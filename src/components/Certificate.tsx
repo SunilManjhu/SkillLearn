@@ -11,6 +11,7 @@ interface CertificateProps {
   date: string;
   certificateId: string;
   isPublic?: boolean;
+  onClose: () => void;
 }
 
 export const Certificate: React.FC<CertificateProps> = ({ 
@@ -18,7 +19,8 @@ export const Certificate: React.FC<CertificateProps> = ({
   userName, 
   date, 
   certificateId,
-  isPublic = false 
+  isPublic = false,
+  onClose,
 }) => {
   const [isVerified, setIsVerified] = useState<boolean | null>(null);
   const [verificationError, setVerificationError] = useState(false);
@@ -63,13 +65,28 @@ export const Certificate: React.FC<CertificateProps> = ({
 
   return (
     <div className="max-w-5xl mx-auto">
-      {!isPublic && (
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-8 no-print">
-          <div>
-            <h1 className="text-2xl font-bold text-[var(--text-primary)]">Your Certificate</h1>
-            <p className="text-[var(--text-secondary)]">Congratulations on completing this course!</p>
+      <div className="no-print mb-6 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] overflow-hidden shadow-xl">
+        <div className="p-6 border-b border-[var(--border-color)] flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <h2 className="text-xl font-bold text-[var(--text-primary)]">
+              {isPublic ? 'Certificate' : 'Your Certificate'}
+            </h2>
+            {!isPublic && (
+              <p className="text-sm text-[var(--text-secondary)] mt-1">Congratulations on completing this course!</p>
+            )}
           </div>
-          <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 p-2 hover:bg-[var(--hover-bg)] rounded-lg transition-colors text-[var(--text-secondary)]"
+            aria-label="Close certificate"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+      {!isPublic && (
+        <div className="p-6 flex flex-wrap items-center justify-end gap-3 no-print">
             <button
               onClick={handleLinkedInShare}
               className="flex items-center gap-2 px-4 py-2 bg-[#0077b5] hover:bg-[#006396] text-white rounded-lg font-bold transition-colors"
@@ -91,9 +108,9 @@ export const Certificate: React.FC<CertificateProps> = ({
               <Download size={18} />
               Download PDF
             </button>
-          </div>
         </div>
       )}
+      </div>
 
       {/* Revamped Certificate Design */}
       <motion.div

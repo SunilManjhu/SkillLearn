@@ -15,6 +15,8 @@ interface ProfilePageProps {
   onShowCertificate: (courseId: string, userName: string, date: string, certId: string) => void;
   /** Increment (e.g. from navbar certificate notification) to open Completed Courses modal. */
   openCompletedCoursesSignal?: number;
+  /** Leave profile (e.g. return to catalog), like closing other full-screen flows. */
+  onDismiss: () => void;
 }
 
 export const ProfilePage: React.FC<ProfilePageProps> = ({
@@ -23,6 +25,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   onLogin,
   onShowCertificate,
   openCompletedCoursesSignal = 0,
+  onDismiss,
 }) => {
   const [displayNameEdit, setDisplayNameEdit] = useState('');
   const [bio, setBio] = useState('');
@@ -90,7 +93,22 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   if (!isAuthReady) {
     return (
       <div className="pt-24 px-6 sm:px-12 max-w-4xl mx-auto pb-20">
-        <p className="text-[var(--text-secondary)]">Loading account…</p>
+        <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl overflow-hidden shadow-2xl">
+          <div className="p-6 border-b border-[var(--border-color)] flex items-center justify-between">
+            <h2 className="text-xl font-bold text-[var(--text-primary)]">Profile</h2>
+            <button
+              type="button"
+              onClick={onDismiss}
+              className="p-2 hover:bg-[var(--hover-bg)] rounded-lg transition-colors text-[var(--text-secondary)] shrink-0"
+              aria-label="Close"
+            >
+              <X size={20} />
+            </button>
+          </div>
+          <div className="p-6">
+            <p className="text-[var(--text-secondary)]">Loading account…</p>
+          </div>
+        </div>
       </div>
     );
   }
@@ -98,16 +116,28 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   if (!user) {
     return (
       <div className="pt-24 px-6 sm:px-12 max-w-4xl mx-auto pb-20">
-        <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl p-8 text-center">
-          <h1 className="text-2xl font-bold text-[var(--text-primary)] mb-2">Your profile</h1>
-          <p className="text-[var(--text-secondary)] mb-6">Sign in to see your details and learning stats.</p>
-          <button
-            type="button"
-            onClick={onLogin}
-            className="bg-orange-500 text-white px-8 py-3 rounded-xl font-bold hover:bg-orange-600 transition-colors"
-          >
-            Sign in
-          </button>
+        <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl overflow-hidden shadow-2xl">
+          <div className="p-6 border-b border-[var(--border-color)] flex items-center justify-between">
+            <h2 className="text-xl font-bold text-[var(--text-primary)]">Your profile</h2>
+            <button
+              type="button"
+              onClick={onDismiss}
+              className="p-2 hover:bg-[var(--hover-bg)] rounded-lg transition-colors text-[var(--text-secondary)] shrink-0"
+              aria-label="Close"
+            >
+              <X size={20} />
+            </button>
+          </div>
+          <div className="p-8 text-center">
+            <p className="text-[var(--text-secondary)] mb-6">Sign in to see your details and learning stats.</p>
+            <button
+              type="button"
+              onClick={onLogin}
+              className="bg-orange-500 text-white px-8 py-3 rounded-xl font-bold hover:bg-orange-600 transition-colors"
+            >
+              Sign in
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -115,7 +145,19 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
 
   return (
     <div className="pt-24 px-6 sm:px-12 max-w-4xl mx-auto pb-20">
-      <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl p-8">
+      <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl overflow-hidden shadow-2xl">
+        <div className="p-6 border-b border-[var(--border-color)] flex items-center justify-between">
+          <h2 className="text-xl font-bold text-[var(--text-primary)]">Profile</h2>
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="p-2 hover:bg-[var(--hover-bg)] rounded-lg transition-colors text-[var(--text-secondary)] shrink-0"
+            aria-label="Close profile"
+          >
+            <X size={20} />
+          </button>
+        </div>
+        <div className="p-8">
         <div className="flex flex-col md:flex-row items-center gap-8 mb-12">
           <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-orange-500/20 bg-[var(--hover-bg)] shrink-0">
             {photoUrl ? (
@@ -207,6 +249,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               insights will show here as you use SkillStream.
             </p>
           </div>
+        </div>
         </div>
       </div>
 

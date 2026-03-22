@@ -533,9 +533,21 @@ export const Navbar: React.FC<NavbarProps> = ({
                   role="menu"
                   aria-label="Account menu"
                 >
-                  <div className="border-b border-[var(--border-color)] bg-[var(--hover-bg)] p-4">
-                    <div className="text-sm font-bold text-[var(--text-primary)]">{user.displayName || 'User'}</div>
-                    <div className="break-all text-xs text-[var(--text-muted)]">{user.email}</div>
+                  <div className="border-b border-[var(--border-color)] p-6 flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <h2 className="text-xl font-bold text-[var(--text-primary)] truncate">
+                        {user.displayName || 'Account'}
+                      </h2>
+                      <div className="break-all text-xs text-[var(--text-muted)] mt-0.5">{user.email}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setOpenDropdown(null)}
+                      className="shrink-0 p-2 hover:bg-[var(--hover-bg)] rounded-lg transition-colors text-[var(--text-secondary)]"
+                      aria-label="Close menu"
+                    >
+                      <X size={20} />
+                    </button>
                   </div>
                   <div className="py-2">
                     <button 

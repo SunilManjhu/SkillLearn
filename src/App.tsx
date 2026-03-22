@@ -104,6 +104,8 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [certificateData, setCertificateData] = useState<CertificateData | null>(null);
+  /** Where to return when closing the certificate view (set synchronously before navigation). */
+  const certificateReturnRef = useRef<{ view: View; courseId: string | null } | null>(null);
   const [notifications, setNotifications] = useState<NavbarNotification[]>(() => [
     {
       id: 'welcome',
@@ -156,6 +158,7 @@ export default function App() {
     const certDate = params.get('cert_date');
 
     if (certId && certCourse && certUser && certDate) {
+      certificateReturnRef.current = { view: 'catalog', courseId: null };
       setCertificateData({
         certificateId: certId,
         courseId: certCourse,
@@ -497,7 +500,42 @@ export default function App() {
     }
   };
 
+  const handleCloseCertificate = useCallback(() => {
+    const wasPublic = certificateData?.isPublic === true;
+    const snap = certificateReturnRef.current;
+    certificateReturnRef.current = null;
+    setCertificateData(null);
+    if (wasPublic) {
+      window.history.replaceState({}, '', `${window.location.pathname}${window.location.hash}`);
+    }
+    if (!snap) {
+      setCurrentView('catalog');
+      scrollDocumentToTop();
+      return;
+    }
+    if (snap.view === 'overview') {
+      if (snap.courseId) {
+        const c = COURSES.find((x) => x.id === snap.courseId);
+        if (c) {
+          setSelectedCourse(c);
+          setCurrentView('overview');
+          scrollDocumentToTop();
+          return;
+        }
+      }
+      setCurrentView('catalog');
+      scrollDocumentToTop();
+      return;
+    }
+    setCurrentView(snap.view);
+    scrollDocumentToTop();
+  }, [certificateData?.isPublic]);
+
   const handleShowCertificate = async (courseId: string, userName: string, date: string, certId: string) => {
+    certificateReturnRef.current = {
+      view: currentView,
+      courseId: selectedCourse?.id ?? null,
+    };
     setCertificateData({
       courseId,
       userName,
@@ -536,6 +574,7 @@ export default function App() {
           date={certificateData.date}
           certificateId={certificateData.certificateId}
           isPublic={certificateData.isPublic}
+          onClose={handleCloseCertificate}
         />
       </div>
     );
@@ -638,18 +677,25 @@ export default function App() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 }}
-            className="flex flex-wrap gap-4"
+            className="flex flex-wrap gap-4 items-stretch"
           >
+            {isAuthReady && !user && (
             <button 
-              onClick={() => handleNavigate('signup')}
-              className="bg-orange-500 hover:bg-orange-600 text-white px-8 py-4 rounded-md font-bold transition-colors flex items-center gap-2"
+              type="button"
+              onClick={() => void handleLogin().catch(() => {})}
+              className="min-h-24 bg-orange-500 hover:bg-orange-600 text-white px-8 rounded-md transition-colors flex flex-col items-center justify-center gap-1"
             >
-              Start a Free Trial
-              <ChevronRight size={20} />
+              <span className="font-bold flex items-center gap-2">
+                Learn for free
+                <ChevronRight size={20} />
+              </span>
+              <span className="text-sm font-medium text-white/90">Sign in with Google</span>
             </button>
+            )}
             <button 
+              type="button"
               onClick={() => handleNavigate('pricing')}
-              className="bg-[var(--hover-bg)] hover:bg-[var(--hover-bg)]/80 text-[var(--text-primary)] px-8 py-4 rounded-md font-bold transition-colors"
+              className="min-h-24 inline-flex items-center justify-center bg-[var(--hover-bg)] hover:bg-[var(--hover-bg)]/80 text-[var(--text-primary)] px-8 rounded-md font-bold transition-colors"
             >
               View Plans
             </button>
@@ -847,12 +893,18 @@ export default function App() {
               </li>
             ))}
           </ul>
-          <button 
-            onClick={() => handleNavigate('signup')}
-            className="w-full py-4 bg-[var(--hover-bg)] hover:bg-[var(--hover-bg)]/80 text-[var(--text-primary)] rounded-md font-bold transition-colors"
-          >
-            Start Free Trial
-          </button>
+          <div className="mt-auto w-full min-h-24 flex flex-col justify-end shrink-0">
+            {isAuthReady && !user ? (
+              <button 
+                type="button"
+                onClick={() => void handleLogin().catch(() => {})}
+                className="min-h-24 w-full bg-[var(--hover-bg)] hover:bg-[var(--hover-bg)]/80 text-[var(--text-primary)] rounded-md transition-colors flex flex-col items-center justify-center gap-1 px-4"
+              >
+                <span className="font-bold">Learn for free</span>
+                <span className="text-sm font-medium text-[var(--text-secondary)]">Sign in with Google</span>
+              </button>
+            ) : null}
+          </div>
         </div>
 
         {/* Premium Plan */}
@@ -881,12 +933,18 @@ export default function App() {
               </li>
             ))}
           </ul>
-          <button 
-            onClick={() => handleNavigate('signup')}
-            className="w-full py-4 bg-orange-500 hover:bg-orange-600 text-white rounded-md font-bold transition-colors"
-          >
-            Start Free Trial
-          </button>
+          <div className="mt-auto w-full min-h-24 flex flex-col justify-end shrink-0">
+            {isAuthReady && !user ? (
+              <button 
+                type="button"
+                onClick={() => void handleLogin().catch(() => {})}
+                className="min-h-24 w-full bg-orange-500 hover:bg-orange-600 text-white rounded-md transition-colors flex flex-col items-center justify-center gap-1 px-4"
+              >
+                <span className="font-bold">Learn for free</span>
+                <span className="text-sm font-medium text-white/90">Sign in with Google</span>
+              </button>
+            ) : null}
+          </div>
         </div>
 
         {/* Business Plan */}
@@ -911,12 +969,15 @@ export default function App() {
               </li>
             ))}
           </ul>
-          <button 
-            onClick={() => handleNavigate('contact')}
-            className="w-full py-4 bg-[var(--hover-bg)] hover:bg-[var(--hover-bg)]/80 text-[var(--text-primary)] rounded-md font-bold transition-colors"
-          >
-            Contact Sales
-          </button>
+          <div className="mt-auto w-full min-h-24 flex flex-col justify-end shrink-0">
+            <button 
+              type="button"
+              onClick={() => handleNavigate('contact')}
+              className="min-h-24 w-full inline-flex items-center justify-center bg-[var(--hover-bg)] hover:bg-[var(--hover-bg)]/80 text-[var(--text-primary)] rounded-md font-bold transition-colors px-4"
+            >
+              Contact Sales
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1269,6 +1330,7 @@ export default function App() {
             onLogin={() => void handleLogin().catch(() => {})}
             onShowCertificate={handleShowCertificate}
             openCompletedCoursesSignal={completedCoursesModalSignal}
+            onDismiss={() => handleNavigate('catalog')}
           />
         )}
         {currentView === 'certificate' && renderCertificate()}
