@@ -22,8 +22,9 @@ googleProvider.setCustomParameters({ prompt: 'select_account' });
 /**
  * Tries Google sign-in with a popup; falls back to full-page redirect when popups are blocked
  * or the environment disallows popups (common on some browsers and embedded previews).
+ * `onBeforeRedirect` runs only when a full-page redirect is about to happen (e.g. stash UI context in sessionStorage).
  */
-export async function signInWithGoogle(): Promise<void> {
+export async function signInWithGoogle(onBeforeRedirect?: () => void): Promise<void> {
   try {
     await signInWithPopup(auth, googleProvider);
   } catch (e: unknown) {
@@ -33,6 +34,7 @@ export async function signInWithGoogle(): Promise<void> {
       code === 'auth/popup-blocked' ||
       code === 'auth/operation-not-supported-in-this-environment'
     ) {
+      onBeforeRedirect?.();
       await signInWithRedirect(auth, googleProvider);
       return;
     }

@@ -6,15 +6,24 @@ import { CourseOverview } from './components/CourseOverview';
 import { ProfilePage } from './components/ProfilePage';
 import { Certificate } from './components/Certificate';
 import { COURSES, Course, Lesson } from './data/courses';
-import { Play, TrendingUp, Award, Users, Globe, ChevronRight, ChevronDown, X, CheckCircle, Mail, LifeBuoy, Briefcase, Shield, Info, Clock } from 'lucide-react';
+import { Play, TrendingUp, Award, Users, Globe, ChevronRight, ChevronDown, X, CheckCircle, Mail, LifeBuoy, Briefcase, Shield, Info, Clock, ArrowLeft, LogIn, AlertTriangle } from 'lucide-react';
 import { motion } from 'motion/react';
 import { auth, signInWithGoogle, getRedirectResult, signOut, onAuthStateChanged, User, db, handleFirestoreError, OperationType } from './firebase';
 import { collection, query, where, getDocs, addDoc, setDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { scrollDocumentToTop } from './utils/scrollDocumentToTop';
 import { recordCourseCompletion } from './utils/courseCompletionLog';
 import { formatAuthError } from './utils/authErrors';
+import { stashAuthReturnState, consumeAuthReturnState, type AuthReturnPayload } from './utils/authReturnContext';
 
 type View = 'home' | 'catalog' | 'player' | 'overview' | 'pricing' | 'about' | 'careers' | 'privacy' | 'help' | 'contact' | 'status' | 'enterprise' | 'signup' | 'profile' | 'settings' | 'certificate';
+
+function findLessonById(course: Course, lessonId: string): Lesson | undefined {
+  for (const mod of course.modules) {
+    const found = mod.lessons.find((l) => l.id === lessonId);
+    if (found) return found;
+  }
+  return undefined;
+}
 
 interface CertificateData {
   courseId: string;
@@ -22,6 +31,63 @@ interface CertificateData {
   date: string;
   certificateId: string;
   isPublic: boolean;
+}
+
+function PlayerSignInGate({
+  courseTitle,
+  onBack,
+  onLogin,
+}: {
+  courseTitle: string;
+  onBack: () => void;
+  onLogin: () => Promise<void>;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  return (
+    <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] pt-20 px-6 flex flex-col items-center justify-center gap-8 max-w-lg mx-auto text-center">
+      <button
+        type="button"
+        onClick={onBack}
+        className="self-start flex items-center gap-2 rounded-full border border-[var(--border-color)] px-4 py-2 text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] transition-colors"
+      >
+        <ArrowLeft size={18} />
+        Back to course
+      </button>
+      <div className="space-y-3">
+        <h1 className="text-2xl font-bold tracking-tight">Sign in to continue</h1>
+        <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
+          Watch lessons and track progress for &ldquo;{courseTitle}&rdquo; with your Google account. After signing in you&apos;ll return to the course overview — start the course when you&apos;re ready.
+        </p>
+      </div>
+      {error && (
+        <div className="w-full flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-500 text-left">
+          <AlertTriangle size={18} className="shrink-0 mt-0.5" />
+          <span>{error}</span>
+        </div>
+      )}
+      <button
+        type="button"
+        disabled={submitting}
+        onClick={async () => {
+          setError(null);
+          setSubmitting(true);
+          try {
+            await onLogin();
+          } catch (e) {
+            setError(formatAuthError(e));
+          } finally {
+            setSubmitting(false);
+          }
+        }}
+        className="w-full max-w-sm flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white py-3.5 rounded-xl text-sm font-bold transition-colors"
+      >
+        <LogIn size={18} />
+        {submitting ? 'Signing in…' : 'Continue with Google'}
+      </button>
+    </div>
+  );
 }
 
 export default function App() {
@@ -53,6 +119,8 @@ export default function App() {
   const categoryRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const courseRefs = useRef<(HTMLDivElement | null)[]>([]);
   const footerRefs = useRef<(HTMLLIElement | null)[]>([]);
+  /** Guest was on the player sign-in gate; after Google sign-in, send them to overview (no auto-play). */
+  const returnToOverviewAfterPlayerGateSignInRef = useRef(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -61,6 +129,23 @@ export default function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (currentView === 'player' && isAuthReady && !user) {
+      returnToOverviewAfterPlayerGateSignInRef.current = true;
+    }
+    if (currentView !== 'player') {
+      returnToOverviewAfterPlayerGateSignInRef.current = false;
+    }
+  }, [currentView, isAuthReady, user]);
+
+  useEffect(() => {
+    if (!isAuthReady || !user || currentView !== 'player') return;
+    if (!returnToOverviewAfterPlayerGateSignInRef.current) return;
+    returnToOverviewAfterPlayerGateSignInRef.current = false;
+    setCurrentView('overview');
+    scrollDocumentToTop();
+  }, [isAuthReady, user, currentView]);
 
   useEffect(() => {
     // Handle Public Certificate Links
@@ -82,22 +167,88 @@ export default function App() {
     }
   }, []);
 
+  const applyAuthReturnPayload = useCallback((payload: AuthReturnPayload | null) => {
+    if (!payload) return;
+    const course = payload.courseId ? COURSES.find((c) => c.id === payload.courseId) : undefined;
+
+    if (payload.view === 'overview' && course) {
+      setSelectedCourse(course);
+      setInitialLesson(undefined);
+      setCurrentView('overview');
+      scrollDocumentToTop();
+      return;
+    }
+    if (payload.view === 'player' && course) {
+      setSelectedCourse(course);
+      setInitialLesson(
+        payload.initialLessonId ? findLessonById(course, payload.initialLessonId) : undefined
+      );
+      setCurrentView('player');
+      scrollDocumentToTop();
+      return;
+    }
+
+    const simpleViews: View[] = [
+      'home',
+      'catalog',
+      'pricing',
+      'profile',
+      'settings',
+      'about',
+      'careers',
+      'privacy',
+      'help',
+      'contact',
+      'status',
+      'enterprise',
+      'signup',
+    ];
+    if (simpleViews.includes(payload.view as View)) {
+      setCurrentView(payload.view as View);
+      scrollDocumentToTop();
+      return;
+    }
+
+    if (payload.view === 'certificate') {
+      setCurrentView(course ? 'overview' : 'catalog');
+      if (course) setSelectedCourse(course);
+      scrollDocumentToTop();
+    }
+  }, []);
+
   useEffect(() => {
     getRedirectResult(auth)
       .then((cred) => {
-        if (cred?.user) setAuthBanner(null);
+        if (cred?.user) {
+          setAuthBanner(null);
+          const params = new URLSearchParams(window.location.search);
+          if (params.get('cert_id')) {
+            consumeAuthReturnState();
+            return;
+          }
+          const payload = consumeAuthReturnState();
+          applyAuthReturnPayload(payload);
+        }
       })
       .catch((err) => {
         console.error('Google redirect sign-in error:', err);
         setAuthBanner(formatAuthError(err));
+        consumeAuthReturnState();
       });
-  }, []);
+  }, [applyAuthReturnPayload]);
 
   const handleLogin = async () => {
     try {
       setAuthBanner(null);
-      await signInWithGoogle();
+      await signInWithGoogle(() =>
+        stashAuthReturnState({
+          view: currentView === 'certificate' ? 'catalog' : currentView,
+          courseId: selectedCourse?.id ?? null,
+          initialLessonId: initialLesson?.id ?? null,
+        })
+      );
     } catch (e) {
+      consumeAuthReturnState();
       console.error('Login error:', e);
       setAuthBanner(formatAuthError(e));
       throw e;
@@ -1032,10 +1183,10 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] selection:bg-orange-500/30 transition-colors duration-300">
-      {currentView !== 'player' && currentView !== 'overview' && (
+      {currentView !== 'certificate' && (
         <Navbar 
           onNavigate={handleNavigate} 
-          activeView={currentView}
+          activeView={currentView === 'overview' || currentView === 'player' ? 'catalog' : currentView}
           searchQuery={searchQuery}
           onSearchChange={handleSearchChange}
           onCategorySelect={handleCategorySelect}
@@ -1052,7 +1203,7 @@ export default function App() {
           onCertificateNotificationClick={handleCertificateNotificationClick}
         />
       )}
-      {authBanner && currentView !== 'player' && currentView !== 'overview' && (
+      {authBanner && currentView !== 'certificate' && (
         <div
           role="alert"
           className="border-b border-orange-500/40 bg-orange-500/10 px-4 py-3 text-sm text-[var(--text-primary)]"
@@ -1083,19 +1234,32 @@ export default function App() {
             }}
             onBack={() => setCurrentView('catalog')}
             user={user}
+            onLogin={handleLogin}
             onShowCertificate={handleShowCertificate}
           />
         )}
         {currentView === 'player' && selectedCourse && (
-          <CoursePlayer
-            key={selectedCourse.id}
-            course={selectedCourse}
-            initialLesson={initialLesson}
-            onBack={() => setCurrentView('overview')}
-            onCourseFinished={handleCoursePlayerFinished}
-            user={user}
-            onLogin={handleLogin}
-          />
+          !isAuthReady ? (
+            <div className="min-h-screen pt-28 flex items-center justify-center text-[var(--text-secondary)] text-sm">
+              Loading…
+            </div>
+          ) : user ? (
+            <CoursePlayer
+              key={selectedCourse.id}
+              course={selectedCourse}
+              initialLesson={initialLesson}
+              onBack={() => setCurrentView('overview')}
+              onCourseFinished={handleCoursePlayerFinished}
+              user={user}
+              onLogin={handleLogin}
+            />
+          ) : (
+            <PlayerSignInGate
+              courseTitle={selectedCourse.title}
+              onBack={() => setCurrentView('overview')}
+              onLogin={handleLogin}
+            />
+          )
         )}
         {currentView === 'pricing' && renderPricing()}
         {currentView === 'profile' && (

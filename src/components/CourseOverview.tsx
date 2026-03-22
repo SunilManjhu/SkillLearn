@@ -1,5 +1,5 @@
-import React, { useState, useLayoutEffect, useEffect } from 'react';
-import { ChevronDown, ChevronRight, Play, Star, Clock, BarChart, Layout, ArrowLeft, User, RotateCcw, CheckCircle2, Award } from 'lucide-react';
+import React, { useState, useLayoutEffect, useEffect, useCallback } from 'react';
+import { ChevronDown, ChevronRight, Play, Star, Clock, BarChart, Layout, ArrowLeft, User, RotateCcw, CheckCircle2, Award, LogIn, X, AlertTriangle } from 'lucide-react';
 import { Course, Lesson } from '../data/courses';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -8,22 +8,26 @@ import {
   isLessonPlaybackComplete,
   clearCourseProgress,
   syncProgressToFirestore,
+  loadProgressFromFirestore,
+  progressStorageKey,
 } from '../utils/courseProgress';
 import { hasRatedOrDismissed, saveCourseRating, remindLaterCourseRating, clearCourseRating, loadCourseRating, type CourseRating } from '../utils/courseRating';
 import { useYoutubeResolvedSeconds } from '../hooks/useYoutubeResolvedSeconds';
 import { scrollDocumentToTop } from '../utils/scrollDocumentToTop';
 import { loadCompletionTimestamps } from '../utils/courseCompletionLog';
 import type { User as FirebaseUser } from '../firebase';
+import { formatAuthError } from '../utils/authErrors';
 
 interface CourseOverviewProps {
   course: Course;
   onStartCourse: (lesson?: Lesson) => void;
   onBack: () => void;
   user: FirebaseUser | null;
+  onLogin: () => Promise<void>;
   onShowCertificate: (courseId: string, userName: string, date: string, certId: string) => void;
 }
 
-export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartCourse, onBack, user, onShowCertificate }) => {
+export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartCourse, onBack, user, onLogin, onShowCertificate }) => {
   const progressUserId = user?.uid ?? null;
   const { lessonDurationLabel } = useYoutubeResolvedSeconds(course);
   const [expandedModules, setExpandedModules] = useState<string[]>([course.modules[0].id]);
@@ -32,6 +36,29 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartC
   const [ratingStars, setRatingStars] = useState(0);
   const [hoverStars, setHoverStars] = useState(0);
   const [ratingComment, setRatingComment] = useState('');
+
+  const [loginModalOpen, setLoginModalOpen] = useState(false);
+  const [loginSubmitting, setLoginSubmitting] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+
+  const closeLoginModal = () => {
+    setLoginModalOpen(false);
+    setLoginError(null);
+  };
+
+  const openPlayLoginModal = () => {
+    setLoginError(null);
+    setLoginModalOpen(true);
+  };
+
+  /* If they sign in from elsewhere (e.g. navbar) while the modal is open, close it — stay on overview. */
+  useEffect(() => {
+    if (user && loginModalOpen) {
+      setLoginModalOpen(false);
+      setLoginError(null);
+      setLoginSubmitting(false);
+    }
+  }, [user, loginModalOpen]);
 
   const RATING_LABELS: Record<number, string> = {
     1: 'Poor',
@@ -52,18 +79,39 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartC
   const totalLessons = course.modules.reduce((acc, m) => acc + m.lessons.length, 0);
   const [progressMap, setProgressMap] = useState(() => loadLessonProgressMap(course.id, progressUserId));
   const isComplete = isCourseComplete(course, progressMap);
+  const completedLessonCount = course.modules.reduce(
+    (acc, m) => acc + m.lessons.filter((l) => isLessonPlaybackComplete(progressMap[l.id])).length,
+    0
+  );
+  const overallProgressPercent = totalLessons ? Math.min(100, Math.round((completedLessonCount / totalLessons) * 100)) : 0;
 
-  const handleRetakeCourse = async () => {
+  const handleRetakeCourse = useCallback(async () => {
+    if (!progressUserId) return;
     clearCourseProgress(course.id, progressUserId);
     clearCourseRating(course.id, progressUserId);
     /* Clear cloud progress before opening the player so we don’t reload a completed map and burn the one-shot finish flow. */
-    if (progressUserId) {
-      await syncProgressToFirestore(course.id, progressUserId, {});
-    }
+    await syncProgressToFirestore(course.id, progressUserId, {});
     setProgressMap({}); // Force re-render and clear local state
     setExistingRating(null);
     setShowRatingPrompt(false);
     onStartCourse();
+  }, [course.id, progressUserId, onStartCourse]);
+
+  const requestPrimaryAction = () => {
+    if (user) {
+      if (isComplete) void handleRetakeCourse();
+      else onStartCourse();
+      return;
+    }
+    openPlayLoginModal();
+  };
+
+  const requestLessonPlay = (lesson: Lesson) => {
+    if (user) {
+      onStartCourse(lesson);
+      return;
+    }
+    openPlayLoginModal();
   };
 
   const handleRatingSubmit = () => {
@@ -81,31 +129,59 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartC
     setRatingComment('');
     // Re-check if we should show prompt
     const progress = loadLessonProgressMap(course.id, progressUserId);
-    if (isCourseComplete(course, progress)) {
+    if (user && isCourseComplete(course, progress)) {
       setShowRatingPrompt(true);
     }
   };
 
   const handleViewCertificate = () => {
-    const userName = user?.displayName || user?.email?.split('@')[0] || 'Learner';
-    const completedAt = loadCompletionTimestamps(progressUserId)[course.id];
+    if (!user) return;
+    const userName = user.displayName || user.email?.split('@')[0] || 'Learner';
+    const completedAt = loadCompletionTimestamps(user.uid)[course.id];
     const date = completedAt
       ? new Date(completedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
       : new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-    const certId = `CERT-${course.id.slice(0, 4)}-${(user?.uid ?? 'anon').slice(0, 4)}`.toUpperCase();
+    const certId = `CERT-${course.id.slice(0, 4)}-${user.uid.slice(0, 4)}`.toUpperCase();
     onShowCertificate(course.id, userName, date, certId);
   };
 
+  /* Re-load progress from local storage when course or account changes (guest key vs user key). */
   useEffect(() => {
-    const progress = loadLessonProgressMap(course.id, progressUserId);
+    setProgressMap(loadLessonProgressMap(course.id, progressUserId));
+  }, [course.id, progressUserId]);
+
+  /* Ratings + completion prompt track the live progress map (including after Firestore merge). */
+  useEffect(() => {
     const rating = loadCourseRating(course.id, progressUserId);
     setExistingRating(rating);
-    
-    // Show prompt if complete AND no rating (or dismissed)
-    // But if they have a rating, we don't show the prompt, we show the "Your Rating" section
     const hasRated = rating && rating.stars > 0;
-    setShowRatingPrompt(isCourseComplete(course, progress) && !hasRated && !rating?.dismissedAt);
-  }, [course, progressUserId]);
+    setShowRatingPrompt(
+      !!user &&
+        isCourseComplete(course, progressMap) &&
+        !hasRated &&
+        !rating?.dismissedAt
+    );
+  }, [course, progressUserId, user, progressMap]);
+
+  useEffect(() => {
+    if (!progressUserId) return undefined;
+    let cancelled = false;
+    loadProgressFromFirestore(course.id, progressUserId).then((remote) => {
+      if (cancelled || !remote || Object.keys(remote).length === 0) return;
+      setProgressMap((prev) => {
+        const next = { ...prev, ...remote };
+        try {
+          localStorage.setItem(progressStorageKey(course.id, progressUserId), JSON.stringify(next));
+        } catch {
+          /* ignore */
+        }
+        return next;
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [course.id, progressUserId]);
 
   useLayoutEffect(() => {
     scrollDocumentToTop();
@@ -125,7 +201,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartC
   }, [course.id]);
 
   return (
-    <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] pb-10 pt-0">
+    <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] pb-10 pt-16">
       {/* Hero Section */}
       <div className="relative w-full overflow-hidden flex flex-col">
         <img
@@ -163,17 +239,42 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartC
               <p className="text-base md:text-lg text-[var(--text-secondary)] mb-4 leading-relaxed max-w-2xl">
                 {course.description}
               </p>
+
+              {user && (
+                <div className="mb-4 max-w-2xl">
+                  <div className="flex items-center justify-between gap-3 text-sm text-[var(--text-secondary)] mb-1.5">
+                    <span>Your progress</span>
+                    <span className="font-mono text-xs text-[var(--text-muted)]">
+                      {completedLessonCount}/{totalLessons} lessons
+                    </span>
+                  </div>
+                  <div
+                    className="h-2 w-full rounded-full bg-[var(--border-color)] overflow-hidden"
+                    role="progressbar"
+                    aria-valuenow={overallProgressPercent}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label="Course completion"
+                  >
+                    <div
+                      className="h-full rounded-full bg-orange-500 transition-[width] duration-300 ease-out"
+                      style={{ width: `${overallProgressPercent}%` }}
+                    />
+                  </div>
+                </div>
+              )}
               
               <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-6">
                 <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
                   <button
-                    onClick={() => (isComplete ? handleRetakeCourse() : onStartCourse())}
+                    type="button"
+                    onClick={requestPrimaryAction}
                     className="flex items-center justify-center gap-2 px-8 py-4 bg-orange-500 hover:bg-orange-600 text-white rounded-2xl font-bold transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-orange-500/20"
                   >
                     {isComplete ? <RotateCcw size={20} /> : <Play size={20} fill="currentColor" />}
                     {isComplete ? 'Retake Course' : 'Start Course'}
                   </button>
-                  {isComplete && (
+                  {user && isComplete && (
                     <button
                       type="button"
                       onClick={handleViewCertificate}
@@ -196,7 +297,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartC
 
         <div className="max-w-7xl mx-auto px-6 mt-0">
         <AnimatePresence>
-          {showRatingPrompt && (
+          {showRatingPrompt && user && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
@@ -295,7 +396,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartC
             </motion.div>
           )}
 
-          {existingRating && existingRating.stars > 0 && (
+          {user && existingRating && existingRating.stars > 0 && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -387,8 +488,9 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartC
                             const lessonComplete = isLessonPlaybackComplete(progressMap[lesson.id]);
                             return (
                               <button
+                                type="button"
                                 key={lesson.id}
-                                onClick={() => onStartCourse(lesson)}
+                                onClick={() => requestLessonPlay(lesson)}
                                 className="w-full flex items-center justify-between p-4 pl-16 hover:bg-[var(--hover-bg)] transition-colors group text-left"
                               >
                                 <div className="flex items-center gap-3">
@@ -475,13 +577,14 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartC
 
               <div className="pt-6 border-t border-[var(--border-color)] space-y-3">
                 <button
-                  onClick={() => (isComplete ? handleRetakeCourse() : onStartCourse())}
+                  type="button"
+                  onClick={requestPrimaryAction}
                   className="w-full py-4 bg-orange-500 hover:bg-orange-600 text-white rounded-2xl font-bold transition-all shadow-lg shadow-orange-500/20 flex items-center justify-center gap-2"
                 >
                   {isComplete ? <RotateCcw size={20} /> : null}
                   {isComplete ? 'Retake Course' : 'Enroll Now'}
                 </button>
-                {isComplete && (
+                {user && isComplete && (
                   <button
                     type="button"
                     onClick={handleViewCertificate}
@@ -496,6 +599,62 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartC
           </div>
         </div>
       </div>
+
+      <AnimatePresence>
+        {loginModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl"
+            >
+              <div className="p-6 border-b border-[var(--border-color)] flex items-center justify-between gap-4">
+                <h2 className="text-xl font-bold text-[var(--text-primary)]">Sign in to learn</h2>
+                <button
+                  type="button"
+                  onClick={closeLoginModal}
+                  className="p-2 hover:bg-[var(--hover-bg)] rounded-full transition-colors shrink-0"
+                  aria-label="Close"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="p-6 space-y-4">
+                <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
+                  Watching lessons and saving your progress requires a Google account. If a pop-up is blocked, you will be redirected to Google to sign in. After signing in you&apos;ll stay on this page — use Start Course when you&apos;re ready.
+                </p>
+                {loginError && (
+                  <div className="flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-500">
+                    <AlertTriangle size={18} className="shrink-0 mt-0.5" />
+                    <span>{loginError}</span>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  disabled={loginSubmitting}
+                  onClick={async () => {
+                    setLoginError(null);
+                    setLoginSubmitting(true);
+                    try {
+                      await onLogin();
+                      closeLoginModal();
+                    } catch (e) {
+                      setLoginError(formatAuthError(e));
+                    } finally {
+                      setLoginSubmitting(false);
+                    }
+                  }}
+                  className="w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white py-3 rounded-xl text-sm font-bold transition-colors"
+                >
+                  <LogIn size={18} />
+                  {loginSubmitting ? 'Signing in…' : 'Continue with Google'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
