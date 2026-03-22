@@ -5,6 +5,7 @@ import { CoursePlayer } from './components/CoursePlayer';
 import { CourseOverview } from './components/CourseOverview';
 import { ProfilePage } from './components/ProfilePage';
 import { Certificate } from './components/Certificate';
+import { ContactForm } from './components/ContactForm';
 import { COURSES, Course, Lesson } from './data/courses';
 import { Play, TrendingUp, Award, Users, Globe, ChevronRight, ChevronDown, X, CheckCircle, Mail, LifeBuoy, Briefcase, Shield, Info, Clock, ArrowLeft, LogIn, AlertTriangle } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -15,7 +16,7 @@ import { recordCourseCompletion } from './utils/courseCompletionLog';
 import { formatAuthError } from './utils/authErrors';
 import { stashAuthReturnState, consumeAuthReturnState, type AuthReturnPayload } from './utils/authReturnContext';
 
-type View = 'home' | 'catalog' | 'player' | 'overview' | 'pricing' | 'about' | 'careers' | 'privacy' | 'help' | 'contact' | 'status' | 'enterprise' | 'signup' | 'profile' | 'settings' | 'certificate';
+type View = 'home' | 'catalog' | 'player' | 'overview' | 'about' | 'careers' | 'privacy' | 'help' | 'contact' | 'status' | 'enterprise' | 'signup' | 'profile' | 'settings' | 'certificate';
 
 function findLessonById(course: Course, lessonId: string): Lesson | undefined {
   for (const mod of course.modules) {
@@ -172,6 +173,9 @@ export default function App() {
 
   const applyAuthReturnPayload = useCallback((payload: AuthReturnPayload | null) => {
     if (!payload) return;
+    if (payload.view === 'pricing') {
+      (payload as { view: string }).view = 'contact';
+    }
     const course = payload.courseId ? COURSES.find((c) => c.id === payload.courseId) : undefined;
 
     if (payload.view === 'overview' && course) {
@@ -194,7 +198,6 @@ export default function App() {
     const simpleViews: View[] = [
       'home',
       'catalog',
-      'pricing',
       'profile',
       'settings',
       'about',
@@ -307,7 +310,7 @@ export default function App() {
   }, [currentView, selectedCourse?.id]);
 
   const handleNavigate = (view: View, shouldClear = true) => {
-    if (shouldClear && (view === 'home' || view === 'catalog' || view === 'pricing' || view === 'profile' || view === 'settings')) {
+    if (shouldClear && (view === 'home' || view === 'catalog' || view === 'contact' || view === 'profile' || view === 'settings')) {
       clearFilters();
       setFocusedCourseIndex(-1);
       setFocusedCategoryIndex(0);
@@ -483,7 +486,7 @@ export default function App() {
   };
 
   const handleFooterKeyDown = (e: React.KeyboardEvent, index: number) => {
-    const footerLinksCount = 9; // Total links in footer
+    const footerLinksCount = 6; // Focusable footer links (Solutions rows are static)
     if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
       e.preventDefault();
       const nextIndex = (index + 1) % footerLinksCount;
@@ -694,10 +697,10 @@ export default function App() {
             )}
             <button 
               type="button"
-              onClick={() => handleNavigate('pricing')}
+              onClick={() => handleNavigate('contact')}
               className="min-h-24 inline-flex items-center justify-center bg-[var(--hover-bg)] hover:bg-[var(--hover-bg)]/80 text-[var(--text-primary)] px-8 rounded-md font-bold transition-colors"
             >
-              View Plans
+              Contact Us
             </button>
           </motion.div>
         </div>
@@ -859,130 +862,6 @@ export default function App() {
     );
   };
 
-  const renderPricing = () => (
-    <div className="pt-32 pb-20 px-6 max-w-7xl mx-auto">
-      <div className="text-center mb-16">
-        <h1 className="text-4xl sm:text-6xl font-bold text-[var(--text-primary)] mb-6">Choose the plan that's right for you.</h1>
-        <p className="text-xl text-[var(--text-secondary)] max-w-2xl mx-auto">
-          Unlock the full potential of your career with unlimited access to thousands of courses, 
-          hands-on labs, and certification prep.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        {/* Individual Plan */}
-        <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl p-8 flex flex-col">
-          <div className="mb-8">
-            <h3 className="text-xl font-bold text-[var(--text-primary)] mb-2">Individual</h3>
-            <p className="text-[var(--text-secondary)] text-sm">Perfect for solo learners looking to level up their skills.</p>
-          </div>
-          <div className="mb-8">
-            <div className="flex items-baseline gap-1">
-              <span className="text-4xl font-bold text-[var(--text-primary)]">$29</span>
-              <span className="text-[var(--text-muted)]">/month</span>
-            </div>
-            <p className="text-orange-500 text-sm font-medium mt-2">7-day free trial</p>
-          </div>
-          <ul className="space-y-4 mb-10 flex-1">
-            {['7,000+ courses', 'Hands-on labs', 'Certification prep', 'Offline viewing', 'Mobile app access'].map((feature) => (
-              <li key={feature} className="flex items-center gap-3 text-[var(--text-secondary)] text-sm">
-                <div className="w-5 h-5 rounded-full bg-orange-500/20 flex items-center justify-center text-orange-500">
-                  <ChevronRight size={14} />
-                </div>
-                {feature}
-              </li>
-            ))}
-          </ul>
-          <div className="mt-auto w-full min-h-24 flex flex-col justify-end shrink-0">
-            {isAuthReady && !user ? (
-              <button 
-                type="button"
-                onClick={() => void handleLogin().catch(() => {})}
-                className="min-h-24 w-full bg-[var(--hover-bg)] hover:bg-[var(--hover-bg)]/80 text-[var(--text-primary)] rounded-md transition-colors flex flex-col items-center justify-center gap-1 px-4"
-              >
-                <span className="font-bold">Learn for free</span>
-                <span className="text-sm font-medium text-[var(--text-secondary)]">Sign in with Google</span>
-              </button>
-            ) : null}
-          </div>
-        </div>
-
-        {/* Premium Plan */}
-        <div className="bg-[var(--bg-secondary)] border-2 border-orange-500 rounded-2xl p-8 flex flex-col relative">
-          <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-orange-500 text-white text-xs font-bold px-4 py-1 rounded-full uppercase tracking-wider">
-            Most Popular
-          </div>
-          <div className="mb-8">
-            <h3 className="text-xl font-bold text-[var(--text-primary)] mb-2">Premium</h3>
-            <p className="text-[var(--text-secondary)] text-sm">Advanced features for serious professionals and teams.</p>
-          </div>
-          <div className="mb-8">
-            <div className="flex items-baseline gap-1">
-              <span className="text-4xl font-bold text-[var(--text-primary)]">$49</span>
-              <span className="text-[var(--text-muted)]">/month</span>
-            </div>
-            <p className="text-orange-500 text-sm font-medium mt-2">14-day free trial</p>
-          </div>
-          <ul className="space-y-4 mb-10 flex-1">
-            {['Everything in Individual', 'Interactive coding challenges', 'Cloud sandboxes', 'Priority support', 'Team analytics'].map((feature) => (
-              <li key={feature} className="flex items-center gap-3 text-[var(--text-secondary)] text-sm">
-                <div className="w-5 h-5 rounded-full bg-orange-500/20 flex items-center justify-center text-orange-500">
-                  <ChevronRight size={14} />
-                </div>
-                {feature}
-              </li>
-            ))}
-          </ul>
-          <div className="mt-auto w-full min-h-24 flex flex-col justify-end shrink-0">
-            {isAuthReady && !user ? (
-              <button 
-                type="button"
-                onClick={() => void handleLogin().catch(() => {})}
-                className="min-h-24 w-full bg-orange-500 hover:bg-orange-600 text-white rounded-md transition-colors flex flex-col items-center justify-center gap-1 px-4"
-              >
-                <span className="font-bold">Learn for free</span>
-                <span className="text-sm font-medium text-white/90">Sign in with Google</span>
-              </button>
-            ) : null}
-          </div>
-        </div>
-
-        {/* Business Plan */}
-        <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl p-8 flex flex-col">
-          <div className="mb-8">
-            <h3 className="text-xl font-bold text-[var(--text-primary)] mb-2">Business</h3>
-            <p className="text-[var(--text-secondary)] text-sm">Custom solutions for large organizations and enterprises.</p>
-          </div>
-          <div className="mb-8">
-            <div className="flex items-baseline gap-1">
-              <span className="text-4xl font-bold text-[var(--text-primary)]">Custom</span>
-            </div>
-            <p className="text-[var(--text-muted)] text-sm mt-2">Contact sales for pricing</p>
-          </div>
-          <ul className="space-y-4 mb-10 flex-1">
-            {['Everything in Premium', 'SSO & LMS integration', 'Custom learning paths', 'Dedicated account manager', 'Advanced reporting'].map((feature) => (
-              <li key={feature} className="flex items-center gap-3 text-[var(--text-secondary)] text-sm">
-                <div className="w-5 h-5 rounded-full bg-orange-500/20 flex items-center justify-center text-orange-500">
-                  <ChevronRight size={14} />
-                </div>
-                {feature}
-              </li>
-            ))}
-          </ul>
-          <div className="mt-auto w-full min-h-24 flex flex-col justify-end shrink-0">
-            <button 
-              type="button"
-              onClick={() => handleNavigate('contact')}
-              className="min-h-24 w-full inline-flex items-center justify-center bg-[var(--hover-bg)] hover:bg-[var(--hover-bg)]/80 text-[var(--text-primary)] rounded-md font-bold transition-colors px-4"
-            >
-              Contact Sales
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
   const renderAbout = () => (
     <div className="pt-32 pb-20 px-6 max-w-7xl mx-auto">
       <div className="max-w-3xl mx-auto text-center mb-16">
@@ -1075,7 +954,9 @@ export default function App() {
               </div>
               <div>
                 <p className="text-[var(--text-primary)] font-bold">Email us</p>
-                <p className="text-[var(--text-secondary)]">support@skillstream.com</p>
+                <p className="text-[var(--text-secondary)]">
+                  Use the form — we&apos;ll reply to the address you provide.
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-4">
@@ -1090,29 +971,7 @@ export default function App() {
           </div>
         </div>
         <div className="bg-[var(--bg-secondary)] p-8 rounded-2xl border border-[var(--border-color)]">
-          <form className="space-y-6">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm text-[var(--text-secondary)]">First Name</label>
-                <input type="text" className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg p-3 text-[var(--text-primary)] focus:border-orange-500 outline-none" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm text-[var(--text-secondary)]">Last Name</label>
-                <input type="text" className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg p-3 text-[var(--text-primary)] focus:border-orange-500 outline-none" />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm text-[var(--text-secondary)]">Email</label>
-              <input type="email" className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg p-3 text-[var(--text-primary)] focus:border-orange-500 outline-none" />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm text-[var(--text-secondary)]">Message</label>
-              <textarea rows={4} className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg p-3 text-[var(--text-primary)] focus:border-orange-500 outline-none"></textarea>
-            </div>
-            <button className="w-full py-4 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-bold transition-colors">
-              Send Message
-            </button>
-          </form>
+          <ContactForm />
         </div>
       </div>
     </div>
@@ -1322,7 +1181,6 @@ export default function App() {
             />
           )
         )}
-        {currentView === 'pricing' && renderPricing()}
         {currentView === 'profile' && (
           <ProfilePage
             user={user}
@@ -1360,60 +1218,36 @@ export default function App() {
             <div>
               <h4 className="text-[var(--text-primary)] font-bold mb-6">Solutions</h4>
               <ul className="space-y-4 text-sm text-[var(--text-secondary)]">
-                <li 
-                  ref={el => footerRefs.current[0] = el as any}
-                  tabIndex={focusedFooterIndex === 0 || focusedFooterIndex === -1 ? 0 : -1}
-                  onKeyDown={(e) => handleFooterKeyDown(e as any, 0)}
-                  onClick={() => handleNavigate('pricing')} 
-                  className="hover:text-orange-500 cursor-pointer focus:outline-none focus:text-orange-500"
-                >
-                  For Individuals
-                </li>
-                <li 
-                  ref={el => footerRefs.current[1] = el as any}
-                  tabIndex={focusedFooterIndex === 1 ? 0 : -1}
-                  onKeyDown={(e) => handleFooterKeyDown(e as any, 1)}
-                  onClick={() => handleNavigate('enterprise')} 
-                  className="hover:text-orange-500 cursor-pointer focus:outline-none focus:text-orange-500"
-                >
-                  For Teams
-                </li>
-                <li 
-                  ref={el => footerRefs.current[2] = el as any}
-                  tabIndex={focusedFooterIndex === 2 ? 0 : -1}
-                  onKeyDown={(e) => handleFooterKeyDown(e as any, 2)}
-                  onClick={() => handleNavigate('enterprise')} 
-                  className="hover:text-orange-500 cursor-pointer focus:outline-none focus:text-orange-500"
-                >
-                  For Enterprise
-                </li>
+                <li className="text-[var(--text-secondary)]">For Individuals</li>
+                <li className="text-[var(--text-secondary)]">For Teams</li>
+                <li className="text-[var(--text-secondary)]">For Enterprise</li>
               </ul>
             </div>
             <div>
               <h4 className="text-[var(--text-primary)] font-bold mb-6">Support</h4>
               <ul className="space-y-4 text-sm text-[var(--text-secondary)]">
                 <li 
-                  ref={el => footerRefs.current[3] = el as any}
-                  tabIndex={focusedFooterIndex === 3 ? 0 : -1}
-                  onKeyDown={(e) => handleFooterKeyDown(e as any, 3)}
+                  ref={el => footerRefs.current[0] = el as any}
+                  tabIndex={focusedFooterIndex === 0 || focusedFooterIndex === -1 ? 0 : -1}
+                  onKeyDown={(e) => handleFooterKeyDown(e as any, 0)}
                   onClick={() => handleNavigate('help')} 
                   className="hover:text-orange-500 cursor-pointer focus:outline-none focus:text-orange-500"
                 >
                   Help Center
                 </li>
                 <li 
-                  ref={el => footerRefs.current[4] = el as any}
-                  tabIndex={focusedFooterIndex === 4 ? 0 : -1}
-                  onKeyDown={(e) => handleFooterKeyDown(e as any, 4)}
+                  ref={el => footerRefs.current[1] = el as any}
+                  tabIndex={focusedFooterIndex === 1 ? 0 : -1}
+                  onKeyDown={(e) => handleFooterKeyDown(e as any, 1)}
                   onClick={() => handleNavigate('contact')} 
                   className="hover:text-orange-500 cursor-pointer focus:outline-none focus:text-orange-500"
                 >
                   Contact Us
                 </li>
                 <li 
-                  ref={el => footerRefs.current[5] = el as any}
-                  tabIndex={focusedFooterIndex === 5 ? 0 : -1}
-                  onKeyDown={(e) => handleFooterKeyDown(e as any, 5)}
+                  ref={el => footerRefs.current[2] = el as any}
+                  tabIndex={focusedFooterIndex === 2 ? 0 : -1}
+                  onKeyDown={(e) => handleFooterKeyDown(e as any, 2)}
                   onClick={() => handleNavigate('status')} 
                   className="hover:text-orange-500 cursor-pointer focus:outline-none focus:text-orange-500"
                 >
@@ -1425,27 +1259,27 @@ export default function App() {
               <h4 className="text-[var(--text-primary)] font-bold mb-6">Company</h4>
               <ul className="space-y-4 text-sm text-[var(--text-secondary)]">
                 <li 
-                  ref={el => footerRefs.current[6] = el as any}
-                  tabIndex={focusedFooterIndex === 6 ? 0 : -1}
-                  onKeyDown={(e) => handleFooterKeyDown(e as any, 6)}
+                  ref={el => footerRefs.current[3] = el as any}
+                  tabIndex={focusedFooterIndex === 3 ? 0 : -1}
+                  onKeyDown={(e) => handleFooterKeyDown(e as any, 3)}
                   onClick={() => handleNavigate('about')} 
                   className="hover:text-orange-500 cursor-pointer focus:outline-none focus:text-orange-500"
                 >
                   About Us
                 </li>
                 <li 
-                  ref={el => footerRefs.current[7] = el as any}
-                  tabIndex={focusedFooterIndex === 7 ? 0 : -1}
-                  onKeyDown={(e) => handleFooterKeyDown(e as any, 7)}
+                  ref={el => footerRefs.current[4] = el as any}
+                  tabIndex={focusedFooterIndex === 4 ? 0 : -1}
+                  onKeyDown={(e) => handleFooterKeyDown(e as any, 4)}
                   onClick={() => handleNavigate('careers')} 
                   className="hover:text-orange-500 cursor-pointer focus:outline-none focus:text-orange-500"
                 >
                   Careers
                 </li>
                 <li 
-                  ref={el => footerRefs.current[8] = el as any}
-                  tabIndex={focusedFooterIndex === 8 ? 0 : -1}
-                  onKeyDown={(e) => handleFooterKeyDown(e as any, 8)}
+                  ref={el => footerRefs.current[5] = el as any}
+                  tabIndex={focusedFooterIndex === 5 ? 0 : -1}
+                  onKeyDown={(e) => handleFooterKeyDown(e as any, 5)}
                   onClick={() => handleNavigate('privacy')} 
                   className="hover:text-orange-500 cursor-pointer focus:outline-none focus:text-orange-500"
                 >

@@ -12,7 +12,7 @@ export interface NavbarNotification {
 }
 
 interface NavbarProps {
-  onNavigate: (view: 'home' | 'catalog' | 'pricing' | 'profile' | 'settings', clear?: boolean) => void;
+  onNavigate: (view: 'home' | 'catalog' | 'contact' | 'profile' | 'settings', clear?: boolean) => void;
   activeView: string;
   searchQuery: string;
   onSearchChange: (query: string) => void;
@@ -328,12 +328,12 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           <button 
             ref={el => navItemsRef.current[4] = el}
-            onClick={() => onNavigate('pricing')}
+            onClick={() => onNavigate('contact')}
             onKeyDown={(e) => handleTopLevelKeyDown(e, 4)}
             tabIndex={focusedNavIndex === 4 ? 0 : -1}
-            className={`hover:text-[var(--text-primary)] transition-colors h-16 focus:outline-none focus:text-[var(--text-primary)] ${activeView === 'pricing' ? 'text-orange-500 border-b-2 border-orange-500' : 'text-[var(--text-secondary)]'}`}
+            className={`hover:text-[var(--text-primary)] transition-colors h-16 focus:outline-none focus:text-[var(--text-primary)] ${activeView === 'contact' ? 'text-orange-500 border-b-2 border-orange-500' : 'text-[var(--text-secondary)]'}`}
           >
-            Pricing
+            Contact Us
           </button>
         </div>
       </div>
@@ -749,13 +749,13 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
               <button
                 type="button"
-                className={`border-t border-[var(--border-color)] px-4 py-3 text-left transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] ${activeView === 'pricing' ? 'text-orange-500' : ''}`}
+                className={`border-t border-[var(--border-color)] px-4 py-3 text-left transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] ${activeView === 'contact' ? 'text-orange-500' : ''}`}
                 onClick={() => {
-                  onNavigate('pricing');
+                  onNavigate('contact');
                   setMobileMenuOpen(false);
                 }}
               >
-                Pricing
+                Contact Us
               </button>
             </div>
           </div>
