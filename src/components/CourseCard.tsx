@@ -1,0 +1,64 @@
+import React, { forwardRef } from 'react';
+import { Star, Clock } from 'lucide-react';
+import type { Course } from '../data/courses';
+
+export interface CourseCardProps {
+  course: Course;
+  onClick: (course: Course) => void;
+  tabIndex?: number;
+  onKeyDown?: React.KeyboardEventHandler<HTMLDivElement>;
+  isFocused?: boolean;
+}
+
+export const CourseCard = forwardRef<HTMLDivElement, CourseCardProps>(
+  ({ course, onClick, tabIndex = 0, onKeyDown, isFocused }, ref) => {
+    const handleKeyDown: React.KeyboardEventHandler<HTMLDivElement> = (e) => {
+      onKeyDown?.(e);
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        onClick(course);
+      }
+    };
+
+    return (
+      <div
+        ref={ref}
+        role="button"
+        tabIndex={tabIndex}
+        onKeyDown={handleKeyDown}
+        onClick={() => onClick(course)}
+        className={`group flex flex-col rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] overflow-hidden text-left cursor-pointer transition-all hover:border-orange-500/30 hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 ${
+          isFocused ? 'ring-2 ring-orange-500/50' : ''
+        }`}
+      >
+        <div className="aspect-video overflow-hidden bg-black/20">
+          <img
+            src={course.thumbnail}
+            alt=""
+            className="h-full w-full object-cover transition-transform group-hover:scale-105"
+          />
+        </div>
+        <div className="flex flex-1 flex-col gap-2 p-4">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-orange-500">{course.category}</span>
+          <h3 className="font-bold text-[var(--text-primary)] line-clamp-2">{course.title}</h3>
+          <p className="text-sm text-[var(--text-secondary)]">{course.author}</p>
+          <div className="mt-auto flex items-center justify-between gap-2 pt-2 text-xs text-[var(--text-muted)]">
+            <span className="flex items-center gap-1 shrink-0">
+              <Star size={12} className="text-orange-500 fill-orange-500" />
+              {course.rating.toFixed(1)}
+            </span>
+            <span className="flex items-center gap-1 shrink-0">
+              <Clock size={12} />
+              {course.duration}
+            </span>
+            <span className="rounded-md bg-[var(--hover-bg)] px-2 py-0.5 text-[var(--text-secondary)] shrink-0">
+              {course.level}
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+);
+
+CourseCard.displayName = 'CourseCard';

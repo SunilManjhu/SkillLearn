@@ -1,0 +1,201 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: votes
+    // Document ID: auto-generated
+    // Fields:
+    //   - lessonId: string (required) - The ID of the lesson.
+    //   - userId: string (required) - The UID of the voter.
+    //   - type: string (required, enum: ['up', 'down']) - Vote type.
+    //   - timestamp: timestamp (required) - When cast.
+    //
+    // Collection: suggestions
+    // Document ID: auto-generated
+    // Fields:
+    //   - lessonId: string (required) - The ID of the lesson.
+    //   - userId: string (required) - The UID of the suggester.
+    //   - suggestedUrl: string (required) - The YouTube URL.
+    //   - timestamp: timestamp (required) - When made.
+    //
+    // Collection: customizations
+    // Document ID: auto-generated
+    // Fields:
+    //   - lessonId: string (required) - The ID of the lesson.
+    //   - userId: string (required) - The UID of the user.
+    //   - customUrl: string (required) - The personal YouTube URL replacement.
+    //   - timestamp: timestamp (required) - When made.
+    //
+    // Collection: reports
+    // Document ID: auto-generated
+    // Fields:
+    //   - lessonId: string (required) - The ID of the lesson.
+    //   - userId: string (required) - The UID of the reporter.
+    //   - reason: string (required, enum: ['Technical issue', 'Misinformation', 'Spam or misleading', 'Legal issue', 'Confusing']) - Report reason.
+    //   - details: string (optional) - Additional details.
+    //   - timestamp: timestamp (required) - When made.
+    //
+    // Collection: certificates
+    // Document ID: certificateId
+    // Fields:
+    //   - courseId: string (required)
+    //   - userId: string (required)
+    //   - userName: string (required)
+    //   - date: timestamp (required)
+    //   - certificateId: string (required)
+    //
+    // Collection: progress
+    // Document ID: userId_courseId
+    // Fields:
+    //   - courseId: string (required)
+    //   - userId: string (required)
+    //   - lessonProgress: map (required)
+    //   - lastUpdated: timestamp (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email.lower() == "ranveer.singh.blr@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidUrl(url) {
+      return url is string &&
+        (url.matches("^https://.*") || url.matches("^http://.*"));
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidVote(data) {
+      return hasRequiredFields(['lessonId', 'userId', 'type', 'timestamp']) &&
+             hasOnlyAllowedFields(['lessonId', 'userId', 'type', 'timestamp']) &&
+             data.lessonId is string && data.lessonId.size() > 0 && data.lessonId.size() < 100 &&
+             data.userId == request.auth.uid &&
+             data.type in ['up', 'down'] &&
+             data.timestamp is timestamp;
+    }
+
+    function isValidSuggestion(data) {
+      return hasRequiredFields(['lessonId', 'userId', 'suggestedUrl', 'timestamp']) &&
+             hasOnlyAllowedFields(['lessonId', 'userId', 'suggestedUrl', 'timestamp']) &&
+             data.lessonId is string && data.lessonId.size() > 0 && data.lessonId.size() < 100 &&
+             data.userId == request.auth.uid &&
+             isValidUrl(data.suggestedUrl) && data.suggestedUrl.size() < 500 &&
+             data.timestamp is timestamp;
+    }
+
+    function isValidCustomization(data) {
+      return hasRequiredFields(['lessonId', 'userId', 'customUrl', 'timestamp']) &&
+             hasOnlyAllowedFields(['lessonId', 'userId', 'customUrl', 'timestamp']) &&
+             data.lessonId is string && data.lessonId.size() > 0 && data.lessonId.size() < 100 &&
+             data.userId == request.auth.uid &&
+             isValidUrl(data.customUrl) && data.customUrl.size() < 500 &&
+             data.timestamp is timestamp;
+    }
+
+    function isValidReport(data) {
+      return hasRequiredFields(['lessonId', 'userId', 'reason', 'timestamp']) &&
+             hasOnlyAllowedFields(['lessonId', 'userId', 'reason', 'details', 'timestamp']) &&
+             data.lessonId is string && data.lessonId.size() > 0 && data.lessonId.size() < 100 &&
+             data.userId == request.auth.uid &&
+             data.reason in ['Technical issue', 'Misinformation', 'Spam or misleading', 'Legal issue', 'Confusing'] &&
+             (!('details' in data) || (data.details is string && data.details.size() < 2000)) &&
+             data.timestamp is timestamp;
+    }
+
+    function isValidCertificate(data) {
+      return hasRequiredFields(['courseId', 'userId', 'userName', 'date', 'certificateId']) &&
+             hasOnlyAllowedFields(['courseId', 'userId', 'userName', 'date', 'certificateId']) &&
+             data.userId == request.auth.uid &&
+             data.userName is string && data.userName.size() < 100 &&
+             data.courseId is string &&
+             data.date is timestamp &&
+             data.certificateId is string;
+    }
+
+    function isValidProgress(data) {
+      return hasRequiredFields(['courseId', 'userId', 'lessonProgress', 'lastUpdated']) &&
+             hasOnlyAllowedFields(['courseId', 'userId', 'lessonProgress', 'lastUpdated']) &&
+             data.userId == request.auth.uid &&
+             data.courseId is string &&
+             data.lessonProgress is map &&
+             data.lastUpdated is timestamp;
+    }
+
+    // ===============================================================
+    // Match Rules
+    // ===============================================================
+
+    match /votes/{voteId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidVote(request.resource.data);
+      allow update: if isAuthenticated() && isOwner(resource.data.userId) && isValidVote(request.resource.data);
+      allow delete: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
+    }
+
+    match /suggestions/{suggestionId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidSuggestion(request.resource.data);
+      allow update: if isAuthenticated() && isOwner(resource.data.userId) && isValidSuggestion(request.resource.data);
+      allow delete: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
+    }
+
+    match /customizations/{customizationId} {
+      allow read: if isAuthenticated() && isOwner(resource.data.userId);
+      allow create: if isAuthenticated() && isValidCustomization(request.resource.data);
+      allow update: if isAuthenticated() && isOwner(resource.data.userId) && isValidCustomization(request.resource.data);
+      allow delete: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
+    }
+
+    match /reports/{reportId} {
+      allow read: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
+      allow create: if isAuthenticated() && isValidReport(request.resource.data);
+      allow update: if isAuthenticated() && isOwner(resource.data.userId) && isValidReport(request.resource.data);
+      allow delete: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
+    }
+
+    match /certificates/{certificateId} {
+      allow read: if true; // Certificates are public by design for sharing
+      allow create: if isAuthenticated() && isValidCertificate(request.resource.data);
+      allow update: if isAuthenticated() && isOwner(resource.data.userId) && isValidCertificate(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /progress/{progressId} {
+      allow read: if isAuthenticated() && isOwner(resource.data.userId);
+      allow create, update: if isAuthenticated() && isValidProgress(request.resource.data);
+      allow delete: if isAuthenticated() && isOwner(resource.data.userId);
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isOwner(userId) && hasOnlyAllowedFields(['role', 'displayName', 'email']) && 
+                            (request.resource.data.role == 'user' || isAdmin());
+    }
+  }
+}

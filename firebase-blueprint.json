@@ -1,0 +1,190 @@
+{
+  "entities": {
+    "Vote": {
+      "title": "Vote",
+      "description": "A user's vote (up or down) on a specific lesson.",
+      "type": "object",
+      "properties": {
+        "lessonId": {
+          "type": "string",
+          "description": "The ID of the lesson being voted on."
+        },
+        "userId": {
+          "type": "string",
+          "description": "The UID of the user who cast the vote."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["up", "down"],
+          "description": "The type of vote: up or down."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the vote was cast."
+        }
+      },
+      "required": ["lessonId", "userId", "type", "timestamp"]
+    },
+    "Suggestion": {
+      "title": "Suggestion",
+      "description": "A YouTube URL suggested by a user for a downvoted lesson.",
+      "type": "object",
+      "properties": {
+        "lessonId": {
+          "type": "string",
+          "description": "The ID of the lesson for which the suggestion is made."
+        },
+        "userId": {
+          "type": "string",
+          "description": "The UID of the user who made the suggestion."
+        },
+        "suggestedUrl": {
+          "type": "string",
+          "description": "The suggested YouTube URL."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the suggestion was made."
+        }
+      },
+      "required": ["lessonId", "userId", "suggestedUrl", "timestamp"]
+    },
+    "Customization": {
+      "title": "Customization",
+      "description": "A user's personal video replacement for a specific lesson.",
+      "type": "object",
+      "properties": {
+        "lessonId": {
+          "type": "string",
+          "description": "The ID of the lesson being customized."
+        },
+        "userId": {
+          "type": "string",
+          "description": "The UID of the user who made the customization."
+        },
+        "customUrl": {
+          "type": "string",
+          "description": "The user's personal YouTube URL replacement."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the customization was made."
+        }
+      },
+      "required": ["lessonId", "userId", "customUrl", "timestamp"]
+    },
+    "Report": {
+      "title": "Report",
+      "description": "A user's report of an issue with a specific lesson.",
+      "type": "object",
+      "properties": {
+        "lessonId": {
+          "type": "string",
+          "description": "The ID of the lesson being reported."
+        },
+        "userId": {
+          "type": "string",
+          "description": "The UID of the user who made the report."
+        },
+        "reason": {
+          "type": "string",
+          "enum": ["Technical issue", "Misinformation", "Spam or misleading", "Legal issue", "Confusing"],
+          "description": "The reason for the report."
+        },
+        "details": {
+          "type": "string",
+          "description": "Optional additional details about the issue."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the report was made."
+        }
+      },
+      "required": ["lessonId", "userId", "reason", "timestamp"]
+    },
+    "Certificate": {
+      "title": "Certificate",
+      "description": "A record of a course completion.",
+      "type": "object",
+      "properties": {
+        "courseId": {
+          "type": "string",
+          "description": "The ID of the completed course."
+        },
+        "userId": {
+          "type": "string",
+          "description": "The UID of the user who completed the course."
+        },
+        "userName": {
+          "type": "string",
+          "description": "The name of the user on the certificate."
+        },
+        "date": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the certificate was issued."
+        },
+        "certificateId": {
+          "type": "string",
+          "description": "The unique ID of the certificate."
+        }
+      },
+      "required": ["courseId", "userId", "userName", "date", "certificateId"]
+    },
+    "Progress": {
+      "title": "Progress",
+      "description": "A user's progress in a specific course.",
+      "type": "object",
+      "properties": {
+        "courseId": {
+          "type": "string",
+          "description": "The ID of the course."
+        },
+        "userId": {
+          "type": "string",
+          "description": "The UID of the user."
+        },
+        "lessonProgress": {
+          "type": "object",
+          "description": "Map of lessonId to LessonProgress objects."
+        },
+        "lastUpdated": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the progress was last updated."
+        }
+      },
+      "required": ["courseId", "userId", "lessonProgress", "lastUpdated"]
+    }
+  },
+  "firestore": {
+    "/votes/{voteId}": {
+      "schema": "Vote",
+      "description": "Collection of user votes on lessons."
+    },
+    "/suggestions/{suggestionId}": {
+      "schema": "Suggestion",
+      "description": "Collection of video suggestions for downvoted lessons."
+    },
+    "/customizations/{customizationId}": {
+      "schema": "Customization",
+      "description": "Collection of user's personal video replacements for lessons."
+    },
+    "/reports/{reportId}": {
+      "schema": "Report",
+      "description": "Collection of user reports of issues with lessons."
+    },
+    "/certificates/{certificateId}": {
+      "schema": "Certificate",
+      "description": "Collection of course completion certificates."
+    },
+    "/progress/{progressId}": {
+      "schema": "Progress",
+      "description": "Collection of user course progress records."
+    }
+  }
+}

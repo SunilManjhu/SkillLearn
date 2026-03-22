@@ -1,0 +1,42 @@
+@import url('https://fonts.googleapis.com/css2?family=Great+Vibes&family=Cormorant+Garamond:wght@300;400;600;700&family=Montserrat:wght@300;400;600;700&display=swap');
+@import 'tailwindcss';
+
+@theme {
+  --font-signature: "Great Vibes", cursive;
+  --font-serif: "Cormorant Garamond", serif;
+  --font-montserrat: "Montserrat", sans-serif;
+}
+
+html {
+  /* Fixed navbar (h-16); keeps scroll-to-top / focus from hiding content under the bar */
+  scroll-padding-top: 4rem;
+}
+
+:root {
+  --bg-primary: #0a0a0b;
+  --bg-secondary: #141416;
+  --text-primary: #fafafa;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --border-color: #27272a;
+  --border-light: #3f3f46;
+  --hover-bg: #1c1c1f;
+}
+
+body.light {
+  --bg-primary: #fafafa;
+  --bg-secondary: #ffffff;
+  --text-primary: #18181b;
+  --text-secondary: #52525b;
+  --text-muted: #71717a;
+  --border-color: #e4e4e7;
+  --border-light: #d4d4d8;
+  --hover-bg: #f4f4f5;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
