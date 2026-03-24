@@ -20,6 +20,7 @@ import {
   APP_HISTORY_KEY,
   type AppHistoryPayload,
   buildHistoryUrl,
+  historyBackOrFallback,
   historyPayloadsEqual,
   parseHashToPayload,
   readPayloadFromHistoryState,
@@ -672,26 +673,12 @@ export default function App() {
     }
   };
 
-  const handleBackFromOverview = useCallback(() => {
-    if (typeof window !== 'undefined' && window.history.length > 1) {
-      window.history.back();
-      return;
-    }
-    historyActionRef.current = 'replace';
-    setSelectedCourse(null);
-    setInitialLesson(undefined);
-    setCurrentView('catalog');
-    scrollDocumentToTop();
-  }, []);
-
   const handleBackFromPlayer = useCallback(() => {
-    if (typeof window !== 'undefined' && window.history.length > 1) {
-      window.history.back();
-      return;
-    }
-    historyActionRef.current = 'replace';
-    setCurrentView('overview');
-    scrollDocumentToTop();
+    historyBackOrFallback(() => {
+      historyActionRef.current = 'replace';
+      setCurrentView('overview');
+      scrollDocumentToTop();
+    });
   }, []);
 
   const handleCloseCertificate = useCallback(() => {
@@ -699,8 +686,39 @@ export default function App() {
     const snap = certificateReturnRef.current;
     certificateReturnRef.current = null;
 
-    if (!wasPublic && typeof window !== 'undefined' && window.history.length > 1) {
-      window.history.back();
+    if (!wasPublic) {
+      historyBackOrFallback(() => {
+        historySkipSyncRef.current = true;
+        setCertificateData(null);
+        if (!snap) {
+          setSelectedCourse(null);
+          setInitialLesson(undefined);
+          setCurrentView('catalog');
+          scrollDocumentToTop();
+          return;
+        }
+        if (snap.view === 'overview') {
+          if (snap.courseId) {
+            const c = COURSES.find((x) => x.id === snap.courseId);
+            if (c) {
+              setSelectedCourse(c);
+              setInitialLesson(undefined);
+              setCurrentView('overview');
+              scrollDocumentToTop();
+              return;
+            }
+          }
+          setSelectedCourse(null);
+          setInitialLesson(undefined);
+          setCurrentView('catalog');
+          scrollDocumentToTop();
+          return;
+        }
+        setSelectedCourse(null);
+        setInitialLesson(undefined);
+        setCurrentView(snap.view);
+        scrollDocumentToTop();
+      });
       return;
     }
 
@@ -1361,7 +1379,6 @@ export default function App() {
               setInitialLesson(lesson);
               setCurrentView('player');
             }}
-            onBack={handleBackFromOverview}
             user={user}
             onLogin={handleLogin}
             onShowCertificate={handleShowCertificate}

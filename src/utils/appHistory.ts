@@ -135,6 +135,37 @@ export function buildHistoryUrl(payload: AppHistoryPayload): string {
   return `${window.location.pathname}${window.location.search}${hash}`;
 }
 
+/**
+ * Prefer the real history stack (system back / browser back on mobile). Some WebViews
+ * report unreliable `history.length`; if `history.back()` does not fire `popstate`,
+ * `fallback` runs once after a short delay.
+ */
+export function historyBackOrFallback(fallback: () => void, options?: { timeoutMs?: number }): void {
+  if (typeof window === 'undefined') {
+    fallback();
+    return;
+  }
+  const timeoutMs = options?.timeoutMs ?? 450;
+  let settled = false;
+  const finish = () => {
+    if (settled) return;
+    settled = true;
+    window.removeEventListener('popstate', onPop);
+    window.clearTimeout(tid);
+  };
+  const onPop = () => {
+    finish();
+  };
+  window.addEventListener('popstate', onPop);
+  const tid = window.setTimeout(() => {
+    if (settled) return;
+    settled = true;
+    window.removeEventListener('popstate', onPop);
+    fallback();
+  }, timeoutMs);
+  window.history.back();
+}
+
 export function historyPayloadsEqual(a: AppHistoryPayload | null, b: AppHistoryPayload | null): boolean {
   if (!a || !b) return a === b;
   if (a.view !== b.view) return false;

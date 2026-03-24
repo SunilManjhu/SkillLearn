@@ -1,5 +1,5 @@
 import React, { useState, useLayoutEffect, useEffect, useCallback } from 'react';
-import { ChevronDown, ChevronRight, Play, Star, Clock, BarChart, Layout, ArrowLeft, User, RotateCcw, CheckCircle2, Award, LogIn, X, AlertTriangle } from 'lucide-react';
+import { ChevronDown, ChevronRight, Play, Star, Clock, BarChart, Layout, User, RotateCcw, CheckCircle2, Award, LogIn, X, AlertTriangle } from 'lucide-react';
 import { Course, Lesson } from '../data/courses';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -21,13 +21,12 @@ import { formatAuthError } from '../utils/authErrors';
 interface CourseOverviewProps {
   course: Course;
   onStartCourse: (lesson?: Lesson) => void;
-  onBack: () => void;
   user: FirebaseUser | null;
   onLogin: () => Promise<void>;
   onShowCertificate: (courseId: string, userName: string, date: string, certId: string) => void;
 }
 
-export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartCourse, onBack, user, onLogin, onShowCertificate }) => {
+export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartCourse, user, onLogin, onShowCertificate }) => {
   const progressUserId = user?.uid ?? null;
   const { lessonDurationLabel } = useYoutubeResolvedSeconds(course);
   const [expandedModules, setExpandedModules] = useState<string[]>([course.modules[0].id]);
@@ -213,15 +212,6 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartC
         <div className="absolute inset-0 bg-gradient-to-t from-[var(--bg-primary)] via-[var(--bg-primary)]/60 to-transparent" />
         
         <div className="relative max-w-7xl mx-auto px-4 py-4 w-full">
-          <button
-            type="button"
-            onClick={onBack}
-            aria-label="Back"
-            className="bg-black/50 hover:bg-black/80 flex shrink-0 items-center gap-2 rounded-full p-2 text-sm font-medium text-white transition-colors mb-2 w-fit"
-          >
-            <ArrowLeft size={18} aria-hidden />
-          </button>
-          
           <div className="max-w-3xl">
               <div className="flex items-center gap-2 mb-1">
                 <span className="px-3 py-1 rounded-full bg-orange-500/10 text-orange-500 text-xs font-bold uppercase tracking-wider">
