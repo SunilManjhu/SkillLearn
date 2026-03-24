@@ -1068,10 +1068,10 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({ course, onBack, onCo
                   stopPlayback();
                   onBack();
                 }}
+                aria-label="Back"
                 className="bg-black/50 hover:bg-black/80 flex shrink-0 items-center gap-2 rounded-full p-2 text-sm font-medium text-white transition-colors"
               >
-                <ArrowLeft size={18} />
-                <span className="hidden sm:inline">Back to Course</span>
+                <ArrowLeft size={18} aria-hidden />
               </button>
 
               <label className="flex shrink-0 cursor-pointer select-none items-center gap-2 rounded-full bg-black/50 px-3 py-1.5 text-white backdrop-blur-sm">

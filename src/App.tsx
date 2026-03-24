@@ -16,6 +16,15 @@ import { scrollDocumentToTop } from './utils/scrollDocumentToTop';
 import { recordCourseCompletion } from './utils/courseCompletionLog';
 import { formatAuthError } from './utils/authErrors';
 import { stashAuthReturnState, consumeAuthReturnState, type AuthReturnPayload } from './utils/authReturnContext';
+import {
+  APP_HISTORY_KEY,
+  type AppHistoryPayload,
+  buildHistoryUrl,
+  historyPayloadsEqual,
+  parseHashToPayload,
+  readPayloadFromHistoryState,
+  resolvePayloadForCourses,
+} from './utils/appHistory';
 
 type View = 'home' | 'catalog' | 'player' | 'overview' | 'about' | 'careers' | 'privacy' | 'help' | 'contact' | 'status' | 'enterprise' | 'signup' | 'profile' | 'settings' | 'certificate';
 
@@ -25,6 +34,44 @@ function findLessonById(course: Course, lessonId: string): Lesson | undefined {
     if (found) return found;
   }
   return undefined;
+}
+
+function getInitialRouteState(): {
+  view: View;
+  selectedCourse: Course | null;
+  initialLesson: Lesson | undefined;
+} {
+  if (typeof window === 'undefined') {
+    return { view: 'home', selectedCourse: null, initialLesson: undefined };
+  }
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('cert_id')) {
+    return { view: 'home', selectedCourse: null, initialLesson: undefined };
+  }
+  const parsed = parseHashToPayload(window.location.hash);
+  if (!parsed) {
+    return { view: 'home', selectedCourse: null, initialLesson: undefined };
+  }
+  const resolved = resolvePayloadForCourses(parsed, COURSES, findLessonById);
+
+  if (resolved.view === 'overview' || resolved.view === 'player') {
+    const c = resolved.courseId ? (COURSES.find((x) => x.id === resolved.courseId) ?? null) : null;
+    const l = c && resolved.lessonId ? findLessonById(c, resolved.lessonId) : undefined;
+    if (c) {
+      return { view: resolved.view as View, selectedCourse: c, initialLesson: l };
+    }
+    return { view: 'catalog', selectedCourse: null, initialLesson: undefined };
+  }
+
+  if (resolved.view === 'certificate') {
+    return { view: 'home', selectedCourse: null, initialLesson: undefined };
+  }
+
+  return {
+    view: resolved.view as View,
+    selectedCourse: null,
+    initialLesson: undefined,
+  };
 }
 
 interface CertificateData {
@@ -52,10 +99,10 @@ function PlayerSignInGate({
       <button
         type="button"
         onClick={onBack}
-        className="self-start flex items-center gap-2 rounded-full border border-[var(--border-color)] px-4 py-2 text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] transition-colors"
+        aria-label="Back"
+        className="self-start flex items-center justify-center rounded-full border border-[var(--border-color)] p-2.5 text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] transition-colors"
       >
-        <ArrowLeft size={18} />
-        Back to course
+        <ArrowLeft size={18} aria-hidden />
       </button>
       <div className="space-y-3">
         <h1 className="text-2xl font-bold tracking-tight">Sign in to continue</h1>
@@ -93,10 +140,11 @@ function PlayerSignInGate({
 }
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<View>('home');
+  const [initialRoute] = useState(() => getInitialRouteState());
+  const [currentView, setCurrentView] = useState<View>(initialRoute.view);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
-  const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
-  const [initialLesson, setInitialLesson] = useState<Lesson | undefined>(undefined);
+  const [selectedCourse, setSelectedCourse] = useState<Course | null>(initialRoute.selectedCourse);
+  const [initialLesson, setInitialLesson] = useState<Lesson | undefined>(initialRoute.initialLesson);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [showMoreCategories, setShowMoreCategories] = useState(false);
@@ -126,6 +174,109 @@ export default function App() {
   /** Guest was on the player sign-in gate; after Google sign-in, send them to overview (no auto-play). */
   const returnToOverviewAfterPlayerGateSignInRef = useRef(false);
 
+  /** Skip one History sync cycle (popstate / programmatic replace). */
+  const historySkipSyncRef = useRef(false);
+  /** Replace current history entry instead of pushing (auth return, completion, etc.). */
+  const historyActionRef = useRef<'push' | 'replace'>('push');
+  const didInitHistoryRef = useRef(false);
+
+  const buildHistoryPayload = useCallback((): AppHistoryPayload => {
+    const p: AppHistoryPayload = { v: 1, view: currentView as AppHistoryPayload['view'] };
+    if (currentView === 'overview' || currentView === 'player') {
+      p.courseId = selectedCourse?.id ?? null;
+      if (currentView === 'player' && initialLesson?.id) {
+        p.lessonId = initialLesson.id;
+      }
+    }
+    if (currentView === 'certificate' && certificateData) {
+      p.certificate = { ...certificateData };
+    }
+    return p;
+  }, [currentView, selectedCourse?.id, initialLesson?.id, certificateData]);
+
+  const applyHistoryPayload = useCallback((raw: AppHistoryPayload) => {
+    const resolved = resolvePayloadForCourses(raw, COURSES, findLessonById);
+    historySkipSyncRef.current = true;
+
+    const view = resolved.view as View;
+
+    if (view === 'certificate' && resolved.certificate) {
+      setCertificateData({
+        courseId: resolved.certificate.courseId,
+        userName: resolved.certificate.userName,
+        date: resolved.certificate.date,
+        certificateId: resolved.certificate.certificateId,
+        isPublic: resolved.certificate.isPublic,
+      });
+    } else {
+      setCertificateData(null);
+    }
+
+    if (view === 'overview' || view === 'player') {
+      const c = resolved.courseId ? (COURSES.find((x) => x.id === resolved.courseId) ?? null) : null;
+      setSelectedCourse(c);
+      setInitialLesson(c && resolved.lessonId ? findLessonById(c, resolved.lessonId) : undefined);
+    } else {
+      setSelectedCourse(null);
+      setInitialLesson(undefined);
+    }
+
+    setCurrentView(view);
+    scrollDocumentToTop();
+  }, []);
+
+  useLayoutEffect(() => {
+    if (didInitHistoryRef.current) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('cert_id')) {
+      didInitHistoryRef.current = true;
+      return;
+    }
+    didInitHistoryRef.current = true;
+    const payload = buildHistoryPayload();
+    window.history.replaceState({ [APP_HISTORY_KEY]: payload }, '', buildHistoryUrl(payload));
+  }, [buildHistoryPayload]);
+
+  useEffect(() => {
+    const onPop = (e: PopStateEvent) => {
+      const fromState = readPayloadFromHistoryState(e.state);
+      const fromHash = parseHashToPayload(window.location.hash);
+      const raw = fromState ?? fromHash;
+      if (!raw) return;
+      applyHistoryPayload(raw);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [applyHistoryPayload]);
+
+  useEffect(() => {
+    if (historySkipSyncRef.current) {
+      historySkipSyncRef.current = false;
+      return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('cert_id') && currentView === 'certificate' && certificateData?.isPublic) {
+      return;
+    }
+
+    const payload = buildHistoryPayload();
+    const prev = readPayloadFromHistoryState(window.history.state);
+    if (historyPayloadsEqual(prev, payload)) {
+      return;
+    }
+
+    const url = buildHistoryUrl(payload);
+    const state = { [APP_HISTORY_KEY]: payload };
+
+    if (historyActionRef.current === 'replace') {
+      historyActionRef.current = 'push';
+      window.history.replaceState(state, '', url);
+      return;
+    }
+
+    window.history.pushState(state, '', url);
+  }, [buildHistoryPayload, currentView, selectedCourse?.id, initialLesson?.id, certificateData]);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user);
@@ -147,6 +298,7 @@ export default function App() {
     if (!isAuthReady || !user || currentView !== 'player') return;
     if (!returnToOverviewAfterPlayerGateSignInRef.current) return;
     returnToOverviewAfterPlayerGateSignInRef.current = false;
+    historyActionRef.current = 'replace';
     setCurrentView('overview');
     scrollDocumentToTop();
   }, [isAuthReady, user, currentView]);
@@ -161,6 +313,7 @@ export default function App() {
 
     if (certId && certCourse && certUser && certDate) {
       certificateReturnRef.current = { view: 'catalog', courseId: null };
+      historySkipSyncRef.current = true;
       setCertificateData({
         certificateId: certId,
         courseId: certCourse,
@@ -169,11 +322,24 @@ export default function App() {
         isPublic: true
       });
       setCurrentView('certificate');
+      const payload: AppHistoryPayload = {
+        v: 1,
+        view: 'certificate',
+        certificate: {
+          courseId: certCourse,
+          userName: certUser,
+          date: certDate,
+          certificateId: certId,
+          isPublic: true,
+        },
+      };
+      window.history.replaceState({ [APP_HISTORY_KEY]: payload }, '', buildHistoryUrl(payload));
     }
   }, []);
 
   const applyAuthReturnPayload = useCallback((payload: AuthReturnPayload | null) => {
     if (!payload) return;
+    historyActionRef.current = 'replace';
     if (payload.view === 'pricing') {
       (payload as { view: string }).view = 'contact';
     }
@@ -265,6 +431,7 @@ export default function App() {
   const handleLogout = async () => {
     try {
       await signOut(auth);
+      historyActionRef.current = 'replace';
       setCurrentView('home');
     } catch (error) {
       console.error('Logout error:', error);
@@ -354,6 +521,7 @@ export default function App() {
       } catch (e) {
         console.error('Course completion side effects failed:', e);
       } finally {
+        historyActionRef.current = 'replace';
         setCurrentView('overview');
         scrollDocumentToTop();
       }
@@ -504,15 +672,50 @@ export default function App() {
     }
   };
 
+  const handleBackFromOverview = useCallback(() => {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    historyActionRef.current = 'replace';
+    setSelectedCourse(null);
+    setInitialLesson(undefined);
+    setCurrentView('catalog');
+    scrollDocumentToTop();
+  }, []);
+
+  const handleBackFromPlayer = useCallback(() => {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    historyActionRef.current = 'replace';
+    setCurrentView('overview');
+    scrollDocumentToTop();
+  }, []);
+
   const handleCloseCertificate = useCallback(() => {
     const wasPublic = certificateData?.isPublic === true;
     const snap = certificateReturnRef.current;
     certificateReturnRef.current = null;
+
+    if (!wasPublic && typeof window !== 'undefined' && window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+
+    historySkipSyncRef.current = true;
     setCertificateData(null);
     if (wasPublic) {
-      window.history.replaceState({}, '', `${window.location.pathname}${window.location.hash}`);
+      window.history.replaceState(
+        { [APP_HISTORY_KEY]: { v: 1, view: 'catalog' } },
+        '',
+        `${window.location.pathname}#/catalog`
+      );
     }
     if (!snap) {
+      setSelectedCourse(null);
+      setInitialLesson(undefined);
       setCurrentView('catalog');
       scrollDocumentToTop();
       return;
@@ -522,15 +725,20 @@ export default function App() {
         const c = COURSES.find((x) => x.id === snap.courseId);
         if (c) {
           setSelectedCourse(c);
+          setInitialLesson(undefined);
           setCurrentView('overview');
           scrollDocumentToTop();
           return;
         }
       }
+      setSelectedCourse(null);
+      setInitialLesson(undefined);
       setCurrentView('catalog');
       scrollDocumentToTop();
       return;
     }
+    setSelectedCourse(null);
+    setInitialLesson(undefined);
     setCurrentView(snap.view);
     scrollDocumentToTop();
   }, [certificateData?.isPublic]);
@@ -1153,7 +1361,7 @@ export default function App() {
               setInitialLesson(lesson);
               setCurrentView('player');
             }}
-            onBack={() => setCurrentView('catalog')}
+            onBack={handleBackFromOverview}
             user={user}
             onLogin={handleLogin}
             onShowCertificate={handleShowCertificate}
@@ -1169,7 +1377,7 @@ export default function App() {
               key={selectedCourse.id}
               course={selectedCourse}
               initialLesson={initialLesson}
-              onBack={() => setCurrentView('overview')}
+              onBack={handleBackFromPlayer}
               onCourseFinished={handleCoursePlayerFinished}
               user={user}
               onLogin={handleLogin}
@@ -1177,7 +1385,7 @@ export default function App() {
           ) : (
             <PlayerSignInGate
               courseTitle={selectedCourse.title}
-              onBack={() => setCurrentView('overview')}
+              onBack={handleBackFromPlayer}
               onLogin={handleLogin}
             />
           )

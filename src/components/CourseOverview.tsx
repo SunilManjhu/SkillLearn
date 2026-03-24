@@ -214,11 +214,12 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartC
         
         <div className="relative max-w-7xl mx-auto px-4 py-4 w-full">
           <button
+            type="button"
             onClick={onBack}
+            aria-label="Back"
             className="bg-black/50 hover:bg-black/80 flex shrink-0 items-center gap-2 rounded-full p-2 text-sm font-medium text-white transition-colors mb-2 w-fit"
           >
-            <ArrowLeft size={18} />
-            <span className="hidden sm:inline">Back to Catalog</span>
+            <ArrowLeft size={18} aria-hidden />
           </button>
           
           <div className="max-w-3xl">
