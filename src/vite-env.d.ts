@@ -6,6 +6,8 @@ declare namespace NodeJS {
     readonly GEMINI_API_KEY?: string;
     /** Injected in vite.config.ts; optional override via .env */
     readonly GEMINI_MODEL?: string;
+    /** Comma-separated fallback model ids (order preserved). Injected in vite.config.ts. */
+    readonly GEMINI_MODEL_FALLBACK?: string;
   }
 }
 

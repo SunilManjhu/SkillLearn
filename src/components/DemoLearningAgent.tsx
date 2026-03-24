@@ -3,11 +3,33 @@ import { GoogleGenAI, Type } from '@google/genai';
 import { Sparkles, X, Loader2, ChevronRight, Trash2 } from 'lucide-react';
 import { COURSES, type Course } from '../data/courses';
 import { parseAssistantReplyJson } from '../utils/parseAssistantReply';
-import { formatGenaiError } from '../utils/formatGenaiError';
+import { formatGenaiError, isRetryableQuotaError } from '../utils/formatGenaiError';
 
-function getGeminiModel(): string {
+/** Primary model from env (default gemini-2.5-flash). */
+function getGeminiModelPrimary(): string {
   const m = process.env.GEMINI_MODEL;
   return typeof m === 'string' && m.trim().length > 0 ? m.trim() : 'gemini-2.5-flash';
+}
+
+/**
+ * Ordered chain: primary first, then comma-separated GEMINI_MODEL_FALLBACK (deduped).
+ */
+function getGeminiModelChain(): string[] {
+  const primary = getGeminiModelPrimary();
+  const raw = process.env.GEMINI_MODEL_FALLBACK;
+  const rest =
+    typeof raw === 'string' && raw.trim().length > 0
+      ? raw.split(',').map((s) => s.trim()).filter(Boolean)
+      : [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const id of [primary, ...rest]) {
+    if (!seen.has(id)) {
+      seen.add(id);
+      out.push(id);
+    }
+  }
+  return out;
 }
 
 function getApiKey(): string | undefined {
@@ -79,7 +101,6 @@ export function DemoLearningAgent({ onOpenCourse }: DemoLearningAgentProps) {
   );
 
   const apiKey = getApiKey();
-  const geminiModel = getGeminiModel();
   const hasChatContent = messages.length > 0 || loading;
 
   useEffect(() => {
@@ -106,35 +127,61 @@ export function DemoLearningAgent({ onOpenCourse }: DemoLearningAgentProps) {
 
     try {
       const ai = new GoogleGenAI({ apiKey });
-      const response = await ai.models.generateContent({
-        model: geminiModel,
-        contents:
-          historyText.length > 0
-            ? `Conversation so far:\n${historyText}\n\nReply to the latest user message.`
-            : trimmed,
-        config: {
-          systemInstruction: `${SYSTEM_INSTRUCTION}\n\nCourse catalog (JSON):\n${JSON.stringify(catalogSnippet)}`,
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              reply: {
-                type: Type.STRING,
-                description:
-                  'Natural conversational reply: answer the user, consult where appropriate, and only soft-sell a course when recommendCourseId is set.',
-              },
-              recommendCourseId: {
-                type: Type.STRING,
-                nullable: true,
-                description:
-                  'Set to a catalog course id when offering that course; use null when no course this turn.',
-              },
+      const modelChain = getGeminiModelChain();
+      const contents =
+        historyText.length > 0
+          ? `Conversation so far:\n${historyText}\n\nReply to the latest user message.`
+          : trimmed;
+      const config = {
+        systemInstruction: `${SYSTEM_INSTRUCTION}\n\nCourse catalog (JSON):\n${JSON.stringify(catalogSnippet)}`,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            reply: {
+              type: Type.STRING,
+              description:
+                'Natural conversational reply: answer the user, consult where appropriate, and only soft-sell a course when recommendCourseId is set.',
             },
-            required: ['reply'],
+            recommendCourseId: {
+              type: Type.STRING,
+              nullable: true,
+              description:
+                'Set to a catalog course id when offering that course; use null when no course this turn.',
+            },
           },
-          temperature: 0.65,
+          required: ['reply'],
         },
-      });
+        temperature: 0.65,
+      };
+
+      let response: Awaited<ReturnType<GoogleGenAI['models']['generateContent']>> | undefined;
+      for (let i = 0; i < modelChain.length; i++) {
+        const model = modelChain[i]!;
+        try {
+          response = await ai.models.generateContent({
+            model,
+            contents,
+            config,
+          });
+          break;
+        } catch (err) {
+          const tryNext = i < modelChain.length - 1 && isRetryableQuotaError(err);
+          if (tryNext) {
+            console.warn(`DemoLearningAgent: ${model} unavailable (quota/rate limit), trying next model…`);
+            continue;
+          }
+          throw err;
+        }
+      }
+
+      if (!response) {
+        setMessages((prev) => [
+          ...prev,
+          { id: newId(), role: 'error', content: 'No model responded. Check GEMINI_MODEL / GEMINI_MODEL_FALLBACK.' },
+        ]);
+        return;
+      }
 
       const text = response.text?.trim();
       if (!text) {

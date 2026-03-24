@@ -13,6 +13,8 @@ export default defineConfig(({mode}) => {
       'process.env.GEMINI_MODEL': JSON.stringify(
         env.GEMINI_MODEL?.trim() || 'gemini-2.5-flash'
       ),
+      /** Comma-separated model ids; tried in order after quota/rate-limit on GEMINI_MODEL. */
+      'process.env.GEMINI_MODEL_FALLBACK': JSON.stringify(env.GEMINI_MODEL_FALLBACK?.trim() || ''),
     },
     resolve: {
       alias: {
