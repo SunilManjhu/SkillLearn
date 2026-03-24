@@ -30,9 +30,18 @@ interface CoursePlayerProps {
   user: User | null;
   onLogin: () => Promise<void>;
   initialLesson?: Lesson;
+  /** Profile/settings overlay on top of the player (App): pause while true, resume when cleared if playback was interrupted. */
+  pauseForAppNavOverlay?: boolean;
 }
 
-export const CoursePlayer: React.FC<CoursePlayerProps> = ({ course, onCourseFinished, user, onLogin, initialLesson }) => {
+export const CoursePlayer: React.FC<CoursePlayerProps> = ({
+  course,
+  onCourseFinished,
+  user,
+  onLogin,
+  initialLesson,
+  pauseForAppNavOverlay = false,
+}) => {
   const progressUserId = user?.uid ?? null;
   const { setYoutubeResolvedSeconds, lessonDurationLabel } = useYoutubeResolvedSeconds(course);
   const [currentLesson, setCurrentLesson] = useState<Lesson>(() => {
@@ -141,6 +150,20 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({ course, onCourseFini
   const replayUiSuppressedRef = useRef(replayUiSuppressed);
   replayUiSuppressedRef.current = replayUiSuppressed;
 
+  const isCustomizeModalOpenRef = useRef(isCustomizeModalOpen);
+  isCustomizeModalOpenRef.current = isCustomizeModalOpen;
+  const isReportModalOpenRef = useRef(isReportModalOpen);
+  isReportModalOpenRef.current = isReportModalOpen;
+  const pauseForAppNavOverlayRef = useRef(pauseForAppNavOverlay);
+  pauseForAppNavOverlayRef.current = pauseForAppNavOverlay;
+
+  /** User was playing before we auto-paused for customize/report/app overlay/tab visibility. */
+  const resumeAfterInterruptionsRef = useRef(false);
+  const customizePauseOwnedRef = useRef(false);
+  const reportPauseOwnedRef = useRef(false);
+  const appNavPauseOwnedRef = useRef(false);
+  const visibilityPauseOwnedRef = useRef(false);
+
   /** Prefer React state so lesson-load handlers see completion before effects run. */
   const savedProgressForLesson = useCallback((lessonId: string): LessonProgress | undefined => {
     return (
@@ -226,6 +249,35 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({ course, onCourseFini
     }
   }, []);
 
+  const resumePlayback = useCallback(() => {
+    if (youtubeEmbedUrl) {
+      try {
+        (ytPlayerRef.current as { playVideo?: () => void } | null)?.playVideo?.();
+      } catch {
+        /* ignore */
+      }
+    }
+    const v = videoRef.current;
+    if (v && !youtubeEmbedUrl) {
+      void v.play().catch(() => {});
+    }
+    setMediaPaused(false);
+  }, [youtubeEmbedUrl]);
+
+  const tryResumePlayback = useCallback(() => {
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+    if (
+      isCustomizeModalOpenRef.current ||
+      isReportModalOpenRef.current ||
+      pauseForAppNavOverlayRef.current
+    ) {
+      return;
+    }
+    if (!resumeAfterInterruptionsRef.current) return;
+    resumeAfterInterruptionsRef.current = false;
+    resumePlayback();
+  }, [resumePlayback]);
+
   const currentModule = useMemo(
     () => course.modules.find((m) => m.lessons.some((l) => l.id === currentLesson.id)),
     [course.modules, currentLesson.id]
@@ -277,7 +329,86 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({ course, onCourseFini
     setMediaPaused(true);
     setChromeVisible(true);
     clearChromeHideTimer();
+    resumeAfterInterruptionsRef.current = false;
+    customizePauseOwnedRef.current = false;
+    reportPauseOwnedRef.current = false;
+    appNavPauseOwnedRef.current = false;
+    visibilityPauseOwnedRef.current = false;
   }, [currentLesson.id, clearChromeHideTimer]);
+
+  useLayoutEffect(() => {
+    if (isCustomizeModalOpen) {
+      if (!mediaPausedRef.current) {
+        stopPlayback();
+        setMediaPaused(true);
+        customizePauseOwnedRef.current = true;
+        resumeAfterInterruptionsRef.current = true;
+      } else {
+        customizePauseOwnedRef.current = false;
+      }
+      return;
+    }
+    if (customizePauseOwnedRef.current) {
+      customizePauseOwnedRef.current = false;
+    }
+    tryResumePlayback();
+  }, [isCustomizeModalOpen, stopPlayback, tryResumePlayback]);
+
+  useLayoutEffect(() => {
+    if (isReportModalOpen) {
+      if (!mediaPausedRef.current) {
+        stopPlayback();
+        setMediaPaused(true);
+        reportPauseOwnedRef.current = true;
+        resumeAfterInterruptionsRef.current = true;
+      } else {
+        reportPauseOwnedRef.current = false;
+      }
+      return;
+    }
+    if (reportPauseOwnedRef.current) {
+      reportPauseOwnedRef.current = false;
+    }
+    tryResumePlayback();
+  }, [isReportModalOpen, stopPlayback, tryResumePlayback]);
+
+  useLayoutEffect(() => {
+    if (pauseForAppNavOverlay) {
+      if (!mediaPausedRef.current) {
+        stopPlayback();
+        setMediaPaused(true);
+        appNavPauseOwnedRef.current = true;
+        resumeAfterInterruptionsRef.current = true;
+      } else {
+        appNavPauseOwnedRef.current = false;
+      }
+      return;
+    }
+    if (appNavPauseOwnedRef.current) {
+      appNavPauseOwnedRef.current = false;
+    }
+    tryResumePlayback();
+  }, [pauseForAppNavOverlay, stopPlayback, tryResumePlayback]);
+
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        if (!mediaPausedRef.current) {
+          stopPlayback();
+          setMediaPaused(true);
+          visibilityPauseOwnedRef.current = true;
+          resumeAfterInterruptionsRef.current = true;
+        }
+        return;
+      }
+      if (visibilityPauseOwnedRef.current) {
+        visibilityPauseOwnedRef.current = false;
+      }
+      tryResumePlayback();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, [stopPlayback, tryResumePlayback]);
 
   useEffect(() => {
     if (mediaPaused) {

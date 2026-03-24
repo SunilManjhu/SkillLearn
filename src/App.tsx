@@ -1380,6 +1380,7 @@ export default function App() {
                 onCourseFinished={handleCoursePlayerFinished}
                 user={user}
                 onLogin={handleLogin}
+                pauseForAppNavOverlay={profileOrSettingsOpen && mainView === 'player'}
               />
             ) : (
               <PlayerSignInGate
