@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
-import { Play, ChevronRight, ChevronDown, CheckCircle2, ArrowLeft, RotateCcw, ThumbsUp, AlertTriangle, Send, ExternalLink, Settings2, X, Info, Flag, Star, LogIn } from 'lucide-react';
+import { Play, ChevronRight, ChevronDown, CheckCircle2, RotateCcw, ThumbsUp, AlertTriangle, Send, ExternalLink, Settings2, X, Info, Flag, Star, LogIn } from 'lucide-react';
 import { Course, Lesson } from '../data/courses';
 import { motion, AnimatePresence } from 'motion/react';
 import { youtubeUrlToEmbedUrl, youtubeVideoIdFromUrl, loadYoutubeIframeApi } from '../utils/youtube';
@@ -23,7 +23,6 @@ import { formatAuthError } from '../utils/authErrors';
 
 interface CoursePlayerProps {
   course: Course;
-  onBack: () => void;
   /** Called when every lesson has reached the true end of its video (same bar as the rating popup). */
   onCourseFinished: (course: Course) => void;
   user: User | null;
@@ -31,7 +30,7 @@ interface CoursePlayerProps {
   initialLesson?: Lesson;
 }
 
-export const CoursePlayer: React.FC<CoursePlayerProps> = ({ course, onBack, onCourseFinished, user, onLogin, initialLesson }) => {
+export const CoursePlayer: React.FC<CoursePlayerProps> = ({ course, onCourseFinished, user, onLogin, initialLesson }) => {
   const progressUserId = user?.uid ?? null;
   const { setYoutubeResolvedSeconds, lessonDurationLabel } = useYoutubeResolvedSeconds(course);
   const [currentLesson, setCurrentLesson] = useState<Lesson>(() => {
@@ -1057,23 +1056,10 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({ course, onBack, onCo
 
           <div className="pointer-events-none absolute inset-x-0 top-0 z-[90] flex justify-between gap-4 px-4 pt-4">
             <div
-              className={`flex w-full items-start justify-between gap-4 transition-opacity duration-200 ease-out ${
+              className={`flex w-full items-start justify-end gap-4 transition-opacity duration-200 ease-out ${
                 showTopControls ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
               }`}
             >
-              <button
-                type="button"
-                onClick={() => {
-                  flushCurrentLessonProgress();
-                  stopPlayback();
-                  onBack();
-                }}
-                aria-label="Back"
-                className="bg-black/50 hover:bg-black/80 flex shrink-0 items-center gap-2 rounded-full p-2 text-sm font-medium text-white transition-colors"
-              >
-                <ArrowLeft size={18} aria-hidden />
-              </button>
-
               <label className="flex shrink-0 cursor-pointer select-none items-center gap-2 rounded-full bg-black/50 px-3 py-1.5 text-white backdrop-blur-sm">
                 <span className="text-xs">Auto-next</span>
                 <input

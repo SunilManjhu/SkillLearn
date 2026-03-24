@@ -8,7 +8,7 @@ import { Certificate } from './components/Certificate';
 import { ContactForm } from './components/ContactForm';
 import { DemoLearningAgent } from './components/DemoLearningAgent';
 import { COURSES, Course, Lesson } from './data/courses';
-import { Play, TrendingUp, Award, Users, Globe, ChevronRight, ChevronDown, X, CheckCircle, Mail, LifeBuoy, Briefcase, Shield, Info, Clock, ArrowLeft, LogIn, AlertTriangle } from 'lucide-react';
+import { Play, TrendingUp, Award, Users, Globe, ChevronRight, ChevronDown, X, CheckCircle, Mail, LifeBuoy, Briefcase, Shield, Info, Clock, LogIn, AlertTriangle } from 'lucide-react';
 import { motion } from 'motion/react';
 import { auth, signInWithGoogle, getRedirectResult, signOut, onAuthStateChanged, User, db, handleFirestoreError, OperationType } from './firebase';
 import { collection, query, where, getDocs, addDoc, setDoc, doc, serverTimestamp } from 'firebase/firestore';
@@ -85,11 +85,9 @@ interface CertificateData {
 
 function PlayerSignInGate({
   courseTitle,
-  onBack,
   onLogin,
 }: {
   courseTitle: string;
-  onBack: () => void;
   onLogin: () => Promise<void>;
 }) {
   const [error, setError] = useState<string | null>(null);
@@ -97,14 +95,6 @@ function PlayerSignInGate({
 
   return (
     <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] pt-20 px-6 flex flex-col items-center justify-center gap-8 max-w-lg mx-auto text-center">
-      <button
-        type="button"
-        onClick={onBack}
-        aria-label="Back"
-        className="self-start flex items-center justify-center rounded-full border border-[var(--border-color)] p-2.5 text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] transition-colors"
-      >
-        <ArrowLeft size={18} aria-hidden />
-      </button>
       <div className="space-y-3">
         <h1 className="text-2xl font-bold tracking-tight">Sign in to continue</h1>
         <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
@@ -672,14 +662,6 @@ export default function App() {
       footerRefs.current[index]?.click();
     }
   };
-
-  const handleBackFromPlayer = useCallback(() => {
-    historyBackOrFallback(() => {
-      historyActionRef.current = 'replace';
-      setCurrentView('overview');
-      scrollDocumentToTop();
-    });
-  }, []);
 
   const handleCloseCertificate = useCallback(() => {
     const wasPublic = certificateData?.isPublic === true;
@@ -1394,7 +1376,6 @@ export default function App() {
               key={selectedCourse.id}
               course={selectedCourse}
               initialLesson={initialLesson}
-              onBack={handleBackFromPlayer}
               onCourseFinished={handleCoursePlayerFinished}
               user={user}
               onLogin={handleLogin}
@@ -1402,7 +1383,6 @@ export default function App() {
           ) : (
             <PlayerSignInGate
               courseTitle={selectedCourse.title}
-              onBack={handleBackFromPlayer}
               onLogin={handleLogin}
             />
           )
