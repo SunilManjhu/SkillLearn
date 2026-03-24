@@ -779,7 +779,7 @@ export default function App() {
     if (!course) return null;
 
     return (
-      <div className="pt-24 px-6 sm:px-12 max-w-7xl mx-auto pb-20">
+      <div className="mx-auto max-w-7xl px-3 pb-16 pt-20 sm:px-6 sm:pb-20 sm:pt-24 md:px-12">
         <Certificate 
           course={course}
           userName={certificateData.userName}

@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useDialogKeyboard } from '../hooks/useDialogKeyboard';
-import { Award, Share2, Download, Globe, ShieldCheck, Linkedin, ExternalLink, ShieldAlert, CheckCircle2, X } from 'lucide-react';
+import { Share2, Download, Globe, ShieldCheck, Linkedin, ExternalLink, ShieldAlert, X } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { motion } from 'motion/react';
@@ -13,6 +13,37 @@ interface CertificateProps {
   certificateId: string;
   isPublic?: boolean;
   onClose: () => void;
+}
+
+const CERTIFICATE_PRINT_ROOT_CLASS = 'printing-certificate-pdf';
+
+type StashedDisplay = { el: HTMLElement; display: string };
+
+/** Hide DOM branches that do not contain #certificate-content so print layout is one page (visibility:hidden still reserves space). */
+function stashAndHideNonCertificatePath(root: HTMLElement, cert: HTMLElement): StashedDisplay[] {
+  const stashed: StashedDisplay[] = [];
+
+  const walk = (node: Element) => {
+    for (const child of Array.from(node.children)) {
+      if (!(child instanceof HTMLElement)) continue;
+      if (child === cert || child.contains(cert)) {
+        if (child !== cert) walk(child);
+      } else {
+        stashed.push({ el: child, display: child.style.display });
+        child.style.display = 'none';
+      }
+    }
+  };
+
+  walk(root);
+  return stashed;
+}
+
+function restoreStashedDisplay(stashed: StashedDisplay[]) {
+  for (const { el, display } of stashed) {
+    if (display) el.style.display = display;
+    else el.style.removeProperty('display');
+  }
 }
 
 export const Certificate: React.FC<CertificateProps> = ({ 
@@ -70,10 +101,40 @@ export const Certificate: React.FC<CertificateProps> = ({
     alert('Certificate link copied to clipboard!');
   };
 
+  const handlePrintPdf = useCallback(() => {
+    const root = document.getElementById('root');
+    const cert = document.getElementById('certificate-content');
+    if (!root || !cert || !(cert instanceof HTMLElement)) {
+      window.print();
+      return;
+    }
+
+    const prevTitle = document.title;
+    document.title = '';
+
+    const stashed = stashAndHideNonCertificatePath(root, cert);
+    document.documentElement.classList.add(CERTIFICATE_PRINT_ROOT_CLASS);
+
+    let cleaned = false;
+    const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      restoreStashedDisplay(stashed);
+      document.title = prevTitle;
+      document.documentElement.classList.remove(CERTIFICATE_PRINT_ROOT_CLASS);
+      window.removeEventListener('afterprint', cleanup);
+    };
+
+    window.addEventListener('afterprint', cleanup);
+    window.setTimeout(cleanup, 3000);
+
+    window.print();
+  }, []);
+
   return (
-    <div className="max-w-5xl mx-auto">
-      <div className="no-print mb-6 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] overflow-hidden shadow-xl">
-        <div className="p-6 border-b border-[var(--border-color)] flex items-center justify-between gap-4">
+    <div className="mx-auto w-full max-w-5xl">
+      <div className="no-print mb-4 sm:mb-6 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] overflow-hidden shadow-xl">
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--border-color)] p-4 sm:p-6">
           <div className="min-w-0">
             <h2 className="text-xl font-bold text-[var(--text-primary)]">
               {isPublic ? 'Certificate' : 'Your Certificate'}
@@ -93,24 +154,28 @@ export const Certificate: React.FC<CertificateProps> = ({
         </div>
 
       {!isPublic && (
-        <div className="p-6 flex flex-wrap items-center justify-end gap-3 no-print">
+        <div className="no-print flex flex-col gap-2 p-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-3 sm:p-6">
             <button
+              type="button"
               onClick={handleLinkedInShare}
-              className="flex items-center gap-2 px-4 py-2 bg-[#0077b5] hover:bg-[#006396] text-white rounded-lg font-bold transition-colors"
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#0077b5] px-4 py-2.5 font-bold text-white transition-colors hover:bg-[#006396] sm:w-auto"
             >
               <Linkedin size={18} />
               Share on LinkedIn
             </button>
             <button
+              type="button"
               onClick={handleCopyLink}
-              className="flex items-center gap-2 px-4 py-2 bg-[var(--hover-bg)] border border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--hover-bg)]/80 rounded-lg font-bold transition-colors"
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--hover-bg)] px-4 py-2.5 font-bold text-[var(--text-primary)] transition-colors hover:bg-[var(--hover-bg)]/80 sm:w-auto"
             >
               <Share2 size={18} />
               Copy Link
             </button>
             <button
-              onClick={() => window.print()}
-              className="flex items-center gap-2 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-bold transition-colors"
+              type="button"
+              onClick={handlePrintPdf}
+              title="Tip: In the print dialog, disable “Headers and footers” to remove the date, URL, and page numbers from the PDF."
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-orange-500 px-4 py-2.5 font-bold text-white transition-colors hover:bg-orange-600 sm:w-auto"
             >
               <Download size={18} />
               Download PDF
@@ -119,87 +184,107 @@ export const Certificate: React.FC<CertificateProps> = ({
       )}
       </div>
 
-      {/* Revamped Certificate Design */}
+      {/* Revamped Certificate Design — nested borders in document flow so footer stays inside frames */}
       <motion.div
         initial={{ opacity: 0, scale: 0.98 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="relative bg-[#fcfbf9] text-slate-900 rounded-sm shadow-2xl overflow-hidden aspect-[1.414/1] border-[1px] border-slate-200"
+        className="relative w-full max-w-full overflow-hidden rounded-sm border border-slate-200 bg-[#fcfbf9] text-slate-900 shadow-2xl"
         id="certificate-content"
       >
         {/* Subtle Texture/Pattern */}
-        <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#000 0.5px, transparent 0.5px)', backgroundSize: '20px 20px' }} />
-        
-        {/* Elegant Border Frame */}
-        <div className="absolute inset-8 border border-slate-300 pointer-events-none" />
-        <div className="absolute inset-10 border-[3px] border-slate-100 pointer-events-none" />
-        
-        <div className="relative h-full flex flex-col items-center justify-between py-20 px-24 text-center">
+        <div
+          className="pointer-events-none absolute inset-0 z-0 opacity-[0.03]"
+          style={{ backgroundImage: 'radial-gradient(#000 0.5px, transparent 0.5px)', backgroundSize: '20px 20px' }}
+        />
+
+        {/* No flex-1 / fixed aspect: border boxes must grow with content so the footer stays inside the frame */}
+        <div className="relative z-[1] flex w-full min-w-0 flex-col p-3 sm:p-5 md:p-7 lg:p-8">
+          <div className="flex w-full min-w-0 flex-col border border-slate-300">
+            <div className="flex w-full min-w-0 flex-col border-[3px] border-slate-100 px-4 py-6 text-center sm:px-6 sm:py-8 md:px-10 md:py-10 lg:px-12 lg:py-12">
+              <div className="flex w-full min-w-0 flex-col items-center gap-8 sm:gap-10">
           {/* Top Section */}
-          <div className="w-full flex justify-between items-start">
+          <div className="flex w-full min-w-0 flex-col items-center justify-between gap-4 sm:flex-row sm:items-start">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-slate-900 rounded-sm flex items-center justify-center text-white font-bold text-sm">S</div>
-              <span className="font-montserrat text-xs font-bold tracking-[0.2em] text-slate-900">SKILLSTREAM</span>
+              <div className="flex h-7 w-7 items-center justify-center rounded-sm bg-slate-900 text-sm font-bold text-white sm:h-8 sm:w-8">S</div>
+              <span className="font-montserrat text-[10px] font-bold tracking-[0.2em] text-slate-900 sm:text-xs">SKILLSTREAM</span>
             </div>
-            <div className="text-right">
-              <p className="font-montserrat text-[10px] font-bold text-slate-400 uppercase tracking-widest">Official Certification</p>
-              <p className="font-montserrat text-[9px] text-slate-400">Verify at skillstream.com/verify</p>
+            <div className="text-center sm:text-right">
+              <p className="font-montserrat text-[9px] font-bold uppercase tracking-widest text-slate-400 sm:text-[10px]">Official Certification</p>
+              <p className="font-montserrat text-[8px] text-slate-400 sm:text-[9px]">Verify at skillstream.com/verify</p>
             </div>
           </div>
 
           {/* Main Content */}
-          <div className="flex-1 flex flex-col items-center justify-center space-y-10">
-            <div className="space-y-4">
-              <h2 className="font-montserrat text-sm font-bold uppercase tracking-[0.4em] text-slate-400">Certificate of Completion</h2>
-              <div className="w-12 h-0.5 bg-orange-500 mx-auto" />
+          <div className="flex w-full min-w-0 flex-col items-center space-y-6 sm:space-y-8 md:space-y-10">
+            <div className="space-y-3 sm:space-y-4">
+              <h2 className="font-montserrat text-[10px] font-bold uppercase tracking-[0.25em] text-slate-400 sm:text-sm sm:tracking-[0.4em]">
+                Certificate of Completion
+              </h2>
+              <div className="mx-auto h-0.5 w-10 bg-orange-500 sm:w-12" />
             </div>
 
-            <div className="space-y-2">
-              <p className="font-serif text-lg text-slate-500 italic">This is to certify that</p>
-              <h3 className="font-serif text-6xl font-medium text-slate-900 tracking-tight">
+            <div className="space-y-1 sm:space-y-2">
+              <p className="font-serif text-sm italic text-slate-500 sm:text-base md:text-lg">This is to certify that</p>
+              <h3 className="break-words font-serif text-3xl font-medium leading-tight tracking-tight text-slate-900 sm:text-5xl md:text-6xl">
                 {userName}
               </h3>
             </div>
 
-            <div className="space-y-4">
-              <p className="font-serif text-lg text-slate-500 italic">has successfully completed the requirements for</p>
-              <h4 className="font-serif text-4xl font-bold text-slate-900 max-w-3xl mx-auto leading-tight">
+            <div className="space-y-3 sm:space-y-4">
+              <p className="font-serif text-sm italic text-slate-500 sm:text-base md:text-lg">
+                has successfully completed the requirements for
+              </p>
+              <h4 className="mx-auto max-w-3xl break-words font-serif text-xl font-bold leading-tight text-slate-900 sm:text-3xl md:text-4xl">
                 {course.title}
               </h4>
-              <div className="flex items-center justify-center gap-4 text-[10px] font-montserrat font-bold text-slate-400 uppercase tracking-widest">
+              <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[9px] font-bold uppercase tracking-widest text-slate-400 font-montserrat sm:gap-4 sm:text-[10px]">
                 <span>{course.category}</span>
-                <span className="w-1 h-1 bg-slate-300 rounded-full" />
+                <span className="hidden h-1 w-1 rounded-full bg-slate-300 sm:inline-block" aria-hidden />
                 <span>{course.level} Level</span>
               </div>
             </div>
           </div>
 
-          {/* Bottom Section */}
-          <div className="w-full flex items-end justify-between">
-            <div className="text-left space-y-1">
-              <p className="font-montserrat text-[10px] font-bold text-slate-400 uppercase tracking-widest">Date of Issue</p>
-              <p className="font-serif text-xl text-slate-900">{date}</p>
+          {/* Bottom Section — grid keeps columns inside frame; min-w-0 avoids clipping (e.g. “DATE” → “ATE”) */}
+          <div className="grid w-full min-w-0 grid-cols-1 gap-6 sm:grid-cols-3 sm:items-end sm:gap-3 md:gap-4">
+            <div className="min-w-0 space-y-1 text-center sm:text-left">
+              <p className="font-montserrat text-[9px] font-bold uppercase tracking-widest text-slate-400 sm:text-[10px]">
+                Date of Issue
+              </p>
+              <p className="break-words font-serif text-base text-slate-900 sm:text-xl">{date}</p>
             </div>
 
-            <div className="flex flex-col items-center gap-2">
-              <div className="w-16 h-16 bg-white border border-slate-100 p-1 shadow-sm">
-                <div className="w-full h-full bg-slate-900 flex items-center justify-center p-1">
-                  <div className="grid grid-cols-4 grid-rows-4 gap-0.5 w-full h-full">
-                    {Array.from({ length: 16 }).map((_, i) => (
-                      <div key={i} className={`bg-white ${Math.random() > 0.5 ? 'opacity-100' : 'opacity-20'}`} />
+            <div className="flex min-w-0 flex-col items-center gap-2 text-center">
+              <div className="h-14 w-14 shrink-0 border border-slate-100 bg-white p-1 shadow-sm sm:h-16 sm:w-16">
+                <div className="flex h-full w-full items-center justify-center bg-slate-900 p-1">
+                  <div className="grid h-full w-full grid-cols-4 grid-rows-4 gap-0.5">
+                    {[
+                      1, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1,
+                    ].map((on, i) => (
+                      <div key={i} className={`bg-white ${on ? 'opacity-100' : 'opacity-25'}`} />
                     ))}
                   </div>
                 </div>
               </div>
-              <p className="font-montserrat text-[8px] text-slate-400 tracking-tighter">ID: {certificateId}</p>
+              <p className="w-full max-w-full break-all px-1 font-montserrat text-[7px] leading-snug tracking-tight text-slate-400 sm:text-[8px]">
+                ID: {certificateId}
+              </p>
             </div>
 
-            <div className="text-right space-y-1">
-              <p className="font-montserrat text-[10px] font-bold text-slate-400 uppercase tracking-widest">Verified By</p>
-              <div className={`flex items-center justify-end gap-1 ${isVerified === false ? 'text-red-600' : 'text-emerald-600'}`}>
-                {isVerified === false ? <ShieldAlert size={14} /> : <ShieldCheck size={14} />}
-                <span className="font-montserrat text-[10px] font-bold">
+            <div className="min-w-0 space-y-1 text-center sm:text-right">
+              <p className="font-montserrat text-[9px] font-bold uppercase tracking-widest text-slate-400 sm:text-[10px]">
+                Verified By
+              </p>
+              <div
+                className={`flex flex-wrap items-center justify-center gap-1 sm:justify-end ${isVerified === false ? 'text-red-600' : 'text-emerald-600'}`}
+              >
+                {isVerified === false ? <ShieldAlert size={14} className="shrink-0" /> : <ShieldCheck size={14} className="shrink-0" />}
+                <span className="min-w-0 break-words font-montserrat text-[9px] font-bold sm:text-[10px]">
                   {isVerified === false ? 'UNVERIFIED RECORD' : 'SKILLSTREAM ACADEMY'}
                 </span>
+              </div>
+            </div>
+          </div>
               </div>
             </div>
           </div>
@@ -207,7 +292,7 @@ export const Certificate: React.FC<CertificateProps> = ({
       </motion.div>
 
       {isPublic && (
-        <div className="mt-12 text-center space-y-6">
+        <div className="no-print mt-12 space-y-6 text-center">
           <div className="inline-flex items-center gap-2 px-4 py-2 bg-orange-500/10 text-orange-500 rounded-full text-sm font-bold">
             <Globe size={16} />
             Publicly Verified Certificate
@@ -230,14 +315,51 @@ export const Certificate: React.FC<CertificateProps> = ({
 
       <style dangerouslySetInnerHTML={{ __html: `
         @media print {
-          .no-print { display: none !important; }
-          body { background: white !important; padding: 0 !important; }
-          #certificate-content { 
-            box-shadow: none !important; 
-            border: none !important;
-            width: 100% !important;
-            height: auto !important;
+          @page {
+            margin: 12mm;
+            size: auto;
+          }
+          html, body {
+            background: white !important;
+            color: #0f172a !important;
             margin: 0 !important;
+            padding: 0 !important;
+            min-height: 0 !important;
+            height: auto !important;
+          }
+          /* Collapse app shell height so we do not get a blank second page */
+          html.printing-certificate-pdf .min-h-screen {
+            min-height: 0 !important;
+          }
+          html.printing-certificate-pdf main {
+            padding: 0 !important;
+            margin: 0 !important;
+            min-height: 0 !important;
+          }
+          #certificate-content,
+          #certificate-content * {
+            print-color-adjust: exact !important;
+            -webkit-print-color-adjust: exact !important;
+          }
+          #certificate-content {
+            position: relative !important;
+            left: auto !important;
+            top: auto !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            height: auto !important;
+            min-height: 0 !important;
+            margin: 0 !important;
+            box-shadow: none !important;
+            border: 1px solid #cbd5e1 !important;
+            border-radius: 0 !important;
+            overflow: visible !important;
+            transform: none !important;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+          .no-print {
+            display: none !important;
           }
         }
       `}} />
