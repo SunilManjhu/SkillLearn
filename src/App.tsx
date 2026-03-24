@@ -6,6 +6,7 @@ import { CourseOverview } from './components/CourseOverview';
 import { ProfilePage } from './components/ProfilePage';
 import { Certificate } from './components/Certificate';
 import { ContactForm } from './components/ContactForm';
+import { DemoLearningAgent } from './components/DemoLearningAgent';
 import { COURSES, Course, Lesson } from './data/courses';
 import { Play, TrendingUp, Award, Users, Globe, ChevronRight, ChevronDown, X, CheckCircle, Mail, LifeBuoy, Briefcase, Shield, Info, Clock, ArrowLeft, LogIn, AlertTriangle } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -1202,6 +1203,15 @@ export default function App() {
         {currentView === 'enterprise' && renderEnterprise()}
         {currentView === 'signup' && renderSignup()}
       </main>
+
+      <DemoLearningAgent
+        onOpenCourse={(course) => {
+          setSelectedCourse(course);
+          setInitialLesson(undefined);
+          setCurrentView('overview');
+          scrollDocumentToTop();
+        }}
+      />
 
       {currentView !== 'player' && currentView !== 'overview' && (
         <footer className="bg-[var(--bg-secondary)] border-t border-[var(--border-color)] py-12 px-6 transition-colors duration-300">

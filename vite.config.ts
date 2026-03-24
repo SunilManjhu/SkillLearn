@@ -9,6 +9,10 @@ export default defineConfig(({mode}) => {
     plugins: [react(), tailwindcss()],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+      /** Must match a model id from the Gemini API (see ListModels). Not valid: gemini-1.5-flash on v1beta. */
+      'process.env.GEMINI_MODEL': JSON.stringify(
+        env.GEMINI_MODEL?.trim() || 'gemini-2.5-flash'
+      ),
     },
     resolve: {
       alias: {
