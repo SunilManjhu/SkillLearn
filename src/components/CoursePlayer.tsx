@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
+import { useDialogKeyboard } from '../hooks/useDialogKeyboard';
 import { Play, ChevronRight, ChevronDown, CheckCircle2, RotateCcw, ThumbsUp, AlertTriangle, Send, ExternalLink, Settings2, X, Info, Flag, Star, LogIn } from 'lucide-react';
 import { Course, Lesson } from '../data/courses';
 import { motion, AnimatePresence } from 'motion/react';
@@ -958,6 +959,100 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({ course, onCourseFini
     }
   };
 
+  const closeCustomizeModal = useCallback(() => {
+    setIsCustomizeModalOpen(false);
+  }, []);
+
+  const closeVoteLoginModal = useCallback(() => {
+    setIsVoteLoginModalOpen(false);
+    setVoteLoginError(null);
+  }, []);
+
+  const closeReportModal = useCallback(() => {
+    setIsReportModalOpen(false);
+  }, []);
+
+  const dismissRatingPrompt = useCallback(() => {
+    remindLaterCourseRating(course.id, progressUserId);
+    setShowRatingPrompt(false);
+    try {
+      onCourseFinished(course);
+    } catch (e) {
+      hasTriggeredFinishNavigationRef.current = false;
+      console.error(e);
+    }
+  }, [course, progressUserId, onCourseFinished]);
+
+  const customizePrimaryAction = useCallback(() => {
+    const fake = { preventDefault: () => {} } as React.FormEvent<Element>;
+    if (customizeTab === 'replace') {
+      void handleReplaceVideo(fake);
+    } else {
+      void handleSubmitSuggestion(fake);
+    }
+  }, [customizeTab, handleReplaceVideo, handleSubmitSuggestion]);
+
+  const reportPrimaryAction = useCallback(() => {
+    if (reportStep === 1) {
+      if (selectedReportReason) setReportStep(2);
+      return;
+    }
+    void handleReportSubmit();
+  }, [reportStep, selectedReportReason, handleReportSubmit]);
+
+  const voteLoginPrimary = useCallback(async () => {
+    if (voteLoginSubmitting) return;
+    setVoteLoginError(null);
+    setVoteLoginSubmitting(true);
+    try {
+      await onLogin();
+    } catch (e) {
+      setVoteLoginError(formatAuthError(e));
+    } finally {
+      setVoteLoginSubmitting(false);
+    }
+  }, [voteLoginSubmitting, onLogin]);
+
+  const ratingPrimaryAction = useCallback(() => {
+    if (ratingStars > 0) handleRatingSubmit();
+    else dismissRatingPrompt();
+  }, [ratingStars, handleRatingSubmit, dismissRatingPrompt]);
+
+  const dismissReplayOverlay = useCallback(() => {
+    replayUiSuppressedRef.current = true;
+    setReplayUiSuppressed(true);
+  }, []);
+
+  useDialogKeyboard({
+    open: isCustomizeModalOpen,
+    onClose: closeCustomizeModal,
+    onPrimaryAction: customizePrimaryAction,
+  });
+
+  useDialogKeyboard({
+    open: isVoteLoginModalOpen,
+    onClose: closeVoteLoginModal,
+    onPrimaryAction: voteLoginPrimary,
+  });
+
+  useDialogKeyboard({
+    open: showRatingPrompt,
+    onClose: dismissRatingPrompt,
+    onPrimaryAction: ratingPrimaryAction,
+  });
+
+  useDialogKeyboard({
+    open: isReportModalOpen,
+    onClose: closeReportModal,
+    onPrimaryAction: reportPrimaryAction,
+  });
+
+  useDialogKeyboard({
+    open: showReplayCta,
+    onClose: dismissReplayOverlay,
+    onPrimaryAction: handleReplayFromStart,
+  });
+
   const selectLesson = (lesson: Lesson) => {
     if (lesson.id === currentLesson.id) return;
     flushCurrentLessonProgress();
@@ -1141,7 +1236,12 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({ course, onCourseFini
 
             <AnimatePresence>
               {isCustomizeModalOpen && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                <div
+                  className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="player-customize-title"
+                >
                   <motion.div
                     initial={{ scale: 0.9, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
@@ -1149,9 +1249,12 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({ course, onCourseFini
                     className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl"
                   >
                     <div className="p-6 border-b border-[var(--border-color)] flex items-center justify-between">
-                      <h2 className="text-xl font-bold text-[var(--text-primary)]">Customize Lesson</h2>
-                      <button 
-                        onClick={() => setIsCustomizeModalOpen(false)}
+                      <h2 id="player-customize-title" className="text-xl font-bold text-[var(--text-primary)]">
+                        Customize Lesson
+                      </h2>
+                      <button
+                        type="button"
+                        onClick={closeCustomizeModal}
                         className="p-2 hover:bg-[var(--hover-bg)] rounded-full transition-colors"
                       >
                         <X size={20} />
@@ -1288,7 +1391,12 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({ course, onCourseFini
 
             <AnimatePresence>
               {isVoteLoginModalOpen && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                <div
+                  className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="player-vote-login-title"
+                >
                   <motion.div
                     initial={{ scale: 0.9, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
@@ -1296,13 +1404,12 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({ course, onCourseFini
                     className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl"
                   >
                     <div className="p-6 border-b border-[var(--border-color)] flex items-center justify-between">
-                      <h2 className="text-xl font-bold text-[var(--text-primary)]">Sign in to vote</h2>
+                      <h2 id="player-vote-login-title" className="text-xl font-bold text-[var(--text-primary)]">
+                        Sign in to vote
+                      </h2>
                       <button
                         type="button"
-                        onClick={() => {
-                          setIsVoteLoginModalOpen(false);
-                          setVoteLoginError(null);
-                        }}
+                        onClick={closeVoteLoginModal}
                         className="p-2 hover:bg-[var(--hover-bg)] rounded-full transition-colors"
                       >
                         <X size={20} />
@@ -1321,17 +1428,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({ course, onCourseFini
                       <button
                         type="button"
                         disabled={voteLoginSubmitting}
-                        onClick={async () => {
-                          setVoteLoginError(null);
-                          setVoteLoginSubmitting(true);
-                          try {
-                            await onLogin();
-                          } catch (e) {
-                            setVoteLoginError(formatAuthError(e));
-                          } finally {
-                            setVoteLoginSubmitting(false);
-                          }
-                        }}
+                        onClick={() => void voteLoginPrimary()}
                         className="w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white py-3 rounded-xl text-sm font-bold transition-colors"
                       >
                         <LogIn size={18} />
@@ -1345,7 +1442,12 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({ course, onCourseFini
 
             <AnimatePresence>
               {showRatingPrompt && (
-                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                <div
+                  className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="player-rating-title"
+                >
                   <motion.div
                     initial={{ scale: 0.9, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
@@ -1356,7 +1458,9 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({ course, onCourseFini
                       <div className="w-16 h-16 bg-orange-500/10 rounded-2xl flex items-center justify-center text-orange-500 mx-auto mb-4">
                         <Star size={32} fill="currentColor" />
                       </div>
-                      <h2 className="text-2xl font-bold text-[var(--text-primary)] mb-2">Course Completed!</h2>
+                      <h2 id="player-rating-title" className="text-2xl font-bold text-[var(--text-primary)] mb-2">
+                        Course Completed!
+                      </h2>
                       <p className="text-[var(--text-secondary)]">How would you rate this course?</p>
                     </div>
 
@@ -1405,16 +1509,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({ course, onCourseFini
                     <div className="flex gap-3">
                       <button
                         type="button"
-                        onClick={() => {
-                          remindLaterCourseRating(course.id, progressUserId);
-                          setShowRatingPrompt(false);
-                          try {
-                            onCourseFinished(course);
-                          } catch (e) {
-                            hasTriggeredFinishNavigationRef.current = false;
-                            console.error(e);
-                          }
-                        }}
+                        onClick={dismissRatingPrompt}
                         className="flex-1 border border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--hover-bg)] py-3 rounded-xl text-sm font-bold transition-colors"
                       >
                         Maybe later
@@ -1435,7 +1530,12 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({ course, onCourseFini
 
             <AnimatePresence>
               {isReportModalOpen && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                <div
+                  className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="player-report-title"
+                >
                   <motion.div
                     initial={{ scale: 0.9, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
@@ -1443,9 +1543,12 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({ course, onCourseFini
                     className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl"
                   >
                     <div className="p-6 border-b border-[var(--border-color)] flex items-center justify-between">
-                      <h2 className="text-xl font-bold text-[var(--text-primary)]">Report</h2>
-                      <button 
-                        onClick={() => setIsReportModalOpen(false)}
+                      <h2 id="player-report-title" className="text-xl font-bold text-[var(--text-primary)]">
+                        Report
+                      </h2>
+                      <button
+                        type="button"
+                        onClick={closeReportModal}
                         className="p-2 hover:bg-[var(--hover-bg)] rounded-full transition-colors"
                       >
                         <X size={20} />

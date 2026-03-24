@@ -1,4 +1,5 @@
 import React, { useState, useLayoutEffect, useEffect, useCallback } from 'react';
+import { useDialogKeyboard } from '../hooks/useDialogKeyboard';
 import { ChevronDown, ChevronRight, Play, Star, Clock, BarChart, Layout, User, RotateCcw, CheckCircle2, Award, LogIn, X, AlertTriangle } from 'lucide-react';
 import { Course, Lesson } from '../data/courses';
 import { motion, AnimatePresence } from 'motion/react';
@@ -40,10 +41,30 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartC
   const [loginSubmitting, setLoginSubmitting] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
 
-  const closeLoginModal = () => {
+  const closeLoginModal = useCallback(() => {
     setLoginModalOpen(false);
     setLoginError(null);
-  };
+  }, []);
+
+  const loginPrimaryAction = useCallback(async () => {
+    if (loginSubmitting) return;
+    setLoginError(null);
+    setLoginSubmitting(true);
+    try {
+      await onLogin();
+      closeLoginModal();
+    } catch (e) {
+      setLoginError(formatAuthError(e));
+    } finally {
+      setLoginSubmitting(false);
+    }
+  }, [loginSubmitting, onLogin, closeLoginModal]);
+
+  useDialogKeyboard({
+    open: loginModalOpen,
+    onClose: closeLoginModal,
+    onPrimaryAction: loginPrimaryAction,
+  });
 
   const openPlayLoginModal = () => {
     setLoginError(null);
@@ -593,7 +614,12 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartC
 
       <AnimatePresence>
         {loginModalOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="course-overview-login-title"
+          >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -601,7 +627,9 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartC
               className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl"
             >
               <div className="p-6 border-b border-[var(--border-color)] flex items-center justify-between gap-4">
-                <h2 className="text-xl font-bold text-[var(--text-primary)]">Sign in to learn</h2>
+                <h2 id="course-overview-login-title" className="text-xl font-bold text-[var(--text-primary)]">
+                  Sign in to learn
+                </h2>
                 <button
                   type="button"
                   onClick={closeLoginModal}
@@ -624,18 +652,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartC
                 <button
                   type="button"
                   disabled={loginSubmitting}
-                  onClick={async () => {
-                    setLoginError(null);
-                    setLoginSubmitting(true);
-                    try {
-                      await onLogin();
-                      closeLoginModal();
-                    } catch (e) {
-                      setLoginError(formatAuthError(e));
-                    } finally {
-                      setLoginSubmitting(false);
-                    }
-                  }}
+                  onClick={() => void loginPrimaryAction()}
                   className="w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white py-3 rounded-xl text-sm font-bold transition-colors"
                 >
                   <LogIn size={18} />

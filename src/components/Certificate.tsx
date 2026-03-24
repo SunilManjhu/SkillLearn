@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useDialogKeyboard } from '../hooks/useDialogKeyboard';
 import { Award, Share2, Download, Globe, ShieldCheck, Linkedin, ExternalLink, ShieldAlert, CheckCircle2, X } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { doc, getDoc } from 'firebase/firestore';
@@ -49,6 +50,12 @@ export const Certificate: React.FC<CertificateProps> = ({
       verify();
     }
   }, [isPublic, certificateId, course.id]);
+
+  useDialogKeyboard({
+    open: true,
+    onClose,
+    onPrimaryAction: onClose,
+  });
 
   const shareUrl = `${window.location.origin}${window.location.pathname}?cert_id=${certificateId}&cert_course=${course.id}&cert_user=${encodeURIComponent(userName)}&cert_date=${date}`;
   

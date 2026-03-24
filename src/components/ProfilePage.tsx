@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import { useDialogKeyboard } from '../hooks/useDialogKeyboard';
 import { reload, updateProfile } from 'firebase/auth';
 import { User, auth } from '../firebase';
 import { computeLearningStats } from '../utils/learningStats';
@@ -46,6 +47,14 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       setShowCompletedModal(true);
     }
   }, [openCompletedCoursesSignal]);
+
+  const closeCompletedModal = useCallback(() => setShowCompletedModal(false), []);
+
+  useDialogKeyboard({
+    open: showCompletedModal,
+    onClose: closeCompletedModal,
+    onPrimaryAction: closeCompletedModal,
+  });
 
   useEffect(() => {
     if (!user) {
@@ -255,7 +264,12 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
 
       <AnimatePresence>
         {showCompletedModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="profile-completed-courses-title"
+          >
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -263,9 +277,12 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl"
             >
               <div className="p-6 border-b border-[var(--border-color)] flex items-center justify-between">
-                <h2 className="text-xl font-bold text-[var(--text-primary)]">Completed Courses</h2>
+                <h2 id="profile-completed-courses-title" className="text-xl font-bold text-[var(--text-primary)]">
+                  Completed Courses
+                </h2>
                 <button
-                  onClick={() => setShowCompletedModal(false)}
+                  type="button"
+                  onClick={closeCompletedModal}
                   className="p-2 hover:bg-[var(--hover-bg)] rounded-lg transition-colors text-[var(--text-secondary)]"
                 >
                   <X size={20} />
@@ -298,7 +315,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                               const date = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
                               const certId = `CERT-${course.id.slice(0, 4)}-${user?.uid.slice(0, 4)}`.toUpperCase();
                               onShowCertificate(course.id, userName, date, certId);
-                              setShowCompletedModal(false);
+                              closeCompletedModal();
                             }}
                             className="flex-1 sm:flex-none px-4 py-2 bg-orange-500/10 text-orange-500 hover:bg-orange-500/20 rounded-lg text-xs font-bold transition-colors"
                           >
@@ -317,7 +334,8 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               </div>
               <div className="p-6 border-t border-[var(--border-color)] bg-[var(--hover-bg)]/50">
                 <button
-                  onClick={() => setShowCompletedModal(false)}
+                  type="button"
+                  onClick={closeCompletedModal}
                   className="w-full bg-orange-500 text-white py-3 rounded-xl font-bold hover:bg-orange-600 transition-colors"
                 >
                   Close

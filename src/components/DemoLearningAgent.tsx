@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useDialogKeyboard } from '../hooks/useDialogKeyboard';
 import { GoogleGenAI, Type } from '@google/genai';
 import { Sparkles, X, Loader2, ChevronRight, Trash2 } from 'lucide-react';
 import { COURSES, type Course } from '../data/courses';
@@ -230,6 +231,18 @@ export function DemoLearningAgent({ onOpenCourse }: DemoLearningAgentProps) {
     }
   };
 
+  const closeAssistant = useCallback(() => setOpen(false), []);
+
+  const assistantPrimaryAction = useCallback(() => {
+    if (!loading && goal.trim() && apiKey) void handleSend();
+  }, [loading, goal, apiKey, handleSend]);
+
+  useDialogKeyboard({
+    open,
+    onClose: closeAssistant,
+    onPrimaryAction: assistantPrimaryAction,
+  });
+
   return (
     <>
       <button
@@ -248,6 +261,7 @@ export function DemoLearningAgent({ onOpenCourse }: DemoLearningAgentProps) {
             hasChatContent ? 'h-[min(85dvh,32rem)]' : ''
           }`}
           role="dialog"
+          aria-modal="true"
           aria-label="Demo learning assistant"
         >
           <div

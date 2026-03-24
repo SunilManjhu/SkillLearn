@@ -119,6 +119,29 @@ export const Navbar: React.FC<NavbarProps> = ({
   }, [mobileSearchOpen, mobileMenuOpen]);
 
   useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (openDropdown !== null) {
+        e.preventDefault();
+        setOpenDropdown(null);
+        setFocusedItemIndex(-1);
+        return;
+      }
+      if (mobileMenuOpen) {
+        e.preventDefault();
+        setMobileMenuOpen(false);
+        return;
+      }
+      if (mobileSearchOpen) {
+        e.preventDefault();
+        setMobileSearchOpen(false);
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [openDropdown, mobileMenuOpen, mobileSearchOpen]);
+
+  useEffect(() => {
     if (!mobileSearchOpen) return;
     const id = requestAnimationFrame(() => mobileSearchInputRef.current?.focus());
     return () => cancelAnimationFrame(id);
