@@ -4,7 +4,9 @@ import { CourseCard } from './components/CourseCard';
 import { CoursePlayer } from './components/CoursePlayer';
 import { CourseOverview } from './components/CourseOverview';
 import { ProfilePage } from './components/ProfilePage';
+import { AccountSettingsPage } from './components/AccountSettingsPage';
 import { Certificate } from './components/Certificate';
+import { useBodyScrollLock } from './hooks/useBodyScrollLock';
 import { ContactForm } from './components/ContactForm';
 import { DemoLearningAgent } from './components/DemoLearningAgent';
 import { COURSES, Course, Lesson } from './data/courses';
@@ -158,6 +160,10 @@ export default function App() {
   ]);
   const [completedCoursesModalSignal, setCompletedCoursesModalSignal] = useState(0);
   const [authBanner, setAuthBanner] = useState<string | null>(null);
+  const [profileSettingsUnderlayView, setProfileSettingsUnderlayView] = useState<View | null>(null);
+  const viewBeforeProfileOrSettingsRef = useRef<View>('catalog');
+  const currentViewRef = useRef<View>(currentView);
+  currentViewRef.current = currentView;
 
   const categoryRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const courseRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -190,6 +196,15 @@ export default function App() {
     historySkipSyncRef.current = true;
 
     const view = resolved.view as View;
+
+    if (
+      (view === 'profile' || view === 'settings') &&
+      currentViewRef.current !== 'profile' &&
+      currentViewRef.current !== 'settings'
+    ) {
+      viewBeforeProfileOrSettingsRef.current = currentViewRef.current;
+      setProfileSettingsUnderlayView(currentViewRef.current);
+    }
 
     if (view === 'certificate' && resolved.certificate) {
       setCertificateData({
@@ -461,6 +476,24 @@ export default function App() {
     }
   }, [currentView]);
 
+  useEffect(() => {
+    if (currentView !== 'profile' && currentView !== 'settings') {
+      setProfileSettingsUnderlayView(null);
+    }
+  }, [currentView]);
+
+  useLayoutEffect(() => {
+    if (
+      (currentView === 'profile' || currentView === 'settings') &&
+      profileSettingsUnderlayView === null
+    ) {
+      viewBeforeProfileOrSettingsRef.current = 'catalog';
+      setProfileSettingsUnderlayView('catalog');
+    }
+  }, [currentView, profileSettingsUnderlayView]);
+
+  useBodyScrollLock(currentView === 'profile' || currentView === 'settings');
+
   /** Course overview / player replace the main column; reset document scroll. */
   useLayoutEffect(() => {
     if (currentView === 'overview' || currentView === 'player') {
@@ -469,6 +502,11 @@ export default function App() {
   }, [currentView, selectedCourse?.id]);
 
   const handleNavigate = (view: View, shouldClear = true) => {
+    const prev = currentViewRef.current;
+    if ((view === 'profile' || view === 'settings') && prev !== 'profile' && prev !== 'settings') {
+      viewBeforeProfileOrSettingsRef.current = prev;
+      setProfileSettingsUnderlayView(prev);
+    }
     if (shouldClear && (view === 'home' || view === 'catalog' || view === 'contact' || view === 'profile' || view === 'settings')) {
       clearFilters();
       setFocusedCourseIndex(-1);
@@ -490,6 +528,11 @@ export default function App() {
 
   const handleCertificateNotificationClick = useCallback(() => {
     setCompletedCoursesModalSignal((s) => s + 1);
+    const prev = currentViewRef.current;
+    if (prev !== 'profile' && prev !== 'settings') {
+      viewBeforeProfileOrSettingsRef.current = prev;
+      setProfileSettingsUnderlayView(prev);
+    }
     setCurrentView('profile');
     scrollDocumentToTop();
   }, []);
@@ -791,59 +834,6 @@ export default function App() {
       </div>
     );
   };
-
-  const renderSettings = () => (
-    <div className="pt-24 px-6 sm:px-12 max-w-4xl mx-auto pb-20">
-      <h1 className="text-3xl font-bold mb-8 text-[var(--text-primary)]">Account Settings</h1>
-      <div className="space-y-6">
-        <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl overflow-hidden">
-          <div className="p-6 border-b border-[var(--border-color)]">
-            <h2 className="text-xl font-bold text-[var(--text-primary)]">Preferences</h2>
-            <p className="text-sm text-[var(--text-secondary)]">Manage your learning and account preferences.</p>
-          </div>
-          <div className="p-6 space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="font-bold text-[var(--text-primary)]">Email Notifications</div>
-                <div className="text-sm text-[var(--text-secondary)]">Receive updates about new courses and activity.</div>
-              </div>
-              <div className="w-12 h-6 bg-orange-500 rounded-full relative cursor-pointer">
-                <div className="absolute top-1 right-1 w-4 h-4 bg-white rounded-full" />
-              </div>
-            </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="font-bold text-[var(--text-primary)]">Autoplay Lessons</div>
-                <div className="text-sm text-[var(--text-secondary)]">Automatically start the next lesson in a course.</div>
-              </div>
-              <div className="w-12 h-6 bg-gray-600 rounded-full relative cursor-pointer">
-                <div className="absolute top-1 left-1 w-4 h-4 bg-white rounded-full" />
-              </div>
-            </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="font-bold text-[var(--text-primary)]">Public Profile</div>
-                <div className="text-sm text-[var(--text-secondary)]">Allow others to see your progress and certificates.</div>
-              </div>
-              <div className="w-12 h-6 bg-orange-500 rounded-full relative cursor-pointer">
-                <div className="absolute top-1 right-1 w-4 h-4 bg-white rounded-full" />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl overflow-hidden">
-          <div className="p-6 border-b border-[var(--border-color)]">
-            <h2 className="text-xl font-bold text-red-500">Danger Zone</h2>
-            <p className="text-sm text-[var(--text-secondary)]">Irreversible actions for your account.</p>
-          </div>
-          <div className="p-6">
-            <button className="text-red-500 border border-red-500/20 px-6 py-2 rounded-lg font-bold hover:bg-red-500 hover:text-white transition-all">Delete Account</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
 
   const renderHome = () => (
     <div className="pt-16">
@@ -1310,12 +1300,15 @@ export default function App() {
     </div>
   );
 
+  const profileOrSettingsOpen = currentView === 'profile' || currentView === 'settings';
+  const mainView: View = profileOrSettingsOpen ? (profileSettingsUnderlayView ?? 'catalog') : currentView;
+
   return (
     <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] selection:bg-orange-500/30 transition-colors duration-300">
       {currentView !== 'certificate' && (
         <Navbar 
           onNavigate={handleNavigate} 
-          activeView={currentView === 'overview' || currentView === 'player' ? 'catalog' : currentView}
+          activeView={mainView === 'overview' || mainView === 'player' ? 'catalog' : mainView}
           searchQuery={searchQuery}
           onSearchChange={handleSearchChange}
           onCategorySelect={handleCategorySelect}
@@ -1350,63 +1343,79 @@ export default function App() {
         </div>
       )}
 
-      <main>
-        {currentView === 'home' && renderHome()}
-        {currentView === 'catalog' && renderCatalog()}
-        {currentView === 'overview' && selectedCourse && (
-          <CourseOverview
-            key={selectedCourse.id}
-            course={selectedCourse}
-            onStartCourse={(lesson) => {
-              setInitialLesson(lesson);
-              setCurrentView('player');
-            }}
-            user={user}
-            onLogin={handleLogin}
-            onShowCertificate={handleShowCertificate}
-          />
-        )}
-        {currentView === 'player' && selectedCourse && (
-          !isAuthReady ? (
-            <div className="min-h-screen pt-28 flex items-center justify-center text-[var(--text-secondary)] text-sm">
-              Loading…
-            </div>
-          ) : user ? (
-            <CoursePlayer
+      <main className={profileOrSettingsOpen ? 'relative' : undefined}>
+        <div
+          className={
+            profileOrSettingsOpen
+              ? 'pointer-events-none select-none overflow-hidden max-h-[calc(100dvh-4rem)]'
+              : undefined
+          }
+          aria-hidden={profileOrSettingsOpen || undefined}
+        >
+          {mainView === 'home' && renderHome()}
+          {mainView === 'catalog' && renderCatalog()}
+          {mainView === 'overview' && selectedCourse && (
+            <CourseOverview
               key={selectedCourse.id}
               course={selectedCourse}
-              initialLesson={initialLesson}
-              onCourseFinished={handleCoursePlayerFinished}
+              onStartCourse={(lesson) => {
+                setInitialLesson(lesson);
+                setCurrentView('player');
+              }}
               user={user}
               onLogin={handleLogin}
+              onShowCertificate={handleShowCertificate}
             />
-          ) : (
-            <PlayerSignInGate
-              courseTitle={selectedCourse.title}
-              onLogin={handleLogin}
-            />
-          )
-        )}
+          )}
+          {mainView === 'player' && selectedCourse && (
+            !isAuthReady ? (
+              <div className="min-h-screen pt-28 flex items-center justify-center text-[var(--text-secondary)] text-sm">
+                Loading…
+              </div>
+            ) : user ? (
+              <CoursePlayer
+                key={selectedCourse.id}
+                course={selectedCourse}
+                initialLesson={initialLesson}
+                onCourseFinished={handleCoursePlayerFinished}
+                user={user}
+                onLogin={handleLogin}
+              />
+            ) : (
+              <PlayerSignInGate
+                courseTitle={selectedCourse.title}
+                onLogin={handleLogin}
+              />
+            )
+          )}
+          {mainView === 'certificate' && renderCertificate()}
+          {mainView === 'about' && renderAbout()}
+          {mainView === 'careers' && renderCareers()}
+          {mainView === 'privacy' && renderPrivacy()}
+          {mainView === 'help' && renderHelp()}
+          {mainView === 'contact' && renderContact()}
+          {mainView === 'status' && renderStatus()}
+          {mainView === 'enterprise' && renderEnterprise()}
+          {mainView === 'signup' && renderSignup()}
+        </div>
+
         {currentView === 'profile' && (
-          <ProfilePage
-            user={user}
-            isAuthReady={isAuthReady}
-            onLogin={() => void handleLogin().catch(() => {})}
-            onShowCertificate={handleShowCertificate}
-            openCompletedCoursesSignal={completedCoursesModalSignal}
-            onDismiss={() => handleNavigate('catalog')}
-          />
+          <div className="fixed inset-x-0 top-16 bottom-0 z-[45] flex items-start justify-center overflow-y-auto bg-black/60 p-4 pb-12 pt-6 backdrop-blur-sm">
+            <ProfilePage
+              user={user}
+              isAuthReady={isAuthReady}
+              onLogin={() => void handleLogin().catch(() => {})}
+              onShowCertificate={handleShowCertificate}
+              openCompletedCoursesSignal={completedCoursesModalSignal}
+              onDismiss={() => handleNavigate(viewBeforeProfileOrSettingsRef.current, false)}
+            />
+          </div>
         )}
-        {currentView === 'certificate' && renderCertificate()}
-        {currentView === 'settings' && renderSettings()}
-        {currentView === 'about' && renderAbout()}
-        {currentView === 'careers' && renderCareers()}
-        {currentView === 'privacy' && renderPrivacy()}
-        {currentView === 'help' && renderHelp()}
-        {currentView === 'contact' && renderContact()}
-        {currentView === 'status' && renderStatus()}
-        {currentView === 'enterprise' && renderEnterprise()}
-        {currentView === 'signup' && renderSignup()}
+        {currentView === 'settings' && (
+          <div className="fixed inset-x-0 top-16 bottom-0 z-[45] flex items-start justify-center overflow-y-auto bg-black/60 p-4 pb-12 pt-6 backdrop-blur-sm">
+            <AccountSettingsPage onDismiss={() => handleNavigate(viewBeforeProfileOrSettingsRef.current, false)} />
+          </div>
+        )}
       </main>
 
       <DemoLearningAgent

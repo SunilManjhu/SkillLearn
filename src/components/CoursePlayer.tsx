@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { useDialogKeyboard } from '../hooks/useDialogKeyboard';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { Play, ChevronRight, ChevronDown, CheckCircle2, RotateCcw, ThumbsUp, AlertTriangle, Send, ExternalLink, Settings2, X, Info, Flag, Star, LogIn } from 'lucide-react';
 import { Course, Lesson } from '../data/courses';
 import { motion, AnimatePresence } from 'motion/react';
@@ -1052,6 +1053,14 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({ course, onCourseFini
     onClose: dismissReplayOverlay,
     onPrimaryAction: handleReplayFromStart,
   });
+
+  useBodyScrollLock(
+    isCustomizeModalOpen ||
+      isVoteLoginModalOpen ||
+      showRatingPrompt ||
+      isReportModalOpen ||
+      showReplayCta
+  );
 
   const selectLesson = (lesson: Lesson) => {
     if (lesson.id === currentLesson.id) return;

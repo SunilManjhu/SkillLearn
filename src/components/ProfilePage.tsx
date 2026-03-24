@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useDialogKeyboard } from '../hooks/useDialogKeyboard';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { reload, updateProfile } from 'firebase/auth';
 import { User, auth } from '../firebase';
 import { computeLearningStats } from '../utils/learningStats';
@@ -50,32 +51,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
 
   const closeCompletedModal = useCallback(() => setShowCompletedModal(false), []);
 
-  useDialogKeyboard({
-    open: showCompletedModal,
-    onClose: closeCompletedModal,
-    onPrimaryAction: closeCompletedModal,
-  });
-
-  useEffect(() => {
-    if (!user) {
-      setDisplayNameEdit('');
-      setBio('');
-      return;
-    }
-    setDisplayNameEdit(user.displayName || '');
-    try {
-      const raw = localStorage.getItem(bioStorageKey(user.uid));
-      setBio(typeof raw === 'string' ? raw : '');
-    } catch {
-      setBio('');
-    }
-  }, [user]);
-
-  const heroName =
-    displayNameEdit.trim() || user?.displayName || user?.email?.split('@')[0] || 'User';
-  const photoUrl = user?.photoURL;
-
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     const u = auth.currentUser;
     if (!u) return;
     setSaveState('saving');
@@ -97,14 +73,54 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       setSaveState('error');
       setSaveError(e instanceof Error ? e.message : 'Could not save profile.');
     }
-  };
+  }, [displayNameEdit, bio]);
+
+  useDialogKeyboard({
+    open: showCompletedModal,
+    onClose: closeCompletedModal,
+    onPrimaryAction: closeCompletedModal,
+  });
+
+  useDialogKeyboard({
+    open: !showCompletedModal,
+    onClose: onDismiss,
+    onPrimaryAction: user ? () => void handleSave() : onLogin,
+  });
+
+  useBodyScrollLock(showCompletedModal);
+
+  useEffect(() => {
+    if (!user) {
+      setDisplayNameEdit('');
+      setBio('');
+      return;
+    }
+    setDisplayNameEdit(user.displayName || '');
+    try {
+      const raw = localStorage.getItem(bioStorageKey(user.uid));
+      setBio(typeof raw === 'string' ? raw : '');
+    } catch {
+      setBio('');
+    }
+  }, [user]);
+
+  const heroName =
+    displayNameEdit.trim() || user?.displayName || user?.email?.split('@')[0] || 'User';
+  const photoUrl = user?.photoURL;
 
   if (!isAuthReady) {
     return (
-      <div className="pt-24 px-6 sm:px-12 max-w-4xl mx-auto pb-20">
+      <div
+        className="w-full max-w-4xl pb-8"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="profile-dialog-title"
+      >
         <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl overflow-hidden shadow-2xl">
           <div className="p-6 border-b border-[var(--border-color)] flex items-center justify-between">
-            <h2 className="text-xl font-bold text-[var(--text-primary)]">Profile</h2>
+            <h2 id="profile-dialog-title" className="text-xl font-bold text-[var(--text-primary)]">
+              Profile
+            </h2>
             <button
               type="button"
               onClick={onDismiss}
@@ -124,10 +140,17 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
 
   if (!user) {
     return (
-      <div className="pt-24 px-6 sm:px-12 max-w-4xl mx-auto pb-20">
+      <div
+        className="w-full max-w-4xl pb-8"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="profile-dialog-title"
+      >
         <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl overflow-hidden shadow-2xl">
           <div className="p-6 border-b border-[var(--border-color)] flex items-center justify-between">
-            <h2 className="text-xl font-bold text-[var(--text-primary)]">Your profile</h2>
+            <h2 id="profile-dialog-title" className="text-xl font-bold text-[var(--text-primary)]">
+              Your profile
+            </h2>
             <button
               type="button"
               onClick={onDismiss}
@@ -153,10 +176,17 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   }
 
   return (
-    <div className="pt-24 px-6 sm:px-12 max-w-4xl mx-auto pb-20">
+    <div
+      className="w-full max-w-4xl pb-8"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="profile-dialog-title"
+    >
       <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl overflow-hidden shadow-2xl">
         <div className="p-6 border-b border-[var(--border-color)] flex items-center justify-between">
-          <h2 className="text-xl font-bold text-[var(--text-primary)]">Profile</h2>
+          <h2 id="profile-dialog-title" className="text-xl font-bold text-[var(--text-primary)]">
+            Profile
+          </h2>
           <button
             type="button"
             onClick={onDismiss}

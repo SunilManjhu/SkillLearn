@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { Search, Menu, User, Bell, ChevronDown, X, LogOut, Settings, Moon, Sun, BellRing, LogIn } from 'lucide-react';
 import { User as FirebaseUser } from '../firebase';
 
@@ -66,6 +67,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   const navItemsRef = useRef<(HTMLButtonElement | null)[]>([]);
 
   const unreadCount = notifications.filter(n => !n.read).length;
+
+  useBodyScrollLock(mobileMenuOpen || mobileSearchOpen);
 
   const browseItems = ['Software Development', 'Cloud Computing', 'Data Science', 'Cybersecurity', 'AI & ML', 'Business', 'Design'];
   const pathItems = ['Web Development', 'Mobile Development', 'Data Engineering', 'DevOps', 'Machine Learning'];
@@ -167,24 +170,6 @@ export const Navbar: React.FC<NavbarProps> = ({
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
   }, []);
-
-  useEffect(() => {
-    if (!mobileMenuOpen) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [mobileMenuOpen]);
-
-  useEffect(() => {
-    if (!mobileMenuOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMobileMenuOpen(false);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [mobileMenuOpen]);
 
   const markAllAsRead = () => {
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));

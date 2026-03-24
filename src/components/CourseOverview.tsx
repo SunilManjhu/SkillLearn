@@ -1,5 +1,6 @@
 import React, { useState, useLayoutEffect, useEffect, useCallback } from 'react';
 import { useDialogKeyboard } from '../hooks/useDialogKeyboard';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { ChevronDown, ChevronRight, Play, Star, Clock, BarChart, Layout, User, RotateCcw, CheckCircle2, Award, LogIn, X, AlertTriangle } from 'lucide-react';
 import { Course, Lesson } from '../data/courses';
 import { motion, AnimatePresence } from 'motion/react';
@@ -65,6 +66,8 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartC
     onClose: closeLoginModal,
     onPrimaryAction: loginPrimaryAction,
   });
+
+  useBodyScrollLock(loginModalOpen);
 
   const openPlayLoginModal = () => {
     setLoginError(null);
