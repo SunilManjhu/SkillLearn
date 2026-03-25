@@ -1,3 +1,16 @@
+import { db, handleFirestoreError, OperationType } from '../firebase';
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  serverTimestamp,
+  setDoc,
+  where,
+} from 'firebase/firestore';
+
 export interface CourseRating {
   stars: number;
   comment?: string;
@@ -34,12 +47,92 @@ export function loadCourseRating(courseId: string, userId?: string | null): Cour
   }
 }
 
-export function saveCourseRating(courseId: string, rating: CourseRating, userId?: string | null): void {
+export function courseRatingDocId(courseId: string, userId: string): string {
+  return `${userId}_${courseId}`;
+}
+
+/** Persists a real star rating (stars 1–5) to Firestore for logged-in users. */
+export async function syncCourseRatingToFirestore(
+  courseId: string,
+  userId: string,
+  rating: CourseRating
+): Promise<void> {
+  if (rating.stars <= 0) return;
+  try {
+    const id = courseRatingDocId(courseId, userId);
+    const payload: Record<string, unknown> = {
+      courseId,
+      userId,
+      stars: rating.stars,
+      submittedAt: serverTimestamp(),
+    };
+    if (rating.comment && rating.comment.trim()) {
+      payload.comment = rating.comment.trim();
+    }
+    await setDoc(doc(db, 'courseRatings', id), payload, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'courseRatings');
+  }
+}
+
+export async function deleteCourseRatingFromFirestore(courseId: string, userId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'courseRatings', courseRatingDocId(courseId, userId)));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'courseRatings');
+  }
+}
+
+export async function loadCourseRatingFromFirestore(
+  courseId: string,
+  userId: string
+): Promise<CourseRating | null> {
+  try {
+    const snap = await getDoc(doc(db, 'courseRatings', courseRatingDocId(courseId, userId)));
+    if (!snap.exists()) return null;
+    const data = snap.data();
+    const stars = data.stars as number;
+    if (!(stars >= 1 && stars <= 5)) return null;
+    const comment = data.comment as string | undefined;
+    return { stars, ...(comment ? { comment } : {}) };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, 'courseRatings');
+  }
+  return null;
+}
+
+export async function hydrateAllCourseRatingsFromFirestore(userId: string): Promise<void> {
+  try {
+    const q = query(collection(db, 'courseRatings'), where('userId', '==', userId));
+    const snapshot = await getDocs(q);
+    for (const docSnap of snapshot.docs) {
+      const data = docSnap.data();
+      const courseId = data.courseId as string;
+      const stars = data.stars as number;
+      const comment = data.comment as string | undefined;
+      if (stars >= 1 && stars <= 5) {
+        saveCourseRating(courseId, { stars, ...(comment ? { comment } : {}) }, userId, { skipFirestoreSync: true });
+      }
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, 'courseRatings');
+  }
+}
+
+export function saveCourseRating(
+  courseId: string,
+  rating: CourseRating,
+  userId?: string | null,
+  options?: { skipFirestoreSync?: boolean }
+): void {
   if (typeof localStorage === 'undefined') return;
   try {
     localStorage.setItem(ratingStorageKey(courseId, userId), JSON.stringify(rating));
   } catch {
     /* ignore */
+  }
+  if (rating.stars > 0 && userId && !options?.skipFirestoreSync) {
+    void syncCourseRatingToFirestore(courseId, userId, rating);
   }
 }
 
@@ -70,5 +163,6 @@ export function clearCourseRating(courseId: string, userId?: string | null): voi
   // Also clear legacy if it exists and we're the same user context
   if (userId) {
     localStorage.removeItem(legacyRatingStorageKey(courseId));
+    void deleteCourseRatingFromFirestore(courseId, userId);
   }
 }

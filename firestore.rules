@@ -54,6 +54,16 @@ service cloud.firestore {
     //   - userId: string (required)
     //   - lessonProgress: map (required)
     //   - lastUpdated: timestamp (required)
+    //   - completedAt: timestamp (optional) - When the course was marked complete
+    //
+    // Collection: courseRatings
+    // Document ID: userId_courseId
+    // Fields:
+    //   - courseId: string (required)
+    //   - userId: string (required)
+    //   - stars: int (required, 1-5)
+    //   - comment: string (optional)
+    //   - submittedAt: timestamp (required)
     //
     // ===============================================================
 
@@ -140,11 +150,22 @@ service cloud.firestore {
 
     function isValidProgress(data) {
       return hasRequiredFields(['courseId', 'userId', 'lessonProgress', 'lastUpdated']) &&
-             hasOnlyAllowedFields(['courseId', 'userId', 'lessonProgress', 'lastUpdated']) &&
+             hasOnlyAllowedFields(['courseId', 'userId', 'lessonProgress', 'lastUpdated', 'completedAt']) &&
              data.userId == request.auth.uid &&
              data.courseId is string &&
              data.lessonProgress is map &&
-             data.lastUpdated is timestamp;
+             data.lastUpdated is timestamp &&
+             (!('completedAt' in data) || data.completedAt is timestamp);
+    }
+
+    function isValidCourseRating(data) {
+      return hasRequiredFields(['courseId', 'userId', 'stars', 'submittedAt']) &&
+             hasOnlyAllowedFields(['courseId', 'userId', 'stars', 'comment', 'submittedAt']) &&
+             data.userId == request.auth.uid &&
+             data.courseId is string && data.courseId.size() > 0 && data.courseId.size() < 200 &&
+             data.stars in [1, 2, 3, 4, 5] &&
+             (!('comment' in data) || (data.comment is string && data.comment.size() < 2000)) &&
+             data.submittedAt is timestamp;
     }
 
     // ===============================================================
@@ -189,6 +210,12 @@ service cloud.firestore {
     match /progress/{progressId} {
       allow read: if isAuthenticated() && isOwner(resource.data.userId);
       allow create, update: if isAuthenticated() && isValidProgress(request.resource.data);
+      allow delete: if isAuthenticated() && isOwner(resource.data.userId);
+    }
+
+    match /courseRatings/{ratingId} {
+      allow read: if isAuthenticated() && isOwner(resource.data.userId);
+      allow create, update: if isAuthenticated() && isValidCourseRating(request.resource.data);
       allow delete: if isAuthenticated() && isOwner(resource.data.userId);
     }
 

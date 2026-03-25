@@ -1,7 +1,18 @@
-import { Course } from '../data/courses';
+import { Course, COURSES } from '../data/courses';
 import { getLastLessonInCourse } from './courseLessons';
+import { loadCompletionTimestamps, mergeCompletionTimestampFromRemote } from './courseCompletionLog';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  deleteField,
+  getDoc,
+  getDocs,
+  query,
+  serverTimestamp,
+  setDoc,
+  where,
+} from 'firebase/firestore';
 
 const PREFIX = 'skilllearn-progress:';
 
@@ -79,10 +90,8 @@ export function savedProgressLooksFinished(p: LessonProgress | undefined): boole
 }
 
 export function isCourseComplete(course: Course, progressByLesson: Record<string, LessonProgress>): boolean {
-  return course.modules.every(module => 
-    module.lessons.every(lesson => 
-      isLessonPlaybackComplete(progressByLesson[lesson.id])
-    )
+  return course.modules.every(module =>
+    module.lessons.every(lesson => isLessonPlaybackComplete(progressByLesson[lesson.id]))
   );
 }
 
@@ -115,31 +124,138 @@ export function clearCourseProgress(courseId: string, userId?: string | null): v
   }
 }
 
+export type SyncProgressOptions = {
+  /** Clear `completedAt` on the progress doc (e.g. course retake). */
+  completedAt?: 'delete';
+};
+
 /** Syncs progress to Firestore for logged-in users. */
-export async function syncProgressToFirestore(courseId: string, userId: string, lessonProgress: Record<string, LessonProgress>): Promise<void> {
+export async function syncProgressToFirestore(
+  courseId: string,
+  userId: string,
+  lessonProgress: Record<string, LessonProgress>,
+  options?: SyncProgressOptions
+): Promise<void> {
   try {
     const progressId = `${userId}_${courseId}`;
-    await setDoc(doc(db, 'progress', progressId), {
+    const payload: Record<string, unknown> = {
       courseId,
       userId,
       lessonProgress,
-      lastUpdated: serverTimestamp()
-    }, { merge: true });
+      lastUpdated: serverTimestamp(),
+    };
+    if (options?.completedAt === 'delete') {
+      payload.completedAt = deleteField();
+    }
+    await setDoc(doc(db, 'progress', progressId), payload, { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, 'progress');
   }
 }
 
+export async function markCourseCompletedTimestampInFirestore(courseId: string, userId: string): Promise<void> {
+  try {
+    await setDoc(
+      doc(db, 'progress', `${userId}_${courseId}`),
+      {
+        courseId,
+        userId,
+        completedAt: serverTimestamp(),
+        lastUpdated: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'progress');
+  }
+}
+
+export type LoadedProgressFromFirestore = {
+  lessonProgress: Record<string, LessonProgress>;
+  completedAtMs?: number;
+} | null;
+
 /** Loads progress from Firestore for logged-in users. */
-export async function loadProgressFromFirestore(courseId: string, userId: string): Promise<Record<string, LessonProgress> | null> {
+export async function loadProgressFromFirestore(
+  courseId: string,
+  userId: string
+): Promise<LoadedProgressFromFirestore> {
   try {
     const progressId = `${userId}_${courseId}`;
     const snap = await getDoc(doc(db, 'progress', progressId));
     if (snap.exists()) {
-      return snap.data().lessonProgress as Record<string, LessonProgress>;
+      const data = snap.data();
+      const lessonProgress = (data.lessonProgress ?? {}) as Record<string, LessonProgress>;
+      const ca = data.completedAt;
+      let completedAtMs: number | undefined;
+      if (ca && typeof (ca as { toMillis?: () => number }).toMillis === 'function') {
+        completedAtMs = (ca as { toMillis: () => number }).toMillis();
+      }
+      return { lessonProgress, completedAtMs };
     }
   } catch (error) {
     handleFirestoreError(error, OperationType.GET, 'progress');
   }
   return null;
+}
+
+/** Merge all remote progress + completion times into localStorage for profile/offline reads. */
+export async function hydrateAllUserProgressFromFirestore(userId: string): Promise<void> {
+  try {
+    const q = query(collection(db, 'progress'), where('userId', '==', userId));
+    const snapshot = await getDocs(q);
+    for (const docSnap of snapshot.docs) {
+      const data = docSnap.data();
+      const courseId = data.courseId as string;
+      const lessonProgress = (data.lessonProgress ?? {}) as Record<string, LessonProgress>;
+      try {
+        localStorage.setItem(progressStorageKey(courseId, userId), JSON.stringify(lessonProgress));
+      } catch {
+        /* ignore */
+      }
+      const ca = data.completedAt;
+      if (ca && typeof (ca as { toMillis?: () => number }).toMillis === 'function') {
+        mergeCompletionTimestampFromRemote(courseId, userId, (ca as { toMillis: () => number }).toMillis());
+      }
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, 'progress');
+  }
+}
+
+/**
+ * If we have a completion record (timestamp) but lessonProgress in Firestore was empty/incomplete
+ * (common after only cert/rating synced), fill local lessonProgress so UI shows full completion.
+ */
+function buildSyntheticCompletedLessonMap(
+  course: Course,
+  existing: Record<string, LessonProgress>
+): Record<string, LessonProgress> {
+  const out: Record<string, LessonProgress> = { ...existing };
+  for (const mod of course.modules) {
+    for (const lesson of mod.lessons) {
+      const p = out[lesson.id];
+      if (!p || !isLessonPlaybackComplete(p)) {
+        out[lesson.id] = { currentTime: 1000, duration: 1000 };
+      }
+    }
+  }
+  return out;
+}
+
+export function ensureSyntheticProgressForRecordedCompletions(userId: string): void {
+  if (typeof localStorage === 'undefined') return;
+  const completionTs = loadCompletionTimestamps(userId);
+  for (const course of COURSES) {
+    if (completionTs[course.id] == null) continue;
+    const m = loadLessonProgressMap(course.id, userId);
+    if (isCourseComplete(course, m)) continue;
+    const filled = buildSyntheticCompletedLessonMap(course, m);
+    try {
+      localStorage.setItem(progressStorageKey(course.id, userId), JSON.stringify(filled));
+    } catch {
+      /* ignore */
+    }
+    void syncProgressToFirestore(course.id, userId, filled);
+  }
 }

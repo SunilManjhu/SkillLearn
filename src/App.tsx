@@ -12,10 +12,20 @@ import { DemoLearningAgent } from './components/DemoLearningAgent';
 import { COURSES, Course, Lesson } from './data/courses';
 import { Play, TrendingUp, Award, Users, Globe, ChevronRight, ChevronDown, X, CheckCircle, Mail, LifeBuoy, Briefcase, Shield, Info, Clock, LogIn, AlertTriangle } from 'lucide-react';
 import { motion } from 'motion/react';
-import { auth, signInWithGoogle, getRedirectResult, signOut, onAuthStateChanged, User, db, handleFirestoreError, OperationType } from './firebase';
-import { collection, query, where, getDocs, addDoc, setDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { auth, signInWithGoogle, getRedirectResult, signOut, onAuthStateChanged, User } from './firebase';
 import { scrollDocumentToTop } from './utils/scrollDocumentToTop';
 import { recordCourseCompletion } from './utils/courseCompletionLog';
+import {
+  buildCertificateId,
+  hydrateCompletionTimestampsFromCertificates,
+  persistCertificateToFirestore,
+} from './utils/certificateFirestore';
+import {
+  ensureSyntheticProgressForRecordedCompletions,
+  hydrateAllUserProgressFromFirestore,
+  markCourseCompletedTimestampInFirestore,
+} from './utils/courseProgress';
+import { hydrateAllCourseRatingsFromFirestore } from './utils/courseRating';
 import { formatAuthError } from './utils/authErrors';
 import {
   readCachedAuthProfile,
@@ -28,7 +38,6 @@ import {
   APP_HISTORY_KEY,
   type AppHistoryPayload,
   buildHistoryUrl,
-  historyBackOrFallback,
   historyPayloadsEqual,
   parseHashToPayload,
   readPayloadFromHistoryState,
@@ -167,9 +176,13 @@ export default function App() {
     },
   ]);
   const [completedCoursesModalSignal, setCompletedCoursesModalSignal] = useState(0);
+  /** Bumps after cloud progress/ratings hydrate into localStorage so profile stats refresh. */
+  const [remoteProfileDataVersion, setRemoteProfileDataVersion] = useState(0);
   const [authBanner, setAuthBanner] = useState<string | null>(null);
   const [profileSettingsUnderlayView, setProfileSettingsUnderlayView] = useState<View | null>(null);
   const viewBeforeProfileOrSettingsRef = useRef<View>('catalog');
+  /** Course id to restore when leaving profile/settings back to overview (survives certificate overlay). */
+  const profileReturnCourseIdRef = useRef<string | null>(null);
   const currentViewRef = useRef<View>(currentView);
   currentViewRef.current = currentView;
 
@@ -204,6 +217,23 @@ export default function App() {
     historySkipSyncRef.current = true;
 
     const view = resolved.view as View;
+
+    if (
+      view === 'certificate' &&
+      !resolved.certificate
+    ) {
+      setCertificateData(null);
+      setSelectedCourse(null);
+      setInitialLesson(undefined);
+      setCurrentView('catalog');
+      window.history.replaceState(
+        { [APP_HISTORY_KEY]: { v: 1, view: 'catalog' } },
+        '',
+        buildHistoryUrl({ v: 1, view: 'catalog' })
+      );
+      scrollDocumentToTop();
+      return;
+    }
 
     if (
       (view === 'profile' || view === 'settings') &&
@@ -305,6 +335,21 @@ export default function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    let cancelled = false;
+    void (async () => {
+      await hydrateAllUserProgressFromFirestore(user.uid);
+      await hydrateCompletionTimestampsFromCertificates(user.uid);
+      ensureSyntheticProgressForRecordedCompletions(user.uid);
+      await hydrateAllCourseRatingsFromFirestore(user.uid);
+      if (!cancelled) setRemoteProfileDataVersion((v) => v + 1);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.uid]);
 
   /** Navbar avatar only — Firebase `user` is still null until restore; snapshot fills the gap without faking API access. */
   const navUser = user ?? (!isAuthReady && authSnapshot ? authSnapshot : null);
@@ -495,7 +540,7 @@ export default function App() {
   }, [currentView]);
 
   useEffect(() => {
-    if (currentView !== 'profile' && currentView !== 'settings') {
+    if (currentView !== 'profile' && currentView !== 'settings' && currentView !== 'certificate') {
       setProfileSettingsUnderlayView(null);
     }
   }, [currentView]);
@@ -521,9 +566,21 @@ export default function App() {
 
   const handleNavigate = (view: View, shouldClear = true) => {
     const prev = currentViewRef.current;
+
+    /** Overlays (profile/settings) and course views share one history slot so Back skips dismissed layers (e.g. overview → Back → home). */
+    const openingProfileOrSettingsOverlay =
+      (view === 'profile' || view === 'settings') &&
+      (prev === 'overview' || prev === 'player' || prev === 'profile' || prev === 'settings');
+    const leavingProfileOrSettingsOverlay =
+      (prev === 'profile' || prev === 'settings') && view !== 'profile' && view !== 'settings';
+    if (openingProfileOrSettingsOverlay || leavingProfileOrSettingsOverlay) {
+      historyActionRef.current = 'replace';
+    }
+
     if ((view === 'profile' || view === 'settings') && prev !== 'profile' && prev !== 'settings') {
       viewBeforeProfileOrSettingsRef.current = prev;
       setProfileSettingsUnderlayView(prev);
+      profileReturnCourseIdRef.current = selectedCourse?.id ?? null;
     }
     if (shouldClear && (view === 'home' || view === 'catalog' || view === 'contact' || view === 'profile' || view === 'settings')) {
       clearFilters();
@@ -533,6 +590,21 @@ export default function App() {
     }
     setCurrentView(view);
     scrollDocumentToTop();
+  };
+
+  /** Restore course context when leaving profile/settings to overview or player (e.g. cert overlay touched selection). */
+  const handleProfileDismiss = () => {
+    const v = viewBeforeProfileOrSettingsRef.current;
+    if ((v === 'overview' || v === 'player') && profileReturnCourseIdRef.current) {
+      const c = COURSES.find((x) => x.id === profileReturnCourseIdRef.current);
+      if (c) {
+        setSelectedCourse(c);
+        if (v === 'overview') {
+          setInitialLesson(undefined);
+        }
+      }
+    }
+    handleNavigate(v, false);
   };
 
   const handleCourseClick = (course: Course, index?: number) => {
@@ -550,15 +622,30 @@ export default function App() {
     if (prev !== 'profile' && prev !== 'settings') {
       viewBeforeProfileOrSettingsRef.current = prev;
       setProfileSettingsUnderlayView(prev);
+      profileReturnCourseIdRef.current = selectedCourse?.id ?? null;
+    }
+    if (prev === 'overview' || prev === 'player' || prev === 'profile' || prev === 'settings') {
+      historyActionRef.current = 'replace';
     }
     setCurrentView('profile');
     scrollDocumentToTop();
-  }, []);
+  }, [selectedCourse?.id]);
 
   const handleCoursePlayerFinished = useCallback(
     (course: Course) => {
       try {
         recordCourseCompletion(course.id, user?.uid ?? null);
+        if (user) {
+          void markCourseCompletedTimestampInFirestore(course.id, user.uid);
+          const certId = buildCertificateId(course.id, user.uid);
+          const userName = user.displayName || user.email?.split('@')[0] || 'Learner';
+          void persistCertificateToFirestore({
+            courseId: course.id,
+            userId: user.uid,
+            userName,
+            certificateId: certId,
+          });
+        }
         setNotifications((prev) => [
           {
             id: `certificate-${course.id}-${Date.now()}`,
@@ -578,7 +665,7 @@ export default function App() {
         scrollDocumentToTop();
       }
     },
-    [user?.uid]
+    [user]
   );
 
   const handleSearchChange = (query: string) => {
@@ -728,86 +815,108 @@ export default function App() {
     const wasPublic = certificateData?.isPublic === true;
     const snap = certificateReturnRef.current;
     certificateReturnRef.current = null;
-
-    if (!wasPublic) {
-      historyBackOrFallback(() => {
-        historySkipSyncRef.current = true;
-        setCertificateData(null);
-        if (!snap) {
-          setSelectedCourse(null);
-          setInitialLesson(undefined);
-          setCurrentView('catalog');
-          scrollDocumentToTop();
-          return;
-        }
-        if (snap.view === 'overview') {
-          if (snap.courseId) {
-            const c = COURSES.find((x) => x.id === snap.courseId);
-            if (c) {
-              setSelectedCourse(c);
-              setInitialLesson(undefined);
-              setCurrentView('overview');
-              scrollDocumentToTop();
-              return;
-            }
-          }
-          setSelectedCourse(null);
-          setInitialLesson(undefined);
-          setCurrentView('catalog');
-          scrollDocumentToTop();
-          return;
-        }
-        setSelectedCourse(null);
-        setInitialLesson(undefined);
-        setCurrentView(snap.view);
-        scrollDocumentToTop();
-      });
-      return;
-    }
-
-    historySkipSyncRef.current = true;
     setCertificateData(null);
+
     if (wasPublic) {
+      historySkipSyncRef.current = true;
       window.history.replaceState(
         { [APP_HISTORY_KEY]: { v: 1, view: 'catalog' } },
         '',
         `${window.location.pathname}#/catalog`
       );
-    }
-    if (!snap) {
-      setSelectedCourse(null);
-      setInitialLesson(undefined);
-      setCurrentView('catalog');
-      scrollDocumentToTop();
-      return;
-    }
-    if (snap.view === 'overview') {
-      if (snap.courseId) {
+      if (!snap) {
+        setSelectedCourse(null);
+        setInitialLesson(undefined);
+        setCurrentView('catalog');
+        scrollDocumentToTop();
+        return;
+      }
+      if (snap.view === 'overview' && snap.courseId) {
         const c = COURSES.find((x) => x.id === snap.courseId);
         if (c) {
           setSelectedCourse(c);
           setInitialLesson(undefined);
           setCurrentView('overview');
+          const payload: AppHistoryPayload = { v: 1, view: 'overview', courseId: snap.courseId };
+          window.history.replaceState({ [APP_HISTORY_KEY]: payload }, '', buildHistoryUrl(payload));
           scrollDocumentToTop();
           return;
         }
       }
       setSelectedCourse(null);
       setInitialLesson(undefined);
-      setCurrentView('catalog');
+      setCurrentView(snap.view);
+      const p: AppHistoryPayload = { v: 1, view: snap.view as AppHistoryPayload['view'] };
+      window.history.replaceState({ [APP_HISTORY_KEY]: p }, '', buildHistoryUrl(p));
       scrollDocumentToTop();
       return;
     }
+
+    historySkipSyncRef.current = true;
+
+    if (!snap) {
+      setSelectedCourse(null);
+      setInitialLesson(undefined);
+      setCurrentView('catalog');
+      window.history.replaceState(
+        { [APP_HISTORY_KEY]: { v: 1, view: 'catalog' } },
+        '',
+        buildHistoryUrl({ v: 1, view: 'catalog' })
+      );
+      scrollDocumentToTop();
+      return;
+    }
+
+    if (snap.view === 'overview' && snap.courseId) {
+      const c = COURSES.find((x) => x.id === snap.courseId);
+      if (c) {
+        setSelectedCourse(c);
+        setInitialLesson(undefined);
+        setCurrentView('overview');
+        const payload: AppHistoryPayload = { v: 1, view: 'overview', courseId: snap.courseId };
+        window.history.replaceState({ [APP_HISTORY_KEY]: payload }, '', buildHistoryUrl(payload));
+        scrollDocumentToTop();
+        return;
+      }
+    }
+
+    if (snap.view === 'overview' && !snap.courseId) {
+      setSelectedCourse(null);
+      setInitialLesson(undefined);
+      setCurrentView('catalog');
+      window.history.replaceState(
+        { [APP_HISTORY_KEY]: { v: 1, view: 'catalog' } },
+        '',
+        buildHistoryUrl({ v: 1, view: 'catalog' })
+      );
+      scrollDocumentToTop();
+      return;
+    }
+
+    if (snap.view === 'profile' || snap.view === 'settings') {
+      historySkipSyncRef.current = true;
+      // snap.courseId is the certificate's course, not the underlay (e.g. user on Python player
+      // viewing Web Dev cert). Do not overwrite selectedCourse / initialLesson here.
+      setCurrentView(snap.view);
+      const returnPayload: AppHistoryPayload = { v: 1, view: snap.view as AppHistoryPayload['view'] };
+      window.history.replaceState({ [APP_HISTORY_KEY]: returnPayload }, '', buildHistoryUrl(returnPayload));
+      scrollDocumentToTop();
+      return;
+    }
+
     setSelectedCourse(null);
     setInitialLesson(undefined);
     setCurrentView(snap.view);
+    const returnPayload: AppHistoryPayload = { v: 1, view: snap.view as AppHistoryPayload['view'] };
+    window.history.replaceState({ [APP_HISTORY_KEY]: returnPayload }, '', buildHistoryUrl(returnPayload));
     scrollDocumentToTop();
   }, [certificateData?.isPublic]);
 
   const handleShowCertificate = async (courseId: string, userName: string, date: string, certId: string) => {
+    historyActionRef.current = 'replace';
     certificateReturnRef.current = {
       view: currentView,
-      courseId: selectedCourse?.id ?? null,
+      courseId,
     };
     setCertificateData({
       courseId,
@@ -818,19 +927,13 @@ export default function App() {
     });
     setCurrentView('certificate');
 
-    // Save to Firestore if user is logged in
     if (user) {
-      try {
-        await setDoc(doc(db, 'certificates', certId), {
-          courseId,
-          userId: user.uid,
-          userName,
-          date: serverTimestamp(), // Use server timestamp for official record
-          certificateId: certId
-        }, { merge: true });
-      } catch (error) {
-        handleFirestoreError(error, OperationType.WRITE, 'certificates');
-      }
+      await persistCertificateToFirestore({
+        courseId,
+        userId: user.uid,
+        userName,
+        certificateId: certId,
+      });
     }
   };
 
@@ -1384,6 +1487,7 @@ export default function App() {
               user={user}
               onLogin={handleLogin}
               onShowCertificate={handleShowCertificate}
+              remoteDataVersion={remoteProfileDataVersion}
             />
           )}
           {mainView === 'player' && selectedCourse && (
@@ -1427,13 +1531,14 @@ export default function App() {
               onLogin={() => void handleLogin().catch(() => {})}
               onShowCertificate={handleShowCertificate}
               openCompletedCoursesSignal={completedCoursesModalSignal}
-              onDismiss={() => handleNavigate(viewBeforeProfileOrSettingsRef.current, false)}
+              onDismiss={handleProfileDismiss}
+              remoteProfileDataVersion={remoteProfileDataVersion}
             />
           </div>
         )}
         {currentView === 'settings' && (
           <div className="fixed inset-x-0 top-16 bottom-0 z-[45] flex items-start justify-center overflow-y-auto bg-black/60 p-4 pb-12 pt-6 backdrop-blur-sm">
-            <AccountSettingsPage onDismiss={() => handleNavigate(viewBeforeProfileOrSettingsRef.current, false)} />
+            <AccountSettingsPage onDismiss={handleProfileDismiss} />
           </div>
         )}
       </main>

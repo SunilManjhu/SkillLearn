@@ -50,7 +50,13 @@ import {
   loadProgressFromFirestore,
   type LessonProgress,
 } from '../utils/courseProgress';
-import { saveCourseRating, hasRatedOrDismissed, remindLaterCourseRating } from '../utils/courseRating';
+import { mergeCompletionTimestampFromRemote } from '../utils/courseCompletionLog';
+import {
+  saveCourseRating,
+  hasRatedOrDismissed,
+  remindLaterCourseRating,
+  loadCourseRatingFromFirestore,
+} from '../utils/courseRating';
 import { useYoutubeResolvedSeconds } from '../hooks/useYoutubeResolvedSeconds';
 import { formatAuthError } from '../utils/authErrors';
 
@@ -955,30 +961,48 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
 
     // Load from Firestore if logged in
     if (progressUserId) {
-      loadProgressFromFirestore(course.id, progressUserId).then(remoteProgress => {
-        if (remoteProgress) {
-          setProgressByLesson(prev => {
-            const next = { ...prev, ...remoteProgress };
-            // Update local storage too
-            try {
-              localStorage.setItem(progressStorageKey(course.id, progressUserId), JSON.stringify(next));
-            } catch { /* ignore */ }
-            return next;
-          });
+      loadProgressFromFirestore(course.id, progressUserId).then((remote) => {
+        if (!remote) return;
+        if (remote.completedAtMs != null) {
+          mergeCompletionTimestampFromRemote(course.id, progressUserId, remote.completedAtMs);
         }
+        if (Object.keys(remote.lessonProgress).length === 0) return;
+        setProgressByLesson((prev) => {
+          const next = { ...prev, ...remote.lessonProgress };
+          try {
+            localStorage.setItem(progressStorageKey(course.id, progressUserId), JSON.stringify(next));
+          } catch {
+            /* ignore */
+          }
+          return next;
+        });
       });
     }
   }, [course.id, progressUserId]);
 
-  // Sync to Firestore when progress changes
   useEffect(() => {
     if (!progressUserId) return;
-    
-    const timeoutId = setTimeout(() => {
-      syncProgressToFirestore(course.id, progressUserId, progressByLesson);
-    }, 5000); // Sync every 5 seconds of inactivity
+    let cancelled = false;
+    loadCourseRatingFromFirestore(course.id, progressUserId).then((remote) => {
+      if (cancelled || !remote) return;
+      saveCourseRating(course.id, remote, progressUserId, { skipFirestoreSync: true });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [course.id, progressUserId]);
 
-    return () => clearTimeout(timeoutId);
+  /**
+   * Persist lesson progress to Firestore for logged-in users.
+   * Flush whenever progress commits (cleanup runs before the next update) and on unmount.
+   * A debounced timer alone was wrong: leaving the player cleared the timer without syncing,
+   * so progress never reached Firestore if the user exited within 5s of the last update.
+   */
+  useEffect(() => {
+    if (!progressUserId) return;
+    return () => {
+      void syncProgressToFirestore(course.id, progressUserId, progressByLessonRef.current);
+    };
   }, [course.id, progressUserId, progressByLesson]);
 
   const handleRatingSubmit = () => {
@@ -1658,6 +1682,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     open: showReplayCta,
     onClose: dismissReplayOverlay,
     onPrimaryAction: handleReplayFromStart,
+    closeOnEscape: false,
   });
 
   useBodyScrollLock(

@@ -13,10 +13,23 @@ import {
   loadProgressFromFirestore,
   progressStorageKey,
 } from '../utils/courseProgress';
-import { hasRatedOrDismissed, saveCourseRating, remindLaterCourseRating, clearCourseRating, loadCourseRating, type CourseRating } from '../utils/courseRating';
+import {
+  hasRatedOrDismissed,
+  saveCourseRating,
+  remindLaterCourseRating,
+  clearCourseRating,
+  loadCourseRating,
+  loadCourseRatingFromFirestore,
+  type CourseRating,
+} from '../utils/courseRating';
 import { useYoutubeResolvedSeconds } from '../hooks/useYoutubeResolvedSeconds';
 import { scrollDocumentToTop } from '../utils/scrollDocumentToTop';
-import { loadCompletionTimestamps } from '../utils/courseCompletionLog';
+import {
+  loadCompletionTimestamps,
+  mergeCompletionTimestampFromRemote,
+  clearCourseCompletionTimestamp,
+} from '../utils/courseCompletionLog';
+import { buildCertificateId } from '../utils/certificateFirestore';
 import type { User as FirebaseUser } from '../firebase';
 import { formatAuthError } from '../utils/authErrors';
 
@@ -26,9 +39,18 @@ interface CourseOverviewProps {
   user: FirebaseUser | null;
   onLogin: () => Promise<void>;
   onShowCertificate: (courseId: string, userName: string, date: string, certId: string) => void;
+  /** Bumps when cloud data is merged into localStorage (so progress/completion UI refreshes). */
+  remoteDataVersion?: number;
 }
 
-export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartCourse, user, onLogin, onShowCertificate }) => {
+export const CourseOverview: React.FC<CourseOverviewProps> = ({
+  course,
+  onStartCourse,
+  user,
+  onLogin,
+  onShowCertificate,
+  remoteDataVersion = 0,
+}) => {
   const progressUserId = user?.uid ?? null;
   const { lessonDurationLabel } = useYoutubeResolvedSeconds(course);
   const [expandedModules, setExpandedModules] = useState<string[]>([course.modules[0].id]);
@@ -102,6 +124,9 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartC
   const totalLessons = course.modules.reduce((acc, m) => acc + m.lessons.length, 0);
   const [progressMap, setProgressMap] = useState(() => loadLessonProgressMap(course.id, progressUserId));
   const isComplete = isCourseComplete(course, progressMap);
+  const completionRecorded =
+    !!progressUserId && loadCompletionTimestamps(progressUserId)[course.id] != null;
+  const showCertificateCta = isComplete || completionRecorded;
   const completedLessonCount = course.modules.reduce(
     (acc, m) => acc + m.lessons.filter((l) => isLessonPlaybackComplete(progressMap[l.id])).length,
     0
@@ -112,8 +137,9 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartC
     if (!progressUserId) return;
     clearCourseProgress(course.id, progressUserId);
     clearCourseRating(course.id, progressUserId);
+    clearCourseCompletionTimestamp(course.id, progressUserId);
     /* Clear cloud progress before opening the player so we don’t reload a completed map and burn the one-shot finish flow. */
-    await syncProgressToFirestore(course.id, progressUserId, {});
+    await syncProgressToFirestore(course.id, progressUserId, {}, { completedAt: 'delete' });
     setProgressMap({}); // Force re-render and clear local state
     setExistingRating(null);
     setShowRatingPrompt(false);
@@ -164,14 +190,14 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartC
     const date = completedAt
       ? new Date(completedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
       : new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-    const certId = `CERT-${course.id.slice(0, 4)}-${user.uid.slice(0, 4)}`.toUpperCase();
+    const certId = buildCertificateId(course.id, user.uid);
     onShowCertificate(course.id, userName, date, certId);
   };
 
   /* Re-load progress from local storage when course or account changes (guest key vs user key). */
   useEffect(() => {
     setProgressMap(loadLessonProgressMap(course.id, progressUserId));
-  }, [course.id, progressUserId]);
+  }, [course.id, progressUserId, remoteDataVersion]);
 
   /* Ratings + completion prompt track the live progress map (including after Firestore merge). */
   useEffect(() => {
@@ -190,9 +216,13 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartC
     if (!progressUserId) return undefined;
     let cancelled = false;
     loadProgressFromFirestore(course.id, progressUserId).then((remote) => {
-      if (cancelled || !remote || Object.keys(remote).length === 0) return;
+      if (cancelled || !remote) return;
+      if (remote.completedAtMs != null) {
+        mergeCompletionTimestampFromRemote(course.id, progressUserId, remote.completedAtMs);
+      }
+      if (Object.keys(remote.lessonProgress).length === 0) return;
       setProgressMap((prev) => {
-        const next = { ...prev, ...remote };
+        const next = { ...prev, ...remote.lessonProgress };
         try {
           localStorage.setItem(progressStorageKey(course.id, progressUserId), JSON.stringify(next));
         } catch {
@@ -200,6 +230,19 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartC
         }
         return next;
       });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [course.id, progressUserId]);
+
+  useEffect(() => {
+    if (!progressUserId) return undefined;
+    let cancelled = false;
+    loadCourseRatingFromFirestore(course.id, progressUserId).then((remote) => {
+      if (cancelled || !remote) return;
+      saveCourseRating(course.id, remote, progressUserId, { skipFirestoreSync: true });
+      setExistingRating(remote);
     });
     return () => {
       cancelled = true;
@@ -289,7 +332,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartC
                     {isComplete ? <RotateCcw size={20} /> : <Play size={20} fill="currentColor" />}
                     {isComplete ? 'Retake Course' : 'Start Course'}
                   </button>
-                  {user && isComplete && (
+                  {user && showCertificateCta && (
                     <button
                       type="button"
                       onClick={handleViewCertificate}
@@ -599,7 +642,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartC
                   {isComplete ? <RotateCcw size={20} /> : null}
                   {isComplete ? 'Retake Course' : 'Enroll Now'}
                 </button>
-                {user && isComplete && (
+                {user && showCertificateCta && (
                   <button
                     type="button"
                     onClick={handleViewCertificate}

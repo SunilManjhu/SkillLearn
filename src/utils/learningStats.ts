@@ -12,9 +12,12 @@ export function computeLearningStats(userId: string | null | undefined): {
   let completedCourseIds: string[] = [];
   let lessonsTouched = 0;
   const uid = userId ?? null;
+  const completionTs = loadCompletionTimestamps(uid);
   for (const course of COURSES) {
     const m = loadLessonProgressMap(course.id, uid);
-    if (isCourseComplete(course, m)) {
+    const finishedByProgress = isCourseComplete(course, m);
+    const finishedByCompletionRecord = !!uid && completionTs[course.id] != null;
+    if (finishedByProgress || finishedByCompletionRecord) {
       completedCourses++;
       completedCourseIds.push(course.id);
     }
@@ -25,7 +28,6 @@ export function computeLearningStats(userId: string | null | undefined): {
       }
     }
   }
-  const completionTs = loadCompletionTimestamps(uid);
   completedCourseIds.sort((a, b) => {
     const tb = completionTs[b] ?? 0;
     const ta = completionTs[a] ?? 0;

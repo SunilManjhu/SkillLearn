@@ -4,6 +4,8 @@ import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { reload, updateProfile } from 'firebase/auth';
 import { User, auth } from '../firebase';
 import { computeLearningStats } from '../utils/learningStats';
+import { loadCompletionTimestamps } from '../utils/courseCompletionLog';
+import { buildCertificateId } from '../utils/certificateFirestore';
 import { COURSES, type Course } from '../data/courses';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, CheckCircle2 } from 'lucide-react';
@@ -19,6 +21,8 @@ interface ProfilePageProps {
   openCompletedCoursesSignal?: number;
   /** Leave profile (e.g. return to catalog), like closing other full-screen flows. */
   onDismiss: () => void;
+  /** Increment when Firestore progress/ratings are merged into localStorage (e.g. after login). */
+  remoteProfileDataVersion?: number;
 }
 
 export const ProfilePage: React.FC<ProfilePageProps> = ({
@@ -28,6 +32,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   onShowCertificate,
   openCompletedCoursesSignal = 0,
   onDismiss,
+  remoteProfileDataVersion = 0,
 }) => {
   const [displayNameEdit, setDisplayNameEdit] = useState('');
   const [bio, setBio] = useState('');
@@ -35,7 +40,10 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showCompletedModal, setShowCompletedModal] = useState(false);
 
-  const stats = useMemo(() => computeLearningStats(user?.uid), [user?.uid]);
+  const stats = useMemo(
+    () => computeLearningStats(user?.uid),
+    [user?.uid, remoteProfileDataVersion]
+  );
 
   const completedCoursesList = useMemo((): Course[] => {
     return stats.completedCourseIds
@@ -341,9 +349,21 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                         <div className="flex items-center gap-3 w-full sm:w-auto mt-2 sm:mt-0">
                           <button
                             onClick={() => {
-                              const userName = user?.displayName || user?.email?.split('@')[0] || 'Learner';
-                              const date = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-                              const certId = `CERT-${course.id.slice(0, 4)}-${user?.uid.slice(0, 4)}`.toUpperCase();
+                              if (!user?.uid) return;
+                              const userName = user.displayName || user.email?.split('@')[0] || 'Learner';
+                              const completedAt = loadCompletionTimestamps(user.uid)[course.id];
+                              const date = completedAt
+                                ? new Date(completedAt).toLocaleDateString('en-US', {
+                                    month: 'long',
+                                    day: 'numeric',
+                                    year: 'numeric',
+                                  })
+                                : new Date().toLocaleDateString('en-US', {
+                                    month: 'long',
+                                    day: 'numeric',
+                                    year: 'numeric',
+                                  });
+                              const certId = buildCertificateId(course.id, user.uid);
                               onShowCertificate(course.id, userName, date, certId);
                               closeCompletedModal();
                             }}

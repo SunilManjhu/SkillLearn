@@ -21,15 +21,17 @@ function handlesEnterNatively(el: Element | null): boolean {
 }
 
 /**
- * Escape closes the dialog. Enter activates the primary action when focus is not in a field
+ * Escape closes the dialog (unless closeOnEscape is false). Enter activates the primary action when focus is not in a field
  * that uses Enter (textarea, text inputs, selects) and not on a button/link (native activation).
  */
 export function useDialogKeyboard(options: {
   open: boolean;
   onClose: () => void;
   onPrimaryAction?: () => void | Promise<void>;
+  /** When false, Escape is ignored so the overlay must be dismissed via UI (e.g. “Replay from start”). Default true. */
+  closeOnEscape?: boolean;
 }): void {
-  const { open, onClose, onPrimaryAction } = options;
+  const { open, onClose, onPrimaryAction, closeOnEscape = true } = options;
 
   useEffect(() => {
     if (!open) return;
@@ -39,6 +41,7 @@ export function useDialogKeyboard(options: {
       if (e.repeat) return;
 
       if (e.key === 'Escape') {
+        if (!closeOnEscape) return;
         e.preventDefault();
         onClose();
         return;
@@ -55,5 +58,5 @@ export function useDialogKeyboard(options: {
 
     document.addEventListener('keydown', onKeyDown, true);
     return () => document.removeEventListener('keydown', onKeyDown, true);
-  }, [open, onClose, onPrimaryAction]);
+  }, [open, onClose, onPrimaryAction, closeOnEscape]);
 }

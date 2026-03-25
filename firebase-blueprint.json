@@ -156,9 +156,45 @@
           "type": "string",
           "format": "date-time",
           "description": "When the progress was last updated."
+        },
+        "completedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the course was marked complete (optional)."
         }
       },
       "required": ["courseId", "userId", "lessonProgress", "lastUpdated"]
+    },
+    "CourseRating": {
+      "title": "CourseRating",
+      "description": "A user's star rating for a completed course.",
+      "type": "object",
+      "properties": {
+        "courseId": {
+          "type": "string",
+          "description": "The ID of the course."
+        },
+        "userId": {
+          "type": "string",
+          "description": "The UID of the user."
+        },
+        "stars": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "description": "Star rating 1–5."
+        },
+        "comment": {
+          "type": "string",
+          "description": "Optional review text."
+        },
+        "submittedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the rating was submitted."
+        }
+      },
+      "required": ["courseId", "userId", "stars", "submittedAt"]
     }
   },
   "firestore": {
@@ -185,6 +221,10 @@
     "/progress/{progressId}": {
       "schema": "Progress",
       "description": "Collection of user course progress records."
+    },
+    "/courseRatings/{ratingId}": {
+      "schema": "CourseRating",
+      "description": "Collection of user course ratings after completion."
     }
   }
 }
