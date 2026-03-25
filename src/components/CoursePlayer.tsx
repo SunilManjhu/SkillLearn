@@ -6,6 +6,7 @@ import {
   ChevronRight,
   ChevronDown,
   CheckCircle2,
+  Check,
   ChevronLeft,
   RotateCcw,
   ThumbsUp,
@@ -26,13 +27,10 @@ import { Course, Lesson } from '../data/courses';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   applyYoutubeCaptionsModule,
-  labelForYoutubeCaptionLang,
   loadYoutubeIframeApi,
   readYoutubeCaptionLang,
   readYoutubeCaptionsPreference,
-  writeYoutubeCaptionLang,
   writeYoutubeCaptionsPreference,
-  YOUTUBE_SUBTITLE_LANGUAGE_OPTIONS,
   YOUTUBE_EMBED_TOP_CROP_PX,
   youtubeEmbedSrcForVideoId,
   youtubeUrlToEmbedUrl,
@@ -79,7 +77,7 @@ function formatYtClock(totalSeconds: number): string {
 
 function formatYtSpeedLabel(rate: number): string {
   if (rate === 1) return 'Normal';
-  return `${rate}x`;
+  return `${rate}×`;
 }
 
 interface CoursePlayerProps {
@@ -141,7 +139,6 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   const [ytVolume, setYtVolume] = useState(100);
   const [ytMuted, setYtMuted] = useState(false);
   const [ytSettingsOpen, setYtSettingsOpen] = useState(false);
-  const [ytSettingsPanel, setYtSettingsPanel] = useState<'main' | 'speed' | 'subtitles'>('main');
   const [ytPlaybackRates, setYtPlaybackRates] = useState<number[]>([1]);
   const [ytPlaybackRate, setYtPlaybackRate] = useState(1);
   const ytSettingsPanelRef = useRef<HTMLDivElement>(null);
@@ -545,23 +542,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     } catch {
       /* ignore */
     }
-    setYtSettingsPanel('main');
-  }, []);
-
-  const handleYoutubeSubtitleChoice = useCallback((choice: 'off' | string) => {
-    if (choice === 'off') {
-      setYoutubeCaptionsEnabled(false);
-      writeYoutubeCaptionsPreference(false);
-      applyYoutubeCaptionsModule(ytPlayerRef.current, false, youtubeCaptionLangRef.current);
-      setYtSettingsPanel('main');
-      return;
-    }
-    setYoutubeCaptionLang(choice);
-    writeYoutubeCaptionLang(choice);
-    setYoutubeCaptionsEnabled(true);
-    writeYoutubeCaptionsPreference(true);
-    applyYoutubeCaptionsModule(ytPlayerRef.current, true, choice);
-    setYtSettingsPanel('main');
+    setYtSettingsOpen(false);
   }, []);
 
   const tryResumePlayback = useCallback(() => {
@@ -687,7 +668,6 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     setYtVolume(100);
     setYtMuted(false);
     setYtSettingsOpen(false);
-    setYtSettingsPanel('main');
     setYtPlaybackRates([1]);
     setYtPlaybackRate(1);
     resumeAfterInterruptionsRef.current = false;
@@ -2008,7 +1988,6 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                         setYtSettingsOpen((o) => {
                           const next = !o;
                           if (next) {
-                            setYtSettingsPanel('main');
                             refreshYtPlayerSettings();
                           }
                           return next;
@@ -2027,121 +2006,59 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                       {ytSettingsOpen && (
                         <motion.div
                           role="dialog"
-                          aria-label="Player settings"
+                          aria-label="Playback speed"
                           initial={{ opacity: 0, y: 6 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: 6 }}
                           transition={{ duration: 0.15 }}
-                          className="absolute bottom-full right-0 z-50 mb-2 w-[min(calc(100vw-2rem),320px)] min-w-[280px] overflow-hidden rounded-xl border border-white/12 bg-[#1f1f1f]/98 py-1 text-white shadow-2xl backdrop-blur-md"
+                          className="absolute bottom-full right-0 z-50 mb-2 w-[min(calc(100vw-2rem),200px)] overflow-hidden rounded-2xl border border-white/[0.09] bg-[#141414]/[0.97] py-2 text-white shadow-[0_12px_40px_rgba(0,0,0,0.55)] ring-1 ring-black/20 backdrop-blur-xl"
                         >
-                          {ytSettingsPanel === 'main' && (
-                            <div className="py-0.5">
-                              <button
-                                type="button"
-                                onClick={() => setYtSettingsPanel('speed')}
-                                className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-[14px] hover:bg-white/[0.08]"
-                              >
-                                <span>Playback speed</span>
-                                <span className="flex items-center gap-0.5 text-[13px] text-white/55">
-                                  {formatYtSpeedLabel(ytPlaybackRate)}
-                                  <ChevronRight className="shrink-0 opacity-80" size={18} aria-hidden />
-                                </span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setYtSettingsPanel('subtitles')}
-                                className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-[14px] hover:bg-white/[0.08]"
-                              >
-                                <span>Subtitles/CC</span>
-                                <span className="flex min-w-0 max-w-[58%] items-center gap-0.5 text-right text-[13px] text-white/55">
-                                  <span className="truncate">
-                                    {!youtubeCaptionsEnabled
-                                      ? 'Off'
-                                      : labelForYoutubeCaptionLang(youtubeCaptionLang)}
-                                  </span>
-                                  <ChevronRight className="shrink-0 opacity-80" size={18} aria-hidden />
-                                </span>
-                              </button>
-                            </div>
-                          )}
-                          {ytSettingsPanel === 'speed' && (
-                            <div>
-                              <div className="flex items-center gap-0.5 border-b border-white/10 px-1 pb-2 pt-0.5">
+                          <div className="flex items-center gap-1 px-2 pb-2 pt-0.5">
+                            <button
+                              type="button"
+                              aria-label="Close settings"
+                              onClick={() => setYtSettingsOpen(false)}
+                              className="-ml-0.5 shrink-0 rounded-lg p-1.5 text-white/75 transition-colors hover:bg-white/[0.08] hover:text-white"
+                            >
+                              <ChevronLeft size={18} strokeWidth={2} aria-hidden />
+                            </button>
+                            <span className="min-w-0 truncate text-[12px] font-semibold tracking-wide text-white/[0.92]">
+                              Playback speed
+                            </span>
+                          </div>
+                          <div
+                            className="mx-1 max-h-[min(92vh,26rem)] space-y-0.5 overflow-y-auto overscroll-contain px-1 pb-1 [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.12)_transparent]"
+                            role="listbox"
+                            aria-label="Speed options"
+                          >
+                            {ytPlaybackRates.map((r) => {
+                              const selected = ytPlaybackRate === r;
+                              return (
                                 <button
+                                  key={r}
                                   type="button"
-                                  aria-label="Back"
-                                  onClick={() => setYtSettingsPanel('main')}
-                                  className="rounded-full p-2 hover:bg-white/10"
-                                >
-                                  <ChevronLeft size={22} aria-hidden />
-                                </button>
-                                <span className="text-[16px] font-medium">Playback speed</span>
-                              </div>
-                              <div className="max-h-[min(50vh,360px)] overflow-y-auto py-1">
-                                {ytPlaybackRates.map((r) => (
-                                  <button
-                                    key={r}
-                                    type="button"
-                                    onClick={() => handleYtPlaybackRateSelect(r)}
-                                    className={`flex w-full items-center justify-between px-3 py-2.5 text-left text-[14px] hover:bg-white/[0.08] ${
-                                      ytPlaybackRate === r ? 'bg-white/[0.06]' : ''
-                                    }`}
-                                  >
-                                    {formatYtSpeedLabel(r)}
-                                    {ytPlaybackRate === r && (
-                                      <CheckCircle2 className="shrink-0 text-orange-400" size={18} aria-hidden />
-                                    )}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          {ytSettingsPanel === 'subtitles' && (
-                            <div>
-                              <div className="flex items-center gap-0.5 border-b border-white/10 px-1 pb-2 pt-0.5">
-                                <button
-                                  type="button"
-                                  aria-label="Back"
-                                  onClick={() => setYtSettingsPanel('main')}
-                                  className="rounded-full p-2 hover:bg-white/10"
-                                >
-                                  <ChevronLeft size={22} aria-hidden />
-                                </button>
-                                <span className="text-[16px] font-medium">Subtitles/CC</span>
-                              </div>
-                              <div className="max-h-[min(50vh,360px)] overflow-y-auto py-1">
-                                <button
-                                  type="button"
-                                  onClick={() => handleYoutubeSubtitleChoice('off')}
-                                  className={`flex w-full items-center justify-between px-3 py-2.5 text-left text-[14px] hover:bg-white/[0.08] ${
-                                    !youtubeCaptionsEnabled ? 'bg-white/[0.06]' : ''
+                                  role="option"
+                                  aria-selected={selected}
+                                  onClick={() => handleYtPlaybackRateSelect(r)}
+                                  className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] tabular-nums transition-colors ${
+                                    selected
+                                      ? 'bg-orange-500/[0.14] text-white ring-1 ring-orange-400/25'
+                                      : 'text-white/[0.88] hover:bg-white/[0.06] hover:text-white'
                                   }`}
                                 >
-                                  Off
-                                  {!youtubeCaptionsEnabled && (
-                                    <CheckCircle2 className="shrink-0 text-orange-400" size={18} aria-hidden />
+                                  <span className="min-w-0">{formatYtSpeedLabel(r)}</span>
+                                  {selected && (
+                                    <Check
+                                      className="shrink-0 text-orange-400"
+                                      size={15}
+                                      strokeWidth={2.5}
+                                      aria-hidden
+                                    />
                                   )}
                                 </button>
-                                {YOUTUBE_SUBTITLE_LANGUAGE_OPTIONS.map((opt) => (
-                                  <button
-                                    key={opt.code}
-                                    type="button"
-                                    onClick={() => handleYoutubeSubtitleChoice(opt.code)}
-                                    className={`flex w-full items-center justify-between px-3 py-2.5 text-left text-[14px] hover:bg-white/[0.08] ${
-                                      youtubeCaptionsEnabled && youtubeCaptionLang === opt.code
-                                        ? 'bg-white/[0.06]'
-                                        : ''
-                                    }`}
-                                  >
-                                    {opt.label}
-                                    {youtubeCaptionsEnabled && youtubeCaptionLang === opt.code && (
-                                      <CheckCircle2 className="shrink-0 text-orange-400" size={18} aria-hidden />
-                                    )}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          )}
+                              );
+                            })}
+                          </div>
                         </motion.div>
                       )}
                     </AnimatePresence>
