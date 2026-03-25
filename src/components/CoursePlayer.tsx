@@ -26,7 +26,7 @@ import { formatAuthError } from '../utils/authErrors';
 /** Keep YouTube frost up briefly after resume so related-video UI can clear under the blur. */
 const YT_UNPAUSE_BLUR_LINGER_MS = 480;
 /** Ignore brief PAUSED (timeline scrub / seek) before treating as a real pause for UI + blocker. */
-const PAUSE_CONFIRM_MS = 220;
+const PAUSE_CONFIRM_MS = 0;
 
 interface CoursePlayerProps {
   course: Course;
