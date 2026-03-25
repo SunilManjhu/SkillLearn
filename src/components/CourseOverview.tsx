@@ -642,7 +642,13 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartC
                   <X size={20} />
                 </button>
               </div>
-              <div className="p-6 space-y-4">
+              <form
+                className="p-6 space-y-4"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!loginSubmitting) void loginPrimaryAction();
+                }}
+              >
                 <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
                   Watching lessons and saving your progress requires a Google account. If a pop-up is blocked, you will be redirected to Google to sign in. After signing in you&apos;ll stay on this page — use Start Course when you&apos;re ready.
                 </p>
@@ -653,15 +659,15 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({ course, onStartC
                   </div>
                 )}
                 <button
-                  type="button"
+                  type="submit"
                   disabled={loginSubmitting}
-                  onClick={() => void loginPrimaryAction()}
+                  autoFocus
                   className="w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white py-3 rounded-xl text-sm font-bold transition-colors"
                 >
                   <LogIn size={18} />
                   {loginSubmitting ? 'Signing in…' : 'Continue with Google'}
                 </button>
-              </div>
+              </form>
             </motion.div>
           </div>
         )}
