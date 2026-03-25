@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { Search, Menu, User, Bell, ChevronDown, X, LogOut, Settings, Moon, Sun, BellRing, LogIn } from 'lucide-react';
 import { User as FirebaseUser } from '../firebase';
+import type { AuthProfileSnapshot } from '../utils/authProfileCache';
 
 export interface NavbarNotification {
   id: string;
@@ -24,7 +25,10 @@ interface NavbarProps {
   onClearFilters: () => void;
   theme: 'dark' | 'light';
   onThemeToggle: () => void;
-  user: FirebaseUser | null;
+  /** False until Firebase has reported initial auth state (avoids flashing "Login" when the user is already signed in). */
+  isAuthReady: boolean;
+  /** Firebase user or last-known profile from localStorage while auth restores (avatar only). */
+  user: FirebaseUser | AuthProfileSnapshot | null;
   onLogin: () => void;
   onLogout: () => void;
   notifications: NavbarNotification[];
@@ -44,6 +48,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onClearFilters,
   theme,
   onThemeToggle,
+  isAuthReady,
   user,
   onLogin,
   onLogout,
@@ -546,8 +551,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           )}
         </div>
 
-        {/* User Profile / Login */}
-        <div className="relative" ref={profileRef}>
+        {/* User Profile / Login — loading uses same footprint as avatar to avoid shifting search/notifications. */}
+        <div className="relative flex h-10 shrink-0 items-center" ref={profileRef}>
           {user ? (
             <>
               <button 
@@ -556,7 +561,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   setMobileMenuOpen(false);
                   setOpenDropdown(openDropdown === 'profile' ? null : 'profile');
                 }}
-                className="h-8 w-8 rounded-full bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center text-white text-xs font-bold cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-500 overflow-hidden"
+                className="h-8 w-8 shrink-0 rounded-full bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center text-white text-xs font-bold cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-500 overflow-hidden"
               >
                 <img 
                   src={user.photoURL || `https://picsum.photos/seed/${user.uid}/100/100`} 
@@ -637,6 +642,12 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </div>
               )}
             </>
+          ) : !isAuthReady ? (
+            <div
+              className="h-8 w-8 shrink-0 rounded-full bg-[var(--hover-bg)] animate-pulse"
+              aria-busy="true"
+              aria-label="Loading account"
+            />
           ) : (
             <button
               type="button"

@@ -17,6 +17,12 @@ import { collection, query, where, getDocs, addDoc, setDoc, doc, serverTimestamp
 import { scrollDocumentToTop } from './utils/scrollDocumentToTop';
 import { recordCourseCompletion } from './utils/courseCompletionLog';
 import { formatAuthError } from './utils/authErrors';
+import {
+  readCachedAuthProfile,
+  writeCachedAuthProfile,
+  clearCachedAuthProfile,
+  type AuthProfileSnapshot,
+} from './utils/authProfileCache';
 import { stashAuthReturnState, consumeAuthReturnState, type AuthReturnPayload } from './utils/authReturnContext';
 import {
   APP_HISTORY_KEY,
@@ -146,6 +152,8 @@ export default function App() {
   const [focusedFooterIndex, setFocusedFooterIndex] = useState(-1);
   const [user, setUser] = useState<User | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
+  /** Last signed-in profile from localStorage — shown until Firebase finishes async restore (no avatar flash on refresh). */
+  const [authSnapshot, setAuthSnapshot] = useState<AuthProfileSnapshot | null>(() => readCachedAuthProfile());
   const [certificateData, setCertificateData] = useState<CertificateData | null>(null);
   /** Where to return when closing the certificate view (set synchronously before navigation). */
   const certificateReturnRef = useRef<{ view: View; courseId: string | null } | null>(null);
@@ -284,12 +292,22 @@ export default function App() {
   }, [buildHistoryPayload, currentView, selectedCourse?.id, initialLesson?.id, certificateData]);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
+    const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
+      setUser(nextUser);
       setIsAuthReady(true);
+      if (nextUser) {
+        writeCachedAuthProfile(nextUser);
+        setAuthSnapshot(null);
+      } else {
+        clearCachedAuthProfile();
+        setAuthSnapshot(null);
+      }
     });
     return () => unsubscribe();
   }, []);
+
+  /** Navbar avatar only — Firebase `user` is still null until restore; snapshot fills the gap without faking API access. */
+  const navUser = user ?? (!isAuthReady && authSnapshot ? authSnapshot : null);
 
   useEffect(() => {
     if (currentView === 'player' && isAuthReady && !user) {
@@ -1317,7 +1335,8 @@ export default function App() {
           onClearFilters={clearFilters}
           theme={theme}
           onThemeToggle={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')}
-          user={user}
+          isAuthReady={isAuthReady}
+          user={navUser}
           onLogin={() => void handleLogin().catch(() => {})}
           onLogout={handleLogout}
           notifications={notifications}
