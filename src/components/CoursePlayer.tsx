@@ -1,10 +1,43 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { useDialogKeyboard } from '../hooks/useDialogKeyboard';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
-import { Play, ChevronRight, ChevronDown, CheckCircle2, RotateCcw, ThumbsUp, AlertTriangle, Send, ExternalLink, Settings2, X, Info, Flag, Star, LogIn } from 'lucide-react';
+import {
+  Play,
+  ChevronRight,
+  ChevronDown,
+  CheckCircle2,
+  ChevronLeft,
+  RotateCcw,
+  ThumbsUp,
+  AlertTriangle,
+  Send,
+  ExternalLink,
+  Settings2,
+  X,
+  Info,
+  Flag,
+  Star,
+  LogIn,
+  Volume2,
+  VolumeX,
+  Cog,
+} from 'lucide-react';
 import { Course, Lesson } from '../data/courses';
 import { motion, AnimatePresence } from 'motion/react';
-import { youtubeUrlToEmbedUrl, youtubeVideoIdFromUrl, loadYoutubeIframeApi } from '../utils/youtube';
+import {
+  applyYoutubeCaptionsModule,
+  labelForYoutubeCaptionLang,
+  loadYoutubeIframeApi,
+  readYoutubeCaptionLang,
+  readYoutubeCaptionsPreference,
+  writeYoutubeCaptionLang,
+  writeYoutubeCaptionsPreference,
+  YOUTUBE_SUBTITLE_LANGUAGE_OPTIONS,
+  YOUTUBE_EMBED_TOP_CROP_PX,
+  youtubeEmbedSrcForVideoId,
+  youtubeUrlToEmbedUrl,
+  youtubeVideoIdFromUrl,
+} from '../utils/youtube';
 import { getNextLesson } from '../utils/courseLessons';
 import { db, User, handleFirestoreError, OperationType } from '../firebase';
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, serverTimestamp, onSnapshot, deleteDoc, limit } from 'firebase/firestore';
@@ -31,6 +64,23 @@ const PAUSE_UI_MIN_MS = 10;
 
 /** Keep pause frost visible this long after playback resumes (video plays underneath; overlay is pointer-events none). */
 const UNPAUSE_FROST_LINGER_MS = 100;
+
+function formatYtClock(totalSeconds: number): string {
+  if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return '0:00';
+  const s = Math.floor(totalSeconds);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) {
+    return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  }
+  return `${m}:${String(sec).padStart(2, '0')}`;
+}
+
+function formatYtSpeedLabel(rate: number): string {
+  if (rate === 1) return 'Normal';
+  return `${rate}x`;
+}
 
 interface CoursePlayerProps {
   course: Course;
@@ -73,6 +123,21 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     return mod ? [mod.id] : [course.modules[0].id];
   });
   const [autoAdvance, setAutoAdvance] = useState(true);
+  const [youtubeCaptionsEnabled, setYoutubeCaptionsEnabled] = useState(() => readYoutubeCaptionsPreference());
+  const youtubeCaptionsEnabledRef = useRef(youtubeCaptionsEnabled);
+  youtubeCaptionsEnabledRef.current = youtubeCaptionsEnabled;
+  const [youtubeCaptionLang, setYoutubeCaptionLang] = useState(() => readYoutubeCaptionLang());
+  const youtubeCaptionLangRef = useRef(youtubeCaptionLang);
+  youtubeCaptionLangRef.current = youtubeCaptionLang;
+  /** YouTube-only HUD: current time / duration and volume (synced via IFrame API). */
+  const [ytHudTime, setYtHudTime] = useState({ current: 0, duration: 0 });
+  const [ytVolume, setYtVolume] = useState(100);
+  const [ytMuted, setYtMuted] = useState(false);
+  const [ytSettingsOpen, setYtSettingsOpen] = useState(false);
+  const [ytSettingsPanel, setYtSettingsPanel] = useState<'main' | 'speed' | 'subtitles'>('main');
+  const [ytPlaybackRates, setYtPlaybackRates] = useState<number[]>([1]);
+  const [ytPlaybackRate, setYtPlaybackRate] = useState(1);
+  const ytSettingsPanelRef = useRef<HTMLDivElement>(null);
   const [mediaPaused, setMediaPaused] = useState(true);
   /** Once true for this lesson, show blurred "Paused" overlay when stopped (not before first play). */
   const [lessonPlaybackEverStarted, setLessonPlaybackEverStarted] = useState(false);
@@ -313,6 +378,160 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     }
   }, [youtubeEmbedUrl]);
 
+  const ytOverlayClickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearYoutubeOverlayClickTimer = useCallback(() => {
+    if (ytOverlayClickTimerRef.current) {
+      clearTimeout(ytOverlayClickTimerRef.current);
+      ytOverlayClickTimerRef.current = null;
+    }
+  }, []);
+
+  /** Fullscreen the video wrapper (keeps top-crop); iframe alone cannot be targeted from parent. */
+  const toggleVideoAreaFullscreen = useCallback(async () => {
+    const el = videoAreaRef.current;
+    if (!el || typeof document === 'undefined') return;
+    try {
+      const doc = document as Document & {
+        webkitFullscreenElement?: Element | null;
+        webkitExitFullscreen?: () => Promise<void>;
+      };
+      const current = document.fullscreenElement ?? doc.webkitFullscreenElement ?? null;
+      if (current === el) {
+        if (document.exitFullscreen) await document.exitFullscreen();
+        else await doc.webkitExitFullscreen?.();
+        return;
+      }
+      const host = el as HTMLElement & { webkitRequestFullscreen?: () => Promise<void> };
+      if (el.requestFullscreen) await el.requestFullscreen();
+      else await host.webkitRequestFullscreen?.();
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  /**
+   * Single-click toggles play/pause after a short delay. If a second click arrives (double-click),
+   * we clear that timer and do not toggle — `onDoubleClick` handles fullscreen.
+   */
+  const handleYoutubeOverlayClick = useCallback(() => {
+    if (ytOverlayClickTimerRef.current) {
+      clearYoutubeOverlayClickTimer();
+      return;
+    }
+    ytOverlayClickTimerRef.current = window.setTimeout(() => {
+      ytOverlayClickTimerRef.current = null;
+      const p = ytPlayerRef.current as {
+        getPlayerState?: () => number;
+        pauseVideo?: () => void;
+        playVideo?: () => void;
+      } | null;
+      const YT = window.YT;
+      if (!p?.getPlayerState || !YT?.PlayerState) return;
+      try {
+        const ps = p.getPlayerState();
+        if (ps === YT.PlayerState.PLAYING) p.pauseVideo?.();
+        else p.playVideo?.();
+      } catch {
+        /* ignore */
+      }
+    }, 280);
+  }, [clearYoutubeOverlayClickTimer]);
+
+  const handleYoutubeOverlayDoubleClick = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      clearYoutubeOverlayClickTimer();
+      void toggleVideoAreaFullscreen();
+    },
+    [clearYoutubeOverlayClickTimer, toggleVideoAreaFullscreen]
+  );
+
+  const handleYtMuteToggle = useCallback(() => {
+    const p = ytPlayerRef.current as {
+      isMuted?: () => boolean;
+      mute?: () => void;
+      unMute?: () => void;
+      getVolume?: () => number;
+    } | null;
+    if (!p?.isMuted) return;
+    try {
+      const wasMuted = p.isMuted();
+      if (wasMuted) {
+        p.unMute?.();
+        setYtMuted(false);
+      } else {
+        p.mute?.();
+        setYtMuted(true);
+      }
+      setYtVolume(p.getVolume?.() ?? 0);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const handleYtVolumeSlider = useCallback((value: number) => {
+    const v = Math.max(0, Math.min(100, Math.round(value)));
+    setYtVolume(v);
+    const p = ytPlayerRef.current as { setVolume?: (n: number) => void; unMute?: () => void } | null;
+    if (!p?.setVolume) return;
+    try {
+      p.setVolume(v);
+      if (v > 0) {
+        p.unMute?.();
+        setYtMuted(false);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const refreshYtPlayerSettings = useCallback(() => {
+    const p = ytPlayerRef.current as {
+      getAvailablePlaybackRates?: () => number[];
+      getPlaybackRate?: () => number;
+    } | null;
+    if (!p?.getAvailablePlaybackRates || !p.getPlaybackRate) return;
+    try {
+      const rates = p.getAvailablePlaybackRates();
+      if (Array.isArray(rates) && rates.length > 0) {
+        setYtPlaybackRates(rates);
+      }
+      setYtPlaybackRate(p.getPlaybackRate());
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const handleYtPlaybackRateSelect = useCallback((rate: number) => {
+    const p = ytPlayerRef.current as { setPlaybackRate?: (r: number) => void } | null;
+    if (!p?.setPlaybackRate) return;
+    try {
+      p.setPlaybackRate(rate);
+      setYtPlaybackRate(rate);
+    } catch {
+      /* ignore */
+    }
+    setYtSettingsPanel('main');
+  }, []);
+
+  const handleYoutubeSubtitleChoice = useCallback((choice: 'off' | string) => {
+    if (choice === 'off') {
+      setYoutubeCaptionsEnabled(false);
+      writeYoutubeCaptionsPreference(false);
+      applyYoutubeCaptionsModule(ytPlayerRef.current, false, youtubeCaptionLangRef.current);
+      setYtSettingsPanel('main');
+      return;
+    }
+    setYoutubeCaptionLang(choice);
+    writeYoutubeCaptionLang(choice);
+    setYoutubeCaptionsEnabled(true);
+    writeYoutubeCaptionsPreference(true);
+    applyYoutubeCaptionsModule(ytPlayerRef.current, true, choice);
+    setYtSettingsPanel('main');
+  }, []);
+
   const tryResumePlayback = useCallback(() => {
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
     if (
@@ -426,6 +645,17 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     clearUnpauseFrostLinger();
     setYtPauseBlurActive(false);
     setNativePauseFrostReady(false);
+    if (ytOverlayClickTimerRef.current) {
+      clearTimeout(ytOverlayClickTimerRef.current);
+      ytOverlayClickTimerRef.current = null;
+    }
+    setYtHudTime({ current: 0, duration: 0 });
+    setYtVolume(100);
+    setYtMuted(false);
+    setYtSettingsOpen(false);
+    setYtSettingsPanel('main');
+    setYtPlaybackRates([1]);
+    setYtPlaybackRate(1);
     resumeAfterInterruptionsRef.current = false;
     customizePauseOwnedRef.current = false;
     reportPauseOwnedRef.current = false;
@@ -521,6 +751,27 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     return () => clearChromeHideTimer();
   }, [clearChromeHideTimer]);
 
+  useEffect(() => {
+    return () => {
+      if (ytOverlayClickTimerRef.current) {
+        clearTimeout(ytOverlayClickTimerRef.current);
+        ytOverlayClickTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!ytSettingsOpen) return;
+    const onDocPointerDown = (e: PointerEvent) => {
+      const el = ytSettingsPanelRef.current;
+      if (el && !el.contains(e.target as Node)) {
+        setYtSettingsOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', onDocPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onDocPointerDown, true);
+  }, [ytSettingsOpen]);
+
   /** Pointer activity over the video (works over YouTube iframe via window coords + bounds). */
   useEffect(() => {
     const isInsideVideoArea = (clientX: number, clientY: number) => {
@@ -580,6 +831,30 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     }, 2500);
     return () => clearInterval(id);
   }, [youtubeEmbedUrl, mergeProgress]);
+
+  /** YouTube HUD: current time / duration (like the default player). */
+  useEffect(() => {
+    if (!youtubeEmbedUrl) return;
+    const tick = () => {
+      const p = ytPlayerRef.current as {
+        getCurrentTime?: () => number;
+        getDuration?: () => number;
+      } | null;
+      if (!p?.getCurrentTime || !p.getDuration) return;
+      try {
+        const d = p.getDuration();
+        const t = p.getCurrentTime();
+        if (Number.isFinite(d) && d > 0) {
+          setYtHudTime({ current: t, duration: d });
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    tick();
+    const id = window.setInterval(tick, 500);
+    return () => clearInterval(id);
+  }, [youtubeEmbedUrl, currentLesson.id]);
 
   /**
    * If the course already met finalize criteria when opening the player, skip layout-driven finalize
@@ -819,12 +1094,32 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
         height: '100%',
         playerVars: {
           autoplay: shouldAutoplay ? 1 : 0,
+          cc_lang_pref: youtubeCaptionLangRef.current,
+          controls: 0,
+          disablekb: 1,
+          fs: 0,
           rel: 0,
           modestbranding: 1,
         },
         events: {
           onReady: (ev) => {
             const player = ev.target;
+            applyYoutubeCaptionsModule(player, youtubeCaptionsEnabledRef.current, youtubeCaptionLangRef.current);
+            try {
+              setYtVolume(player.getVolume());
+              setYtMuted(player.isMuted());
+              const d0 = player.getDuration();
+              if (Number.isFinite(d0) && d0 > 0) {
+                setYtHudTime({ current: player.getCurrentTime(), duration: d0 });
+              }
+              const rates = player.getAvailablePlaybackRates();
+              if (Array.isArray(rates) && rates.length > 0) {
+                setYtPlaybackRates(rates);
+              }
+              setYtPlaybackRate(player.getPlaybackRate());
+            } catch {
+              /* ignore */
+            }
             const lid = lessonRef.current.id;
             try {
               const d = player.getDuration();
@@ -855,6 +1150,12 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
             } catch {
               /* ignore */
             }
+          },
+          onApiChange: (ev) => {
+            applyYoutubeCaptionsModule(ev.target, youtubeCaptionsEnabledRef.current, youtubeCaptionLangRef.current);
+          },
+          onPlaybackRateChange: (ev) => {
+            setYtPlaybackRate(ev.data);
           },
           onStateChange: (e) => {
             const ps = window.YT!.PlayerState;
@@ -975,6 +1276,11 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     clearUnpauseFrostLinger,
     startUnpauseFrostLinger,
   ]);
+
+  useEffect(() => {
+    if (!youtubeEmbedUrl) return;
+    applyYoutubeCaptionsModule(ytPlayerRef.current, youtubeCaptionsEnabled, youtubeCaptionLang);
+  }, [youtubeCaptionsEnabled, youtubeCaptionLang, youtubeEmbedUrl]);
 
   useEffect(() => {
     if (!currentLesson.id) return;
@@ -1369,10 +1675,29 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
           className={`aspect-video bg-black relative group ${!showTopControls && !mediaPaused ? 'cursor-none' : ''}`}
         >
           <div
-            ref={ytContainerRef}
-            className={`absolute inset-0 h-full w-full ${youtubeEmbedUrl ? 'z-[1]' : 'hidden'} ${blockPlayerPointerWhilePaused && youtubeEmbedUrl ? 'pointer-events-none' : ''}`}
+            className={`absolute inset-0 overflow-hidden ${youtubeEmbedUrl ? 'z-[1]' : 'hidden'} ${blockPlayerPointerWhilePaused && youtubeEmbedUrl ? 'pointer-events-none' : ''}`}
             aria-hidden={!youtubeEmbedUrl}
-          />
+          >
+            {/*
+              YouTube does not allow hiding the title/channel bar via API; clip the top of the iframe.
+            */}
+            <div
+              ref={ytContainerRef}
+              className="absolute left-0 right-0 w-full"
+              style={{
+                top: -YOUTUBE_EMBED_TOP_CROP_PX,
+                height: `calc(100% + ${YOUTUBE_EMBED_TOP_CROP_PX}px)`,
+              }}
+            />
+          </div>
+          {youtubeEmbedUrl && (
+            <div
+              className="absolute inset-0 z-[2] cursor-pointer touch-manipulation"
+              aria-hidden
+              onClick={handleYoutubeOverlayClick}
+              onDoubleClick={handleYoutubeOverlayDoubleClick}
+            />
+          )}
           <video
             key={currentLesson.id}
             ref={videoRef}
@@ -1476,7 +1801,12 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
               aria-hidden="true"
             >
               {showPauseFrostLabel && (
-                <p className="text-lg font-semibold tracking-wide text-white drop-shadow-md">Paused</p>
+                <div
+                  className="flex h-24 w-24 items-center justify-center rounded-full border-2 border-white/70 bg-black/30 shadow-lg"
+                  role="status"
+                >
+                  <p className="text-center text-lg font-semibold tracking-wide text-white drop-shadow-md">Paused</p>
+                </div>
               )}
             </div>
           )}
@@ -1525,6 +1855,208 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
               </label>
             </div>
           </div>
+
+          {youtubeEmbedUrl && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-40 px-4 pb-3 pt-8 bg-gradient-to-t from-black/70 to-transparent">
+              <div
+                className={`flex w-full items-center justify-between gap-3 transition-opacity duration-200 ease-out ${
+                  showTopControls ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
+                }`}
+              >
+                <p
+                  className="shrink-0 text-xs font-mono tabular-nums text-white drop-shadow-md"
+                  aria-live="polite"
+                >
+                  <span className="text-white/95">{formatYtClock(ytHudTime.current)}</span>
+                  <span className="text-white/60"> / </span>
+                  <span className="text-white/80">{formatYtClock(ytHudTime.duration)}</span>
+                </p>
+                <div className="flex min-w-0 max-w-[72%] items-center gap-2 sm:max-w-md">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setYoutubeCaptionsEnabled((prev) => {
+                        const next = !prev;
+                        writeYoutubeCaptionsPreference(next);
+                        return next;
+                      });
+                    }}
+                    className={`rounded-md p-1.5 text-white hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60 ${
+                      youtubeCaptionsEnabled ? 'bg-white/15' : ''
+                    }`}
+                    aria-pressed={youtubeCaptionsEnabled}
+                    aria-label={youtubeCaptionsEnabled ? 'Turn off captions' : 'Turn on captions'}
+                  >
+                    <span className="flex h-5 w-5 select-none items-center justify-center text-[10px] font-bold leading-none tracking-tight">
+                      CC
+                    </span>
+                  </button>
+                  <div className="relative shrink-0" ref={ytSettingsPanelRef}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setYtSettingsOpen((o) => {
+                          const next = !o;
+                          if (next) {
+                            setYtSettingsPanel('main');
+                            refreshYtPlayerSettings();
+                          }
+                          return next;
+                        });
+                      }}
+                      className={`rounded-md p-1.5 text-white hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60 ${
+                        ytSettingsOpen ? 'bg-white/15' : ''
+                      }`}
+                      aria-expanded={ytSettingsOpen}
+                      aria-haspopup="true"
+                      aria-label="Player settings"
+                    >
+                      <Cog size={20} aria-hidden />
+                    </button>
+                    <AnimatePresence>
+                      {ytSettingsOpen && (
+                        <motion.div
+                          role="dialog"
+                          aria-label="Player settings"
+                          initial={{ opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 6 }}
+                          transition={{ duration: 0.15 }}
+                          className="absolute bottom-full right-0 z-50 mb-2 w-[min(calc(100vw-2rem),320px)] min-w-[280px] overflow-hidden rounded-xl border border-white/12 bg-[#1f1f1f]/98 py-1 text-white shadow-2xl backdrop-blur-md"
+                        >
+                          {ytSettingsPanel === 'main' && (
+                            <div className="py-0.5">
+                              <button
+                                type="button"
+                                onClick={() => setYtSettingsPanel('speed')}
+                                className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-[14px] hover:bg-white/[0.08]"
+                              >
+                                <span>Playback speed</span>
+                                <span className="flex items-center gap-0.5 text-[13px] text-white/55">
+                                  {formatYtSpeedLabel(ytPlaybackRate)}
+                                  <ChevronRight className="shrink-0 opacity-80" size={18} aria-hidden />
+                                </span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setYtSettingsPanel('subtitles')}
+                                className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-[14px] hover:bg-white/[0.08]"
+                              >
+                                <span>Subtitles/CC</span>
+                                <span className="flex min-w-0 max-w-[58%] items-center gap-0.5 text-right text-[13px] text-white/55">
+                                  <span className="truncate">
+                                    {!youtubeCaptionsEnabled
+                                      ? 'Off'
+                                      : labelForYoutubeCaptionLang(youtubeCaptionLang)}
+                                  </span>
+                                  <ChevronRight className="shrink-0 opacity-80" size={18} aria-hidden />
+                                </span>
+                              </button>
+                            </div>
+                          )}
+                          {ytSettingsPanel === 'speed' && (
+                            <div>
+                              <div className="flex items-center gap-0.5 border-b border-white/10 px-1 pb-2 pt-0.5">
+                                <button
+                                  type="button"
+                                  aria-label="Back"
+                                  onClick={() => setYtSettingsPanel('main')}
+                                  className="rounded-full p-2 hover:bg-white/10"
+                                >
+                                  <ChevronLeft size={22} aria-hidden />
+                                </button>
+                                <span className="text-[16px] font-medium">Playback speed</span>
+                              </div>
+                              <div className="max-h-[min(50vh,360px)] overflow-y-auto py-1">
+                                {ytPlaybackRates.map((r) => (
+                                  <button
+                                    key={r}
+                                    type="button"
+                                    onClick={() => handleYtPlaybackRateSelect(r)}
+                                    className={`flex w-full items-center justify-between px-3 py-2.5 text-left text-[14px] hover:bg-white/[0.08] ${
+                                      ytPlaybackRate === r ? 'bg-white/[0.06]' : ''
+                                    }`}
+                                  >
+                                    {formatYtSpeedLabel(r)}
+                                    {ytPlaybackRate === r && (
+                                      <CheckCircle2 className="shrink-0 text-orange-400" size={18} aria-hidden />
+                                    )}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {ytSettingsPanel === 'subtitles' && (
+                            <div>
+                              <div className="flex items-center gap-0.5 border-b border-white/10 px-1 pb-2 pt-0.5">
+                                <button
+                                  type="button"
+                                  aria-label="Back"
+                                  onClick={() => setYtSettingsPanel('main')}
+                                  className="rounded-full p-2 hover:bg-white/10"
+                                >
+                                  <ChevronLeft size={22} aria-hidden />
+                                </button>
+                                <span className="text-[16px] font-medium">Subtitles/CC</span>
+                              </div>
+                              <div className="max-h-[min(50vh,360px)] overflow-y-auto py-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleYoutubeSubtitleChoice('off')}
+                                  className={`flex w-full items-center justify-between px-3 py-2.5 text-left text-[14px] hover:bg-white/[0.08] ${
+                                    !youtubeCaptionsEnabled ? 'bg-white/[0.06]' : ''
+                                  }`}
+                                >
+                                  Off
+                                  {!youtubeCaptionsEnabled && (
+                                    <CheckCircle2 className="shrink-0 text-orange-400" size={18} aria-hidden />
+                                  )}
+                                </button>
+                                {YOUTUBE_SUBTITLE_LANGUAGE_OPTIONS.map((opt) => (
+                                  <button
+                                    key={opt.code}
+                                    type="button"
+                                    onClick={() => handleYoutubeSubtitleChoice(opt.code)}
+                                    className={`flex w-full items-center justify-between px-3 py-2.5 text-left text-[14px] hover:bg-white/[0.08] ${
+                                      youtubeCaptionsEnabled && youtubeCaptionLang === opt.code
+                                        ? 'bg-white/[0.06]'
+                                        : ''
+                                    }`}
+                                  >
+                                    {opt.label}
+                                    {youtubeCaptionsEnabled && youtubeCaptionLang === opt.code && (
+                                      <CheckCircle2 className="shrink-0 text-orange-400" size={18} aria-hidden />
+                                    )}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleYtMuteToggle}
+                    className="shrink-0 rounded-md p-1.5 text-white hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+                    aria-label={ytMuted ? 'Unmute' : 'Mute'}
+                  >
+                    {ytMuted ? <VolumeX size={20} aria-hidden /> : <Volume2 size={20} aria-hidden />}
+                  </button>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={ytMuted ? 0 : ytVolume}
+                    onChange={(e) => handleYtVolumeSlider(Number(e.target.value))}
+                    className="h-1.5 w-full min-w-[72px] cursor-pointer accent-orange-500 sm:min-w-[100px]"
+                    aria-label="Volume"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
           <div className="p-8 max-w-4xl">
@@ -1654,15 +2186,23 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                                 className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500/50"
                               />
                               
-                              {replaceUrl && youtubeVideoIdFromUrl(replaceUrl) && (
-                                <div className="aspect-video rounded-xl overflow-hidden border border-[var(--border-color)] bg-black">
-                                  <iframe
-                                    src={`https://www.youtube.com/embed/${youtubeVideoIdFromUrl(replaceUrl)}`}
-                                    className="w-full h-full"
-                                    allowFullScreen
-                                  />
-                                </div>
-                              )}
+                              {(() => {
+                                const replaceVid = youtubeVideoIdFromUrl(replaceUrl);
+                                return replaceUrl && replaceVid ? (
+                                  <div className="aspect-video rounded-xl overflow-hidden border border-[var(--border-color)] bg-black relative">
+                                    <iframe
+                                      src={youtubeEmbedSrcForVideoId(replaceVid)}
+                                      title="YouTube preview"
+                                      className="absolute left-0 right-0 w-full border-0"
+                                      style={{
+                                        top: -YOUTUBE_EMBED_TOP_CROP_PX,
+                                        height: `calc(100% + ${YOUTUBE_EMBED_TOP_CROP_PX}px)`,
+                                      }}
+                                      allowFullScreen
+                                    />
+                                  </div>
+                                ) : null;
+                              })()}
 
                               <div className="flex gap-3">
                                 <button
@@ -1705,15 +2245,23 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                                 className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500/50"
                               />
                               
-                              {suggestedUrl && youtubeVideoIdFromUrl(suggestedUrl) && (
-                                <div className="aspect-video rounded-xl overflow-hidden border border-[var(--border-color)] bg-black">
-                                  <iframe
-                                    src={`https://www.youtube.com/embed/${youtubeVideoIdFromUrl(suggestedUrl)}`}
-                                    className="w-full h-full"
-                                    allowFullScreen
-                                  />
-                                </div>
-                              )}
+                              {(() => {
+                                const suggestedVid = youtubeVideoIdFromUrl(suggestedUrl);
+                                return suggestedUrl && suggestedVid ? (
+                                  <div className="aspect-video rounded-xl overflow-hidden border border-[var(--border-color)] bg-black relative">
+                                    <iframe
+                                      src={youtubeEmbedSrcForVideoId(suggestedVid)}
+                                      title="YouTube preview"
+                                      className="absolute left-0 right-0 w-full border-0"
+                                      style={{
+                                        top: -YOUTUBE_EMBED_TOP_CROP_PX,
+                                        height: `calc(100% + ${YOUTUBE_EMBED_TOP_CROP_PX}px)`,
+                                      }}
+                                      allowFullScreen
+                                    />
+                                  </div>
+                                ) : null;
+                              })()}
 
                               <button
                                 type="submit"

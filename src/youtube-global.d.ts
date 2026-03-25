@@ -5,6 +5,18 @@ type YTPlayerInstance = {
   destroy: () => void;
   getDuration: () => number;
   getCurrentTime: () => number;
+  getPlayerState: () => number;
+  getPlaybackRate: () => number;
+  setPlaybackRate: (rate: number) => void;
+  getAvailablePlaybackRates: () => number[];
+  getVolume: () => number;
+  setVolume: (volume: number) => void;
+  isMuted: () => boolean;
+  mute: () => void;
+  unMute: () => void;
+  loadModule: (name: string) => void;
+  unloadModule: (name: string) => void;
+  setOption: (module: string, option: string, value: unknown) => void;
   seekTo: (seconds: number, allowSeekAhead?: boolean) => void;
   pauseVideo: () => void;
   playVideo: () => void;
@@ -23,6 +35,8 @@ declare global {
           events?: {
             onReady?: (e: { target: YTPlayerInstance }) => void;
             onStateChange?: (e: { data: number; target: YTPlayerInstance }) => void;
+            onApiChange?: (e: { target: YTPlayerInstance }) => void;
+            onPlaybackRateChange?: (e: { data: number; target: YTPlayerInstance }) => void;
           };
         }
       ) => YTPlayerInstance;
