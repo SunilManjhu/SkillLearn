@@ -61,11 +61,10 @@ export function youtubeUrlToEmbedUrl(url: string | undefined | null): string | u
 }
 
 /**
- * Pixels clipped from the top of YouTube embeds via `overflow: hidden` + offset iframe.
- * YouTube no longer exposes a parameter to hide the title/channel bar (`showinfo` was removed);
- * this only affects layout, not the stream.
+ * Pixels shifted/clipped from the top of YouTube embeds via `overflow: hidden` + offset iframe.
+ * Kept at 0 so the full video frame is visible; a positive value hides chrome but can crop picture.
  */
-export const YOUTUBE_EMBED_TOP_CROP_PX = 56;
+export const YOUTUBE_EMBED_TOP_CROP_PX = 0;
 
 /** Default caption track language for embeds (`cc_lang_pref`) and `setOption('captions','track',...)`. */
 export const YOUTUBE_CC_LANG_PREF = 'en';

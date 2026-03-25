@@ -391,7 +391,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     }
   }, []);
 
-  /** Fullscreen the video wrapper (keeps top-crop); iframe alone cannot be targeted from parent. */
+  /** Fullscreen the video wrapper; iframe alone cannot be targeted from parent. */
   const toggleVideoAreaFullscreen = useCallback(async () => {
     const el = videoAreaRef.current;
     if (!el || typeof document === 'undefined') return;
@@ -1693,7 +1693,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
             aria-hidden={!youtubeEmbedUrl}
           >
             {/*
-              YouTube does not allow hiding the title/channel bar via API; clip the top of the iframe.
+              Optional top offset via YOUTUBE_EMBED_TOP_CROP_PX (0 = full frame, no picture crop).
             */}
             <div
               ref={ytContainerRef}
@@ -1716,7 +1716,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
             key={currentLesson.id}
             ref={videoRef}
             src={youtubeEmbedUrl ? undefined : activeVideoUrl}
-            className={`absolute inset-0 h-full w-full ${youtubeEmbedUrl ? 'hidden' : 'z-0'}`}
+            className={`absolute inset-0 h-full w-full object-contain ${youtubeEmbedUrl ? 'hidden' : 'z-0'}`}
             controls={!youtubeEmbedUrl}
             onLoadedMetadata={handleNativeLoadedMetadata}
             onTimeUpdate={() => {
