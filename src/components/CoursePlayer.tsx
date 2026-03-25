@@ -23,10 +23,14 @@ import { saveCourseRating, hasRatedOrDismissed, remindLaterCourseRating } from '
 import { useYoutubeResolvedSeconds } from '../hooks/useYoutubeResolvedSeconds';
 import { formatAuthError } from '../utils/authErrors';
 
-/** Keep YouTube frost up briefly after resume so related-video UI can clear under the blur. */
-const YT_UNPAUSE_BLUR_LINGER_MS = 480;
-/** Ignore brief PAUSED (timeline scrub / seek) before treating as a real pause for UI + blocker. */
-const PAUSE_CONFIRM_MS = 0;
+/**
+ * Frost + resume blocker wait this long after a user pause so sub‑100ms glitches don’t flash the UI.
+ * `mediaPaused` still updates immediately so chrome/cursor match the real player state.
+ */
+const PAUSE_UI_MIN_MS = 10;
+
+/** Keep pause frost visible this long after playback resumes (video plays underneath; overlay is pointer-events none). */
+const UNPAUSE_FROST_LINGER_MS = 100;
 
 interface CoursePlayerProps {
   course: Course;
@@ -72,10 +76,12 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   const [mediaPaused, setMediaPaused] = useState(true);
   /** Once true for this lesson, show blurred "Paused" overlay when stopped (not before first play). */
   const [lessonPlaybackEverStarted, setLessonPlaybackEverStarted] = useState(false);
-  /** YouTube only: frost overlay turns on after PAUSED on the next task (scrub can cancel); mediaPaused is same-tick. */
+  /** YouTube: frost/blocker after PAUSE is confirmed (100ms) or right away on end / non-buffering stop. */
   const [ytPauseBlurActive, setYtPauseBlurActive] = useState(false);
-  /** YouTube only: keep dim/blur briefly after PLAYING so related-video UI can clear under the frost. */
-  const [ytUnpauseBlurLinger, setYtUnpauseBlurLinger] = useState(false);
+  /** Native video: frost/blocker after pause is confirmed (100ms) or right away on ended. */
+  const [nativePauseFrostReady, setNativePauseFrostReady] = useState(false);
+  /** Brief frost after unpause while video is already playing (cleared from pause state immediately). */
+  const [unpauseFrostLinger, setUnpauseFrostLinger] = useState(false);
   /** When playing: chrome hides after idle; any activity in the video rect shows it again (like native / streaming UIs). */
   const [chromeVisible, setChromeVisible] = useState(true);
   const [progressByLesson, setProgressByLesson] = useState<Record<string, LessonProgress>>(() =>
@@ -129,10 +135,9 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const ytContainerRef = useRef<HTMLDivElement>(null);
   const ytPlayerRef = useRef<{ destroy: () => void } | null>(null);
-  /** YouTube: defer “really paused” until this fires — avoids pause UI / blocker during scrub. */
-  const ytPausedConfirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const nativePausedConfirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const ytUnpauseBlurLingerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ytPauseUiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nativePauseUiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const unpauseFrostLingerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const videoAreaRef = useRef<HTMLDivElement>(null);
   /** Pull focus out of cross-origin iframe so parent (e.g. Navbar Esc) receives key events. */
   const pauseResumeOverlayRef = useRef<HTMLDivElement>(null);
@@ -162,6 +167,11 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   lessonRef.current = currentLesson;
   autoAdvanceRef.current = autoAdvance;
   mediaPausedRef.current = mediaPaused;
+
+  const ytPauseBlurActiveRef = useRef(ytPauseBlurActive);
+  const nativePauseFrostReadyRef = useRef(nativePauseFrostReady);
+  ytPauseBlurActiveRef.current = ytPauseBlurActive;
+  nativePauseFrostReadyRef.current = nativePauseFrostReady;
 
   const progressByLessonRef = useRef(progressByLesson);
   progressByLessonRef.current = progressByLesson;
@@ -263,22 +273,32 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     }
   }, [mergeProgress, userSuggestion]);
 
+  const clearUnpauseFrostLinger = useCallback(() => {
+    if (unpauseFrostLingerTimerRef.current) {
+      clearTimeout(unpauseFrostLingerTimerRef.current);
+      unpauseFrostLingerTimerRef.current = null;
+    }
+    setUnpauseFrostLinger(false);
+  }, []);
+
+  const startUnpauseFrostLinger = useCallback(() => {
+    clearUnpauseFrostLinger();
+    setUnpauseFrostLinger(true);
+    unpauseFrostLingerTimerRef.current = window.setTimeout(() => {
+      unpauseFrostLingerTimerRef.current = null;
+      setUnpauseFrostLinger(false);
+    }, UNPAUSE_FROST_LINGER_MS);
+  }, [clearUnpauseFrostLinger]);
+
   const stopPlayback = useCallback(() => {
+    clearUnpauseFrostLinger();
     videoRef.current?.pause();
     try {
       ytPlayerRef.current?.pauseVideo();
     } catch {
       /* ignore */
     }
-  }, []);
-
-  const clearYtUnpauseBlurLingerTimer = useCallback(() => {
-    if (ytUnpauseBlurLingerTimerRef.current) {
-      clearTimeout(ytUnpauseBlurLingerTimerRef.current);
-      ytUnpauseBlurLingerTimerRef.current = null;
-    }
-    setYtUnpauseBlurLinger(false);
-  }, []);
+  }, [clearUnpauseFrostLinger]);
 
   const resumePlayback = useCallback(() => {
     if (youtubeEmbedUrl) {
@@ -287,12 +307,10 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
       } catch {
         /* ignore */
       }
+    } else {
+      const v = videoRef.current;
+      if (v) void v.play().catch(() => {});
     }
-    const v = videoRef.current;
-    if (v && !youtubeEmbedUrl) {
-      void v.play().catch(() => {});
-    }
-    setMediaPaused(false);
   }, [youtubeEmbedUrl]);
 
   const tryResumePlayback = useCallback(() => {
@@ -320,16 +338,15 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     );
   }, []);
 
-  /** Resume only — overlay blocks iframe / native controls while paused. */
-  const resumeYoutubeFromPausedOverlay = useCallback((e?: React.PointerEvent | React.KeyboardEvent) => {
-    e?.preventDefault();
-    if (!canResumeFromPlayerOverlay()) return;
-    try {
-      (ytPlayerRef.current as { playVideo?: () => void } | null)?.playVideo?.();
-    } catch {
-      /* ignore */
-    }
-  }, [canResumeFromPlayerOverlay]);
+  /** User tapped the pause surface — resume immediately (frost may linger via `startUnpauseFrostLinger`). */
+  const resumeFromPausedOverlay = useCallback(
+    (e?: React.PointerEvent | React.KeyboardEvent) => {
+      e?.preventDefault();
+      if (!canResumeFromPlayerOverlay()) return;
+      resumePlayback();
+    },
+    [canResumeFromPlayerOverlay, resumePlayback]
+  );
 
   const currentModule = useMemo(
     () => course.modules.find((m) => m.lessons.some((l) => l.id === currentLesson.id)),
@@ -378,14 +395,17 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   const showPauseFrostBackdrop =
     !showReplayCta &&
     lessonPlaybackEverStarted &&
-    ((!youtubeEmbedUrl && mediaPaused) ||
-      (youtubeEmbedUrl && (ytUnpauseBlurLinger || (mediaPaused && ytPauseBlurActive))));
+    (unpauseFrostLinger ||
+      (mediaPaused && (youtubeEmbedUrl ? ytPauseBlurActive : nativePauseFrostReady)));
 
   const showPauseFrostLabel = showPauseFrostBackdrop && mediaPaused;
 
   /** After first play, while paused: full-area resume layer; blocks iframe / native controls (timeline) until unpaused. */
   const blockPlayerPointerWhilePaused =
-    mediaPaused && lessonPlaybackEverStarted && !showReplayCta;
+    mediaPaused &&
+    lessonPlaybackEverStarted &&
+    !showReplayCta &&
+    (youtubeEmbedUrl ? ytPauseBlurActive : nativePauseFrostReady);
 
   /** Before paint: pause chrome + reset replay overlay for this lesson. */
   useLayoutEffect(() => {
@@ -395,22 +415,23 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     setLessonPlaybackEverStarted(false);
     setChromeVisible(true);
     clearChromeHideTimer();
-    if (ytPausedConfirmTimerRef.current) {
-      clearTimeout(ytPausedConfirmTimerRef.current);
-      ytPausedConfirmTimerRef.current = null;
+    if (ytPauseUiTimerRef.current) {
+      clearTimeout(ytPauseUiTimerRef.current);
+      ytPauseUiTimerRef.current = null;
     }
-    if (nativePausedConfirmTimerRef.current) {
-      clearTimeout(nativePausedConfirmTimerRef.current);
-      nativePausedConfirmTimerRef.current = null;
+    if (nativePauseUiTimerRef.current) {
+      clearTimeout(nativePauseUiTimerRef.current);
+      nativePauseUiTimerRef.current = null;
     }
+    clearUnpauseFrostLinger();
     setYtPauseBlurActive(false);
-    clearYtUnpauseBlurLingerTimer();
+    setNativePauseFrostReady(false);
     resumeAfterInterruptionsRef.current = false;
     customizePauseOwnedRef.current = false;
     reportPauseOwnedRef.current = false;
     appNavPauseOwnedRef.current = false;
     visibilityPauseOwnedRef.current = false;
-  }, [currentLesson.id, clearChromeHideTimer, clearYtUnpauseBlurLingerTimer]);
+  }, [currentLesson.id, clearChromeHideTimer, clearUnpauseFrostLinger]);
 
   useLayoutEffect(() => {
     if (isCustomizeModalOpen) {
@@ -837,84 +858,59 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
           },
           onStateChange: (e) => {
             const ps = window.YT!.PlayerState;
-            const clearYtPausedConfirm = () => {
-              if (ytPausedConfirmTimerRef.current) {
-                clearTimeout(ytPausedConfirmTimerRef.current);
-                ytPausedConfirmTimerRef.current = null;
+            const clearYtPauseUiTimer = () => {
+              if (ytPauseUiTimerRef.current) {
+                clearTimeout(ytPauseUiTimerRef.current);
+                ytPauseUiTimerRef.current = null;
               }
             };
 
             /* Only PLAYING clears pause. BUFFERING during load was hiding the replay CTA on completed lessons. */
             if (e.data === ps.PLAYING) {
-              clearYtPausedConfirm();
-              if (ytUnpauseBlurLingerTimerRef.current) {
-                clearTimeout(ytUnpauseBlurLingerTimerRef.current);
-                ytUnpauseBlurLingerTimerRef.current = null;
-              }
-              const shouldUnpauseLinger =
-                lessonPlaybackEverStartedRef.current && mediaPausedRef.current;
-
+              clearYtPauseUiTimer();
+              const hadPauseFrost = lessonPlaybackEverStartedRef.current && ytPauseBlurActiveRef.current;
               setLessonPlaybackEverStarted(true);
               setMediaPaused(false);
               setYtPauseBlurActive(false);
-
-              if (shouldUnpauseLinger) {
-                setYtUnpauseBlurLinger(true);
-                ytUnpauseBlurLingerTimerRef.current = window.setTimeout(() => {
-                  ytUnpauseBlurLingerTimerRef.current = null;
-                  setYtUnpauseBlurLinger(false);
-                }, YT_UNPAUSE_BLUR_LINGER_MS);
-              } else {
-                setYtUnpauseBlurLinger(false);
+              if (hadPauseFrost) {
+                startUnpauseFrostLinger();
               }
             } else if (e.data === ps.PAUSED) {
-              /* Defer “paused” UI: scrubbing fires PAUSED then PLAYING quickly; we only lock the iframe after a real pause. */
-              clearYtPausedConfirm();
-              if (ytUnpauseBlurLingerTimerRef.current) {
-                clearTimeout(ytUnpauseBlurLingerTimerRef.current);
-                ytUnpauseBlurLingerTimerRef.current = null;
-              }
-              setYtUnpauseBlurLinger(false);
+              clearYtPauseUiTimer();
+              clearUnpauseFrostLinger();
+              setMediaPaused(true);
               setYtPauseBlurActive(false);
               const player = e.target as unknown as {
                 getPlayerState?: () => number;
                 getDuration?: () => number;
                 getCurrentTime?: () => number;
               };
-              ytPausedConfirmTimerRef.current = window.setTimeout(() => {
-                ytPausedConfirmTimerRef.current = null;
+              ytPauseUiTimerRef.current = window.setTimeout(() => {
+                ytPauseUiTimerRef.current = null;
                 try {
                   if (player.getPlayerState?.() === ps.PAUSED) {
-                    setMediaPaused(true);
                     setYtPauseBlurActive(true);
                     try {
-                      const d = player.getDuration();
-                      if (d > 0) mergeProgress(lessonRef.current.id, player.getCurrentTime(), d);
+                      const d = player.getDuration?.() ?? 0;
+                      if (d > 0) {
+                        mergeProgress(lessonRef.current.id, player.getCurrentTime?.() ?? 0, d);
+                      }
                     } catch {
                       /* ignore */
                     }
                   }
                 } catch {
-                  setMediaPaused(true);
                   setYtPauseBlurActive(true);
                 }
-              }, PAUSE_CONFIRM_MS);
+              }, PAUSE_UI_MIN_MS);
             } else if (e.data === ps.ENDED) {
-              clearYtPausedConfirm();
-              if (ytUnpauseBlurLingerTimerRef.current) {
-                clearTimeout(ytUnpauseBlurLingerTimerRef.current);
-                ytUnpauseBlurLingerTimerRef.current = null;
-              }
-              setYtUnpauseBlurLinger(false);
+              clearYtPauseUiTimer();
+              clearUnpauseFrostLinger();
               setMediaPaused(true);
               setYtPauseBlurActive(true);
             } else if (e.data !== ps.BUFFERING) {
-              clearYtPausedConfirm();
-              if (ytUnpauseBlurLingerTimerRef.current) {
-                clearTimeout(ytUnpauseBlurLingerTimerRef.current);
-                ytUnpauseBlurLingerTimerRef.current = null;
-              }
-              setYtUnpauseBlurLinger(false);
+              clearYtPauseUiTimer();
+              clearUnpauseFrostLinger();
               setMediaPaused(true);
               setYtPauseBlurActive(true);
             }
@@ -960,18 +956,25 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
 
     return () => {
       cancelled = true;
-      if (ytPausedConfirmTimerRef.current) {
-        clearTimeout(ytPausedConfirmTimerRef.current);
-        ytPausedConfirmTimerRef.current = null;
+      if (ytPauseUiTimerRef.current) {
+        clearTimeout(ytPauseUiTimerRef.current);
+        ytPauseUiTimerRef.current = null;
       }
-      if (ytUnpauseBlurLingerTimerRef.current) {
-        clearTimeout(ytUnpauseBlurLingerTimerRef.current);
-        ytUnpauseBlurLingerTimerRef.current = null;
-      }
+      clearUnpauseFrostLinger();
       ytPlayerRef.current?.destroy();
       ytPlayerRef.current = null;
     };
-  }, [currentLesson.id, activeVideoUrl, goToNextLesson, mergeProgress, savedProgressForLesson, setYoutubeResolvedSeconds, scheduleFinalizeFromStorage]);
+  }, [
+    currentLesson.id,
+    activeVideoUrl,
+    goToNextLesson,
+    mergeProgress,
+    savedProgressForLesson,
+    setYoutubeResolvedSeconds,
+    scheduleFinalizeFromStorage,
+    clearUnpauseFrostLinger,
+    startUnpauseFrostLinger,
+  ]);
 
   useEffect(() => {
     if (!currentLesson.id) return;
@@ -1387,10 +1390,12 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
             }}
             onSeeked={saveNativeProgressNow}
             onPlay={() => {
-              if (nativePausedConfirmTimerRef.current) {
-                clearTimeout(nativePausedConfirmTimerRef.current);
-                nativePausedConfirmTimerRef.current = null;
+              if (nativePauseUiTimerRef.current) {
+                clearTimeout(nativePauseUiTimerRef.current);
+                nativePauseUiTimerRef.current = null;
               }
+              const hadPauseFrost = lessonPlaybackEverStartedRef.current && nativePauseFrostReadyRef.current;
+              setNativePauseFrostReady(false);
               const saved = savedProgressForLesson(currentLesson.id);
               if (isLessonPlaybackComplete(saved) && !replayUiSuppressedRef.current) {
                 void videoRef.current?.pause();
@@ -1398,34 +1403,42 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
               }
               setLessonPlaybackEverStarted(true);
               setMediaPaused(false);
+              if (hadPauseFrost) {
+                startUnpauseFrostLinger();
+              }
               const v = videoRef.current;
               if (v && Number.isFinite(v.duration) && v.duration > 0 && v.currentTime < 2.5) {
                 mergeProgress(currentLesson.id, v.currentTime, v.duration);
               }
             }}
             onPause={() => {
-              if (nativePausedConfirmTimerRef.current) {
-                clearTimeout(nativePausedConfirmTimerRef.current);
-                nativePausedConfirmTimerRef.current = null;
+              if (nativePauseUiTimerRef.current) {
+                clearTimeout(nativePauseUiTimerRef.current);
+                nativePauseUiTimerRef.current = null;
               }
-              nativePausedConfirmTimerRef.current = window.setTimeout(() => {
-                nativePausedConfirmTimerRef.current = null;
+              clearUnpauseFrostLinger();
+              setMediaPaused(true);
+              setNativePauseFrostReady(false);
+              saveNativeProgressNow();
+              nativePauseUiTimerRef.current = window.setTimeout(() => {
+                nativePauseUiTimerRef.current = null;
                 const v = videoRef.current;
                 if (!v || v.paused !== true) return;
-                setMediaPaused(true);
-                saveNativeProgressNow();
-              }, PAUSE_CONFIRM_MS);
+                setNativePauseFrostReady(true);
+              }, PAUSE_UI_MIN_MS);
             }}
             onEnded={() => {
-              if (nativePausedConfirmTimerRef.current) {
-                clearTimeout(nativePausedConfirmTimerRef.current);
-                nativePausedConfirmTimerRef.current = null;
+              if (nativePauseUiTimerRef.current) {
+                clearTimeout(nativePauseUiTimerRef.current);
+                nativePauseUiTimerRef.current = null;
               }
+              clearUnpauseFrostLinger();
               const v = videoRef.current;
               if (v && Number.isFinite(v.duration) && v.duration > 0) {
                 mergeProgress(currentLesson.id, v.duration, v.duration);
               }
               setMediaPaused(true);
+              setNativePauseFrostReady(true);
               if (!getNextLesson(courseRef.current, lessonRef.current) && !autoAdvanceRef.current) {
                 scheduleFinalizeFromStorage();
               }
@@ -1448,23 +1461,11 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
               aria-label="Resume playback"
               onPointerDown={(e) => {
                 if (e.pointerType === 'mouse' && e.button !== 0) return;
-                if (youtubeEmbedUrl) {
-                  resumeYoutubeFromPausedOverlay(e);
-                } else {
-                  e.preventDefault();
-                  if (!canResumeFromPlayerOverlay()) return;
-                  void videoRef.current?.play();
-                }
+                resumeFromPausedOverlay(e);
               }}
               onKeyDown={(e) => {
                 if (e.key !== 'Enter' && e.key !== ' ') return;
-                if (youtubeEmbedUrl) {
-                  resumeYoutubeFromPausedOverlay(e);
-                } else {
-                  e.preventDefault();
-                  if (!canResumeFromPlayerOverlay()) return;
-                  void videoRef.current?.play();
-                }
+                resumeFromPausedOverlay(e);
               }}
             />
           )}
