@@ -23,6 +23,11 @@ import { saveCourseRating, hasRatedOrDismissed, remindLaterCourseRating } from '
 import { useYoutubeResolvedSeconds } from '../hooks/useYoutubeResolvedSeconds';
 import { formatAuthError } from '../utils/authErrors';
 
+/** Keep YouTube frost up briefly after resume so related-video UI can clear under the blur. */
+const YT_UNPAUSE_BLUR_LINGER_MS = 480;
+/** Ignore brief PAUSED (timeline scrub / seek) before treating as a real pause for UI + blocker. */
+const PAUSE_CONFIRM_MS = 220;
+
 interface CoursePlayerProps {
   course: Course;
   /** Called when every lesson has reached the true end of its video (same bar as the rating popup). */
@@ -65,6 +70,12 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   });
   const [autoAdvance, setAutoAdvance] = useState(true);
   const [mediaPaused, setMediaPaused] = useState(true);
+  /** Once true for this lesson, show blurred "Paused" overlay when stopped (not before first play). */
+  const [lessonPlaybackEverStarted, setLessonPlaybackEverStarted] = useState(false);
+  /** YouTube only: frost overlay turns on after PAUSED on the next task (scrub can cancel); mediaPaused is same-tick. */
+  const [ytPauseBlurActive, setYtPauseBlurActive] = useState(false);
+  /** YouTube only: keep dim/blur briefly after PLAYING so related-video UI can clear under the frost. */
+  const [ytUnpauseBlurLinger, setYtUnpauseBlurLinger] = useState(false);
   /** When playing: chrome hides after idle; any activity in the video rect shows it again (like native / streaming UIs). */
   const [chromeVisible, setChromeVisible] = useState(true);
   const [progressByLesson, setProgressByLesson] = useState<Record<string, LessonProgress>>(() =>
@@ -118,9 +129,17 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const ytContainerRef = useRef<HTMLDivElement>(null);
   const ytPlayerRef = useRef<{ destroy: () => void } | null>(null);
+  /** YouTube: defer “really paused” until this fires — avoids pause UI / blocker during scrub. */
+  const ytPausedConfirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nativePausedConfirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ytUnpauseBlurLingerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const videoAreaRef = useRef<HTMLDivElement>(null);
+  /** Pull focus out of cross-origin iframe so parent (e.g. Navbar Esc) receives key events. */
+  const pauseResumeOverlayRef = useRef<HTMLDivElement>(null);
   const chromeHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mediaPausedRef = useRef(mediaPaused);
+  const lessonPlaybackEverStartedRef = useRef(lessonPlaybackEverStarted);
+  lessonPlaybackEverStartedRef.current = lessonPlaybackEverStarted;
 
   const playNextAfterEndRef = useRef(false);
   const courseRef = useRef(course);
@@ -156,6 +175,10 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   isReportModalOpenRef.current = isReportModalOpen;
   const pauseForAppNavOverlayRef = useRef(pauseForAppNavOverlay);
   pauseForAppNavOverlayRef.current = pauseForAppNavOverlay;
+  const isVoteLoginModalOpenRef = useRef(isVoteLoginModalOpen);
+  isVoteLoginModalOpenRef.current = isVoteLoginModalOpen;
+  const showRatingPromptRef = useRef(showRatingPrompt);
+  showRatingPromptRef.current = showRatingPrompt;
 
   /** User was playing before we auto-paused for customize/report/app overlay/tab visibility. */
   const resumeAfterInterruptionsRef = useRef(false);
@@ -249,6 +272,14 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     }
   }, []);
 
+  const clearYtUnpauseBlurLingerTimer = useCallback(() => {
+    if (ytUnpauseBlurLingerTimerRef.current) {
+      clearTimeout(ytUnpauseBlurLingerTimerRef.current);
+      ytUnpauseBlurLingerTimerRef.current = null;
+    }
+    setYtUnpauseBlurLinger(false);
+  }, []);
+
   const resumePlayback = useCallback(() => {
     if (youtubeEmbedUrl) {
       try {
@@ -277,6 +308,28 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     resumeAfterInterruptionsRef.current = false;
     resumePlayback();
   }, [resumePlayback]);
+
+  const canResumeFromPlayerOverlay = useCallback(() => {
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return false;
+    return !(
+      isCustomizeModalOpenRef.current ||
+      isReportModalOpenRef.current ||
+      pauseForAppNavOverlayRef.current ||
+      isVoteLoginModalOpenRef.current ||
+      showRatingPromptRef.current
+    );
+  }, []);
+
+  /** Resume only — overlay blocks iframe / native controls while paused. */
+  const resumeYoutubeFromPausedOverlay = useCallback((e?: React.PointerEvent | React.KeyboardEvent) => {
+    e?.preventDefault();
+    if (!canResumeFromPlayerOverlay()) return;
+    try {
+      (ytPlayerRef.current as { playVideo?: () => void } | null)?.playVideo?.();
+    } catch {
+      /* ignore */
+    }
+  }, [canResumeFromPlayerOverlay]);
 
   const currentModule = useMemo(
     () => course.modules.find((m) => m.lessons.some((l) => l.id === currentLesson.id)),
@@ -322,19 +375,42 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   const showReplayCta =
     isLessonActuallyFinished(persistedProgressForCurrentLesson) && !replayUiSuppressed && mediaPaused;
 
+  const showPauseFrostBackdrop =
+    !showReplayCta &&
+    lessonPlaybackEverStarted &&
+    ((!youtubeEmbedUrl && mediaPaused) ||
+      (youtubeEmbedUrl && (ytUnpauseBlurLinger || (mediaPaused && ytPauseBlurActive))));
+
+  const showPauseFrostLabel = showPauseFrostBackdrop && mediaPaused;
+
+  /** After first play, while paused: full-area resume layer; blocks iframe / native controls (timeline) until unpaused. */
+  const blockPlayerPointerWhilePaused =
+    mediaPaused && lessonPlaybackEverStarted && !showReplayCta;
+
   /** Before paint: pause chrome + reset replay overlay for this lesson. */
   useLayoutEffect(() => {
     replayUiSuppressedRef.current = false;
     setReplayUiSuppressed(false);
     setMediaPaused(true);
+    setLessonPlaybackEverStarted(false);
     setChromeVisible(true);
     clearChromeHideTimer();
+    if (ytPausedConfirmTimerRef.current) {
+      clearTimeout(ytPausedConfirmTimerRef.current);
+      ytPausedConfirmTimerRef.current = null;
+    }
+    if (nativePausedConfirmTimerRef.current) {
+      clearTimeout(nativePausedConfirmTimerRef.current);
+      nativePausedConfirmTimerRef.current = null;
+    }
+    setYtPauseBlurActive(false);
+    clearYtUnpauseBlurLingerTimer();
     resumeAfterInterruptionsRef.current = false;
     customizePauseOwnedRef.current = false;
     reportPauseOwnedRef.current = false;
     appNavPauseOwnedRef.current = false;
     visibilityPauseOwnedRef.current = false;
-  }, [currentLesson.id, clearChromeHideTimer]);
+  }, [currentLesson.id, clearChromeHideTimer, clearYtUnpauseBlurLingerTimer]);
 
   useLayoutEffect(() => {
     if (isCustomizeModalOpen) {
@@ -458,6 +534,14 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     el.addEventListener('touchstart', onTouch, { passive: true });
     return () => el.removeEventListener('touchstart', onTouch);
   }, [currentLesson.id, currentLesson.videoUrl, revealChromeAndScheduleHide]);
+
+  useEffect(() => {
+    if (!blockPlayerPointerWhilePaused) return;
+    const id = requestAnimationFrame(() => {
+      pauseResumeOverlayRef.current?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [blockPlayerPointerWhilePaused]);
 
   /** Persist YouTube position periodically while playing. */
   useEffect(() => {
@@ -753,22 +837,86 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
           },
           onStateChange: (e) => {
             const ps = window.YT!.PlayerState;
+            const clearYtPausedConfirm = () => {
+              if (ytPausedConfirmTimerRef.current) {
+                clearTimeout(ytPausedConfirmTimerRef.current);
+                ytPausedConfirmTimerRef.current = null;
+              }
+            };
+
             /* Only PLAYING clears pause. BUFFERING during load was hiding the replay CTA on completed lessons. */
             if (e.data === ps.PLAYING) {
-              const lid = lessonRef.current.id;
-              const savedPlay = savedProgressForLesson(lid);
-              const currentTime = e.target.getCurrentTime();
-              if (isLessonActuallyFinished(savedPlay) && !replayUiSuppressedRef.current && currentTime < 1) {
-                try {
-                  e.target.pauseVideo();
-                } catch {
-                  /* ignore */
-                }
-              } else {
-                setMediaPaused(false);
+              clearYtPausedConfirm();
+              if (ytUnpauseBlurLingerTimerRef.current) {
+                clearTimeout(ytUnpauseBlurLingerTimerRef.current);
+                ytUnpauseBlurLingerTimerRef.current = null;
               }
-            } else if (e.data !== ps.BUFFERING) {
+              const shouldUnpauseLinger =
+                lessonPlaybackEverStartedRef.current && mediaPausedRef.current;
+
+              setLessonPlaybackEverStarted(true);
+              setMediaPaused(false);
+              setYtPauseBlurActive(false);
+
+              if (shouldUnpauseLinger) {
+                setYtUnpauseBlurLinger(true);
+                ytUnpauseBlurLingerTimerRef.current = window.setTimeout(() => {
+                  ytUnpauseBlurLingerTimerRef.current = null;
+                  setYtUnpauseBlurLinger(false);
+                }, YT_UNPAUSE_BLUR_LINGER_MS);
+              } else {
+                setYtUnpauseBlurLinger(false);
+              }
+            } else if (e.data === ps.PAUSED) {
+              /* Defer “paused” UI: scrubbing fires PAUSED then PLAYING quickly; we only lock the iframe after a real pause. */
+              clearYtPausedConfirm();
+              if (ytUnpauseBlurLingerTimerRef.current) {
+                clearTimeout(ytUnpauseBlurLingerTimerRef.current);
+                ytUnpauseBlurLingerTimerRef.current = null;
+              }
+              setYtUnpauseBlurLinger(false);
+              setYtPauseBlurActive(false);
+              const player = e.target as unknown as {
+                getPlayerState?: () => number;
+                getDuration?: () => number;
+                getCurrentTime?: () => number;
+              };
+              ytPausedConfirmTimerRef.current = window.setTimeout(() => {
+                ytPausedConfirmTimerRef.current = null;
+                try {
+                  if (player.getPlayerState?.() === ps.PAUSED) {
+                    setMediaPaused(true);
+                    setYtPauseBlurActive(true);
+                    try {
+                      const d = player.getDuration();
+                      if (d > 0) mergeProgress(lessonRef.current.id, player.getCurrentTime(), d);
+                    } catch {
+                      /* ignore */
+                    }
+                  }
+                } catch {
+                  setMediaPaused(true);
+                  setYtPauseBlurActive(true);
+                }
+              }, PAUSE_CONFIRM_MS);
+            } else if (e.data === ps.ENDED) {
+              clearYtPausedConfirm();
+              if (ytUnpauseBlurLingerTimerRef.current) {
+                clearTimeout(ytUnpauseBlurLingerTimerRef.current);
+                ytUnpauseBlurLingerTimerRef.current = null;
+              }
+              setYtUnpauseBlurLinger(false);
               setMediaPaused(true);
+              setYtPauseBlurActive(true);
+            } else if (e.data !== ps.BUFFERING) {
+              clearYtPausedConfirm();
+              if (ytUnpauseBlurLingerTimerRef.current) {
+                clearTimeout(ytUnpauseBlurLingerTimerRef.current);
+                ytUnpauseBlurLingerTimerRef.current = null;
+              }
+              setYtUnpauseBlurLinger(false);
+              setMediaPaused(true);
+              setYtPauseBlurActive(true);
             }
 
             try {
@@ -779,10 +927,6 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                 if (d > 0 && t < 2.5) {
                   mergeProgress(lessonRef.current.id, t, d);
                 }
-              }
-              if (e.data === ps.PAUSED) {
-                const d = player.getDuration();
-                if (d > 0) mergeProgress(lessonRef.current.id, player.getCurrentTime(), d);
               }
             } catch {
               /* ignore */
@@ -816,6 +960,14 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
 
     return () => {
       cancelled = true;
+      if (ytPausedConfirmTimerRef.current) {
+        clearTimeout(ytPausedConfirmTimerRef.current);
+        ytPausedConfirmTimerRef.current = null;
+      }
+      if (ytUnpauseBlurLingerTimerRef.current) {
+        clearTimeout(ytUnpauseBlurLingerTimerRef.current);
+        ytUnpauseBlurLingerTimerRef.current = null;
+      }
       ytPlayerRef.current?.destroy();
       ytPlayerRef.current = null;
     };
@@ -1210,11 +1362,12 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
       <div className="flex-1 flex flex-col">
         <div
           ref={videoAreaRef}
+          data-skillstream-video-area
           className={`aspect-video bg-black relative group ${!showTopControls && !mediaPaused ? 'cursor-none' : ''}`}
         >
           <div
             ref={ytContainerRef}
-            className={`absolute inset-0 h-full w-full ${youtubeEmbedUrl ? 'z-[1]' : 'hidden'}`}
+            className={`absolute inset-0 h-full w-full ${youtubeEmbedUrl ? 'z-[1]' : 'hidden'} ${blockPlayerPointerWhilePaused && youtubeEmbedUrl ? 'pointer-events-none' : ''}`}
             aria-hidden={!youtubeEmbedUrl}
           />
           <video
@@ -1234,11 +1387,16 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
             }}
             onSeeked={saveNativeProgressNow}
             onPlay={() => {
+              if (nativePausedConfirmTimerRef.current) {
+                clearTimeout(nativePausedConfirmTimerRef.current);
+                nativePausedConfirmTimerRef.current = null;
+              }
               const saved = savedProgressForLesson(currentLesson.id);
               if (isLessonPlaybackComplete(saved) && !replayUiSuppressedRef.current) {
                 void videoRef.current?.pause();
                 return;
               }
+              setLessonPlaybackEverStarted(true);
               setMediaPaused(false);
               const v = videoRef.current;
               if (v && Number.isFinite(v.duration) && v.duration > 0 && v.currentTime < 2.5) {
@@ -1246,10 +1404,23 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
               }
             }}
             onPause={() => {
-              setMediaPaused(true);
-              saveNativeProgressNow();
+              if (nativePausedConfirmTimerRef.current) {
+                clearTimeout(nativePausedConfirmTimerRef.current);
+                nativePausedConfirmTimerRef.current = null;
+              }
+              nativePausedConfirmTimerRef.current = window.setTimeout(() => {
+                nativePausedConfirmTimerRef.current = null;
+                const v = videoRef.current;
+                if (!v || v.paused !== true) return;
+                setMediaPaused(true);
+                saveNativeProgressNow();
+              }, PAUSE_CONFIRM_MS);
             }}
             onEnded={() => {
+              if (nativePausedConfirmTimerRef.current) {
+                clearTimeout(nativePausedConfirmTimerRef.current);
+                nativePausedConfirmTimerRef.current = null;
+              }
               const v = videoRef.current;
               if (v && Number.isFinite(v.duration) && v.duration > 0) {
                 mergeProgress(currentLesson.id, v.duration, v.duration);
@@ -1268,9 +1439,50 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
             }}
           />
 
+          {blockPlayerPointerWhilePaused && (
+            <div
+              ref={pauseResumeOverlayRef}
+              className="absolute inset-0 z-10 cursor-pointer select-none touch-manipulation focus:outline-none"
+              role="button"
+              tabIndex={0}
+              aria-label="Resume playback"
+              onPointerDown={(e) => {
+                if (e.pointerType === 'mouse' && e.button !== 0) return;
+                if (youtubeEmbedUrl) {
+                  resumeYoutubeFromPausedOverlay(e);
+                } else {
+                  e.preventDefault();
+                  if (!canResumeFromPlayerOverlay()) return;
+                  void videoRef.current?.play();
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter' && e.key !== ' ') return;
+                if (youtubeEmbedUrl) {
+                  resumeYoutubeFromPausedOverlay(e);
+                } else {
+                  e.preventDefault();
+                  if (!canResumeFromPlayerOverlay()) return;
+                  void videoRef.current?.play();
+                }
+              }}
+            />
+          )}
+
+          {showPauseFrostBackdrop && (
+            <div
+              className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-black/80 backdrop-blur-[28px] supports-[backdrop-filter]:bg-black/70"
+              aria-hidden="true"
+            >
+              {showPauseFrostLabel && (
+                <p className="text-lg font-semibold tracking-wide text-white drop-shadow-md">Paused</p>
+              )}
+            </div>
+          )}
+
           {showReplayCta && (
             <div
-              className="absolute inset-0 z-[80] flex cursor-default items-center justify-center bg-black/55 backdrop-blur-[1px]"
+              className="absolute inset-0 z-30 flex cursor-default items-center justify-center bg-black/80 backdrop-blur-[28px] supports-[backdrop-filter]:bg-black/70"
               role="dialog"
               aria-modal="true"
               aria-label="Lesson completed"
@@ -1289,7 +1501,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
             </div>
           )}
 
-          <div className="pointer-events-none absolute inset-x-0 top-0 z-[90] flex justify-between gap-4 px-4 pt-4">
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-40 flex justify-between gap-4 px-4 pt-4">
             <div
               className={`flex w-full items-start justify-end gap-4 transition-opacity duration-200 ease-out ${
                 showTopControls ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'

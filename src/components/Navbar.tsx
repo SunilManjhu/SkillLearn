@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { Search, Menu, User, Bell, ChevronDown, X, LogOut, Settings, Moon, Sun, BellRing, LogIn } from 'lucide-react';
 import { User as FirebaseUser } from '../firebase';
@@ -90,6 +91,25 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   useEffect(() => {
+    const closeMenusFromVideoInteraction = () => {
+      setMobileMenuOpen(false);
+      setMobileNavExpand(null);
+      setMobileSearchOpen(false);
+      setOpenDropdown(null);
+      setFocusedItemIndex(-1);
+    };
+
+    const onPointerDownCapture = (event: PointerEvent) => {
+      const t = event.target;
+      if (!(t instanceof Element)) return;
+      if (!t.closest('[data-skillstream-video-area]')) return;
+      closeMenusFromVideoInteraction();
+    };
+    document.addEventListener('pointerdown', onPointerDownCapture, true);
+    return () => document.removeEventListener('pointerdown', onPointerDownCapture, true);
+  }, []);
+
+  useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
       if (dropdownRef.current && !dropdownRef.current.contains(target) &&
@@ -133,6 +153,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       if (mobileMenuOpen) {
         e.preventDefault();
         setMobileMenuOpen(false);
+        setMobileNavExpand(null);
         return;
       }
       if (mobileSearchOpen) {
@@ -149,6 +170,15 @@ export const Navbar: React.FC<NavbarProps> = ({
     const id = requestAnimationFrame(() => mobileSearchInputRef.current?.focus());
     return () => cancelAnimationFrame(id);
   }, [mobileSearchOpen]);
+
+  /** Move focus into the page when the drawer opens so Esc reaches document (e.g. after YouTube iframe had focus). */
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const id = requestAnimationFrame(() => {
+      mobileMenuRef.current?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [mobileMenuOpen]);
 
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 1024px)');
@@ -232,6 +262,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   return (
+    <>
     <nav className="fixed top-0 left-0 right-0 h-16 bg-[var(--bg-secondary)] border-b border-[var(--border-color)] flex items-center justify-between px-6 z-50 transition-colors duration-300 overflow-visible">
       <div className="flex items-center gap-8">
         <button 
@@ -249,8 +280,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Browse Dropdown */}
           <div className="relative">
             <button 
+              type="button"
               ref={el => navItemsRef.current[1] = el}
-              onClick={() => onNavigate('catalog', false)}
               onKeyDown={(e) => handleTopLevelKeyDown(e, 1, 'browse')}
               onMouseEnter={() => setOpenDropdown('browse')}
               tabIndex={focusedNavIndex === 1 ? 0 : -1}
@@ -644,12 +675,16 @@ export const Navbar: React.FC<NavbarProps> = ({
             type="button"
             className="fixed inset-0 top-16 z-[45] bg-black/50 md:hidden"
             aria-label="Close menu"
-            onClick={() => setMobileMenuOpen(false)}
+            onClick={() => {
+              setMobileMenuOpen(false);
+              setMobileNavExpand(null);
+            }}
           />
           <div
             id="mobile-nav-drawer"
             ref={mobileMenuRef}
-            className="fixed bottom-0 left-0 top-16 z-[46] flex w-full max-w-sm flex-col overflow-y-auto overscroll-contain border-r border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-xl md:hidden"
+            tabIndex={-1}
+            className="fixed bottom-0 left-0 top-16 z-[46] flex w-full max-w-sm flex-col overflow-y-auto overscroll-contain border-r border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-xl outline-none focus:outline-none md:hidden"
             role="dialog"
             aria-modal="true"
             aria-label="Main navigation"
@@ -770,5 +805,18 @@ export const Navbar: React.FC<NavbarProps> = ({
         </>
       )}
     </nav>
+    {openDropdown !== null &&
+      createPortal(
+        <div
+          className="fixed inset-0 top-16 z-[48] hidden md:block"
+          aria-hidden
+          onPointerDown={() => {
+            setOpenDropdown(null);
+            setFocusedItemIndex(-1);
+          }}
+        />,
+        document.body
+      )}
+  </>
   );
 };
