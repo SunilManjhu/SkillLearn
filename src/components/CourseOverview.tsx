@@ -6,6 +6,7 @@ import { Course, Lesson } from '../data/courses';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   isCourseComplete,
+  hasResumableCourseProgress,
   loadLessonProgressMap,
   isLessonPlaybackComplete,
   clearCourseProgress,
@@ -124,6 +125,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
   const totalLessons = course.modules.reduce((acc, m) => acc + m.lessons.length, 0);
   const [progressMap, setProgressMap] = useState(() => loadLessonProgressMap(course.id, progressUserId));
   const isComplete = isCourseComplete(course, progressMap);
+  const canResume = hasResumableCourseProgress(course, progressMap);
   const completionRecorded =
     !!progressUserId && loadCompletionTimestamps(progressUserId)[course.id] != null;
   const showCertificateCta = isComplete || completionRecorded;
@@ -330,7 +332,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                     className="flex items-center justify-center gap-2 px-8 py-4 bg-orange-500 hover:bg-orange-600 text-white rounded-2xl font-bold transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-orange-500/20"
                   >
                     {isComplete ? <RotateCcw size={20} /> : <Play size={20} fill="currentColor" />}
-                    {isComplete ? 'Retake Course' : 'Start Course'}
+                    {isComplete ? 'Retake Course' : canResume ? 'Resume lesson' : 'Start Course'}
                   </button>
                   {user && showCertificateCta && (
                     <button
@@ -693,7 +695,8 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                 }}
               >
                 <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
-                  Watching lessons and saving your progress requires a Google account. If a pop-up is blocked, you will be redirected to Google to sign in. After signing in you&apos;ll stay on this page — use Start Course when you&apos;re ready.
+                  Watching lessons and saving your progress requires a Google account. If a pop-up is blocked, you will be redirected to Google to sign in. After signing in you&apos;ll stay on this page — use{' '}
+                  {canResume ? 'Resume lesson' : 'Start Course'} when you&apos;re ready.
                 </p>
                 {loginError && (
                   <div className="flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-500">

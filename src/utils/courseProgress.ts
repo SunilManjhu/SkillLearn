@@ -95,6 +95,20 @@ export function isCourseComplete(course: Course, progressByLesson: Record<string
   );
 }
 
+/** True when the course is not finished but the learner has at least one completed lesson or partial playback on a lesson. */
+export function hasResumableCourseProgress(course: Course, progressByLesson: Record<string, LessonProgress>): boolean {
+  if (isCourseComplete(course, progressByLesson)) return false;
+  for (const module of course.modules) {
+    for (const lesson of module.lessons) {
+      const p = progressByLesson[lesson.id];
+      if (!p) continue;
+      if (isLessonPlaybackComplete(p)) return true;
+      if (p.duration > 0 && p.currentTime > 0) return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Strict check: every lesson within ~1.5s of its video end (used only where full timeline strictness matters).
  */
