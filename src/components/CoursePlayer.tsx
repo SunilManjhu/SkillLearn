@@ -131,6 +131,13 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   youtubeCaptionLangRef.current = youtubeCaptionLang;
   /** YouTube-only HUD: current time / duration and volume (synced via IFrame API). */
   const [ytHudTime, setYtHudTime] = useState({ current: 0, duration: 0 });
+  /** While dragging the seek bar, HUD ticks must not fight the slider. */
+  const [ytSeekDragging, setYtSeekDragging] = useState(false);
+  const [ytSeekDragSeconds, setYtSeekDragSeconds] = useState(0);
+  const ytSeekDraggingRef = useRef(false);
+  ytSeekDraggingRef.current = ytSeekDragging;
+  /** True between pointer down/up on the seek bar so we only preview during drag; keyboard uses `onInput` commits. */
+  const ytPointerSeekRef = useRef(false);
   const [ytVolume, setYtVolume] = useState(100);
   const [ytMuted, setYtMuted] = useState(false);
   const [ytSettingsOpen, setYtSettingsOpen] = useState(false);
@@ -487,6 +494,31 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     }
   }, []);
 
+  const commitYtSeek = useCallback((seconds: number) => {
+    const p = ytPlayerRef.current as {
+      seekTo?: (t: number, allowSeekAhead: boolean) => void;
+      getDuration?: () => number;
+    } | null;
+    if (!p?.seekTo || !p.getDuration) {
+      setYtSeekDragging(false);
+      return;
+    }
+    try {
+      const d = p.getDuration();
+      if (!(Number.isFinite(d) && d > 0)) {
+        setYtSeekDragging(false);
+        return;
+      }
+      const clamped = Math.max(0, Math.min(seconds, d));
+      p.seekTo(clamped, true);
+      setYtHudTime({ current: clamped, duration: d });
+      mergeProgress(lessonRef.current.id, clamped, d);
+    } catch {
+      /* ignore */
+    }
+    setYtSeekDragging(false);
+  }, [mergeProgress]);
+
   const refreshYtPlayerSettings = useCallback(() => {
     const p = ytPlayerRef.current as {
       getAvailablePlaybackRates?: () => number[];
@@ -577,8 +609,8 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     return `You're in the section “${section}”, on “${currentLesson.title}.” This segment connects to the rest of the course and emphasizes patterns you can reuse while practicing.`;
   }, [currentModule?.title, currentLesson.title]);
 
-  /** ~3s idle before hiding chrome while playing — typical for built-in & streaming players. */
-  const CHROME_IDLE_MS = 3000;
+  /** Touch: brief idle before hiding chrome while playing (no reliable “cursor left” signal). */
+  const TOUCH_CHROME_IDLE_MS = 3000;
 
   const clearChromeHideTimer = useCallback(() => {
     if (chromeHideTimerRef.current) {
@@ -587,17 +619,17 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     }
   }, []);
 
-  const scheduleChromeHide = useCallback(() => {
+  const scheduleTouchChromeHide = useCallback(() => {
     clearChromeHideTimer();
     chromeHideTimerRef.current = setTimeout(() => {
       if (!mediaPausedRef.current) setChromeVisible(false);
-    }, CHROME_IDLE_MS);
+    }, TOUCH_CHROME_IDLE_MS);
   }, [clearChromeHideTimer]);
 
-  const revealChromeAndScheduleHide = useCallback(() => {
+  const revealChromeAfterTouch = useCallback(() => {
     setChromeVisible(true);
-    if (!mediaPausedRef.current) scheduleChromeHide();
-  }, [scheduleChromeHide]);
+    if (!mediaPausedRef.current) scheduleTouchChromeHide();
+  }, [scheduleTouchChromeHide]);
 
   const showTopControls = mediaPaused || chromeVisible;
 
@@ -650,6 +682,8 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
       ytOverlayClickTimerRef.current = null;
     }
     setYtHudTime({ current: 0, duration: 0 });
+    setYtSeekDragging(false);
+    setYtSeekDragSeconds(0);
     setYtVolume(100);
     setYtMuted(false);
     setYtSettingsOpen(false);
@@ -743,9 +777,8 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
       setChromeVisible(true);
     } else {
       setChromeVisible(true);
-      scheduleChromeHide();
     }
-  }, [mediaPaused, clearChromeHideTimer, scheduleChromeHide]);
+  }, [mediaPaused, clearChromeHideTimer]);
 
   useEffect(() => {
     return () => clearChromeHideTimer();
@@ -772,7 +805,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     return () => document.removeEventListener('pointerdown', onDocPointerDown, true);
   }, [ytSettingsOpen]);
 
-  /** Pointer activity over the video (works over YouTube iframe via window coords + bounds). */
+  /** Mouse: show chrome while cursor is over the player rect; hide as soon as it leaves (iframe-safe via window coords). */
   useEffect(() => {
     const isInsideVideoArea = (clientX: number, clientY: number) => {
       const el = videoAreaRef.current;
@@ -783,13 +816,13 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
 
     const onMove = (e: MouseEvent) => {
       if (mediaPausedRef.current) return;
-      if (!isInsideVideoArea(e.clientX, e.clientY)) return;
-      revealChromeAndScheduleHide();
+      clearChromeHideTimer();
+      setChromeVisible(isInsideVideoArea(e.clientX, e.clientY));
     };
 
     window.addEventListener('mousemove', onMove, { passive: true });
     return () => window.removeEventListener('mousemove', onMove);
-  }, [revealChromeAndScheduleHide]);
+  }, [clearChromeHideTimer]);
 
   useEffect(() => {
     const el = videoAreaRef.current;
@@ -800,12 +833,12 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
         setChromeVisible(true);
         return;
       }
-      revealChromeAndScheduleHide();
+      revealChromeAfterTouch();
     };
 
     el.addEventListener('touchstart', onTouch, { passive: true });
     return () => el.removeEventListener('touchstart', onTouch);
-  }, [currentLesson.id, currentLesson.videoUrl, revealChromeAndScheduleHide]);
+  }, [currentLesson.id, currentLesson.videoUrl, revealChromeAfterTouch]);
 
   useEffect(() => {
     if (!blockPlayerPointerWhilePaused) return;
@@ -842,6 +875,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
       } | null;
       if (!p?.getCurrentTime || !p.getDuration) return;
       try {
+        if (ytSeekDraggingRef.current) return;
         const d = p.getDuration();
         const t = p.getCurrentTime();
         if (Number.isFinite(d) && d > 0) {
@@ -1859,6 +1893,80 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
           {youtubeEmbedUrl && (
             <div className="pointer-events-none absolute inset-x-0 bottom-0 z-40 px-4 pb-3 pt-8 bg-gradient-to-t from-black/70 to-transparent">
               <div
+                className={`mb-2 flex w-full flex-col gap-0 transition-opacity duration-200 ease-out ${
+                  showTopControls ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
+                }`}
+              >
+                <p className="sr-only" id="yt-seek-label">
+                  Seek video position
+                </p>
+                <div className="flex w-full items-center py-1.5">
+                  <input
+                    type="range"
+                    min={0}
+                    max={Math.max(0, ytHudTime.duration)}
+                    step={0.25}
+                    value={
+                      ytSeekDragging
+                        ? Math.min(ytSeekDragSeconds, Math.max(0, ytHudTime.duration))
+                        : Math.min(ytHudTime.current, Math.max(0, ytHudTime.duration))
+                    }
+                    disabled={!(ytHudTime.duration > 0)}
+                    aria-labelledby="yt-seek-label"
+                    aria-valuemin={0}
+                    aria-valuemax={Math.floor(ytHudTime.duration)}
+                    aria-valuenow={Math.floor(
+                      ytSeekDragging ? ytSeekDragSeconds : ytHudTime.current
+                    )}
+                    onPointerDown={(e) => {
+                      clearChromeHideTimer();
+                      setChromeVisible(true);
+                      ytPointerSeekRef.current = true;
+                      setYtSeekDragging(true);
+                      try {
+                        e.currentTarget.setPointerCapture(e.pointerId);
+                      } catch {
+                        /* ignore */
+                      }
+                      const p = ytPlayerRef.current as { getCurrentTime?: () => number } | null;
+                      try {
+                        setYtSeekDragSeconds(p?.getCurrentTime?.() ?? ytHudTime.current);
+                      } catch {
+                        setYtSeekDragSeconds(ytHudTime.current);
+                      }
+                    }}
+                    onInput={(e) => {
+                      const v = Number((e.target as HTMLInputElement).value);
+                      setYtSeekDragSeconds(v);
+                      if (!ytPointerSeekRef.current) {
+                        commitYtSeek(v);
+                      }
+                    }}
+                    onPointerUp={(e) => {
+                      try {
+                        e.currentTarget.releasePointerCapture(e.pointerId);
+                      } catch {
+                        /* ignore */
+                      }
+                      if (ytPointerSeekRef.current) {
+                        ytPointerSeekRef.current = false;
+                        commitYtSeek(Number((e.target as HTMLInputElement).value));
+                      }
+                    }}
+                    onPointerCancel={(e) => {
+                      try {
+                        e.currentTarget.releasePointerCapture(e.pointerId);
+                      } catch {
+                        /* ignore */
+                      }
+                      ytPointerSeekRef.current = false;
+                      setYtSeekDragging(false);
+                    }}
+                    className="h-1.5 w-full cursor-pointer accent-orange-500 disabled:cursor-not-allowed disabled:opacity-40"
+                  />
+                </div>
+              </div>
+              <div
                 className={`flex w-full items-center justify-between gap-3 transition-opacity duration-200 ease-out ${
                   showTopControls ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
                 }`}
@@ -1867,7 +1975,9 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                   className="shrink-0 text-xs font-mono tabular-nums text-white drop-shadow-md"
                   aria-live="polite"
                 >
-                  <span className="text-white/95">{formatYtClock(ytHudTime.current)}</span>
+                  <span className="text-white/95">
+                    {formatYtClock(ytSeekDragging ? ytSeekDragSeconds : ytHudTime.current)}
+                  </span>
                   <span className="text-white/60"> / </span>
                   <span className="text-white/80">{formatYtClock(ytHudTime.duration)}</span>
                 </p>
