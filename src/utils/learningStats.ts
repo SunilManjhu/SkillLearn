@@ -1,8 +1,12 @@
-import { COURSES } from '../data/courses';
+import type { Course } from '../data/courses';
+import { STATIC_CATALOG_FALLBACK } from '../data/courses';
 import { isCourseComplete, loadLessonProgressMap } from './courseProgress';
 import { loadCompletionTimestamps } from './courseCompletionLog';
 
-export function computeLearningStats(userId: string | null | undefined): {
+export function computeLearningStats(
+  userId: string | null | undefined,
+  courses: Course[] = STATIC_CATALOG_FALLBACK
+): {
   completedCourses: number;
   completedCourseIds: string[];
   skillPoints: number;
@@ -13,7 +17,7 @@ export function computeLearningStats(userId: string | null | undefined): {
   let lessonsTouched = 0;
   const uid = userId ?? null;
   const completionTs = loadCompletionTimestamps(uid);
-  for (const course of COURSES) {
+  for (const course of courses) {
     const m = loadLessonProgressMap(course.id, uid);
     const finishedByProgress = isCourseComplete(course, m);
     const finishedByCompletionRecord = !!uid && completionTs[course.id] != null;

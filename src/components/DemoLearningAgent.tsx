@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useDialogKeyboard } from '../hooks/useDialogKeyboard';
 import { GoogleGenAI, Type } from '@google/genai';
 import { Sparkles, X, Loader2, ChevronRight, Trash2 } from 'lucide-react';
-import { COURSES, type Course } from '../data/courses';
+import { STATIC_CATALOG_FALLBACK, type Course } from '../data/courses';
 import { parseAssistantReplyJson } from '../utils/parseAssistantReply';
 import { formatGenaiError, isRetryableQuotaError } from '../utils/formatGenaiError';
 
@@ -78,9 +78,10 @@ const SYSTEM_INSTRUCTION = [
 
 interface DemoLearningAgentProps {
   onOpenCourse: (course: Course) => void;
+  courses?: Course[];
 }
 
-export function DemoLearningAgent({ onOpenCourse }: DemoLearningAgentProps) {
+export function DemoLearningAgent({ onOpenCourse, courses = STATIC_CATALOG_FALLBACK }: DemoLearningAgentProps) {
   const [open, setOpen] = useState(false);
   const [goal, setGoal] = useState('');
   const [loading, setLoading] = useState(false);
@@ -89,16 +90,16 @@ export function DemoLearningAgent({ onOpenCourse }: DemoLearningAgentProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  const allowedIds = useMemo(() => new Set(COURSES.map((c) => c.id)), []);
+  const allowedIds = useMemo(() => new Set(courses.map((c) => c.id)), [courses]);
   const catalogSnippet = useMemo(
     () =>
-      COURSES.map((c) => ({
+      courses.map((c) => ({
         id: c.id,
         title: c.title,
         category: c.category,
         level: c.level,
       })),
-    []
+    [courses]
   );
 
   const apiKey = getApiKey();
@@ -201,7 +202,7 @@ export function DemoLearningAgent({ onOpenCourse }: DemoLearningAgentProps) {
 
       const { reply, recommendCourseId } = parsed.data;
       const course =
-        recommendCourseId != null ? COURSES.find((c) => c.id === recommendCourseId) : undefined;
+        recommendCourseId != null ? courses.find((c) => c.id === recommendCourseId) : undefined;
 
       if (recommendCourseId != null && !course) {
         setMessages((prev) => [

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
-import { Search, Menu, User, Bell, ChevronDown, X, LogOut, Settings, Moon, Sun, BellRing, LogIn } from 'lucide-react';
+import { Search, Menu, User, Bell, ChevronDown, X, LogOut, Settings, Moon, Sun, BellRing, LogIn, Shield } from 'lucide-react';
 import { User as FirebaseUser } from '../firebase';
 import type { AuthProfileSnapshot } from '../utils/authProfileCache';
 
@@ -10,12 +10,15 @@ export interface NavbarNotification {
   message: string;
   read: boolean;
   time: string;
-  kind?: 'certificate' | 'generic';
+  kind?: 'certificate' | 'broadcast' | 'generic';
   courseId?: string;
+  lessonId?: string;
+  moduleId?: string;
+  alertId?: string;
 }
 
 interface NavbarProps {
-  onNavigate: (view: 'home' | 'catalog' | 'contact' | 'profile' | 'settings', clear?: boolean) => void;
+  onNavigate: (view: 'home' | 'catalog' | 'contact' | 'profile' | 'settings' | 'admin', clear?: boolean) => void;
   activeView: string;
   searchQuery: string;
   onSearchChange: (query: string) => void;
@@ -33,8 +36,11 @@ interface NavbarProps {
   onLogout: () => void;
   notifications: NavbarNotification[];
   setNotifications: React.Dispatch<React.SetStateAction<NavbarNotification[]>>;
-  /** Certificate notifications: open profile → Completed Courses (latest first). */
-  onCertificateNotificationClick: () => void;
+  /** Handle primary click on a notification (navigate, open profile, etc.). */
+  onNotificationAction: (n: NavbarNotification) => void;
+  /** Optional: persist dismiss (e.g. Firestore) before removing from the list. */
+  onDismissNotification?: (n: NavbarNotification) => void;
+  isAdmin?: boolean;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ 
@@ -54,7 +60,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLogout,
   notifications,
   setNotifications,
-  onCertificateNotificationClick,
+  onNotificationAction,
+  onDismissNotification,
+  isAdmin = false,
 }) => {
   const [openDropdown, setOpenDropdown] = useState<'browse' | 'paths' | 'skills' | 'profile' | 'notifications' | null>(null);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
@@ -211,7 +219,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   const removeNotification = (id: string) => {
-    setNotifications(prev => prev.filter(n => n.id !== id));
+    const n = notifications.find((x) => x.id === id);
+    if (n) onDismissNotification?.(n);
+    setNotifications(prev => prev.filter((x) => x.id !== id));
   };
 
   const clearAllNotifications = () => {
@@ -512,10 +522,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                         type="button"
                         className="min-w-0 flex-1 rounded-lg px-2 py-2 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-orange-500/60"
                         onClick={() => {
-                          if (n.kind === 'certificate') {
-                            onCertificateNotificationClick();
-                            setOpenDropdown(null);
-                          }
+                          onNotificationAction(n);
+                          setOpenDropdown(null);
                           setNotifications((prev) =>
                             prev.map((x) => (x.id === n.id ? { ...x, read: true } : x))
                           );
@@ -525,6 +533,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                         <span className="text-[10px] text-[var(--text-muted)]">{n.time}</span>
                         {n.kind === 'certificate' && (
                           <span className="mt-1 block text-[10px] font-semibold text-orange-500">View in profile</span>
+                        )}
+                        {n.kind === 'broadcast' && (
+                          <span className="mt-1 block text-[10px] font-semibold text-orange-500">Open course</span>
                         )}
                       </button>
                       <button
@@ -604,6 +615,18 @@ export const Navbar: React.FC<NavbarProps> = ({
                       <User size={16} />
                       Profile Details
                     </button>
+                    {isAdmin && (
+                      <button 
+                        onClick={() => {
+                          setOpenDropdown(null);
+                          onNavigate('admin');
+                        }}
+                        className="w-full flex items-center gap-3 px-4 py-2 text-sm text-orange-500 hover:bg-orange-500/10 transition-colors text-left"
+                      >
+                        <Shield size={16} />
+                        Admin
+                      </button>
+                    )}
                     <button 
                       onClick={() => {
                         setOpenDropdown(null);
@@ -801,6 +824,18 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </div>
                 )}
               </div>
+              {isAdmin && user && (
+                <button
+                  type="button"
+                  className="border-t border-[var(--border-color)] px-4 py-3 text-left text-orange-500 transition-colors hover:bg-orange-500/10"
+                  onClick={() => {
+                    onNavigate('admin');
+                    setMobileMenuOpen(false);
+                  }}
+                >
+                  Admin
+                </button>
+              )}
               <button
                 type="button"
                 className={`border-t border-[var(--border-color)] px-4 py-3 text-left transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] ${activeView === 'contact' ? 'text-orange-500' : ''}`}

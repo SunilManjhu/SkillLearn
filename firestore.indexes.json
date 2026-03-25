@@ -1,0 +1,13 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "alerts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "courseId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

@@ -19,7 +19,8 @@ export type AppHistoryView =
   | 'signup'
   | 'profile'
   | 'settings'
-  | 'certificate';
+  | 'certificate'
+  | 'admin';
 
 export interface CertificateHistorySnapshot {
   courseId: string;
@@ -50,6 +51,7 @@ const SIMPLE_VIEWS: AppHistoryView[] = [
   'signup',
   'profile',
   'settings',
+  'admin',
 ];
 
 function isSimpleView(s: string): s is AppHistoryView {
@@ -73,6 +75,8 @@ export function payloadToHash(payload: AppHistoryPayload): string {
   }
 
   if (view === 'certificate') return '#/certificate';
+
+  if (view === 'admin') return '#/admin';
 
   if (isSimpleView(view)) return `#/${view}`;
   return '#/';
@@ -111,6 +115,10 @@ export function parseHashToPayload(hash: string): AppHistoryPayload | null {
 
   if (head === 'certificate' && segments.length === 1) {
     return { v: 1, view: 'certificate' };
+  }
+
+  if (head === 'admin' && segments.length === 1) {
+    return { v: 1, view: 'admin' };
   }
 
   if (segments.length === 1 && isSimpleView(head)) {

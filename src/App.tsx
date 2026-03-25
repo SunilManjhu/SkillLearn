@@ -9,7 +9,17 @@ import { Certificate } from './components/Certificate';
 import { useBodyScrollLock } from './hooks/useBodyScrollLock';
 import { ContactForm } from './components/ContactForm';
 import { DemoLearningAgent } from './components/DemoLearningAgent';
-import { COURSES, Course, Lesson } from './data/courses';
+import { STATIC_CATALOG_FALLBACK, Course, Lesson } from './data/courses';
+import { AdminPage } from './components/AdminPage';
+import { ensureUserProfile, fetchUserRole } from './utils/userProfileFirestore';
+import { resolveCatalogCourses } from './utils/publishedCoursesFirestore';
+import { enrollUserInCourse, fetchEnrolledCourseIds } from './utils/enrollmentsFirestore';
+import {
+  fetchActiveAlertsForCourses,
+  loadUserAlertState,
+  markAlertDismissed,
+  markAlertRead,
+} from './utils/alertsFirestore';
 import { Play, TrendingUp, Award, Users, Globe, ChevronRight, ChevronDown, X, CheckCircle, Mail, LifeBuoy, Briefcase, Shield, Info, Clock, LogIn, AlertTriangle } from 'lucide-react';
 import { motion } from 'motion/react';
 import { auth, signInWithGoogle, getRedirectResult, signOut, onAuthStateChanged, User } from './firebase';
@@ -44,7 +54,7 @@ import {
   resolvePayloadForCourses,
 } from './utils/appHistory';
 
-type View = 'home' | 'catalog' | 'player' | 'overview' | 'about' | 'careers' | 'privacy' | 'help' | 'contact' | 'status' | 'enterprise' | 'signup' | 'profile' | 'settings' | 'certificate';
+type View = 'home' | 'catalog' | 'player' | 'overview' | 'about' | 'careers' | 'privacy' | 'help' | 'contact' | 'status' | 'enterprise' | 'signup' | 'profile' | 'settings' | 'certificate' | 'admin';
 
 function findLessonById(course: Course, lessonId: string): Lesson | undefined {
   for (const mod of course.modules) {
@@ -52,6 +62,14 @@ function findLessonById(course: Course, lessonId: string): Lesson | undefined {
     if (found) return found;
   }
   return undefined;
+}
+
+function formatAlertListTime(ms: number): string {
+  const d = Date.now() - ms;
+  if (d < 60_000) return 'Just now';
+  if (d < 3_600_000) return `${Math.floor(d / 60_000)}m ago`;
+  if (d < 86_400_000) return `${Math.floor(d / 3_600_000)}h ago`;
+  return `${Math.floor(d / 86_400_000)}d ago`;
 }
 
 function getInitialRouteState(): {
@@ -70,10 +88,10 @@ function getInitialRouteState(): {
   if (!parsed) {
     return { view: 'home', selectedCourse: null, initialLesson: undefined };
   }
-  const resolved = resolvePayloadForCourses(parsed, COURSES, findLessonById);
+  const resolved = resolvePayloadForCourses(parsed, STATIC_CATALOG_FALLBACK, findLessonById);
 
   if (resolved.view === 'overview' || resolved.view === 'player') {
-    const c = resolved.courseId ? (COURSES.find((x) => x.id === resolved.courseId) ?? null) : null;
+    const c = resolved.courseId ? (STATIC_CATALOG_FALLBACK.find((x) => x.id === resolved.courseId) ?? null) : null;
     const l = c && resolved.lessonId ? findLessonById(c, resolved.lessonId) : undefined;
     if (c) {
       return { view: resolved.view as View, selectedCourse: c, initialLesson: l };
@@ -166,15 +184,16 @@ export default function App() {
   const [certificateData, setCertificateData] = useState<CertificateData | null>(null);
   /** Where to return when closing the certificate view (set synchronously before navigation). */
   const certificateReturnRef = useRef<{ view: View; courseId: string | null } | null>(null);
-  const [notifications, setNotifications] = useState<NavbarNotification[]>(() => [
-    {
-      id: 'welcome',
-      message: 'Welcome to SkillStream! Start your first course today.',
-      read: false,
-      time: 'Now',
-      kind: 'generic',
-    },
-  ]);
+  const [notifications, setNotifications] = useState<NavbarNotification[]>([]);
+  const [catalogCourses, setCatalogCourses] = useState<Course[]>(() => STATIC_CATALOG_FALLBACK);
+  const catalogCoursesRef = useRef<Course[]>(catalogCourses);
+  catalogCoursesRef.current = catalogCourses;
+  const [isAdminUser, setIsAdminUser] = useState(false);
+  /** After opening a broadcast alert: scroll overview curriculum to module/lesson. */
+  const [overviewContentDeepLink, setOverviewContentDeepLink] = useState<{
+    moduleId?: string;
+    lessonId?: string;
+  } | null>(null);
   const [completedCoursesModalSignal, setCompletedCoursesModalSignal] = useState(0);
   /** Bumps after cloud progress/ratings hydrate into localStorage so profile stats refresh. */
   const [remoteProfileDataVersion, setRemoteProfileDataVersion] = useState(0);
@@ -213,7 +232,7 @@ export default function App() {
   }, [currentView, selectedCourse?.id, initialLesson?.id, certificateData]);
 
   const applyHistoryPayload = useCallback((raw: AppHistoryPayload) => {
-    const resolved = resolvePayloadForCourses(raw, COURSES, findLessonById);
+    const resolved = resolvePayloadForCourses(raw, catalogCoursesRef.current, findLessonById);
     historySkipSyncRef.current = true;
 
     const view = resolved.view as View;
@@ -257,7 +276,7 @@ export default function App() {
     }
 
     if (view === 'overview' || view === 'player') {
-      const c = resolved.courseId ? (COURSES.find((x) => x.id === resolved.courseId) ?? null) : null;
+      const c = resolved.courseId ? (STATIC_CATALOG_FALLBACK.find((x) => x.id === resolved.courseId) ?? null) : null;
       setSelectedCourse(c);
       setInitialLesson(c && resolved.lessonId ? findLessonById(c, resolved.lessonId) : undefined);
     } else {
@@ -342,17 +361,100 @@ export default function App() {
     void (async () => {
       await hydrateAllUserProgressFromFirestore(user.uid);
       await hydrateCompletionTimestampsFromCertificates(user.uid);
-      ensureSyntheticProgressForRecordedCompletions(user.uid);
+      ensureSyntheticProgressForRecordedCompletions(user.uid, catalogCourses);
       await hydrateAllCourseRatingsFromFirestore(user.uid);
       if (!cancelled) setRemoteProfileDataVersion((v) => v + 1);
     })();
     return () => {
       cancelled = true;
     };
-  }, [user?.uid]);
+  }, [user?.uid, catalogCourses]);
 
   /** Navbar avatar only — Firebase `user` is still null until restore; snapshot fills the gap without faking API access. */
   const navUser = user ?? (!isAuthReady && authSnapshot ? authSnapshot : null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void resolveCatalogCourses().then((courses) => {
+      if (!cancelled) setCatalogCourses(courses);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const refreshCatalogCourses = useCallback(async () => {
+    const next = await resolveCatalogCourses();
+    setCatalogCourses(next);
+  }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setIsAdminUser(false);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      await ensureUserProfile(user);
+      const role = await fetchUserRole(user.uid);
+      if (!cancelled) setIsAdminUser(role === 'admin');
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user?.uid) {
+      setNotifications([
+        {
+          id: 'welcome',
+          message: 'Welcome to SkillStream! Start your first course today.',
+          read: false,
+          time: 'Now',
+          kind: 'generic',
+        },
+      ]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const enrolled = await fetchEnrolledCourseIds(user.uid);
+      const alerts = await fetchActiveAlertsForCourses(enrolled);
+      const st = await loadUserAlertState(user.uid);
+      if (cancelled) return;
+      const rows: NavbarNotification[] = alerts
+        .filter((a) => !st.dismissedAlertIds[a.id])
+        .map((a) => ({
+          id: `broadcast-${a.id}`,
+          kind: 'broadcast' as const,
+          alertId: a.id,
+          courseId: a.courseId,
+          lessonId: a.lessonId,
+          moduleId: a.moduleId,
+          message: `${a.title}: ${a.message}`,
+          read: !!st.readAlertIds[a.id],
+          time: formatAlertListTime(a.createdAtMs),
+        }));
+      setNotifications((prev) => {
+        const certs = prev.filter((n) => n.kind === 'certificate');
+        return [...rows, ...certs];
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.uid]);
+
+  useEffect(() => {
+    if (currentView !== 'admin') return;
+    if (!isAuthReady) return;
+    if (!user || !isAdminUser) {
+      historyActionRef.current = 'replace';
+      setCurrentView('catalog');
+      scrollDocumentToTop();
+    }
+  }, [currentView, isAuthReady, user, isAdminUser]);
 
   useEffect(() => {
     if (currentView === 'player' && isAuthReady && !user) {
@@ -412,7 +514,7 @@ export default function App() {
     if (payload.view === 'pricing') {
       (payload as { view: string }).view = 'contact';
     }
-    const course = payload.courseId ? COURSES.find((c) => c.id === payload.courseId) : undefined;
+    const course = payload.courseId ? catalogCoursesRef.current.find((c) => c.id === payload.courseId) : undefined;
 
     if (payload.view === 'overview' && course) {
       setSelectedCourse(course);
@@ -444,6 +546,7 @@ export default function App() {
       'status',
       'enterprise',
       'signup',
+      'admin',
     ];
     if (simpleViews.includes(payload.view as View)) {
       setCurrentView(payload.view as View);
@@ -510,7 +613,7 @@ export default function App() {
   const categories = ['All', 'Software Development', 'Cloud Computing', 'Data Science', 'Cybersecurity', 'AI & ML'];
   const moreCategories = ['Business', 'Design', 'Marketing', 'Personal Development'];
 
-  const filteredCourses = COURSES.filter(course => {
+  const filteredCourses = catalogCourses.filter(course => {
     const matchesSearch = course.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       course.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
       course.author.toLowerCase().includes(searchQuery.toLowerCase());
@@ -596,7 +699,7 @@ export default function App() {
   const handleProfileDismiss = () => {
     const v = viewBeforeProfileOrSettingsRef.current;
     if ((v === 'overview' || v === 'player') && profileReturnCourseIdRef.current) {
-      const c = COURSES.find((x) => x.id === profileReturnCourseIdRef.current);
+      const c = catalogCourses.find((x) => x.id === profileReturnCourseIdRef.current);
       if (c) {
         setSelectedCourse(c);
         if (v === 'overview') {
@@ -610,6 +713,9 @@ export default function App() {
   const handleCourseClick = (course: Course, index?: number) => {
     if (index !== undefined) {
       setFocusedCourseIndex(index);
+    }
+    if (user?.uid) {
+      void enrollUserInCourse(user.uid, course.id);
     }
     setSelectedCourse(course);
     setInitialLesson(undefined);
@@ -630,6 +736,43 @@ export default function App() {
     setCurrentView('profile');
     scrollDocumentToTop();
   }, [selectedCourse?.id]);
+
+  const handleNotificationAction = useCallback(
+    (n: NavbarNotification) => {
+      if (n.kind === 'certificate') {
+        handleCertificateNotificationClick();
+        return;
+      }
+      if (n.kind === 'broadcast' && n.courseId && user?.uid) {
+        if (n.alertId) void markAlertRead(user.uid, n.alertId);
+        const course = catalogCourses.find((c) => c.id === n.courseId);
+        if (!course) return;
+        setSelectedCourse(course);
+        const lesson = n.lessonId ? findLessonById(course, n.lessonId) : undefined;
+        if (lesson) {
+          setInitialLesson(lesson);
+          setOverviewContentDeepLink(null);
+          setCurrentView('player');
+        } else {
+          setInitialLesson(undefined);
+          setOverviewContentDeepLink({ moduleId: n.moduleId, lessonId: n.lessonId });
+          setCurrentView('overview');
+        }
+        historyActionRef.current = 'replace';
+        scrollDocumentToTop();
+      }
+    },
+    [handleCertificateNotificationClick, user?.uid, catalogCourses]
+  );
+
+  const handleDismissNotification = useCallback(
+    (n: NavbarNotification) => {
+      if (n.kind === 'broadcast' && n.alertId && user?.uid) {
+        void markAlertDismissed(user.uid, n.alertId);
+      }
+    },
+    [user?.uid]
+  );
 
   const handleCoursePlayerFinished = useCallback(
     (course: Course) => {
@@ -832,7 +975,7 @@ export default function App() {
         return;
       }
       if (snap.view === 'overview' && snap.courseId) {
-        const c = COURSES.find((x) => x.id === snap.courseId);
+        const c = catalogCoursesRef.current.find((x) => x.id === snap.courseId);
         if (c) {
           setSelectedCourse(c);
           setInitialLesson(undefined);
@@ -868,7 +1011,7 @@ export default function App() {
     }
 
     if (snap.view === 'overview' && snap.courseId) {
-      const c = COURSES.find((x) => x.id === snap.courseId);
+      const c = catalogCoursesRef.current.find((x) => x.id === snap.courseId);
       if (c) {
         setSelectedCourse(c);
         setInitialLesson(undefined);
@@ -939,7 +1082,7 @@ export default function App() {
 
   const renderCertificate = () => {
     if (!certificateData) return null;
-    const course = COURSES.find(c => c.id === certificateData.courseId);
+    const course = catalogCourses.find(c => c.id === certificateData.courseId);
     if (!course) return null;
 
     return (
@@ -1429,7 +1572,9 @@ export default function App() {
       {currentView !== 'certificate' && (
         <Navbar 
           onNavigate={handleNavigate} 
-          activeView={mainView === 'overview' || mainView === 'player' ? 'catalog' : mainView}
+          activeView={
+            mainView === 'overview' || mainView === 'player' || mainView === 'admin' ? 'catalog' : mainView
+          }
           searchQuery={searchQuery}
           onSearchChange={handleSearchChange}
           onCategorySelect={handleCategorySelect}
@@ -1444,7 +1589,9 @@ export default function App() {
           onLogout={handleLogout}
           notifications={notifications}
           setNotifications={setNotifications}
-          onCertificateNotificationClick={handleCertificateNotificationClick}
+          onNotificationAction={handleNotificationAction}
+          onDismissNotification={handleDismissNotification}
+          isAdmin={isAdminUser}
         />
       )}
       {authBanner && currentView !== 'certificate' && (
@@ -1488,6 +1635,8 @@ export default function App() {
               onLogin={handleLogin}
               onShowCertificate={handleShowCertificate}
               remoteDataVersion={remoteProfileDataVersion}
+              contentDeepLink={overviewContentDeepLink}
+              onContentDeepLinkConsumed={() => setOverviewContentDeepLink(null)}
             />
           )}
           {mainView === 'player' && selectedCourse && (
@@ -1520,12 +1669,20 @@ export default function App() {
           {mainView === 'contact' && renderContact()}
           {mainView === 'status' && renderStatus()}
           {mainView === 'enterprise' && renderEnterprise()}
+          {mainView === 'admin' && isAdminUser && (
+            <AdminPage
+              courses={catalogCourses}
+              onDismiss={() => handleNavigate('catalog', false)}
+              onCatalogChanged={refreshCatalogCourses}
+            />
+          )}
           {mainView === 'signup' && renderSignup()}
         </div>
 
         {currentView === 'profile' && (
           <div className="fixed inset-x-0 top-16 bottom-0 z-[45] flex items-start justify-center overflow-y-auto bg-black/60 p-4 pb-12 pt-6 backdrop-blur-sm">
             <ProfilePage
+              courses={catalogCourses}
               user={user}
               isAuthReady={isAuthReady}
               onLogin={() => void handleLogin().catch(() => {})}
@@ -1544,6 +1701,7 @@ export default function App() {
       </main>
 
       <DemoLearningAgent
+        courses={catalogCourses}
         onOpenCourse={(course) => {
           setSelectedCourse(course);
           setInitialLesson(undefined);
@@ -1552,7 +1710,7 @@ export default function App() {
         }}
       />
 
-      {currentView !== 'player' && currentView !== 'overview' && (
+      {currentView !== 'player' && currentView !== 'overview' && currentView !== 'admin' && (
         <footer className="bg-[var(--bg-secondary)] border-t border-[var(--border-color)] py-12 px-6 transition-colors duration-300">
           <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-12">
             <div className="col-span-1 md:col-span-1">

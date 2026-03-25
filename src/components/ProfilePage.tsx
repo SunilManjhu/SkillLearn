@@ -6,13 +6,14 @@ import { User, auth } from '../firebase';
 import { computeLearningStats } from '../utils/learningStats';
 import { loadCompletionTimestamps } from '../utils/courseCompletionLog';
 import { buildCertificateId } from '../utils/certificateFirestore';
-import { COURSES, type Course } from '../data/courses';
+import type { Course } from '../data/courses';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, CheckCircle2 } from 'lucide-react';
 
 const bioStorageKey = (uid: string) => `skilllearn-profile-bio:${uid}`;
 
 interface ProfilePageProps {
+  courses: Course[];
   user: User | null;
   isAuthReady: boolean;
   onLogin: () => void;
@@ -26,6 +27,7 @@ interface ProfilePageProps {
 }
 
 export const ProfilePage: React.FC<ProfilePageProps> = ({
+  courses,
   user,
   isAuthReady,
   onLogin,
@@ -41,15 +43,15 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   const [showCompletedModal, setShowCompletedModal] = useState(false);
 
   const stats = useMemo(
-    () => computeLearningStats(user?.uid),
-    [user?.uid, remoteProfileDataVersion]
+    () => computeLearningStats(user?.uid, courses),
+    [user?.uid, remoteProfileDataVersion, courses]
   );
 
   const completedCoursesList = useMemo((): Course[] => {
     return stats.completedCourseIds
-      .map((id) => COURSES.find((c) => c.id === id))
+      .map((id) => courses.find((c) => c.id === id))
       .filter((c): c is Course => c != null);
-  }, [stats.completedCourseIds]);
+  }, [stats.completedCourseIds, courses]);
 
   useEffect(() => {
     if (openCompletedCoursesSignal > 0) {

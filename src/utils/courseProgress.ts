@@ -1,4 +1,4 @@
-import { Course, COURSES } from '../data/courses';
+import { Course, STATIC_CATALOG_FALLBACK } from '../data/courses';
 import { getLastLessonInCourse } from './courseLessons';
 import { loadCompletionTimestamps, mergeCompletionTimestampFromRemote } from './courseCompletionLog';
 import { db, handleFirestoreError, OperationType } from '../firebase';
@@ -257,10 +257,10 @@ function buildSyntheticCompletedLessonMap(
   return out;
 }
 
-export function ensureSyntheticProgressForRecordedCompletions(userId: string): void {
+export function ensureSyntheticProgressForRecordedCompletions(userId: string, courses: Course[] = STATIC_CATALOG_FALLBACK): void {
   if (typeof localStorage === 'undefined') return;
   const completionTs = loadCompletionTimestamps(userId);
-  for (const course of COURSES) {
+  for (const course of courses) {
     if (completionTs[course.id] == null) continue;
     const m = loadLessonProgressMap(course.id, userId);
     if (isCourseComplete(course, m)) continue;

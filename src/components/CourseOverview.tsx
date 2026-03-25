@@ -42,6 +42,9 @@ interface CourseOverviewProps {
   onShowCertificate: (courseId: string, userName: string, date: string, certId: string) => void;
   /** Bumps when cloud data is merged into localStorage (so progress/completion UI refreshes). */
   remoteDataVersion?: number;
+  /** One-shot scroll target (e.g. from a broadcast alert). */
+  contentDeepLink?: { moduleId?: string; lessonId?: string } | null;
+  onContentDeepLinkConsumed?: () => void;
 }
 
 export const CourseOverview: React.FC<CourseOverviewProps> = ({
@@ -51,6 +54,8 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
   onLogin,
   onShowCertificate,
   remoteDataVersion = 0,
+  contentDeepLink = null,
+  onContentDeepLinkConsumed,
 }) => {
   const progressUserId = user?.uid ?? null;
   const { lessonDurationLabel } = useYoutubeResolvedSeconds(course);
@@ -121,6 +126,30 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
         : [...prev, moduleId]
     );
   };
+
+  useEffect(() => {
+    if (!contentDeepLink) return;
+    const { moduleId, lessonId } = contentDeepLink;
+    const expand: string[] = [];
+    if (moduleId) expand.push(moduleId);
+    if (lessonId) {
+      const mod = course.modules.find((m) => m.lessons.some((l) => l.id === lessonId));
+      if (mod && !expand.includes(mod.id)) expand.push(mod.id);
+    }
+    if (expand.length > 0) {
+      setExpandedModules((prev) => Array.from(new Set([...prev, ...expand])));
+    }
+    const scrollId = lessonId ? `course-lesson-${lessonId}` : moduleId ? `course-module-${moduleId}` : null;
+    const t = window.setTimeout(() => {
+      if (scrollId) {
+        document.getElementById(scrollId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else {
+        document.getElementById('course-curriculum')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+      onContentDeepLinkConsumed?.();
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, [contentDeepLink, course, onContentDeepLinkConsumed]);
 
   const totalLessons = course.modules.reduce((acc, m) => acc + m.lessons.length, 0);
   const [progressMap, setProgressMap] = useState(() => loadLessonProgressMap(course.id, progressUserId));
@@ -500,7 +529,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
           {/* Main Content: Table of Contents */}
           <div className="lg:col-span-2">
-            <h2 className="text-2xl font-bold mb-8 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 whitespace-nowrap">
+            <h2 id="course-curriculum" className="text-2xl font-bold mb-8 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 whitespace-nowrap">
               Course Content
               <span className="text-sm font-normal text-[var(--text-secondary)] whitespace-nowrap">
                 {course.modules.length} modules • {totalLessons} lessons
@@ -511,6 +540,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
               {course.modules.map((module, idx) => (
                 <div
                   key={module.id}
+                  id={`course-module-${module.id}`}
                   className="border border-[var(--border-color)] rounded-2xl overflow-hidden bg-[var(--bg-secondary)] transition-all"
                 >
                   <button
@@ -550,6 +580,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                               <button
                                 type="button"
                                 key={lesson.id}
+                                id={`course-lesson-${lesson.id}`}
                                 onClick={() => requestLessonPlay(lesson)}
                                 className="w-full flex items-center justify-between p-4 pl-16 hover:bg-[var(--hover-bg)] transition-colors group text-left"
                               >

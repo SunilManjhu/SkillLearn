@@ -28,7 +28,8 @@ export interface Course {
   modules: Module[];
 }
 
-export const COURSES: Course[] = [
+/** Default catalog when Firestore `publishedCourses` is empty (bootstrap / offline). */
+export const STATIC_CATALOG_FALLBACK: Course[] = [
   {
     id: 'python-mastery',
     title: 'Python Programming Mastery',
@@ -126,3 +127,6 @@ export const COURSES: Course[] = [
     ]
   }
 ];
+
+/** @deprecated Prefer async Firestore catalog when available. */
+export const COURSES = STATIC_CATALOG_FALLBACK;

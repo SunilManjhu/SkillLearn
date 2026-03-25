@@ -78,10 +78,16 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    function hasAdminRole() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
     function isAdmin() {
-      return isAuthenticated() &&
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-          (request.auth.token.email.lower() == "ranveer.singh.blr@gmail.com" && request.auth.token.email_verified == true));
+      return isAuthenticated() && (
+        hasAdminRole() ||
+        (request.auth.token.email.lower() == "ranveer.singh.blr@gmail.com" && request.auth.token.email_verified == true)
+      );
     }
 
     function hasRequiredFields(fields) {
@@ -221,8 +227,89 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isAuthenticated();
-      allow create, update: if isOwner(userId) && hasOnlyAllowedFields(['role', 'displayName', 'email']) && 
-                            (request.resource.data.role == 'user' || isAdmin());
+      allow create: if isOwner(userId) &&
+        hasOnlyAllowedFields(['role', 'displayName', 'email']) &&
+        request.resource.data.role == 'user';
+      allow update: if isAuthenticated() &&
+        hasOnlyAllowedFields(['role', 'displayName', 'email']) &&
+        (
+          (isOwner(userId) && request.resource.data.role == resource.data.role) ||
+          isAdmin()
+        );
+    }
+
+    function isValidEnrollment(data) {
+      return data.keys().hasAll(['userId', 'courseId', 'enrolledAt']) &&
+        hasOnlyAllowedFields(['userId', 'courseId', 'enrolledAt']) &&
+        data.userId == request.auth.uid &&
+        data.courseId is string && data.courseId.size() > 0 && data.courseId.size() < 200 &&
+        data.enrolledAt is timestamp;
+    }
+
+    match /enrollments/{enrollmentId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && isValidEnrollment(request.resource.data);
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && isValidEnrollment(request.resource.data);
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    function isValidAlert(data) {
+      return data.keys().hasAll(['type', 'title', 'message', 'courseId', 'status', 'createdAt']) &&
+        data.type in ['course_update', 'topic_update', 'video_update', 'course_change'] &&
+        data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+        data.message is string && data.message.size() > 0 && data.message.size() < 2000 &&
+        data.courseId is string && data.courseId.size() > 0 && data.courseId.size() < 200 &&
+        data.status in ['active', 'archived'] &&
+        data.createdAt is timestamp &&
+        (!('moduleId' in data) || (data.moduleId is string && data.moduleId.size() < 200)) &&
+        (!('lessonId' in data) || (data.lessonId is string && data.lessonId.size() < 200));
+    }
+
+    match /alerts/{alertId} {
+      allow read: if isAuthenticated();
+      allow create: if isAdmin() && isValidAlert(request.resource.data);
+      allow update, delete: if isAdmin();
+    }
+
+    function isValidUserAlertStatePatch(data) {
+      return (
+        (data.keys().hasOnly(['readAlertIds', 'dismissedAlertIds', 'lastUpdated']) ||
+          data.keys().hasOnly(['readAlertIds', 'dismissedAlertIds']) ||
+          data.keys().hasOnly(['readAlertIds', 'lastUpdated']) ||
+          data.keys().hasOnly(['dismissedAlertIds', 'lastUpdated']) ||
+          data.keys().hasOnly(['readAlertIds']) ||
+          data.keys().hasOnly(['dismissedAlertIds']) ||
+          data.keys().hasOnly(['lastUpdated'])) &&
+        (!('readAlertIds' in data) || data.readAlertIds is map) &&
+        (!('dismissedAlertIds' in data) || data.dismissedAlertIds is map) &&
+        (!('lastUpdated' in data) || data.lastUpdated is timestamp)
+      );
+    }
+
+    match /userAlertState/{userId} {
+      allow read: if isOwner(userId);
+      allow create, update: if isOwner(userId) && isValidUserAlertStatePatch(request.resource.data);
+    }
+
+    function isValidPublishedCourseWrite(data) {
+      return data.keys().hasAll(['title', 'author', 'thumbnail', 'description', 'level', 'duration', 'rating', 'category', 'modules']) &&
+        data.title is string && data.title.size() > 0 && data.title.size() < 500 &&
+        data.author is string && data.author.size() > 0 && data.author.size() < 200 &&
+        data.thumbnail is string && data.thumbnail.size() > 0 && data.thumbnail.size() < 2000 &&
+        data.description is string && data.description.size() < 20000 &&
+        data.level in ['Beginner', 'Intermediate', 'Advanced'] &&
+        data.duration is string && data.duration.size() < 100 &&
+        data.rating is number && data.rating >= 0 && data.rating <= 5 &&
+        data.category is string && data.category.size() > 0 && data.category.size() < 200 &&
+        data.modules is list &&
+        (!('authorBio' in data) || (data.authorBio is string && data.authorBio.size() < 20000)) &&
+        (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    match /publishedCourses/{courseId} {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidPublishedCourseWrite(request.resource.data);
+      allow delete: if isAdmin();
     }
   }
 }
