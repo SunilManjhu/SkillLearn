@@ -187,8 +187,11 @@ interface AdminCourseCatalogSectionProps {
 
 interface RequiredFieldTarget {
   targetId: string;
+  /** Course details vs modules — must match validateDraft order. */
+  scope: 'course' | 'module';
   moduleIndex: number;
-  lessonKey?: string;
+  /** Lessons to expand (module errors include first lesson so lesson 1 is visible). */
+  lessonKeys?: string[];
 }
 
 export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps> = ({
@@ -209,7 +212,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const [baselineJson, setBaselineJson] = useState<string | null>(null);
   /** Turn on inline field errors after first failed save. */
   const [showValidationHints, setShowValidationHints] = useState(false);
-  /** Editor sections are collapsed by default so large catalogs remain scannable. */
+  /** New Course (__new__) opens course details + first module/lesson; published picks start collapsed (see effect). */
   const [courseDetailsOpen, setCourseDetailsOpen] = useState(false);
   const [openModules, setOpenModules] = useState<Record<number, boolean>>({});
   const [openLessons, setOpenLessons] = useState<Record<string, boolean>>({});
@@ -219,6 +222,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const pendingOpenNewLessonKeyRef = useRef<string | null>(null);
   /** On failed save, scroll/focus the first invalid required field once it is rendered. */
   const pendingScrollTargetIdRef = useRef<string | null>(null);
+  /** Avoid collapsing the editor when selector moves from __new__ to draft.id after first save (draft id unchanged). */
+  const prevCatalogOpenStateRef = useRef<{ selector: string; draftId: string | undefined }>({
+    selector: '',
+    draftId: undefined,
+  });
   const { showActionToast, actionToast } = useAdminActionToast();
   /** Re-read category option list when extras change in localStorage (same tab). */
   const [categoryOptionsVersion, setCategoryOptionsVersion] = useState(0);
@@ -454,29 +462,78 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   };
 
   const getFirstRequiredFieldTarget = (c: Course): RequiredFieldTarget | null => {
+    if (!c.title.trim()) return { targetId: 'admin-course-title', scope: 'course', moduleIndex: 0 };
+    if (!c.author.trim()) return { targetId: 'admin-course-author', scope: 'course', moduleIndex: 0 };
+    if (!c.thumbnail.trim()) return { targetId: 'admin-course-thumbnail', scope: 'course', moduleIndex: 0 };
+    if (!c.modules.length) return { targetId: 'admin-course-title', scope: 'course', moduleIndex: 0 };
     for (let mi = 0; mi < c.modules.length; mi += 1) {
       const m = c.modules[mi];
-      if (!m.id.trim()) return { targetId: `admin-module-id-${mi}`, moduleIndex: mi };
-      if (!m.title.trim()) return { targetId: `admin-module-title-${mi}`, moduleIndex: mi };
+      if (!m.id.trim()) {
+        return {
+          targetId: `admin-module-id-${mi}`,
+          scope: 'module',
+          moduleIndex: mi,
+          lessonKeys: [`${mi}:0`],
+        };
+      }
+      if (!m.title.trim()) {
+        return {
+          targetId: `admin-module-title-${mi}`,
+          scope: 'module',
+          moduleIndex: mi,
+          lessonKeys: [`${mi}:0`],
+        };
+      }
+      if (!m.lessons.length) {
+        return {
+          targetId: `admin-module-title-${mi}`,
+          scope: 'module',
+          moduleIndex: mi,
+          lessonKeys: [],
+        };
+      }
       for (let li = 0; li < m.lessons.length; li += 1) {
         const l = m.lessons[li];
         const lessonKey = `${mi}:${li}`;
+        const openKeys = li === 0 ? [lessonKey] : [`${mi}:0`, lessonKey];
         if (!l.id.trim()) {
-          return { targetId: `admin-lesson-id-${mi}-${li}`, moduleIndex: mi, lessonKey };
+          return {
+            targetId: `admin-lesson-id-${mi}-${li}`,
+            scope: 'module',
+            moduleIndex: mi,
+            lessonKeys: openKeys,
+          };
         }
         if (!l.title.trim()) {
-          return { targetId: `admin-lesson-title-${mi}-${li}`, moduleIndex: mi, lessonKey };
+          return {
+            targetId: `admin-lesson-title-${mi}-${li}`,
+            scope: 'module',
+            moduleIndex: mi,
+            lessonKeys: openKeys,
+          };
         }
         if (!l.videoUrl.trim() || !l.videoUrl.startsWith('http')) {
-          return { targetId: `admin-lesson-url-${mi}-${li}`, moduleIndex: mi, lessonKey };
+          return {
+            targetId: `admin-lesson-url-${mi}-${li}`,
+            scope: 'module',
+            moduleIndex: mi,
+            lessonKeys: openKeys,
+          };
         }
       }
+    }
+    if (c.rating < 0 || c.rating > 5) {
+      return { targetId: 'admin-course-rating', scope: 'course', moduleIndex: 0 };
     }
     return null;
   };
 
   const fieldErrors = useMemo(() => {
     const out = {
+      courseTitle: false,
+      courseAuthor: false,
+      courseThumbnail: false,
+      courseRating: false,
       moduleId: new Set<number>(),
       moduleTitle: new Set<number>(),
       lessonId: new Set<string>(),
@@ -484,6 +541,10 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       videoUrl: new Set<string>(),
     };
     if (!draft) return out;
+    if (!draft.title.trim()) out.courseTitle = true;
+    if (!draft.author.trim()) out.courseAuthor = true;
+    if (!draft.thumbnail.trim()) out.courseThumbnail = true;
+    if (draft.rating < 0 || draft.rating > 5) out.courseRating = true;
     for (let mi = 0; mi < draft.modules.length; mi += 1) {
       const m = draft.modules[mi];
       if (!m.id.trim()) out.moduleId.add(mi);
@@ -506,9 +567,17 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       setShowValidationHints(true);
       const target = getFirstRequiredFieldTarget(draft);
       if (target) {
-        setCourseDetailsOpen(false);
-        setOpenModules({ [target.moduleIndex]: true });
-        setOpenLessons(target.lessonKey ? { [target.lessonKey]: true } : {});
+        if (target.scope === 'course') {
+          setCourseDetailsOpen(true);
+          setOpenModules({});
+          setOpenLessons({});
+        } else {
+          setCourseDetailsOpen(false);
+          setOpenModules({ [target.moduleIndex]: true });
+          const nextLessons: Record<string, boolean> = {};
+          for (const k of target.lessonKeys ?? []) nextLessons[k] = true;
+          setOpenLessons(nextLessons);
+        }
         pendingScrollTargetIdRef.current = target.targetId;
       }
       showActionToast(err, 'danger');
@@ -626,13 +695,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     const ok = await deletePublishedCourse(draft.id);
     setBusy(false);
     if (ok) {
-      const list = await refreshList();
+      await refreshList();
       await onCatalogChanged();
-      const nextId = firstAvailableStructuredCourseId(list);
-      const fresh = emptyCourse(nextId);
-      setDraft(fresh);
-      setBaselineJson(JSON.stringify(fresh));
-      setSelector('__new__');
+      setDraft(null);
+      setBaselineJson(null);
+      setSelector('');
       setRenameDocId('');
       showActionToast('Course deleted.');
     } else {
@@ -699,13 +766,39 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   };
 
   useEffect(() => {
-    // New selection starts compact by default.
+    pendingOpenNewModuleIndexRef.current = null;
+    pendingOpenNewLessonKeyRef.current = null;
+
+    const prev = prevCatalogOpenStateRef.current;
+    const did = draft?.id;
+
+    if (!draft) {
+      setCourseDetailsOpen(false);
+      setOpenModules({});
+      setOpenLessons({});
+      prevCatalogOpenStateRef.current = { selector, draftId: undefined };
+      return;
+    }
+
+    if (selector === '__new__') {
+      setCourseDetailsOpen(true);
+      setOpenModules({ 0: true });
+      setOpenLessons({ '0:0': true });
+      prevCatalogOpenStateRef.current = { selector, draftId: did };
+      return;
+    }
+
+    // First save: selector __new__ → same id as draft; draft id did not change — keep expand/collapse as-is.
+    if (prev.selector === '__new__' && did && selector === did && prev.draftId === did) {
+      prevCatalogOpenStateRef.current = { selector, draftId: did };
+      return;
+    }
+
     setCourseDetailsOpen(false);
     setOpenModules({});
     setOpenLessons({});
-    pendingOpenNewModuleIndexRef.current = null;
-    pendingOpenNewLessonKeyRef.current = null;
-  }, [draft?.id]);
+    prevCatalogOpenStateRef.current = { selector, draftId: did };
+  }, [draft?.id, selector]);
 
   useEffect(() => {
     const idx = pendingOpenNewModuleIndexRef.current;
@@ -741,7 +834,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       pendingScrollTargetIdRef.current = null;
     });
     return () => cancelAnimationFrame(rafId);
-  }, [openModules, openLessons, draft, showValidationHints]);
+  }, [openModules, openLessons, draft, showValidationHints, courseDetailsOpen]);
 
   const cancelDialogCopy =
     cancelDialogVariant === 'new-dirty'
@@ -939,19 +1032,43 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             <label className="block space-y-1 sm:col-span-2">
               <span className="text-xs font-semibold text-[var(--text-secondary)]">Course title</span>
               <input
+                id="admin-course-title"
                 value={draft.title}
                 onChange={(e) => updateDraft({ title: e.target.value })}
                 placeholder="e.g. Full-Stack Web Foundations — short name shown in the catalog"
-                className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm"
+                className={`w-full bg-[var(--bg-primary)] border rounded-lg px-3 py-2 text-sm ${
+                  showValidationHints && fieldErrors.courseTitle
+                    ? 'border-red-500'
+                    : 'border-[var(--border-color)]'
+                }`}
               />
+              <span
+                className={`min-h-[16px] text-[11px] block ${
+                  showValidationHints && fieldErrors.courseTitle ? 'text-red-400' : 'text-transparent'
+                }`}
+              >
+                Title is required.
+              </span>
             </label>
             <label className="block space-y-1">
               <span className="text-xs font-semibold text-[var(--text-secondary)]">Author</span>
               <input
+                id="admin-course-author"
                 value={draft.author}
                 onChange={(e) => updateDraft({ author: e.target.value })}
-                className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm"
+                className={`w-full bg-[var(--bg-primary)] border rounded-lg px-3 py-2 text-sm ${
+                  showValidationHints && fieldErrors.courseAuthor
+                    ? 'border-red-500'
+                    : 'border-[var(--border-color)]'
+                }`}
               />
+              <span
+                className={`min-h-[16px] text-[11px] block ${
+                  showValidationHints && fieldErrors.courseAuthor ? 'text-red-400' : 'text-transparent'
+                }`}
+              >
+                Author is required.
+              </span>
             </label>
             <label className="block space-y-1">
               <span className="text-xs font-semibold text-[var(--text-secondary)]">Category</span>
@@ -1002,23 +1119,47 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     Rating (0–5)
                   </span>
                   <input
+                    id="admin-course-rating"
                     type="number"
                     min={0}
                     max={5}
                     step={0.1}
                     value={draft.rating}
                     onChange={(e) => updateDraft({ rating: Number(e.target.value) })}
-                    className="box-border w-full min-w-0 rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    className={`box-border w-full min-w-0 rounded-lg border bg-[var(--bg-primary)] px-3 py-2 text-sm [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
+                      showValidationHints && fieldErrors.courseRating
+                        ? 'border-red-500'
+                        : 'border-[var(--border-color)]'
+                    }`}
                   />
+                  <span
+                    className={`min-h-[16px] text-[11px] ${
+                      showValidationHints && fieldErrors.courseRating ? 'text-red-400' : 'text-transparent'
+                    }`}
+                  >
+                    Rating must be 0–5.
+                  </span>
                 </label>
               </div>
               <label className="block min-w-0 flex-1 space-y-1">
                 <span className="text-xs font-semibold text-[var(--text-secondary)]">Thumbnail URL</span>
                 <input
+                  id="admin-course-thumbnail"
                   value={draft.thumbnail}
                   onChange={(e) => updateDraft({ thumbnail: e.target.value })}
-                  className="w-full min-w-0 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm font-mono"
+                  className={`w-full min-w-0 bg-[var(--bg-primary)] border rounded-lg px-3 py-2 text-sm font-mono ${
+                    showValidationHints && fieldErrors.courseThumbnail
+                      ? 'border-red-500'
+                      : 'border-[var(--border-color)]'
+                  }`}
                 />
+                <span
+                  className={`min-h-[16px] text-[11px] block ${
+                    showValidationHints && fieldErrors.courseThumbnail ? 'text-red-400' : 'text-transparent'
+                  }`}
+                >
+                  Thumbnail URL is required.
+                </span>
               </label>
             </div>
             <label className="block space-y-1 sm:col-span-2">
