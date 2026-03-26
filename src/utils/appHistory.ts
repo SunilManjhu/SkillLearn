@@ -18,7 +18,6 @@ export type AppHistoryView =
   | 'enterprise'
   | 'signup'
   | 'profile'
-  | 'settings'
   | 'certificate'
   | 'admin';
 
@@ -54,7 +53,6 @@ const SIMPLE_VIEWS: AppHistoryView[] = [
   'enterprise',
   'signup',
   'profile',
-  'settings',
   'admin',
 ];
 
@@ -127,6 +125,11 @@ export function parseHashToPayload(hash: string): AppHistoryPayload | null {
     return { v: 1, view: 'certificate' };
   }
 
+  /** Legacy `#/settings` → profile */
+  if (head === 'settings' && segments.length === 1) {
+    return { v: 1, view: 'profile' };
+  }
+
   if (head === 'admin') {
     let adminTab: AdminHistoryTab = 'alerts';
     const sub = segments[1]?.toLowerCase();
@@ -150,6 +153,9 @@ export function readPayloadFromHistoryState(state: unknown): AppHistoryPayload |
   if (!raw || typeof raw !== 'object') return null;
   const p = raw as AppHistoryPayload;
   if (p.v !== 1 || typeof p.view !== 'string') return null;
+  if (p.view === 'settings') {
+    return { ...p, v: 1, view: 'profile' };
+  }
   return p;
 }
 

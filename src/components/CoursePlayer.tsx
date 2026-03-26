@@ -92,7 +92,7 @@ interface CoursePlayerProps {
   user: User | null;
   onLogin: () => Promise<void>;
   initialLesson?: Lesson;
-  /** Profile/settings overlay on top of the player (App): pause while true, resume when cleared if playback was interrupted. */
+  /** Profile overlay on top of the player (App): pause while true, resume when cleared if playback was interrupted. */
   pauseForAppNavOverlay?: boolean;
 }
 

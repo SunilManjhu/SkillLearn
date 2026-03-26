@@ -1,12 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { RefreshCw, ShieldCheck } from 'lucide-react';
+import { RefreshCw, ShieldCheck, Users, UserCircle } from 'lucide-react';
 import {
   listUsersForAdmin,
   updateUserRoleAsAdmin,
-  upsertUserRoleAsAdmin,
   type AdminUserRow,
 } from '../../utils/adminUsersFirestore';
-import type { UserRole } from '../../utils/userProfileFirestore';
+import { countFirestoreAdminUsers, type UserRole } from '../../utils/userProfileFirestore';
 
 interface AdminUserRolesSectionProps {
   currentAdminUid?: string;
@@ -18,8 +17,6 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
   const [message, setMessage] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [savingUserId, setSavingUserId] = useState<string | null>(null);
-  const [manualUid, setManualUid] = useState('');
-  const [manualRole, setManualRole] = useState<UserRole>('user');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -41,13 +38,33 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
     );
   }, [rows, search]);
 
+  const roleStats = useMemo(() => {
+    let admins = 0;
+    let users = 0;
+    for (const r of rows) {
+      if (r.role === 'admin') admins += 1;
+      else users += 1;
+    }
+    return { total: rows.length, admins, users };
+  }, [rows]);
+
+  const soleAdminSelfDemoteMsg =
+    "You're the only admin. Promote another account to admin first, then you can set your role to user.";
+
   const handleRoleChange = async (userId: string, nextRole: UserRole) => {
     const current = rows.find((r) => r.id === userId);
     if (!current || current.role === nextRole) return;
 
     if (currentAdminUid && currentAdminUid === userId && nextRole !== 'admin') {
-      setMessage('You cannot remove your own admin role.');
-      return;
+      const n = await countFirestoreAdminUsers();
+      if (n < 0) {
+        setMessage('Could not verify admin count. Refresh the list and try again.');
+        return;
+      }
+      if (n < 2) {
+        setMessage(soleAdminSelfDemoteMsg);
+        return;
+      }
     }
 
     setSavingUserId(userId);
@@ -60,38 +77,6 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
     }
     setRows((prev) => prev.map((r) => (r.id === userId ? { ...r, role: nextRole } : r)));
     setMessage('Role updated successfully.');
-    setSavingUserId(null);
-  };
-
-  const handleManualUpdate = async () => {
-    const uid = manualUid.trim();
-    if (!uid) {
-      setMessage('Enter a UID first.');
-      return;
-    }
-    if (currentAdminUid && uid === currentAdminUid && manualRole !== 'admin') {
-      setMessage('You cannot remove your own admin role.');
-      return;
-    }
-    setSavingUserId(uid);
-    setMessage(null);
-    const ok = await upsertUserRoleAsAdmin(uid, manualRole);
-    if (!ok) {
-      setMessage('Could not update role for that UID.');
-      setSavingUserId(null);
-      return;
-    }
-    setMessage('Role updated for UID.');
-    setRows((prev) => {
-      const idx = prev.findIndex((r) => r.id === uid);
-      if (idx === -1) {
-        return [
-          { id: uid, displayName: 'Unnamed user', email: '', role: manualRole },
-          ...prev,
-        ];
-      }
-      return prev.map((r) => (r.id === uid ? { ...r, role: manualRole } : r));
-    });
     setSavingUserId(null);
   };
 
@@ -115,8 +100,39 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
 
       <p className="text-xs text-[var(--text-muted)]">
         Update any user to <code className="text-orange-500/90">admin</code> or{' '}
-        <code className="text-orange-500/90">user</code> from this panel.
+        <code className="text-orange-500/90">user</code> from this panel. Counts reflect documents in
+        the <code className="text-orange-500/80">users</code> collection.
       </p>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/60 px-4 py-3.5">
+          <div className="flex items-center gap-2 text-[var(--text-muted)]">
+            <UserCircle size={18} className="shrink-0 text-[var(--text-secondary)]" aria-hidden />
+            <span className="text-[11px] font-semibold uppercase tracking-wide">Total profiles</span>
+          </div>
+          <p className="mt-2 text-2xl font-bold tabular-nums text-[var(--text-primary)]">
+            {loading ? '—' : roleStats.total}
+          </p>
+        </div>
+        <div className="rounded-xl border border-orange-500/25 bg-orange-500/[0.07] px-4 py-3.5">
+          <div className="flex items-center gap-2 text-orange-500/90">
+            <ShieldCheck size={18} className="shrink-0" aria-hidden />
+            <span className="text-[11px] font-semibold uppercase tracking-wide">Admins</span>
+          </div>
+          <p className="mt-2 text-2xl font-bold tabular-nums text-orange-500">
+            {loading ? '—' : roleStats.admins}
+          </p>
+        </div>
+        <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/60 px-4 py-3.5">
+          <div className="flex items-center gap-2 text-[var(--text-muted)]">
+            <Users size={18} className="shrink-0 text-[var(--text-secondary)]" aria-hidden />
+            <span className="text-[11px] font-semibold uppercase tracking-wide">Users</span>
+          </div>
+          <p className="mt-2 text-2xl font-bold tabular-nums text-[var(--text-primary)]">
+            {loading ? '—' : roleStats.users}
+          </p>
+        </div>
+      </div>
 
       <input
         type="text"
@@ -125,37 +141,6 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
         placeholder="Search by name, email, role, or UID"
         className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm"
       />
-
-      <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-3 space-y-2">
-        <p className="text-xs text-[var(--text-muted)]">
-          Missing someone? Set role directly by UID.
-        </p>
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-[1fr_auto_auto]">
-          <input
-            type="text"
-            value={manualUid}
-            onChange={(e) => setManualUid(e.target.value)}
-            placeholder="User UID"
-            className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-sm"
-          />
-          <select
-            value={manualRole}
-            onChange={(e) => setManualRole(e.target.value as UserRole)}
-            className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-sm"
-          >
-            <option value="user">user</option>
-            <option value="admin">admin</option>
-          </select>
-          <button
-            type="button"
-            disabled={savingUserId === manualUid.trim() && manualUid.trim().length > 0}
-            onClick={() => void handleManualUpdate()}
-            className="rounded-lg bg-orange-500 px-3 py-2 text-sm font-semibold text-white hover:bg-orange-600 disabled:opacity-60"
-          >
-            Update UID
-          </button>
-        </div>
-      </div>
 
       {message && <p className="text-xs text-[var(--text-secondary)]">{message}</p>}
 

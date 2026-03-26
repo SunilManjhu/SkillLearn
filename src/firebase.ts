@@ -7,6 +7,7 @@ import {
   getRedirectResult,
   signOut,
   onAuthStateChanged,
+  deleteUser,
   User,
 } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer, Firestore } from 'firebase/firestore';
@@ -114,6 +115,27 @@ async function testConnection() {
   }
 }
 testConnection();
+
+export type DeleteAccountResult =
+  | { ok: true }
+  | { ok: false; code: string; message: string };
+
+/** Deletes the currently signed-in Firebase Auth user. May require recent login (`auth/requires-recent-login`). */
+export async function deleteCurrentUserAccount(): Promise<DeleteAccountResult> {
+  const u = auth.currentUser;
+  if (!u) {
+    return { ok: false, code: 'no-user', message: 'No signed-in user.' };
+  }
+  try {
+    await deleteUser(u);
+    return { ok: true };
+  } catch (e: unknown) {
+    const code =
+      typeof e === 'object' && e !== null && 'code' in e ? String((e as { code: string }).code) : 'unknown';
+    const message = e instanceof Error ? e.message : 'Could not delete account.';
+    return { ok: false, code, message };
+  }
+}
 
 export { getRedirectResult, signInWithPopup, signOut, onAuthStateChanged };
 export type { User };

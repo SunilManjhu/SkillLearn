@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
-import { Search, Menu, User, Bell, ChevronDown, X, LogOut, Settings, Moon, Sun, BellRing, LogIn, Shield } from 'lucide-react';
+import { Search, Menu, User, Bell, ChevronDown, X, LogOut, Moon, Sun, BellRing, LogIn, Shield } from 'lucide-react';
 import { User as FirebaseUser } from '../firebase';
 import type { AuthProfileSnapshot } from '../utils/authProfileCache';
 import { allPresetCatalogCategories } from '../utils/catalogCategoryPresets';
@@ -12,7 +12,7 @@ export interface NavbarNotification {
   read: boolean;
   time: string;
   kind?: 'certificate' | 'broadcast' | 'generic';
-  actionView?: 'home' | 'catalog' | 'contact' | 'profile' | 'settings' | 'admin';
+  actionView?: 'home' | 'catalog' | 'contact' | 'profile' | 'admin';
   adminTab?: 'alerts' | 'catalog' | 'moderation' | 'users';
   actionLabel?: string;
   courseId?: string;
@@ -22,7 +22,7 @@ export interface NavbarNotification {
 }
 
 interface NavbarProps {
-  onNavigate: (view: 'home' | 'catalog' | 'contact' | 'profile' | 'settings' | 'admin', clear?: boolean) => void;
+  onNavigate: (view: 'home' | 'catalog' | 'contact' | 'profile' | 'admin', clear?: boolean) => void;
   activeView: string;
   searchQuery: string;
   onSearchChange: (query: string) => void;
@@ -492,7 +492,21 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           {mobileSearchOpen ? <X size={20} /> : <Search size={20} />}
         </button>
-        
+
+        <button
+          type="button"
+          onClick={() => {
+            setOpenDropdown(null);
+            setMobileMenuOpen(false);
+            onThemeToggle();
+          }}
+          className="rounded-lg p-2 text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-orange-500/50"
+          aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+          title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+        >
+          {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+        </button>
+
         {/* Notifications */}
         <div className="relative" ref={notificationRef}>
           <button 
@@ -652,28 +666,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                         Admin
                       </button>
                     )}
-                    <button 
-                      onClick={() => {
-                        setOpenDropdown(null);
-                        onNavigate('settings');
-                      }}
-                      className="w-full flex items-center gap-3 px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--hover-bg)] transition-colors text-left"
-                    >
-                      <Settings size={16} />
-                      Preferences
-                    </button>
-                    <button 
-                      onClick={onThemeToggle}
-                      className="w-full flex items-center justify-between px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--hover-bg)] transition-colors text-left"
-                    >
-                      <div className="flex items-center gap-3">
-                        {theme === 'dark' ? <Moon size={16} /> : <Sun size={16} />}
-                        Theme: {theme === 'dark' ? 'Dark' : 'Light'}
-                      </div>
-                      <div className={`w-8 h-4 rounded-full relative transition-colors ${theme === 'dark' ? 'bg-orange-500' : 'bg-gray-600'}`}>
-                        <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${theme === 'dark' ? 'right-0.5' : 'left-0.5'}`} />
-                      </div>
-                    </button>
                   </div>
                   <div className="border-t border-[var(--border-color)] py-2">
                     <button 
@@ -750,6 +742,17 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <div className="border-b border-[var(--border-color)] p-4">
               <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Menu</p>
+            </div>
+            <div className="border-b border-[var(--border-color)] px-2 py-2">
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-[var(--text-primary)] hover:bg-[var(--hover-bg)]"
+                onClick={() => onThemeToggle()}
+                aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+              >
+                {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+                {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+              </button>
             </div>
             <div className="flex flex-col py-2 text-sm font-medium text-[var(--text-secondary)]">
               <button

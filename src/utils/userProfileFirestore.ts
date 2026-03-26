@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, setDoc, where } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 
@@ -43,5 +43,16 @@ export async function fetchUserRole(uid: string): Promise<UserRole> {
   } catch (error) {
     handleFirestoreError(error, OperationType.GET, `users/${uid}`);
     return 'user';
+  }
+}
+
+/** Count of `users` docs with `role == 'admin'`. Returns `-1` if the query fails. */
+export async function countFirestoreAdminUsers(): Promise<number> {
+  try {
+    const snap = await getDocs(query(collection(db, 'users'), where('role', '==', 'admin')));
+    return snap.size;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'users');
+    return -1;
   }
 }

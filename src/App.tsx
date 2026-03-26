@@ -5,14 +5,17 @@ import { CoursePlayer } from './components/CoursePlayer';
 import { CourseOverview } from './components/CourseOverview';
 import { CourseCatalogLoadingSkeleton } from './components/CourseCatalogLoadingSkeleton';
 import { ProfilePage } from './components/ProfilePage';
-import { AccountSettingsPage } from './components/AccountSettingsPage';
 import { Certificate } from './components/Certificate';
 import { useBodyScrollLock } from './hooks/useBodyScrollLock';
 import { ContactForm } from './components/ContactForm';
 import { DemoLearningAgent } from './components/DemoLearningAgent';
 import { STATIC_CATALOG_FALLBACK, Course, Lesson } from './data/courses';
 import { AdminPage } from './components/AdminPage';
-import { ensureUserProfile, fetchUserRole } from './utils/userProfileFirestore';
+import {
+  ensureUserProfile,
+  fetchUserRole,
+  countFirestoreAdminUsers,
+} from './utils/userProfileFirestore';
 import { peekResolvedCatalogCourses, resolveCatalogCourses } from './utils/publishedCoursesFirestore';
 import { enrollUserInCourse, fetchEnrolledCourseIds } from './utils/enrollmentsFirestore';
 import {
@@ -33,6 +36,7 @@ import {
   onAuthStateChanged,
   isFirestorePermissionDenied,
   User,
+  deleteCurrentUserAccount,
 } from './firebase';
 import { collection, limit, onSnapshot, query, where } from 'firebase/firestore';
 import { scrollDocumentToTop } from './utils/scrollDocumentToTop';
@@ -77,7 +81,24 @@ import {
   CATALOG_STATIC_MORE,
 } from './utils/catalogCategoryPresets';
 
-type View = 'home' | 'catalog' | 'player' | 'overview' | 'about' | 'careers' | 'privacy' | 'help' | 'contact' | 'status' | 'enterprise' | 'signup' | 'profile' | 'settings' | 'certificate' | 'admin';
+type View = 'home' | 'catalog' | 'player' | 'overview' | 'about' | 'careers' | 'privacy' | 'help' | 'contact' | 'status' | 'enterprise' | 'signup' | 'profile' | 'certificate' | 'admin';
+
+const alertsMutedStorageKey = (uid: string) => `skilllearn-alerts-muted:${uid}`;
+
+function readAlertsMutedFromStorage(uid: string): boolean {
+  if (typeof localStorage === 'undefined') return false;
+  try {
+    return localStorage.getItem(alertsMutedStorageKey(uid)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+const ADMIN_DELETE_BLOCKED_MULTI_MSG =
+  "Admin accounts can't be deleted. In Admin → Users, set your role to user (or ask another admin), then return here to delete your account.";
+
+const ADMIN_DELETE_BLOCKED_SOLE_MSG =
+  "You're the only admin. Promote another account to admin in Admin → Users first, then set your role to user — after that you can delete your account.";
 
 function findLessonById(course: Course, lessonId: string): Lesson | undefined {
   for (const mod of course.modules) {
@@ -296,6 +317,8 @@ export default function App() {
   );
   const [currentView, setCurrentView] = useState<View>(initialRoute.view);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  /** In-app bell: hide course/admin alerts; certificates still show. Persisted per uid. */
+  const [alertsMuted, setAlertsMuted] = useState(false);
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(initialRoute.selectedCourse);
   const [initialLesson, setInitialLesson] = useState<Lesson | undefined>(initialRoute.initialLesson);
   const [adminTab, setAdminTab] = useState<AdminHistoryTab>(() => initialRoute.adminTab);
@@ -342,6 +365,8 @@ export default function App() {
    * Prevents treating a brief `isAdminUser === false` as “kick off #/admin”.
    */
   const [adminAccessResolved, setAdminAccessResolved] = useState(false);
+  /** `users` docs with role admin; loaded when signed-in user is admin (for delete-account copy). */
+  const [firestoreAdminCount, setFirestoreAdminCount] = useState<number | null>(null);
   /** After opening a broadcast alert: scroll overview curriculum to module/lesson. */
   const [overviewContentDeepLink, setOverviewContentDeepLink] = useState<{
     moduleId?: string;
@@ -353,7 +378,7 @@ export default function App() {
   const [authBanner, setAuthBanner] = useState<string | null>(null);
   const [profileSettingsUnderlayView, setProfileSettingsUnderlayView] = useState<View | null>(null);
   const viewBeforeProfileOrSettingsRef = useRef<View>('catalog');
-  /** Course id to restore when leaving profile/settings back to overview (survives certificate overlay). */
+  /** Course id to restore when leaving profile overlay back to overview (survives certificate overlay). */
   const profileReturnCourseIdRef = useRef<string | null>(null);
   const currentViewRef = useRef<View>(currentView);
   currentViewRef.current = currentView;
@@ -410,11 +435,7 @@ export default function App() {
       return;
     }
 
-    if (
-      (view === 'profile' || view === 'settings') &&
-      currentViewRef.current !== 'profile' &&
-      currentViewRef.current !== 'settings'
-    ) {
+    if (view === 'profile' && currentViewRef.current !== 'profile') {
       viewBeforeProfileOrSettingsRef.current = currentViewRef.current;
       setProfileSettingsUnderlayView(currentViewRef.current);
     }
@@ -651,6 +672,32 @@ export default function App() {
       cancelled = true;
     };
   }, [isAuthReady, user]);
+
+  useEffect(() => {
+    if (!user?.uid || !isAdminUser || !adminAccessResolved) {
+      setFirestoreAdminCount(null);
+      return;
+    }
+    if (currentView !== 'profile') {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const n = await countFirestoreAdminUsers();
+      if (!cancelled) setFirestoreAdminCount(n);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.uid, isAdminUser, adminAccessResolved, currentView]);
+
+  useEffect(() => {
+    if (!user?.uid) {
+      setAlertsMuted(false);
+      return;
+    }
+    setAlertsMuted(readAlertsMutedFromStorage(user.uid));
+  }, [user?.uid]);
 
   useEffect(() => {
     if (!user?.uid) {
@@ -915,7 +962,6 @@ export default function App() {
       'home',
       'catalog',
       'profile',
-      'settings',
       'about',
       'careers',
       'privacy',
@@ -926,8 +972,9 @@ export default function App() {
       'signup',
       'admin',
     ];
-    if (simpleViews.includes(payload.view as View)) {
-      setCurrentView(payload.view as View);
+    const simpleTarget = (payload.view === 'settings' ? 'profile' : payload.view) as View;
+    if (simpleViews.includes(simpleTarget)) {
+      setCurrentView(simpleTarget);
       scrollDocumentToTop();
       return;
     }
@@ -988,6 +1035,71 @@ export default function App() {
     }
   };
 
+  const handleToggleAlertsMuted = useCallback(
+    (muted: boolean) => {
+      const uid = auth.currentUser?.uid;
+      if (!uid) return;
+      try {
+        if (muted) localStorage.setItem(alertsMutedStorageKey(uid), '1');
+        else localStorage.removeItem(alertsMutedStorageKey(uid));
+      } catch {
+        /* ignore */
+      }
+      setAlertsMuted(muted);
+    },
+    []
+  );
+
+  const handleDeleteAccount = useCallback(async (): Promise<{ ok: true } | { ok: false; error: string }> => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) {
+      return { ok: false, error: 'No signed-in user.' };
+    }
+    const role = await fetchUserRole(uid);
+    if (role === 'admin') {
+      const n = await countFirestoreAdminUsers();
+      if (n === 1) {
+        return { ok: false, error: ADMIN_DELETE_BLOCKED_SOLE_MSG };
+      }
+      return { ok: false, error: ADMIN_DELETE_BLOCKED_MULTI_MSG };
+    }
+    const result = await deleteCurrentUserAccount();
+    if (!result.ok) {
+      if (result.code === 'auth/requires-recent-login') {
+        return {
+          ok: false,
+          error:
+            'For security, sign out, sign in with Google again, then try deleting your account.',
+        };
+      }
+      return { ok: false, error: result.message };
+    }
+    clearCachedAuthProfile();
+    historyActionRef.current = 'replace';
+    setCurrentView('catalog');
+    setSelectedCourse(null);
+    setInitialLesson(undefined);
+    setNotifications([]);
+    return { ok: true };
+  }, []);
+
+  const navbarNotifications = useMemo(() => {
+    if (user?.uid && alertsMuted) {
+      return notifications.filter((n) => n.kind === 'certificate');
+    }
+    return notifications;
+  }, [user?.uid, alertsMuted, notifications]);
+
+  const accountDeletionBlockLoading =
+    isAdminUser && adminAccessResolved && firestoreAdminCount === null;
+  const accountDeletionBlockedMessage = !isAdminUser
+    ? null
+    : accountDeletionBlockLoading
+      ? null
+      : firestoreAdminCount === 1
+        ? ADMIN_DELETE_BLOCKED_SOLE_MSG
+        : ADMIN_DELETE_BLOCKED_MULTI_MSG;
+
   const categories = CATALOG_CATEGORIES_ROW;
 
   const moreCategories = useMemo(() => {
@@ -1039,22 +1151,19 @@ export default function App() {
   }, [currentView]);
 
   useEffect(() => {
-    if (currentView !== 'profile' && currentView !== 'settings' && currentView !== 'certificate') {
+    if (currentView !== 'profile' && currentView !== 'certificate') {
       setProfileSettingsUnderlayView(null);
     }
   }, [currentView]);
 
   useLayoutEffect(() => {
-    if (
-      (currentView === 'profile' || currentView === 'settings') &&
-      profileSettingsUnderlayView === null
-    ) {
+    if (currentView === 'profile' && profileSettingsUnderlayView === null) {
       viewBeforeProfileOrSettingsRef.current = 'catalog';
       setProfileSettingsUnderlayView('catalog');
     }
   }, [currentView, profileSettingsUnderlayView]);
 
-  useBodyScrollLock(currentView === 'profile' || currentView === 'settings');
+  useBodyScrollLock(currentView === 'profile');
 
   /** Course overview / player replace the main column; reset document scroll. */
   useLayoutEffect(() => {
@@ -1066,22 +1175,20 @@ export default function App() {
   const handleNavigate = (view: View, shouldClear = true) => {
     const prev = currentViewRef.current;
 
-    /** Overlays (profile/settings) and course views share one history slot so Back skips dismissed layers (e.g. overview → Back → home). */
-    const openingProfileOrSettingsOverlay =
-      (view === 'profile' || view === 'settings') &&
-      (prev === 'overview' || prev === 'player' || prev === 'profile' || prev === 'settings');
-    const leavingProfileOrSettingsOverlay =
-      (prev === 'profile' || prev === 'settings') && view !== 'profile' && view !== 'settings';
-    if (openingProfileOrSettingsOverlay || leavingProfileOrSettingsOverlay) {
+    /** Profile overlay and course views share one history slot so Back skips dismissed layers (e.g. overview → Back → home). */
+    const openingProfileOverlay =
+      view === 'profile' && (prev === 'overview' || prev === 'player' || prev === 'profile');
+    const leavingProfileOverlay = prev === 'profile' && view !== 'profile';
+    if (openingProfileOverlay || leavingProfileOverlay) {
       historyActionRef.current = 'replace';
     }
 
-    if ((view === 'profile' || view === 'settings') && prev !== 'profile' && prev !== 'settings') {
+    if (view === 'profile' && prev !== 'profile') {
       viewBeforeProfileOrSettingsRef.current = prev;
       setProfileSettingsUnderlayView(prev);
       profileReturnCourseIdRef.current = selectedCourse?.id ?? null;
     }
-    if (shouldClear && (view === 'home' || view === 'catalog' || view === 'contact' || view === 'profile' || view === 'settings')) {
+    if (shouldClear && (view === 'home' || view === 'catalog' || view === 'contact' || view === 'profile')) {
       clearFilters();
       setFocusedCourseIndex(-1);
       setFocusedCategoryIndex(0);
@@ -1094,7 +1201,7 @@ export default function App() {
     scrollDocumentToTop();
   };
 
-  /** Restore course context when leaving profile/settings to overview or player (e.g. cert overlay touched selection). */
+  /** Restore course context when leaving profile overlay to overview or player (e.g. cert overlay touched selection). */
   const handleProfileDismiss = () => {
     const v = viewBeforeProfileOrSettingsRef.current;
     if ((v === 'overview' || v === 'player') && profileReturnCourseIdRef.current) {
@@ -1124,12 +1231,12 @@ export default function App() {
   const handleCertificateNotificationClick = useCallback(() => {
     setCompletedCoursesModalSignal((s) => s + 1);
     const prev = currentViewRef.current;
-    if (prev !== 'profile' && prev !== 'settings') {
+    if (prev !== 'profile') {
       viewBeforeProfileOrSettingsRef.current = prev;
       setProfileSettingsUnderlayView(prev);
       profileReturnCourseIdRef.current = selectedCourse?.id ?? null;
     }
-    if (prev === 'overview' || prev === 'player' || prev === 'profile' || prev === 'settings') {
+    if (prev === 'overview' || prev === 'player' || prev === 'profile') {
       historyActionRef.current = 'replace';
     }
     setCurrentView('profile');
@@ -1465,8 +1572,8 @@ export default function App() {
       historySkipSyncRef.current = true;
       // snap.courseId is the certificate's course, not the underlay (e.g. user on Python player
       // viewing Web Dev cert). Do not overwrite selectedCourse / initialLesson here.
-      setCurrentView(snap.view);
-      const returnPayload: AppHistoryPayload = { v: 1, view: snap.view as AppHistoryPayload['view'] };
+      setCurrentView('profile');
+      const returnPayload: AppHistoryPayload = { v: 1, view: 'profile' };
       window.history.replaceState({ [APP_HISTORY_KEY]: returnPayload }, '', buildHistoryUrl(returnPayload));
       scrollDocumentToTop();
       return;
@@ -1989,8 +2096,8 @@ export default function App() {
     </div>
   );
 
-  const profileOrSettingsOpen = currentView === 'profile' || currentView === 'settings';
-  const mainView: View = profileOrSettingsOpen ? (profileSettingsUnderlayView ?? 'catalog') : currentView;
+  const profileOverlayOpen = currentView === 'profile';
+  const mainView: View = profileOverlayOpen ? (profileSettingsUnderlayView ?? 'catalog') : currentView;
 
   return (
     <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] selection:bg-orange-500/30 transition-colors duration-300">
@@ -2012,7 +2119,7 @@ export default function App() {
           user={navUser}
           onLogin={() => void handleLogin().catch(() => {})}
           onLogout={handleLogout}
-          notifications={notifications}
+          notifications={navbarNotifications}
           setNotifications={setNotifications}
           onNotificationAction={handleNotificationAction}
           onDismissNotification={handleDismissNotification}
@@ -2038,14 +2145,14 @@ export default function App() {
         </div>
       )}
 
-      <main className={profileOrSettingsOpen ? 'relative' : undefined}>
+      <main className={profileOverlayOpen ? 'relative' : undefined}>
         <div
           className={
-            profileOrSettingsOpen
+            profileOverlayOpen
               ? 'pointer-events-none select-none overflow-hidden max-h-[calc(100dvh-4rem)]'
               : undefined
           }
-          aria-hidden={profileOrSettingsOpen || undefined}
+          aria-hidden={profileOverlayOpen || undefined}
         >
           {mainView === 'home' && renderHome()}
           {mainView === 'catalog' && renderCatalog()}
@@ -2088,7 +2195,7 @@ export default function App() {
                   onCourseFinished={handleCoursePlayerFinished}
                   user={user}
                   onLogin={handleLogin}
-                  pauseForAppNavOverlay={profileOrSettingsOpen && mainView === 'player'}
+                  pauseForAppNavOverlay={profileOverlayOpen && mainView === 'player'}
                 />
               ) : (
                 <PlayerSignInGate
@@ -2136,12 +2243,12 @@ export default function App() {
               openCompletedCoursesSignal={completedCoursesModalSignal}
               onDismiss={handleProfileDismiss}
               remoteProfileDataVersion={remoteProfileDataVersion}
+              alertsMuted={alertsMuted}
+              onAlertsMutedChange={handleToggleAlertsMuted}
+              onDeleteAccount={handleDeleteAccount}
+              accountDeletionBlockedMessage={accountDeletionBlockedMessage}
+              accountDeletionBlockLoading={accountDeletionBlockLoading}
             />
-          </div>
-        )}
-        {currentView === 'settings' && (
-          <div className="fixed inset-x-0 top-16 bottom-0 z-[45] flex items-start justify-center overflow-y-auto bg-black/60 p-4 pb-12 pt-6 backdrop-blur-sm">
-            <AccountSettingsPage onDismiss={handleProfileDismiss} />
           </div>
         )}
       </main>

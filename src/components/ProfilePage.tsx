@@ -8,7 +8,7 @@ import { loadCompletionTimestamps } from '../utils/courseCompletionLog';
 import { buildCertificateId } from '../utils/certificateFirestore';
 import type { Course } from '../data/courses';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, CheckCircle2 } from 'lucide-react';
+import { X, CheckCircle2, BellOff, Trash2, Info } from 'lucide-react';
 
 const bioStorageKey = (uid: string) => `skilllearn-profile-bio:${uid}`;
 
@@ -24,6 +24,15 @@ interface ProfilePageProps {
   onDismiss: () => void;
   /** Increment when Firestore progress/ratings are merged into localStorage (e.g. after login). */
   remoteProfileDataVersion?: number;
+  /** Hide course/admin bell items; certificates still appear in the bell. */
+  alertsMuted?: boolean;
+  onAlertsMutedChange?: (muted: boolean) => void;
+  /** Permanently delete Firebase Auth user (may require recent login). */
+  onDeleteAccount?: () => Promise<{ ok: true } | { ok: false; error: string }>;
+  /** When set, delete is disabled and this explanation is shown (e.g. Firestore role is still admin). */
+  accountDeletionBlockedMessage?: string | null;
+  /** True while resolving admin count for delete-account messaging. */
+  accountDeletionBlockLoading?: boolean;
 }
 
 export const ProfilePage: React.FC<ProfilePageProps> = ({
@@ -35,12 +44,20 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   openCompletedCoursesSignal = 0,
   onDismiss,
   remoteProfileDataVersion = 0,
+  alertsMuted = false,
+  onAlertsMutedChange,
+  onDeleteAccount,
+  accountDeletionBlockedMessage = null,
+  accountDeletionBlockLoading = false,
 }) => {
   const [displayNameEdit, setDisplayNameEdit] = useState('');
   const [bio, setBio] = useState('');
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showCompletedModal, setShowCompletedModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const stats = useMemo(
     () => computeLearningStats(user?.uid, courses),
@@ -91,13 +108,24 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
     onPrimaryAction: closeCompletedModal,
   });
 
+  const closeDeleteConfirm = useCallback(() => {
+    if (deleteBusy) return;
+    setShowDeleteConfirm(false);
+    setDeleteError(null);
+  }, [deleteBusy]);
+
   useDialogKeyboard({
-    open: !showCompletedModal,
+    open: showDeleteConfirm,
+    onClose: closeDeleteConfirm,
+  });
+
+  useDialogKeyboard({
+    open: !showCompletedModal && !showDeleteConfirm,
     onClose: onDismiss,
     onPrimaryAction: user ? () => void handleSave() : onLogin,
   });
 
-  useBodyScrollLock(showCompletedModal);
+  useBodyScrollLock(showCompletedModal || showDeleteConfirm);
 
   useEffect(() => {
     if (!user) {
@@ -299,6 +327,90 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             </p>
           </div>
         </div>
+
+        {user && (onAlertsMutedChange || onDeleteAccount) && (
+          <div className="mt-10 space-y-8 border-t border-[var(--border-color)] pt-10">
+            {onAlertsMutedChange && (
+              <div>
+                <h2 className="text-xl font-bold mb-4 text-[var(--text-primary)] flex items-center gap-2">
+                  <BellOff size={22} className="text-orange-500 shrink-0" />
+                  Notifications
+                </h2>
+                <div className="rounded-xl border border-[var(--border-color)] bg-[var(--hover-bg)]/50 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-[var(--text-primary)]">Mute in-app alerts</p>
+                    <p className="text-sm text-[var(--text-secondary)] mt-1">
+                      Hides course updates and admin inbox items from the bell. Certificate notices still appear.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={alertsMuted}
+                    onClick={() => onAlertsMutedChange(!alertsMuted)}
+                    className={`relative h-9 w-14 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500/60 ${
+                      alertsMuted ? 'bg-orange-500' : 'bg-[var(--border-color)]'
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none absolute top-1 left-1 h-7 w-7 rounded-full bg-white shadow transition-transform ${
+                        alertsMuted ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                    <span className="sr-only">{alertsMuted ? 'Alerts muted' : 'Alerts on'}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {onDeleteAccount && (
+              <div>
+                <h2 className="text-xl font-bold mb-4 text-[var(--text-primary)]">Danger zone</h2>
+                {accountDeletionBlockLoading ? (
+                  <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 flex gap-3">
+                    <Info size={20} className="text-amber-500 shrink-0 mt-0.5" aria-hidden />
+                    <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
+                      Checking admin accounts…
+                    </p>
+                  </div>
+                ) : accountDeletionBlockedMessage ? (
+                  <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 flex gap-3">
+                    <Info size={20} className="text-amber-500 shrink-0 mt-0.5" aria-hidden />
+                    <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
+                      {accountDeletionBlockedMessage}
+                    </p>
+                  </div>
+                ) : null}
+                <div
+                  className={`rounded-xl border border-red-500/30 bg-red-500/5 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 ${
+                    accountDeletionBlockedMessage || accountDeletionBlockLoading ? 'mt-4' : ''
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <p className="font-semibold text-[var(--text-primary)]">Delete account</p>
+                    <p className="text-sm text-[var(--text-secondary)] mt-1">
+                      Permanently remove your SkillStream sign-in. This cannot be undone.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!!accountDeletionBlockedMessage || accountDeletionBlockLoading}
+                    aria-disabled={!!accountDeletionBlockedMessage || accountDeletionBlockLoading}
+                    onClick={() => {
+                      if (accountDeletionBlockedMessage || accountDeletionBlockLoading) return;
+                      setDeleteError(null);
+                      setShowDeleteConfirm(true);
+                    }}
+                    className="inline-flex items-center justify-center gap-2 shrink-0 rounded-lg border border-red-500/50 bg-red-500/10 px-4 py-2.5 text-sm font-bold text-red-500 hover:bg-red-500/20 transition-colors disabled:pointer-events-none disabled:opacity-45"
+                  >
+                    <Trash2 size={16} />
+                    Delete account
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         </div>
       </div>
 
@@ -397,6 +509,62 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
           </div>
         )}
       </AnimatePresence>
+
+      {showDeleteConfirm && onDeleteAccount && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="profile-delete-title"
+        >
+          <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
+            <div className="p-5 border-b border-[var(--border-color)]">
+              <h3 id="profile-delete-title" className="text-lg font-bold text-[var(--text-primary)]">
+                Delete your account?
+              </h3>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-sm text-[var(--text-secondary)]">
+                Your Google-linked account will be removed from SkillStream. If deletion fails, sign out,
+                sign in with Google again, then try once more (Firebase requires a recent sign-in for
+                security). Admins must set their role to user in Admin → Users before deletion; if you are
+                the only admin, promote someone else to admin first.
+              </p>
+              {deleteError && <p className="text-sm text-red-500">{deleteError}</p>}
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  disabled={deleteBusy}
+                  onClick={closeDeleteConfirm}
+                  className="flex-1 border border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--hover-bg)] py-2.5 rounded-lg text-sm font-semibold disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={deleteBusy}
+                  onClick={() => {
+                    void (async () => {
+                      setDeleteBusy(true);
+                      setDeleteError(null);
+                      const result = await onDeleteAccount();
+                      setDeleteBusy(false);
+                      if (!result.ok) {
+                        setDeleteError(result.error);
+                        return;
+                      }
+                      setShowDeleteConfirm(false);
+                    })();
+                  }}
+                  className="flex-[1.2] py-2.5 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-500 disabled:opacity-60"
+                >
+                  {deleteBusy ? 'Deleting…' : 'Yes, delete'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
