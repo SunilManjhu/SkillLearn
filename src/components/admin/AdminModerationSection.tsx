@@ -1,14 +1,18 @@
 import React, { useState, useCallback } from 'react';
-import { CheckCircle2, Flag, Lightbulb, RefreshCw, Trash2 } from 'lucide-react';
+import { CheckCircle2, Flag, Lightbulb, Mail, RefreshCw, Trash2 } from 'lucide-react';
 import {
   listReportsForAdmin,
   listSuggestionsForAdmin,
+  listContactMessagesForAdmin,
   subscribeReportsForAdmin,
   subscribeSuggestionsForAdmin,
+  subscribeContactMessagesForAdmin,
   deleteReportAsAdmin,
   deleteSuggestionAsAdmin,
+  deleteContactMessageAsAdmin,
   type AdminReportRow,
   type AdminSuggestionRow,
+  type AdminContactMessageRow,
 } from '../../utils/adminModerationFirestore';
 import { createReportResolvedNotice } from '../../utils/alertsFirestore';
 import { useAdminActionToast } from './useAdminActionToast';
@@ -18,25 +22,39 @@ function formatWhen(ms: number): string {
   return new Date(ms).toLocaleString();
 }
 
+function senderLine(c: AdminContactMessageRow): string {
+  const parts: string[] = [];
+  if (c.senderDisplayName.trim()) parts.push(c.senderDisplayName.trim());
+  if (c.senderEmail.trim()) parts.push(c.senderEmail.trim());
+  return parts.length > 0 ? parts.join(' · ') : '—';
+}
+
 export const AdminModerationSection: React.FC = () => {
-  const [subTab, setSubTab] = useState<'reports' | 'suggestions'>('reports');
+  const [subTab, setSubTab] = useState<'reports' | 'suggestions' | 'contact'>('reports');
   const [reports, setReports] = useState<AdminReportRow[]>([]);
   const [suggestions, setSuggestions] = useState<AdminSuggestionRow[]>([]);
+  const [contactMessages, setContactMessages] = useState<AdminContactMessageRow[]>([]);
   const [loading, setLoading] = useState(false);
   const { showActionToast, actionToast } = useAdminActionToast();
   const [confirmState, setConfirmState] = useState<
     | { type: 'delete-report'; reportId: string }
     | { type: 'resolve-report'; report: AdminReportRow }
     | { type: 'delete-suggestion'; suggestionId: string }
+    | { type: 'delete-contact'; messageId: string }
     | null
   >(null);
   const [confirmSubmitting, setConfirmSubmitting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [r, s] = await Promise.all([listReportsForAdmin(), listSuggestionsForAdmin()]);
+    const [r, s, c] = await Promise.all([
+      listReportsForAdmin(),
+      listSuggestionsForAdmin(),
+      listContactMessagesForAdmin(),
+    ]);
     setReports(r);
     setSuggestions(s);
+    setContactMessages(c);
     setLoading(false);
   }, []);
 
@@ -48,8 +66,9 @@ export const AdminModerationSection: React.FC = () => {
     setLoading(true);
     let firstReportsSeen = false;
     let firstSuggestionsSeen = false;
+    let firstContactSeen = false;
     const markReady = () => {
-      if (firstReportsSeen && firstSuggestionsSeen) setLoading(false);
+      if (firstReportsSeen && firstSuggestionsSeen && firstContactSeen) setLoading(false);
     };
 
     const unsubReports = subscribeReportsForAdmin(
@@ -68,10 +87,19 @@ export const AdminModerationSection: React.FC = () => {
       },
       () => showActionToast('Failed to subscribe to suggestions.', 'danger')
     );
+    const unsubContact = subscribeContactMessagesForAdmin(
+      (rows) => {
+        setContactMessages(rows);
+        firstContactSeen = true;
+        markReady();
+      },
+      () => showActionToast('Failed to subscribe to contact messages.', 'danger')
+    );
 
     return () => {
       unsubReports();
       unsubSuggestions();
+      unsubContact();
     };
   }, [showActionToast]);
 
@@ -81,6 +109,10 @@ export const AdminModerationSection: React.FC = () => {
 
   const removeSuggestion = async (id: string) => {
     setConfirmState({ type: 'delete-suggestion', suggestionId: id });
+  };
+
+  const removeContact = async (id: string) => {
+    setConfirmState({ type: 'delete-contact', messageId: id });
   };
 
   const resolveReport = async (r: AdminReportRow) => {
@@ -101,6 +133,14 @@ export const AdminModerationSection: React.FC = () => {
       setSuggestions((prev) => prev.filter((x) => x.id !== id));
       showActionToast('Suggestion deleted.');
     } else showActionToast('Failed to delete suggestion.', 'danger');
+  };
+
+  const runDeleteContact = async (id: string) => {
+    const ok = await deleteContactMessageAsAdmin(id);
+    if (ok) {
+      setContactMessages((prev) => prev.filter((x) => x.id !== id));
+      showActionToast('Contact message deleted.');
+    } else showActionToast('Failed to delete contact message.', 'danger');
   };
 
   const runResolveReport = async (r: AdminReportRow) => {
@@ -141,6 +181,8 @@ export const AdminModerationSection: React.FC = () => {
         await runDeleteReport(confirmState.reportId);
       } else if (confirmState.type === 'delete-suggestion') {
         await runDeleteSuggestion(confirmState.suggestionId);
+      } else if (confirmState.type === 'delete-contact') {
+        await runDeleteContact(confirmState.messageId);
       } else {
         await runResolveReport(confirmState.report);
       }
@@ -149,6 +191,15 @@ export const AdminModerationSection: React.FC = () => {
       setConfirmSubmitting(false);
     }
   }, [confirmState]);
+
+  const confirmBody =
+    confirmState?.type === 'resolve-report'
+      ? 'This will notify the reporting user and remove the report from the moderation inbox.'
+      : confirmState?.type === 'delete-report'
+        ? 'This will remove the report without notifying the user.'
+        : confirmState?.type === 'delete-contact'
+          ? 'This will permanently remove the contact message from the inbox.'
+          : 'This will permanently remove the URL suggestion from the inbox.';
 
   return (
     <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-6 space-y-4">
@@ -168,7 +219,7 @@ export const AdminModerationSection: React.FC = () => {
         </button>
       </div>
 
-      <div className="flex gap-2 border-b border-[var(--border-color)] pb-2">
+      <div className="flex flex-wrap gap-2 border-b border-[var(--border-color)] pb-2">
         <button
           type="button"
           onClick={() => setSubTab('reports')}
@@ -187,6 +238,16 @@ export const AdminModerationSection: React.FC = () => {
         >
           <Lightbulb size={14} />
           URL suggestions ({suggestions.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setSubTab('contact')}
+          className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold ${
+            subTab === 'contact' ? 'bg-orange-500/20 text-orange-500' : 'text-[var(--text-secondary)]'
+          }`}
+        >
+          <Mail size={14} />
+          Contact ({contactMessages.length})
         </button>
       </div>
 
@@ -279,6 +340,42 @@ export const AdminModerationSection: React.FC = () => {
           )}
         </div>
       )}
+
+      {subTab === 'contact' && (
+        <div className="max-h-[min(28rem,55vh)] space-y-2 overflow-y-auto overscroll-contain">
+          {contactMessages.length === 0 ? (
+            <p className="text-sm text-[var(--text-muted)] py-6 text-center">No contact messages yet.</p>
+          ) : (
+            contactMessages.map((c) => (
+              <div
+                key={c.id}
+                className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/40 p-4 text-sm"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0 space-y-1">
+                    <p className="font-semibold text-[var(--text-primary)]">{c.subject}</p>
+                    <p className="text-xs text-[var(--text-muted)]">{senderLine(c)}</p>
+                    <p className="text-xs text-[var(--text-muted)]">
+                      User <code className="text-orange-500/90">{c.userId}</code>
+                    </p>
+                    <p className="text-xs text-[var(--text-muted)]">{formatWhen(c.timestampMs)}</p>
+                    <p className="mt-2 text-[var(--text-secondary)] whitespace-pre-wrap">{c.message}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void removeContact(c.id)}
+                    className="shrink-0 rounded-lg p-2 text-red-400 hover:bg-red-500/10"
+                    aria-label="Delete contact message"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
       {confirmState && (
         <div
           className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
@@ -302,13 +399,7 @@ export const AdminModerationSection: React.FC = () => {
               </button>
             </div>
             <div className="p-5 space-y-4">
-              <p className="text-sm text-[var(--text-secondary)]">
-                {confirmState.type === 'resolve-report'
-                  ? 'This will notify the reporting user and remove the report from the moderation inbox.'
-                  : confirmState.type === 'delete-report'
-                    ? 'This will remove the report without notifying the user.'
-                    : 'This will permanently remove the URL suggestion from the inbox.'}
-              </p>
+              <p className="text-sm text-[var(--text-secondary)]">{confirmBody}</p>
               <div className="flex gap-3">
                 <button
                   type="button"

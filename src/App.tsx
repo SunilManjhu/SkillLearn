@@ -819,6 +819,7 @@ export default function App() {
 
     let reportCount = 0;
     let suggestionCount = 0;
+    let contactCount = 0;
     let cancelled = false;
 
     const syncAdminInboxNotifications = () => {
@@ -853,6 +854,19 @@ export default function App() {
             read: byId.get(id)?.read ?? false,
           });
         }
+        if (contactCount > 0) {
+          const id = 'admin-moderation-contact';
+          adminRows.push({
+            id,
+            kind: 'generic',
+            actionView: 'admin',
+            adminTab: 'moderation',
+            actionLabel: 'Open moderation',
+            message: `Moderation inbox: Contact messages (${contactCount}) need review.`,
+            time: 'Now',
+            read: byId.get(id)?.read ?? false,
+          });
+        }
         return [...adminRows, ...nonAdminRows];
       });
     };
@@ -865,11 +879,16 @@ export default function App() {
       suggestionCount = snap.size;
       syncAdminInboxNotifications();
     });
+    const unsubContact = onSnapshot(collection(db, 'contactMessages'), (snap) => {
+      contactCount = snap.size;
+      syncAdminInboxNotifications();
+    });
 
     return () => {
       cancelled = true;
       unsubReports();
       unsubSuggestions();
+      unsubContact();
     };
   }, [user?.uid, isAdminUser]);
 
@@ -1964,7 +1983,7 @@ export default function App() {
               <div>
                 <p className="text-[var(--text-primary)] font-bold">Email us</p>
                 <p className="text-[var(--text-secondary)]">
-                  Use the form — we&apos;ll reply to the address you provide.
+                  Sign in and use the form — we&apos;ll reply to the email on your account.
                 </p>
               </div>
             </div>
@@ -1980,7 +1999,7 @@ export default function App() {
           </div>
         </div>
         <div className="bg-[var(--bg-secondary)] p-8 rounded-2xl border border-[var(--border-color)]">
-          <ContactForm />
+          <ContactForm user={user} onLogin={() => void handleLogin().catch(() => {})} />
         </div>
       </div>
     </div>

@@ -65,6 +65,16 @@ service cloud.firestore {
     //   - comment: string (optional)
     //   - submittedAt: timestamp (required)
     //
+    // Collection: contactMessages
+    // Document ID: auto-generated
+    // Fields:
+    //   - subject: string (required)
+    //   - message: string (required)
+    //   - userId: string (required) - submitter UID
+    //   - senderEmail: string (required, may be empty when token has no email)
+    //   - senderDisplayName: string (required, may be empty)
+    //   - timestamp: timestamp (required)
+    //
     // ===============================================================
 
     // ===============================================================
@@ -189,6 +199,24 @@ service cloud.firestore {
              data.submittedAt is timestamp;
     }
 
+    function contactSenderEmailMatchesToken(data) {
+      return (request.auth.token.email is string && request.auth.token.email.size() > 0)
+        ? (data.senderEmail is string && data.senderEmail == request.auth.token.email)
+        : (data.senderEmail is string && data.senderEmail.size() == 0);
+    }
+
+    function isValidContactMessage(data) {
+      return hasRequiredFields(['subject', 'message', 'userId', 'timestamp', 'senderEmail', 'senderDisplayName']) &&
+             hasOnlyAllowedFields(['subject', 'message', 'userId', 'timestamp', 'senderEmail', 'senderDisplayName']) &&
+             data.subject is string && data.subject.size() > 0 && data.subject.size() < 300 &&
+             data.message is string && data.message.size() > 0 && data.message.size() < 10000 &&
+             data.userId == request.auth.uid &&
+             data.senderEmail is string && data.senderEmail.size() < 320 &&
+             data.senderDisplayName is string && data.senderDisplayName.size() < 200 &&
+             data.timestamp is timestamp &&
+             contactSenderEmailMatchesToken(data);
+    }
+
     // ===============================================================
     // Match Rules
     // ===============================================================
@@ -219,6 +247,12 @@ service cloud.firestore {
       allow create: if isAuthenticated() && isValidReport(request.resource.data);
       allow update: if isAuthenticated() && isOwner(resource.data.userId) && isValidReport(request.resource.data);
       allow delete: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
+    }
+
+    match /contactMessages/{messageId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated() && isValidContactMessage(request.resource.data);
+      allow update, delete: if isAdmin();
     }
 
     match /certificates/{certificateId} {

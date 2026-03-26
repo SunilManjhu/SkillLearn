@@ -1,35 +1,28 @@
 import React, { useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, LogIn } from 'lucide-react';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { db, handleFirestoreError, OperationType, type User } from '../firebase';
 
-const WEB3FORMS_URL = 'https://api.web3forms.com/submit';
-
-function isValidEmail(value: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+export interface ContactFormProps {
+  user: User | null;
+  onLogin: () => Promise<void>;
 }
 
-export const ContactForm: React.FC = () => {
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [email, setEmail] = useState('');
+export const ContactForm: React.FC<ContactFormProps> = ({ user, onLogin }) => {
+  const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
-  const [fieldErrors, setFieldErrors] = useState<Partial<Record<'firstName' | 'lastName' | 'email' | 'message', string>>>({});
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<'subject' | 'message', string>>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
-
-  const accessKey = import.meta.env.VITE_WEB3FORMS_ACCESS_KEY as string | undefined;
+  const [loginSubmitting, setLoginSubmitting] = useState(false);
 
   const validate = (): boolean => {
     const next: typeof fieldErrors = {};
-    const fn = firstName.trim();
-    const ln = lastName.trim();
-    const em = email.trim();
+    const sub = subject.trim();
     const msg = message.trim();
 
-    if (!fn) next.firstName = 'Please enter your first name.';
-    if (!ln) next.lastName = 'Please enter your last name.';
-    if (!em) next.email = 'Please enter your email.';
-    else if (!isValidEmail(em)) next.email = 'Please enter a valid email address.';
+    if (!sub) next.subject = 'Please enter a subject.';
     if (!msg) next.message = 'Please enter a message.';
 
     setFieldErrors(next);
@@ -39,43 +32,57 @@ export const ContactForm: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitError(null);
+    if (!user) return;
     if (!validate()) return;
-
-    if (!accessKey?.trim()) {
-      setSubmitError('The contact form is not configured. Please try again later.');
-      return;
-    }
 
     setSubmitting(true);
     try {
-      const res = await fetch(WEB3FORMS_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({
-          access_key: accessKey.trim(),
-          subject: 'SkillStream: Contact form message',
-          name: `${firstName.trim()} ${lastName.trim()}`,
-          email: email.trim(),
-          message: message.trim(),
-        }),
+      const tokenEmail = user.email ?? '';
+      await addDoc(collection(db, 'contactMessages'), {
+        subject: subject.trim(),
+        message: message.trim(),
+        userId: user.uid,
+        senderEmail: tokenEmail,
+        senderDisplayName: user.displayName ?? '',
+        timestamp: serverTimestamp(),
       });
-      const data = (await res.json()) as { success?: boolean; message?: string };
-      if (!res.ok || !data.success) {
-        setSubmitError(data.message || 'Something went wrong. Please try again.');
-        return;
-      }
       setSuccess(true);
-      setFirstName('');
-      setLastName('');
-      setEmail('');
+      setSubject('');
       setMessage('');
       setFieldErrors({});
-    } catch {
-      setSubmitError('Network error. Please check your connection and try again.');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'contactMessages');
+      setSubmitError('Could not send your message. Please try again.');
     } finally {
       setSubmitting(false);
     }
   };
+
+  if (!user) {
+    return (
+      <div className="space-y-6 text-center">
+        <p className="text-[var(--text-secondary)] leading-relaxed">
+          Sign in with Google to send us a message. We&apos;ll use your account name and email so we can reply.
+        </p>
+        <button
+          type="button"
+          disabled={loginSubmitting}
+          onClick={async () => {
+            setLoginSubmitting(true);
+            try {
+              await onLogin();
+            } finally {
+              setLoginSubmitting(false);
+            }
+          }}
+          className="w-full max-w-sm mx-auto flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white py-3.5 rounded-xl text-sm font-bold transition-colors"
+        >
+          <LogIn size={18} />
+          {loginSubmitting ? 'Signing in…' : 'Continue with Google'}
+        </button>
+      </div>
+    );
+  }
 
   if (success) {
     return (
@@ -85,7 +92,7 @@ export const ContactForm: React.FC = () => {
       >
         <p className="text-lg font-bold text-[var(--text-primary)] mb-2">Thank you!</p>
         <p className="text-[var(--text-secondary)] leading-relaxed">
-          We&apos;ve received your message and will get back to you soon at the email you provided.
+          We&apos;ve received your message and will get back to you soon at the email on your account.
         </p>
         <button
           type="button"
@@ -100,74 +107,26 @@ export const ContactForm: React.FC = () => {
 
   return (
     <form className="space-y-6" onSubmit={(e) => void handleSubmit(e)} noValidate>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <label htmlFor="contact-first-name" className="text-sm text-[var(--text-secondary)]">
-            First Name
-          </label>
-          <input
-            id="contact-first-name"
-            type="text"
-            autoComplete="given-name"
-            value={firstName}
-            onChange={(e) => {
-              setFirstName(e.target.value);
-              if (fieldErrors.firstName) setFieldErrors((p) => ({ ...p, firstName: undefined }));
-            }}
-            className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg p-3 text-[var(--text-primary)] focus:border-orange-500 outline-none"
-            aria-invalid={!!fieldErrors.firstName}
-            aria-describedby={fieldErrors.firstName ? 'contact-first-name-err' : undefined}
-          />
-          {fieldErrors.firstName && (
-            <p id="contact-first-name-err" className="text-xs text-red-500">
-              {fieldErrors.firstName}
-            </p>
-          )}
-        </div>
-        <div className="space-y-2">
-          <label htmlFor="contact-last-name" className="text-sm text-[var(--text-secondary)]">
-            Last Name
-          </label>
-          <input
-            id="contact-last-name"
-            type="text"
-            autoComplete="family-name"
-            value={lastName}
-            onChange={(e) => {
-              setLastName(e.target.value);
-              if (fieldErrors.lastName) setFieldErrors((p) => ({ ...p, lastName: undefined }));
-            }}
-            className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg p-3 text-[var(--text-primary)] focus:border-orange-500 outline-none"
-            aria-invalid={!!fieldErrors.lastName}
-            aria-describedby={fieldErrors.lastName ? 'contact-last-name-err' : undefined}
-          />
-          {fieldErrors.lastName && (
-            <p id="contact-last-name-err" className="text-xs text-red-500">
-              {fieldErrors.lastName}
-            </p>
-          )}
-        </div>
-      </div>
       <div className="space-y-2">
-        <label htmlFor="contact-email" className="text-sm text-[var(--text-secondary)]">
-          Email
+        <label htmlFor="contact-subject" className="text-sm text-[var(--text-secondary)]">
+          Subject
         </label>
         <input
-          id="contact-email"
-          type="email"
-          autoComplete="email"
-          value={email}
+          id="contact-subject"
+          type="text"
+          autoComplete="off"
+          value={subject}
           onChange={(e) => {
-            setEmail(e.target.value);
-            if (fieldErrors.email) setFieldErrors((p) => ({ ...p, email: undefined }));
+            setSubject(e.target.value);
+            if (fieldErrors.subject) setFieldErrors((p) => ({ ...p, subject: undefined }));
           }}
           className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg p-3 text-[var(--text-primary)] focus:border-orange-500 outline-none"
-          aria-invalid={!!fieldErrors.email}
-          aria-describedby={fieldErrors.email ? 'contact-email-err' : undefined}
+          aria-invalid={!!fieldErrors.subject}
+          aria-describedby={fieldErrors.subject ? 'contact-subject-err' : undefined}
         />
-        {fieldErrors.email && (
-          <p id="contact-email-err" className="text-xs text-red-500">
-            {fieldErrors.email}
+        {fieldErrors.subject && (
+          <p id="contact-subject-err" className="text-xs text-red-500">
+            {fieldErrors.subject}
           </p>
         )}
       </div>
@@ -209,7 +168,7 @@ export const ContactForm: React.FC = () => {
             Sending…
           </>
         ) : (
-          'Send Message'
+          'Send message'
         )}
       </button>
     </form>

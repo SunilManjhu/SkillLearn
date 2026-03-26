@@ -28,6 +28,17 @@ export interface AdminSuggestionRow {
   timestampMs: number;
 }
 
+export interface AdminContactMessageRow {
+  id: string;
+  subject: string;
+  message: string;
+  userId: string;
+  senderEmail: string;
+  senderDisplayName: string;
+  timestampMs: number;
+}
+
+
 function mapReportsSnapshot(snap: QuerySnapshot): AdminReportRow[] {
   const rows: AdminReportRow[] = [];
   for (const d of snap.docs) {
@@ -78,6 +89,32 @@ function mapSuggestionsSnapshot(snap: QuerySnapshot): AdminSuggestionRow[] {
   return rows;
 }
 
+
+function mapContactMessagesSnapshot(snap: QuerySnapshot): AdminContactMessageRow[] {
+  const rows: AdminContactMessageRow[] = [];
+  for (const d of snap.docs) {
+    const data = d.data();
+    if (
+      typeof data.subject !== 'string' ||
+      typeof data.message !== 'string' ||
+      typeof data.userId !== 'string'
+    ) {
+      continue;
+    }
+    rows.push({
+      id: d.id,
+      subject: data.subject,
+      message: data.message,
+      userId: data.userId,
+      senderEmail: typeof data.senderEmail === 'string' ? data.senderEmail : '',
+      senderDisplayName: typeof data.senderDisplayName === 'string' ? data.senderDisplayName : '',
+      timestampMs: tsToMs(data.timestamp),
+    });
+  }
+  rows.sort((a, b) => b.timestampMs - a.timestampMs);
+  return rows;
+}
+
 export async function listReportsForAdmin(): Promise<AdminReportRow[]> {
   try {
     const snap = await getDocs(collection(db, 'reports'));
@@ -94,6 +131,17 @@ export async function listSuggestionsForAdmin(): Promise<AdminSuggestionRow[]> {
     return mapSuggestionsSnapshot(snap);
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'suggestions');
+    return [];
+  }
+}
+
+
+export async function listContactMessagesForAdmin(): Promise<AdminContactMessageRow[]> {
+  try {
+    const snap = await getDocs(collection(db, 'contactMessages'));
+    return mapContactMessagesSnapshot(snap);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'contactMessages');
     return [];
   }
 }
@@ -126,12 +174,38 @@ export function subscribeSuggestionsForAdmin(
   );
 }
 
+
+export function subscribeContactMessagesForAdmin(
+  onData: (rows: AdminContactMessageRow[]) => void,
+  onError?: (error: unknown) => void
+): () => void {
+  return onSnapshot(
+    collection(db, 'contactMessages'),
+    (snap) => onData(mapContactMessagesSnapshot(snap)),
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'contactMessages');
+      onError?.(error);
+    }
+  );
+}
+
 export async function deleteReportAsAdmin(reportId: string): Promise<boolean> {
   try {
     await deleteDoc(doc(db, 'reports', reportId));
     return true;
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, `reports/${reportId}`);
+    return false;
+  }
+}
+
+
+export async function deleteContactMessageAsAdmin(messageId: string): Promise<boolean> {
+  try {
+    await deleteDoc(doc(db, 'contactMessages', messageId));
+    return true;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `contactMessages/${messageId}`);
     return false;
   }
 }
