@@ -43,6 +43,8 @@ interface NavbarProps {
   onNotificationAction: (n: NavbarNotification) => void;
   /** Optional: persist dismiss (e.g. Firestore) before removing from the list. */
   onDismissNotification?: (n: NavbarNotification) => void;
+  /** Signed-out: called before clearing the list when "Clear all" removes the welcome tip (avoids badge returning on refresh). */
+  onGuestClearNotifications?: () => void;
   isAdmin?: boolean;
 }
 
@@ -65,6 +67,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   setNotifications,
   onNotificationAction,
   onDismissNotification,
+  onGuestClearNotifications,
   isAdmin = false,
 }) => {
   const [openDropdown, setOpenDropdown] = useState<'browse' | 'paths' | 'skills' | 'profile' | 'notifications' | null>(null);
@@ -228,6 +231,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   const clearAllNotifications = () => {
+    if (notifications.some((n) => n.id === 'welcome')) {
+      onGuestClearNotifications?.();
+    }
     setNotifications([]);
   };
 

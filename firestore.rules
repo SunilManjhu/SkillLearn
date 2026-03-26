@@ -83,10 +83,13 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
+    // UID fallback: rules must agree the user is admin; if hasAdminRole/email checks ever diverge
+    // from the client (wrong DB in Console, token shape, etc.), this still allows known admins.
     function isAdmin() {
       return isAuthenticated() && (
         hasAdminRole() ||
-        (request.auth.token.email.lower() == "ranveer.singh.blr@gmail.com" && request.auth.token.email_verified == true)
+        (request.auth.token.email.lower() == "ranveer.singh.blr@gmail.com" && request.auth.token.email_verified == true) ||
+        request.auth.uid == "Uz4Ctf9ThuV7BumSU8T8xAe1qt42"
       );
     }
 
@@ -262,12 +265,13 @@ service cloud.firestore {
 
     function isValidAlert(data) {
       return data.keys().hasAll(['type', 'title', 'message', 'courseId', 'status', 'createdAt']) &&
-        data.type in ['course_update', 'topic_update', 'video_update', 'course_change'] &&
+        data.type in ['course_update', 'topic_update', 'video_update', 'course_change', 'report_resolved'] &&
         data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
         data.message is string && data.message.size() > 0 && data.message.size() < 2000 &&
         data.courseId is string && data.courseId.size() > 0 && data.courseId.size() < 200 &&
         data.status in ['active', 'archived'] &&
-        data.createdAt is timestamp &&
+        (data.createdAt == request.time || data.createdAt is timestamp) &&
+        (!('userId' in data) || (data.userId is string && data.userId.size() > 0 && data.userId.size() < 200)) &&
         (!('moduleId' in data) || (data.moduleId is string && data.moduleId.size() < 200)) &&
         (!('lessonId' in data) || (data.lessonId is string && data.lessonId.size() < 200));
     }
@@ -276,6 +280,29 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow create: if isAdmin() && isValidAlert(request.resource.data);
       allow update, delete: if isAdmin();
+    }
+
+    // Admin-created inbox rows for a specific user (e.g. report resolved). Separate from `alerts`
+    // so rules can scope reads to the recipient without exposing other users' docs.
+    // Client uses FieldValue.serverTimestamp() for createdAt — in rules that value matches request.time,
+    // not always `is timestamp`, so allow both (see Firebase rules + server timestamps).
+    // Admin-only create: minimal shape checks (strict length caps have caused false denials).
+    function isValidReportNoticeCreate(data) {
+      return data.keys().hasAll(['forUserId', 'title', 'message', 'kind', 'createdAt']) &&
+        data.forUserId is string && data.forUserId.size() > 0 && data.forUserId.size() < 256 &&
+        data.title is string && data.title.size() > 0 && data.title.size() < 500 &&
+        data.message is string && data.message.size() > 0 && data.message.size() < 50000 &&
+        data.kind == 'report_resolved' &&
+        (!('lessonId' in data) || (data.lessonId is string && data.lessonId.size() > 0 && data.lessonId.size() < 4000));
+    }
+
+    match /reportNotices/{noticeId} {
+      allow read: if isAuthenticated() && (
+        resource.data.forUserId == request.auth.uid || isAdmin()
+      );
+      allow create: if isAdmin() && isValidReportNoticeCreate(request.resource.data);
+      allow delete: if isAdmin();
+      allow update: if false;
     }
 
     function isValidUserAlertStatePatch(data) {

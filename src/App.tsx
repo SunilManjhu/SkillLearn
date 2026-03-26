@@ -20,10 +20,21 @@ import {
   loadUserAlertState,
   markAlertDismissed,
   markAlertRead,
+  reportNoticesFromQuerySnapshot,
 } from './utils/alertsFirestore';
 import { Play, TrendingUp, Award, Users, Globe, ChevronRight, ChevronDown, X, CheckCircle, Mail, LifeBuoy, Briefcase, Shield, Info, Clock, LogIn, AlertTriangle } from 'lucide-react';
 import { motion } from 'motion/react';
-import { auth, signInWithGoogle, getRedirectResult, signOut, onAuthStateChanged, User } from './firebase';
+import {
+  auth,
+  db,
+  signInWithGoogle,
+  getRedirectResult,
+  signOut,
+  onAuthStateChanged,
+  isFirestorePermissionDenied,
+  User,
+} from './firebase';
+import { collection, limit, onSnapshot, query, where } from 'firebase/firestore';
 import { scrollDocumentToTop } from './utils/scrollDocumentToTop';
 import { recordCourseCompletion } from './utils/courseCompletionLog';
 import {
@@ -262,6 +273,21 @@ function PlayerSignInGate({
       </button>
     </div>
   );
+}
+
+const SKILLSTREAM_GUEST_WELCOME_READ_KEY = 'skillstream_guest_welcome_read';
+const SKILLSTREAM_GUEST_WELCOME_DISMISSED_KEY = 'skillstream_guest_welcome_dismissed';
+
+function readGuestWelcomePersistedState(): { read: boolean; dismissed: boolean } {
+  if (typeof localStorage === 'undefined') return { read: false, dismissed: false };
+  try {
+    return {
+      read: localStorage.getItem(SKILLSTREAM_GUEST_WELCOME_READ_KEY) === '1',
+      dismissed: localStorage.getItem(SKILLSTREAM_GUEST_WELCOME_DISMISSED_KEY) === '1',
+    };
+  } catch {
+    return { read: false, dismissed: false };
+  }
 }
 
 export default function App() {
@@ -628,54 +654,111 @@ export default function App() {
 
   useEffect(() => {
     if (!user?.uid) {
-      setNotifications([
-        {
-          id: 'welcome',
-          message: 'Welcome to SkillStream! Start your first course today.',
-          read: false,
-          time: 'Now',
-          kind: 'generic',
-          actionView: 'catalog',
-          actionLabel: 'Open catalog',
-        },
-      ]);
+      const { read, dismissed } = readGuestWelcomePersistedState();
+      if (dismissed) {
+        setNotifications([]);
+      } else {
+        setNotifications([
+          {
+            id: 'welcome',
+            message: 'Welcome to SkillStream! Start your first course today.',
+            read,
+            time: 'Now',
+            kind: 'generic',
+            actionView: 'catalog',
+            actionLabel: 'Open catalog',
+          },
+        ]);
+      }
       return;
     }
     let cancelled = false;
-    void (async () => {
-      const enrolled = await fetchEnrolledCourseIds(user.uid);
-      const alerts = await fetchActiveAlertsForCourses(enrolled);
-      const st = await loadUserAlertState(user.uid);
-      const accountCreatedAtMs = (() => {
-        const raw = user.metadata.creationTime;
-        if (!raw) return null;
-        const parsed = Date.parse(raw);
-        return Number.isFinite(parsed) ? parsed : null;
-      })();
-      if (cancelled) return;
-      const rows: NavbarNotification[] = alerts
-        .filter((a) => (accountCreatedAtMs == null ? true : a.createdAtMs >= accountCreatedAtMs))
-        .filter((a) => !st.dismissedAlertIds[a.id])
-        .map((a) => ({
-          id: `broadcast-${a.id}`,
-          kind: 'broadcast' as const,
-          alertId: a.id,
-          courseId: a.courseId,
-          lessonId: a.lessonId,
-          moduleId: a.moduleId,
-          message: `${a.title}: ${a.message}`,
-          read: !!st.readAlertIds[a.id],
-          time: formatAlertListTime(a.createdAtMs),
-        }));
-      setNotifications((prev) => {
-        const certs = prev.filter((n) => n.kind === 'certificate');
-        return [...rows, ...certs];
-      });
+    const uid = user.uid;
+    const accountCreatedAtMs = (() => {
+      const raw = user.metadata.creationTime;
+      if (!raw) return null;
+      const parsed = Date.parse(raw);
+      return Number.isFinite(parsed) ? parsed : null;
     })();
+
+    const applyMergedAlerts = async (personalAlerts: ReturnType<typeof reportNoticesFromQuerySnapshot>) => {
+      if (cancelled) return;
+      try {
+        const enrolled = await fetchEnrolledCourseIds(uid);
+        if (cancelled) return;
+        const courseAlerts = await fetchActiveAlertsForCourses(enrolled);
+        if (cancelled) return;
+        const byAlertId = new Map<string, (typeof courseAlerts)[number]>();
+        for (const a of courseAlerts) byAlertId.set(a.id, a);
+        for (const a of personalAlerts) byAlertId.set(a.id, a);
+        const alerts = Array.from(byAlertId.values()).sort((a, b) => b.createdAtMs - a.createdAtMs);
+        const st = await loadUserAlertState(uid);
+        if (cancelled) return;
+        const rows: NavbarNotification[] = alerts
+          .filter(
+            (a) =>
+              a.type === 'report_resolved' ||
+              accountCreatedAtMs == null ||
+              a.createdAtMs >= accountCreatedAtMs
+          )
+          .filter((a) => !st.dismissedAlertIds[a.id])
+          .map((a) => {
+            const kind: NavbarNotification['kind'] =
+              a.type === 'report_resolved' ? 'generic' : 'broadcast';
+            return {
+              id: `broadcast-${a.id}`,
+              kind,
+              alertId: a.id,
+              courseId: a.courseId,
+              lessonId: a.lessonId,
+              moduleId: a.moduleId,
+              message: `${a.title}: ${a.message}`,
+              read: !!st.readAlertIds[a.id],
+              time: formatAlertListTime(a.createdAtMs),
+            };
+          });
+        setNotifications((prev) => {
+          const certs = prev.filter((n) => n.kind === 'certificate');
+          return [...rows, ...certs];
+        });
+      } catch (error) {
+        console.error('Failed to refresh notifications:', error);
+      }
+    };
+
+    const reportNoticesQ = query(collection(db, 'reportNotices'), where('forUserId', '==', uid), limit(50));
+    void applyMergedAlerts([]);
+    const unsub = onSnapshot(
+      reportNoticesQ,
+      (snap) => {
+        void applyMergedAlerts(reportNoticesFromQuerySnapshot(snap));
+      },
+      (error) => {
+        // Keep course alerts working even if reportNotices read is denied/misconfigured.
+        console.error('reportNotices snapshot failed:', error);
+        if (isFirestorePermissionDenied(error)) {
+          setAuthBanner('Session permissions may be stale. Please sign out and sign back in.');
+        }
+        void applyMergedAlerts([]);
+      }
+    );
+
     return () => {
       cancelled = true;
+      unsub();
     };
   }, [user?.uid, user?.metadata.creationTime]);
+
+  useEffect(() => {
+    if (user?.uid) return;
+    const welcome = notifications.find((n) => n.id === 'welcome');
+    if (!welcome?.read) return;
+    try {
+      localStorage.setItem(SKILLSTREAM_GUEST_WELCOME_READ_KEY, '1');
+    } catch {
+      /* ignore */
+    }
+  }, [user?.uid, notifications]);
 
   useEffect(() => {
     if (currentView !== 'admin') return;
@@ -1024,12 +1107,28 @@ export default function App() {
 
   const handleDismissNotification = useCallback(
     (n: NavbarNotification) => {
+      if (!user?.uid && n.id === 'welcome') {
+        try {
+          localStorage.setItem(SKILLSTREAM_GUEST_WELCOME_DISMISSED_KEY, '1');
+        } catch {
+          /* ignore */
+        }
+      }
       if (n.kind === 'broadcast' && n.alertId && user?.uid) {
         void markAlertDismissed(user.uid, n.alertId);
       }
     },
     [user?.uid]
   );
+
+  const handleGuestClearNotifications = useCallback(() => {
+    if (user?.uid) return;
+    try {
+      localStorage.setItem(SKILLSTREAM_GUEST_WELCOME_DISMISSED_KEY, '1');
+    } catch {
+      /* ignore */
+    }
+  }, [user?.uid]);
 
   const handleCoursePlayerFinished = useCallback(
     (course: Course) => {
@@ -1848,6 +1947,7 @@ export default function App() {
           setNotifications={setNotifications}
           onNotificationAction={handleNotificationAction}
           onDismissNotification={handleDismissNotification}
+          onGuestClearNotifications={handleGuestClearNotifications}
           isAdmin={isAdminUser}
         />
       )}

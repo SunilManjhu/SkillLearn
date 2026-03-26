@@ -9,10 +9,16 @@ import {
   setDoc,
   where,
   limit,
+  type QuerySnapshot,
 } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 
-export type BroadcastAlertType = 'course_update' | 'topic_update' | 'video_update' | 'course_change';
+export type BroadcastAlertType =
+  | 'course_update'
+  | 'topic_update'
+  | 'video_update'
+  | 'course_change'
+  | 'report_resolved';
 
 export interface BroadcastAlert {
   id: string;
@@ -20,6 +26,7 @@ export interface BroadcastAlert {
   title: string;
   message: string;
   courseId: string;
+  userId?: string;
   moduleId?: string;
   lessonId?: string;
   createdAtMs: number;
@@ -63,6 +70,58 @@ export async function createBroadcastAlert(params: {
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, 'alerts');
     return null;
+  }
+}
+
+export type CreateReportResolvedNoticeResult =
+  | { ok: true; id: string }
+  | { ok: false; userMessage: string };
+
+/** Writes to `reportNotices` — recipient can read via `where('forUserId','==', uid)` under tight rules. */
+export async function createReportResolvedNotice(params: {
+  forUserId: string;
+  title: string;
+  message: string;
+  lessonId?: string;
+}): Promise<CreateReportResolvedNoticeResult> {
+  const payload: Record<string, unknown> = {
+    forUserId: params.forUserId,
+    title: params.title,
+    message: params.message,
+    kind: 'report_resolved',
+    createdAt: serverTimestamp(),
+  };
+  if (params.lessonId) payload.lessonId = params.lessonId;
+
+  const tryCreate = async () => addDoc(collection(db, 'reportNotices'), payload);
+
+  try {
+    const ref = await tryCreate();
+    return { ok: true, id: ref.id };
+  } catch (error) {
+    const code =
+      typeof error === 'object' && error !== null && 'code' in error
+        ? String((error as { code: string }).code)
+        : '';
+    // Rules/auth propagation can lag after role/rules changes. Force-refresh token and retry once.
+    if (code === 'permission-denied' && auth.currentUser) {
+      try {
+        await auth.currentUser.getIdToken(true);
+        const ref = await tryCreate();
+        return { ok: true, id: ref.id };
+      } catch {
+        // Fall through to normal error handling below.
+      }
+    }
+
+    handleFirestoreError(error, OperationType.WRITE, 'reportNotices');
+    const userMessage =
+      code === 'permission-denied'
+        ? 'Permission denied creating the notice. If you are an admin, ask a developer to check Firestore rules for reportNotices and redeploy.'
+        : code
+          ? `Could not create notice (${code}). Check the browser console for details.`
+          : 'Could not create notice. Check the browser console for details.';
+    return { ok: false, userMessage };
   }
 }
 
@@ -111,6 +170,28 @@ export async function fetchActiveAlertsForCourses(courseIds: string[]): Promise<
     handleFirestoreError(error, OperationType.LIST, 'alerts');
     return [];
   }
+}
+
+/** Parse `reportNotices` docs from `where('forUserId','==', uid)`. */
+export function reportNoticesFromQuerySnapshot(snap: QuerySnapshot): BroadcastAlert[] {
+  const rows: BroadcastAlert[] = [];
+  for (const d of snap.docs) {
+    const data = d.data();
+    if (data.kind !== 'report_resolved') continue;
+    if (typeof data.title !== 'string' || typeof data.message !== 'string') continue;
+    rows.push({
+      id: d.id,
+      type: 'report_resolved',
+      title: data.title,
+      message: data.message,
+      courseId: '__system__',
+      lessonId: typeof data.lessonId === 'string' ? data.lessonId : undefined,
+      createdAtMs: toMillis(data.createdAt),
+      status: 'active',
+    });
+  }
+  rows.sort((a, b) => b.createdAtMs - a.createdAtMs);
+  return rows;
 }
 
 export async function loadUserAlertState(userId: string): Promise<UserAlertState> {

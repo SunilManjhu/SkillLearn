@@ -189,10 +189,13 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   const [voteLoginError, setVoteLoginError] = useState<string | null>(null);
 
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [reportMode, setReportMode] = useState<'create' | 'recall'>('create');
   const [reportStep, setReportStep] = useState(1);
   const [selectedReportReason, setSelectedReportReason] = useState<string | null>(null);
   const [reportDetails, setReportDetails] = useState('');
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+  const [hasActiveUserReport, setHasActiveUserReport] = useState(false);
+  const [isRecallingReport, setIsRecallingReport] = useState(false);
 
   // Rating State
   const [showRatingPrompt, setShowRatingPrompt] = useState(false);
@@ -1509,6 +1512,30 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     return () => unsubscribe();
   }, [currentLesson.id, user]);
 
+  // Track whether the current signed-in user has an active report for this lesson.
+  useEffect(() => {
+    if (!currentLesson.id || !user) {
+      setHasActiveUserReport(false);
+      return;
+    }
+    const reportQ = query(
+      collection(db, 'reports'),
+      where('lessonId', '==', currentLesson.id),
+      where('userId', '==', user.uid),
+      limit(20)
+    );
+    const unsubscribe = onSnapshot(
+      reportQ,
+      (snapshot) => {
+        setHasActiveUserReport(!snapshot.empty);
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.GET, 'reports');
+      }
+    );
+    return () => unsubscribe();
+  }, [currentLesson.id, user]);
+
   // Listen for user's own suggestion to replace the video URL
   useEffect(() => {
     if (!currentLesson.id || !user) {
@@ -1738,6 +1765,40 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     }
   };
 
+  const handleRecallReport = useCallback(async () => {
+    if (!user) return;
+    setIsRecallingReport(true);
+    try {
+      const reportsRef = collection(db, 'reports');
+      const reportQ = query(
+        reportsRef,
+        where('lessonId', '==', currentLesson.id),
+        where('userId', '==', user.uid)
+      );
+      const reportSnap = await getDocs(reportQ);
+      const deleteReportPromises = reportSnap.docs.map((d) => deleteDoc(d.ref));
+      await Promise.all(deleteReportPromises);
+
+      // Reporting currently auto-adds a downvote; recall removes it to fully clear the report signal.
+      const votesRef = collection(db, 'votes');
+      const voteQ = query(
+        votesRef,
+        where('lessonId', '==', currentLesson.id),
+        where('userId', '==', user.uid),
+        where('type', '==', 'down')
+      );
+      const voteSnap = await getDocs(voteQ);
+      const deleteVotePromises = voteSnap.docs.map((d) => deleteDoc(d.ref));
+      await Promise.all(deleteVotePromises);
+      setIsReportModalOpen(false);
+      setReportMode('create');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, 'reports');
+    } finally {
+      setIsRecallingReport(false);
+    }
+  }, [currentLesson.id, user]);
+
   const closeCustomizeModal = useCallback(() => {
     setIsCustomizeModalOpen(false);
   }, []);
@@ -1749,6 +1810,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
 
   const closeReportModal = useCallback(() => {
     setIsReportModalOpen(false);
+    setReportMode('create');
   }, []);
 
   const dismissRatingPrompt = useCallback(() => {
@@ -2321,20 +2383,29 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                 </button>
                 <button
                   onClick={() => {
+                    if (hasActiveUserReport) {
+                      setReportMode('recall');
+                      setIsReportModalOpen(true);
+                      return;
+                    }
+                    setReportMode('create');
                     setIsReportModalOpen(true);
                     setReportStep(1);
                     setSelectedReportReason(null);
                     setReportDetails('');
                   }}
+                  disabled={isRecallingReport}
                   className={`flex items-center gap-2 px-4 py-2 rounded-full border transition-all ${
-                    userVote === 'down' 
+                    hasActiveUserReport
                       ? 'bg-red-500 border-red-500 text-white' 
                       : 'border-[var(--border-color)] text-[var(--text-secondary)] hover:border-red-500/50'
-                  }`}
-                  title="Report an issue"
+                  } ${isRecallingReport ? 'opacity-60 cursor-not-allowed' : ''}`}
+                  title={hasActiveUserReport ? 'Click to recall your report' : 'Report an issue'}
                 >
                   <Flag size={18} />
-                  <span className="text-sm font-bold">Report</span>
+                  <span className="text-sm font-bold">
+                    {isRecallingReport ? 'Recalling...' : hasActiveUserReport ? 'Reported' : 'Report'}
+                  </span>
                 </button>
               </div>
             </div>
@@ -2677,7 +2748,32 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                     </div>
 
                     <div className="p-8">
-                      {reportStep === 1 ? (
+                      {reportMode === 'recall' ? (
+                        <div className="space-y-6">
+                          <div>
+                            <h3 className="text-lg font-bold text-[var(--text-primary)] mb-2">Recall your report?</h3>
+                            <p className="text-sm text-[var(--text-secondary)] mb-6">
+                              We&apos;ll remove your report for this lesson. You can report it again anytime.
+                            </p>
+                          </div>
+                          <div className="flex gap-3">
+                            <button
+                              onClick={closeReportModal}
+                              disabled={isRecallingReport}
+                              className="flex-1 border border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--hover-bg)] disabled:opacity-60 py-3 rounded-xl text-sm font-bold transition-colors"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => void handleRecallReport()}
+                              disabled={isRecallingReport}
+                              className="flex-[2] bg-red-500 hover:bg-red-600 disabled:opacity-60 text-white py-3 rounded-xl text-sm font-bold transition-colors"
+                            >
+                              {isRecallingReport ? 'Recalling...' : 'Recall report'}
+                            </button>
+                          </div>
+                        </div>
+                      ) : reportStep === 1 ? (
                         <div className="space-y-6">
                           <div>
                             <h3 className="text-lg font-bold text-[var(--text-primary)] mb-2">What's going on?</h3>

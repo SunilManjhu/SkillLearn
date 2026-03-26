@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "deploy:rules": "firebase deploy --project gen-lang-client-0658395534 --only firestore:rules"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
