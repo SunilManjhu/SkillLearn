@@ -1114,7 +1114,7 @@ export default function App() {
           /* ignore */
         }
       }
-      if (n.kind === 'broadcast' && n.alertId && user?.uid) {
+      if (n.alertId && user?.uid) {
         void markAlertDismissed(user.uid, n.alertId);
       }
     },

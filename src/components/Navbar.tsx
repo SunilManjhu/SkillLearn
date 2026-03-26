@@ -234,6 +234,9 @@ export const Navbar: React.FC<NavbarProps> = ({
     if (notifications.some((n) => n.id === 'welcome')) {
       onGuestClearNotifications?.();
     }
+    for (const n of notifications) {
+      onDismissNotification?.(n);
+    }
     setNotifications([]);
   };
 
