@@ -15,6 +15,7 @@ import {
   ensureUserProfile,
   fetchUserRole,
   countFirestoreAdminUsers,
+  subscribeUserRole,
 } from './utils/userProfileFirestore';
 import { peekResolvedCatalogCourses, resolveCatalogCourses } from './utils/publishedCoursesFirestore';
 import { enrollUserInCourse, fetchEnrolledCourseIds } from './utils/enrollmentsFirestore';
@@ -660,16 +661,29 @@ export default function App() {
     }
     setAdminAccessResolved(false);
     let cancelled = false;
+    let unsub: (() => void) | null = null;
+
     void (async () => {
       await ensureUserProfile(user);
-      const role = await fetchUserRole(user.uid);
-      if (!cancelled) {
-        setIsAdminUser(role === 'admin');
-        setAdminAccessResolved(true);
-      }
+      if (cancelled) return;
+      unsub = subscribeUserRole(
+        user.uid,
+        (role) => {
+          if (cancelled) return;
+          setIsAdminUser(role === 'admin');
+          setAdminAccessResolved(true);
+        },
+        () => {
+          if (cancelled) return;
+          setIsAdminUser(false);
+          setAdminAccessResolved(true);
+        }
+      );
     })();
+
     return () => {
       cancelled = true;
+      unsub?.();
     };
   }, [isAuthReady, user]);
 
