@@ -95,6 +95,37 @@ function readAlertsMutedFromStorage(uid: string): boolean {
   }
 }
 
+type ModerationBellDismissed = { reports: boolean; suggestions: boolean; contact: boolean };
+
+const moderationBellDismissedStorageKey = (uid: string) => `skillstream-moderation-bell-dismissed:${uid}`;
+
+function readModerationBellDismissedFromStorage(uid: string): ModerationBellDismissed {
+  if (typeof localStorage === 'undefined') {
+    return { reports: false, suggestions: false, contact: false };
+  }
+  try {
+    const raw = localStorage.getItem(moderationBellDismissedStorageKey(uid));
+    if (!raw) return { reports: false, suggestions: false, contact: false };
+    const p = JSON.parse(raw) as Partial<ModerationBellDismissed>;
+    return {
+      reports: !!p.reports,
+      suggestions: !!p.suggestions,
+      contact: !!p.contact,
+    };
+  } catch {
+    return { reports: false, suggestions: false, contact: false };
+  }
+}
+
+function writeModerationBellDismissedToStorage(uid: string, state: ModerationBellDismissed) {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(moderationBellDismissedStorageKey(uid), JSON.stringify(state));
+  } catch {
+    /* ignore */
+  }
+}
+
 const ADMIN_DELETE_BLOCKED_MULTI_MSG =
   "Admin accounts can't be deleted. In Admin → Users, set your role to user (or ask another admin), then return here to delete your account.";
 
@@ -323,6 +354,14 @@ export default function App() {
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(initialRoute.selectedCourse);
   const [initialLesson, setInitialLesson] = useState<Lesson | undefined>(initialRoute.initialLesson);
   const [adminTab, setAdminTab] = useState<AdminHistoryTab>(() => initialRoute.adminTab);
+  /** One-shot sub-tab when opening Admin → Moderation from a navbar notification. */
+  const [pendingModerationSubTab, setPendingModerationSubTab] = useState<
+    'reports' | 'suggestions' | 'contact' | null
+  >(null);
+  const prevModerationCountsRef = useRef({ reports: 0, suggestions: 0, contact: 0 });
+  /** After Clear All / dismiss, hide moderation bell rows until that queue grows (count bump). */
+  const moderationBellDismissedRef = useRef({ reports: false, suggestions: false, contact: false });
+  const runModerationInboxSyncRef = useRef<(() => void) | null>(null);
   const [deferredCourseRoute, setDeferredCourseRoute] = useState<DeferredCourseRoute | null>(
     () => initialRoute.deferredCourseRoute
   );
@@ -779,9 +818,14 @@ export default function App() {
             };
           });
         setNotifications((prev) => {
-          const adminInbox = prev.filter((n) => n.id.startsWith('admin-moderation-'));
+          // Do not preserve admin-moderation-* here — that reintroduces rows after Clear All when
+          // this async merge runs after reportNotices / course alerts refresh.
           const certs = prev.filter((n) => n.kind === 'certificate');
-          return [...adminInbox, ...rows, ...certs];
+          return [...rows, ...certs];
+        });
+        // Re-apply moderation inbox rows from the admin listener (respects dismiss + counts).
+        queueMicrotask(() => {
+          runModerationInboxSyncRef.current?.();
         });
       } catch (error) {
         console.error('Failed to refresh notifications:', error);
@@ -814,78 +858,139 @@ export default function App() {
   useEffect(() => {
     if (!user?.uid || !isAdminUser) {
       setNotifications((prev) => prev.filter((n) => !n.id.startsWith('admin-moderation-')));
+      prevModerationCountsRef.current = { reports: 0, suggestions: 0, contact: 0 };
+      moderationBellDismissedRef.current = { reports: false, suggestions: false, contact: false };
+      runModerationInboxSyncRef.current = null;
       return;
     }
+
+    const uid = user.uid;
+    moderationBellDismissedRef.current = readModerationBellDismissedFromStorage(uid);
 
     let reportCount = 0;
     let suggestionCount = 0;
     let contactCount = 0;
     let cancelled = false;
+    /** Skip unread bump on the first snapshot per listener (avoid marking existing backlog as new). */
+    const skipFirstSnapshot = { reports: true, suggestions: true, contact: true };
+    let bumpedReports = false;
+    let bumpedSuggestions = false;
+    let bumpedContact = false;
 
     const syncAdminInboxNotifications = () => {
       if (cancelled) return;
+      const br = bumpedReports;
+      const bs = bumpedSuggestions;
+      const bc = bumpedContact;
+      bumpedReports = false;
+      bumpedSuggestions = false;
+      bumpedContact = false;
       setNotifications((prev) => {
         const byId = new Map<string, NavbarNotification>(prev.map((n) => [n.id, n]));
         const nonAdminRows = prev.filter((n) => !n.id.startsWith('admin-moderation-'));
         const adminRows: NavbarNotification[] = [];
         if (reportCount > 0) {
-          const id = 'admin-moderation-reports';
-          adminRows.push({
-            id,
-            kind: 'generic',
-            actionView: 'admin',
-            adminTab: 'moderation',
-            actionLabel: 'Open moderation',
-            message: `Moderation inbox: Reports (${reportCount}) need review.`,
-            time: 'Now',
-            read: byId.get(id)?.read ?? false,
-          });
+          const suppress = moderationBellDismissedRef.current.reports && !br;
+          if (!suppress) {
+            if (br) moderationBellDismissedRef.current.reports = false;
+            const id = 'admin-moderation-reports';
+            adminRows.push({
+              id,
+              kind: 'generic',
+              actionView: 'admin',
+              adminTab: 'moderation',
+              adminModerationSubTab: 'reports',
+              actionLabel: 'Open moderation',
+              message: `Moderation inbox: Reports (${reportCount}) need review.`,
+              time: 'Now',
+              read: br ? false : (byId.get(id)?.read ?? false),
+            });
+          }
         }
         if (suggestionCount > 0) {
-          const id = 'admin-moderation-suggestions';
-          adminRows.push({
-            id,
-            kind: 'generic',
-            actionView: 'admin',
-            adminTab: 'moderation',
-            actionLabel: 'Open moderation',
-            message: `Moderation inbox: URL suggestions (${suggestionCount}) need review.`,
-            time: 'Now',
-            read: byId.get(id)?.read ?? false,
-          });
+          const suppress = moderationBellDismissedRef.current.suggestions && !bs;
+          if (!suppress) {
+            if (bs) moderationBellDismissedRef.current.suggestions = false;
+            const id = 'admin-moderation-suggestions';
+            adminRows.push({
+              id,
+              kind: 'generic',
+              actionView: 'admin',
+              adminTab: 'moderation',
+              adminModerationSubTab: 'suggestions',
+              actionLabel: 'Open moderation',
+              message: `Moderation inbox: URL suggestions (${suggestionCount}) need review.`,
+              time: 'Now',
+              read: bs ? false : (byId.get(id)?.read ?? false),
+            });
+          }
         }
         if (contactCount > 0) {
-          const id = 'admin-moderation-contact';
-          adminRows.push({
-            id,
-            kind: 'generic',
-            actionView: 'admin',
-            adminTab: 'moderation',
-            actionLabel: 'Open moderation',
-            message: `Moderation inbox: Contact messages (${contactCount}) need review.`,
-            time: 'Now',
-            read: byId.get(id)?.read ?? false,
-          });
+          const suppress = moderationBellDismissedRef.current.contact && !bc;
+          if (!suppress) {
+            if (bc) moderationBellDismissedRef.current.contact = false;
+            const id = 'admin-moderation-contact';
+            adminRows.push({
+              id,
+              kind: 'generic',
+              actionView: 'admin',
+              adminTab: 'moderation',
+              adminModerationSubTab: 'contact',
+              actionLabel: 'Open moderation',
+              message: `Moderation inbox: Contact messages (${contactCount}) need review.`,
+              time: 'Now',
+              read: bc ? false : (byId.get(id)?.read ?? false),
+            });
+          }
         }
+        writeModerationBellDismissedToStorage(uid, {
+          reports: moderationBellDismissedRef.current.reports,
+          suggestions: moderationBellDismissedRef.current.suggestions,
+          contact: moderationBellDismissedRef.current.contact,
+        });
         return [...adminRows, ...nonAdminRows];
       });
     };
 
+    runModerationInboxSyncRef.current = syncAdminInboxNotifications;
+
     const unsubReports = onSnapshot(collection(db, 'reports'), (snap) => {
-      reportCount = snap.size;
+      const size = snap.size;
+      if (!skipFirstSnapshot.reports) {
+        if (size > prevModerationCountsRef.current.reports) bumpedReports = true;
+      } else {
+        skipFirstSnapshot.reports = false;
+      }
+      prevModerationCountsRef.current.reports = size;
+      reportCount = size;
       syncAdminInboxNotifications();
     });
     const unsubSuggestions = onSnapshot(collection(db, 'suggestions'), (snap) => {
-      suggestionCount = snap.size;
+      const size = snap.size;
+      if (!skipFirstSnapshot.suggestions) {
+        if (size > prevModerationCountsRef.current.suggestions) bumpedSuggestions = true;
+      } else {
+        skipFirstSnapshot.suggestions = false;
+      }
+      prevModerationCountsRef.current.suggestions = size;
+      suggestionCount = size;
       syncAdminInboxNotifications();
     });
     const unsubContact = onSnapshot(collection(db, 'contactMessages'), (snap) => {
-      contactCount = snap.size;
+      const size = snap.size;
+      if (!skipFirstSnapshot.contact) {
+        if (size > prevModerationCountsRef.current.contact) bumpedContact = true;
+      } else {
+        skipFirstSnapshot.contact = false;
+      }
+      prevModerationCountsRef.current.contact = size;
+      contactCount = size;
       syncAdminInboxNotifications();
     });
 
     return () => {
       cancelled = true;
+      runModerationInboxSyncRef.current = null;
       unsubReports();
       unsubSuggestions();
       unsubContact();
@@ -1118,7 +1223,9 @@ export default function App() {
 
   const navbarNotifications = useMemo(() => {
     if (user?.uid && alertsMuted) {
-      return notifications.filter((n) => n.kind === 'certificate');
+      return notifications.filter(
+        (n) => n.kind === 'certificate' || n.id.startsWith('admin-moderation-')
+      );
     }
     return notifications;
   }, [user?.uid, alertsMuted, notifications]);
@@ -1276,6 +1383,15 @@ export default function App() {
     scrollDocumentToTop();
   }, [selectedCourse?.id]);
 
+  const clearPendingModerationSubTab = useCallback(() => setPendingModerationSubTab(null), []);
+
+  const handleClearAllNotifications = useCallback(() => {
+    if (!user?.uid) return;
+    moderationBellDismissedRef.current = { reports: true, suggestions: true, contact: true };
+    writeModerationBellDismissedToStorage(user.uid, moderationBellDismissedRef.current);
+    runModerationInboxSyncRef.current?.();
+  }, [user?.uid]);
+
   const handleNotificationAction = useCallback(
     (n: NavbarNotification) => {
       if (n.kind === 'certificate') {
@@ -1285,6 +1401,11 @@ export default function App() {
       if (n.kind === 'generic' && n.actionView) {
         if (n.actionView === 'admin' && n.adminTab) {
           setAdminTab(n.adminTab);
+          if (n.adminTab === 'moderation' && n.adminModerationSubTab) {
+            setPendingModerationSubTab(n.adminModerationSubTab);
+          } else {
+            setPendingModerationSubTab(null);
+          }
           setCurrentView('admin');
           scrollDocumentToTop();
           return;
@@ -1325,6 +1446,13 @@ export default function App() {
       }
       if (n.alertId && user?.uid) {
         void markAlertDismissed(user.uid, n.alertId);
+      }
+      if (n.id === 'admin-moderation-reports') moderationBellDismissedRef.current.reports = true;
+      else if (n.id === 'admin-moderation-suggestions') moderationBellDismissedRef.current.suggestions = true;
+      else if (n.id === 'admin-moderation-contact') moderationBellDismissedRef.current.contact = true;
+      if (n.id.startsWith('admin-moderation-') && user?.uid) {
+        writeModerationBellDismissedToStorage(user.uid, moderationBellDismissedRef.current);
+        runModerationInboxSyncRef.current?.();
       }
     },
     [user?.uid]
@@ -2156,6 +2284,7 @@ export default function App() {
           setNotifications={setNotifications}
           onNotificationAction={handleNotificationAction}
           onDismissNotification={handleDismissNotification}
+          onClearAllNotifications={handleClearAllNotifications}
           onGuestClearNotifications={handleGuestClearNotifications}
           isAdmin={isAdminUser}
         />
@@ -2252,6 +2381,8 @@ export default function App() {
               courses={catalogCourses}
               activeTab={adminTab}
               currentAdminUid={user?.uid}
+              moderationInitialSubTab={pendingModerationSubTab}
+              onModerationInitialSubTabConsumed={clearPendingModerationSubTab}
               onTabChange={setAdminTab}
               onDismiss={() => handleNavigate('catalog', false)}
               onCatalogChanged={refreshCatalogCourses}

@@ -29,7 +29,16 @@ function senderLine(c: AdminContactMessageRow): string {
   return parts.length > 0 ? parts.join(' · ') : '—';
 }
 
-export const AdminModerationSection: React.FC = () => {
+export interface AdminModerationSectionProps {
+  /** One-shot: switch to this sub-tab when set (e.g. from navbar notification). */
+  initialSubTab?: 'reports' | 'suggestions' | 'contact';
+  onInitialSubTabConsumed?: () => void;
+}
+
+export const AdminModerationSection: React.FC<AdminModerationSectionProps> = ({
+  initialSubTab,
+  onInitialSubTabConsumed,
+}) => {
   const [subTab, setSubTab] = useState<'reports' | 'suggestions' | 'contact'>('reports');
   const [reports, setReports] = useState<AdminReportRow[]>([]);
   const [suggestions, setSuggestions] = useState<AdminSuggestionRow[]>([]);
@@ -59,8 +68,10 @@ export const AdminModerationSection: React.FC = () => {
   }, []);
 
   React.useEffect(() => {
-    void load();
-  }, [load]);
+    if (!initialSubTab) return;
+    setSubTab(initialSubTab);
+    onInitialSubTabConsumed?.();
+  }, [initialSubTab, onInitialSubTabConsumed]);
 
   React.useEffect(() => {
     setLoading(true);

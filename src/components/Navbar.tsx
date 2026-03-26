@@ -14,6 +14,8 @@ export interface NavbarNotification {
   kind?: 'certificate' | 'broadcast' | 'generic';
   actionView?: 'home' | 'catalog' | 'contact' | 'profile' | 'admin';
   adminTab?: 'alerts' | 'catalog' | 'moderation' | 'users';
+  /** When opening Admin → Moderation, which inbox sub-tab to show. */
+  adminModerationSubTab?: 'reports' | 'suggestions' | 'contact';
   actionLabel?: string;
   courseId?: string;
   lessonId?: string;
@@ -44,6 +46,8 @@ interface NavbarProps {
   onNotificationAction: (n: NavbarNotification) => void;
   /** Optional: persist dismiss (e.g. Firestore) before removing from the list. */
   onDismissNotification?: (n: NavbarNotification) => void;
+  /** Called before clearing the list (e.g. stop re-adding Firestore-driven moderation rows until new activity). */
+  onClearAllNotifications?: () => void;
   /** Signed-out: called before clearing the list when "Clear all" removes the welcome tip (avoids badge returning on refresh). */
   onGuestClearNotifications?: () => void;
   isAdmin?: boolean;
@@ -68,6 +72,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   setNotifications,
   onNotificationAction,
   onDismissNotification,
+  onClearAllNotifications,
   onGuestClearNotifications,
   isAdmin = false,
 }) => {
@@ -232,6 +237,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   const clearAllNotifications = () => {
+    onClearAllNotifications?.();
     if (notifications.some((n) => n.id === 'welcome')) {
       onGuestClearNotifications?.();
     }

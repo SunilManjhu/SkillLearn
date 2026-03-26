@@ -14,6 +14,9 @@ interface AdminPageProps {
   courses: Course[];
   activeTab: AdminHistoryTab;
   currentAdminUid?: string;
+  /** One-shot: open Moderation inbox on this sub-tab (e.g. from navbar notification). */
+  moderationInitialSubTab?: 'reports' | 'suggestions' | 'contact' | null;
+  onModerationInitialSubTabConsumed?: () => void;
   onTabChange: (tab: AdminHistoryTab) => void;
   onDismiss: () => void;
   onCatalogChanged: () => void | Promise<void>;
@@ -30,6 +33,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   courses,
   activeTab: tab,
   currentAdminUid,
+  moderationInitialSubTab,
+  onModerationInitialSubTabConsumed,
   onTabChange,
   onDismiss,
   onCatalogChanged,
@@ -326,7 +331,12 @@ export const AdminPage: React.FC<AdminPageProps> = ({
 
         {tab === 'catalog' && <AdminCourseCatalogSection onCatalogChanged={onCatalogChanged} />}
 
-        {tab === 'moderation' && <AdminModerationSection />}
+        {tab === 'moderation' && (
+          <AdminModerationSection
+            initialSubTab={moderationInitialSubTab ?? undefined}
+            onInitialSubTabConsumed={onModerationInitialSubTabConsumed}
+          />
+        )}
         {tab === 'users' && <AdminUserRolesSection currentAdminUid={currentAdminUid} />}
 
         {actionToast}
