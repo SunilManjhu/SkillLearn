@@ -525,10 +525,9 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             </div>
             <div className="p-5 space-y-4">
               <p className="text-sm text-[var(--text-secondary)]">
-                Your Google-linked account will be removed from SkillStream. If deletion fails, sign out,
-                sign in with Google again, then try once more (Firebase requires a recent sign-in for
-                security). Admins must set their role to user in Admin → Users before deletion; if you are
-                the only admin, promote someone else to admin first.
+                Your Google-linked account will be removed from SkillStream. Admins must set their role to
+                user in Admin → Users before deletion; if you are the only admin, promote someone else to
+                admin first.
               </p>
               {deleteError && <p className="text-sm text-red-500">{deleteError}</p>}
               <div className="flex gap-3">
