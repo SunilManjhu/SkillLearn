@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { BookOpen, Copy, Plus, RotateCcw, Save, Trash2, RefreshCw, X } from 'lucide-react';
+import { BookOpen, Copy, Plus, RotateCcw, Save, Trash2, RefreshCw, X, ChevronDown, ChevronRight } from 'lucide-react';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { useDialogKeyboard } from '../../hooks/useDialogKeyboard';
 import type { Course, Lesson, Module } from '../../data/courses';
@@ -184,6 +184,14 @@ interface AdminCourseCatalogSectionProps {
   onCatalogChanged: () => void | Promise<void>;
 }
 
+interface RequiredFieldTarget {
+  targetId: string;
+  moduleIndex: number;
+  lessonKey?: string;
+}
+
+type ActionToastVariant = 'success' | 'danger';
+
 export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps> = ({
   onCatalogChanged,
 }) => {
@@ -193,6 +201,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const [draft, setDraft] = useState<Course | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [actionToastText, setActionToastText] = useState<string | null>(null);
+  const [actionToastVariant, setActionToastVariant] = useState<ActionToastVariant>('success');
   const [listLoading, setListLoading] = useState(false);
   /** True after first focus on Course select or explicit Reload list — then options include New Course + published. */
   const [catalogRequested, setCatalogRequested] = useState(false);
@@ -201,6 +211,19 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const [renameDocId, setRenameDocId] = useState('');
   /** JSON snapshot of draft when last loaded / saved — for dirty detection and Cancel. */
   const [baselineJson, setBaselineJson] = useState<string | null>(null);
+  /** Turn on inline field errors after first failed save. */
+  const [showValidationHints, setShowValidationHints] = useState(false);
+  /** Editor sections are collapsed by default so large catalogs remain scannable. */
+  const [courseDetailsOpen, setCourseDetailsOpen] = useState(false);
+  const [openModules, setOpenModules] = useState<Record<number, boolean>>({});
+  const [openLessons, setOpenLessons] = useState<Record<string, boolean>>({});
+  /** After adding a module, open that exact index once draft state is committed. */
+  const pendingOpenNewModuleIndexRef = useRef<number | null>(null);
+  /** After adding a lesson, open that exact lesson once draft state is committed. */
+  const pendingOpenNewLessonKeyRef = useRef<string | null>(null);
+  /** On failed save, scroll/focus the first invalid required field once it is rendered. */
+  const pendingScrollTargetIdRef = useRef<string | null>(null);
+  const saveToastHideTimerRef = useRef<number | null>(null);
   /** Re-read category option list when extras change in localStorage (same tab). */
   const [categoryOptionsVersion, setCategoryOptionsVersion] = useState(0);
 
@@ -259,6 +282,28 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     [publishedList]
   );
 
+  const showActionToast = useCallback((text: string, variant: ActionToastVariant = 'success') => {
+    if (saveToastHideTimerRef.current) {
+      window.clearTimeout(saveToastHideTimerRef.current);
+      saveToastHideTimerRef.current = null;
+    }
+    setActionToastVariant(variant);
+    setActionToastText(text);
+    saveToastHideTimerRef.current = window.setTimeout(() => {
+      setActionToastText(null);
+      saveToastHideTimerRef.current = null;
+    }, 2200);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (saveToastHideTimerRef.current) {
+        window.clearTimeout(saveToastHideTimerRef.current);
+        saveToastHideTimerRef.current = null;
+      }
+    };
+  }, []);
+
   /** First time draft appears (e.g. initial load) without baseline yet. */
   useEffect(() => {
     if (!draft || baselineJson !== null) return;
@@ -315,6 +360,9 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const addModule = () => {
     setDraft((d) => {
       if (!d) return null;
+      const newModuleIndex = d.modules.length;
+      pendingOpenNewModuleIndexRef.current = newModuleIndex;
+      pendingOpenNewLessonKeyRef.current = `${newModuleIndex}:0`;
       const structured = isStructuredCourseId(d.id);
       const mid = structured ? nextModuleIdForCourse(d) : nextModuleIdLegacy(d.modules);
       const lid = structured ? `${mid}L1` : nextLessonIdLegacy(d);
@@ -336,18 +384,25 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         ],
       };
     });
+    // Focus editing on the newly added module.
+    setCourseDetailsOpen(false);
   };
 
   const removeModule = (mi: number) => {
+    if (!draft || draft.modules.length <= 1) return;
     setDraft((d) => {
       if (!d || d.modules.length <= 1) return d;
       return { ...d, modules: d.modules.filter((_, i) => i !== mi) };
     });
+    showActionToast('Module deleted.', 'danger');
   };
 
   const addLesson = (mi: number) => {
     setDraft((d) => {
       if (!d) return null;
+      const targetModule = d.modules[mi];
+      if (!targetModule) return d;
+      pendingOpenNewLessonKeyRef.current = `${mi}:${targetModule.lessons.length}`;
       const lid = isStructuredCourseId(d.id)
         ? nextLessonIdInModule(d, mi)
         : nextLessonIdLegacy(d);
@@ -366,6 +421,9 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   };
 
   const removeLesson = (mi: number, li: number) => {
+    if (!draft) return;
+    const target = draft.modules[mi];
+    if (!target || target.lessons.length <= 1) return;
     setDraft((d) => {
       if (!d) return null;
       const modules = d.modules.map((m, i) => {
@@ -375,6 +433,28 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       });
       return { ...d, modules };
     });
+    showActionToast('Lesson deleted.', 'danger');
+  };
+
+  const toggleModuleOpen = (mi: number) => {
+    setOpenModules((prev) => {
+      const nextOpen = !prev[mi];
+      if (!nextOpen) return {};
+      return { [mi]: true };
+    });
+    // Working in module editor should collapse the course details section.
+    setCourseDetailsOpen(false);
+    // When switching modules, collapse all lesson panels until the user picks one.
+    setOpenLessons({});
+  };
+
+  const toggleLessonOpen = (mi: number, li: number) => {
+    const key = `${mi}:${li}`;
+    setOpenLessons((prev) => {
+      const nextOpen = !prev[key];
+      if (!nextOpen) return {};
+      return { [key]: true };
+    });
   };
 
   const validateDraft = (c: Course): string | null => {
@@ -382,20 +462,82 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     if (!c.author.trim()) return 'Author is required.';
     if (!c.thumbnail.trim()) return 'Thumbnail URL is required.';
     if (!c.modules.length) return 'At least one module is required.';
-    for (const m of c.modules) {
+    for (let mi = 0; mi < c.modules.length; mi += 1) {
+      const m = c.modules[mi];
+      if (!m.id.trim()) return `Module ${mi + 1}: Module ID is required.`;
+      if (!m.title.trim()) return `Module ${mi + 1}: Module title is required.`;
       if (!m.lessons.length) return 'Each module needs at least one lesson.';
-      for (const l of m.lessons) {
-        if (!l.videoUrl.trim() || !l.videoUrl.startsWith('http')) return 'Every lesson needs a valid video URL.';
+      for (let li = 0; li < m.lessons.length; li += 1) {
+        const l = m.lessons[li];
+        if (!l.id.trim()) return `Module ${mi + 1}, Lesson ${li + 1}: Lesson ID is required.`;
+        if (!l.title.trim()) return `Module ${mi + 1}, Lesson ${li + 1}: Lesson title is required.`;
+        if (!l.videoUrl.trim() || !l.videoUrl.startsWith('http')) {
+          return `Module ${mi + 1}, Lesson ${li + 1}: Video URL is required and must start with http.`;
+        }
       }
     }
     if (c.rating < 0 || c.rating > 5) return 'Rating must be 0–5.';
     return null;
   };
 
+  const getFirstRequiredFieldTarget = (c: Course): RequiredFieldTarget | null => {
+    for (let mi = 0; mi < c.modules.length; mi += 1) {
+      const m = c.modules[mi];
+      if (!m.id.trim()) return { targetId: `admin-module-id-${mi}`, moduleIndex: mi };
+      if (!m.title.trim()) return { targetId: `admin-module-title-${mi}`, moduleIndex: mi };
+      for (let li = 0; li < m.lessons.length; li += 1) {
+        const l = m.lessons[li];
+        const lessonKey = `${mi}:${li}`;
+        if (!l.id.trim()) {
+          return { targetId: `admin-lesson-id-${mi}-${li}`, moduleIndex: mi, lessonKey };
+        }
+        if (!l.title.trim()) {
+          return { targetId: `admin-lesson-title-${mi}-${li}`, moduleIndex: mi, lessonKey };
+        }
+        if (!l.videoUrl.trim() || !l.videoUrl.startsWith('http')) {
+          return { targetId: `admin-lesson-url-${mi}-${li}`, moduleIndex: mi, lessonKey };
+        }
+      }
+    }
+    return null;
+  };
+
+  const fieldErrors = useMemo(() => {
+    const out = {
+      moduleId: new Set<number>(),
+      moduleTitle: new Set<number>(),
+      lessonId: new Set<string>(),
+      lessonTitle: new Set<string>(),
+      videoUrl: new Set<string>(),
+    };
+    if (!draft) return out;
+    for (let mi = 0; mi < draft.modules.length; mi += 1) {
+      const m = draft.modules[mi];
+      if (!m.id.trim()) out.moduleId.add(mi);
+      if (!m.title.trim()) out.moduleTitle.add(mi);
+      for (let li = 0; li < m.lessons.length; li += 1) {
+        const l = m.lessons[li];
+        const key = `${mi}:${li}`;
+        if (!l.id.trim()) out.lessonId.add(key);
+        if (!l.title.trim()) out.lessonTitle.add(key);
+        if (!l.videoUrl.trim() || !l.videoUrl.startsWith('http')) out.videoUrl.add(key);
+      }
+    }
+    return out;
+  }, [draft]);
+
   const handleSave = async () => {
     if (!draft) return;
     const err = validateDraft(draft);
     if (err) {
+      setShowValidationHints(true);
+      const target = getFirstRequiredFieldTarget(draft);
+      if (target) {
+        setCourseDetailsOpen(false);
+        setOpenModules({ [target.moduleIndex]: true });
+        setOpenLessons(target.lessonKey ? { [target.lessonKey]: true } : {});
+        pendingScrollTargetIdRef.current = target.targetId;
+      }
       setMsg(err);
       return;
     }
@@ -404,8 +546,10 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     const ok = await savePublishedCourse(draft);
     setBusy(false);
     if (ok) {
+      setShowValidationHints(false);
       if (draft.category.trim()) addCatalogCategoryExtra(draft.category.trim());
-      setMsg('Saved to Firestore.');
+      setMsg(null);
+      showActionToast('Saved to Firestore.');
       await refreshList();
       await onCatalogChanged();
       setSelector(draft.id);
@@ -494,7 +638,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         `Saved as "${newId}". The old document "${oldId}" could not be deleted — remove the duplicate manually in Firebase Console.`
       );
     } else {
-      setMsg(`Document ID updated: "${oldId}" → "${newId}".`);
+      setMsg(null);
+      showActionToast(`Document ID updated: "${oldId}" -> "${newId}".`);
     }
   };
 
@@ -514,7 +659,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       setBaselineJson(JSON.stringify(fresh));
       setSelector('__new__');
       setRenameDocId('');
-      setMsg('Course deleted.');
+      setMsg(null);
+      showActionToast('Course deleted.', 'danger');
     } else setMsg('Delete failed.');
   };
 
@@ -577,6 +723,51 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     if (!dirty) return;
     setCancelDialogVariant('published-dirty');
   };
+
+  useEffect(() => {
+    // New selection starts compact by default.
+    setCourseDetailsOpen(false);
+    setOpenModules({});
+    setOpenLessons({});
+    pendingOpenNewModuleIndexRef.current = null;
+    pendingOpenNewLessonKeyRef.current = null;
+  }, [draft?.id]);
+
+  useEffect(() => {
+    const idx = pendingOpenNewModuleIndexRef.current;
+    if (idx == null || !draft) return;
+    if (idx < 0 || idx >= draft.modules.length) return;
+    setOpenModules({ [idx]: true });
+    pendingOpenNewModuleIndexRef.current = null;
+  }, [draft?.modules.length, draft]);
+
+  useEffect(() => {
+    const key = pendingOpenNewLessonKeyRef.current;
+    if (!key || !draft) return;
+    const [miRaw, liRaw] = key.split(':');
+    const mi = Number(miRaw);
+    const li = Number(liRaw);
+    if (!Number.isInteger(mi) || !Number.isInteger(li)) return;
+    if (mi < 0 || mi >= draft.modules.length) return;
+    if (li < 0 || li >= draft.modules[mi].lessons.length) return;
+    setOpenLessons({ [key]: true });
+    // Ensure the containing module is visible too.
+    setOpenModules({ [mi]: true });
+    pendingOpenNewLessonKeyRef.current = null;
+  }, [draft?.modules, draft]);
+
+  useEffect(() => {
+    const id = pendingScrollTargetIdRef.current;
+    if (!id) return;
+    const rafId = requestAnimationFrame(() => {
+      const el = document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement | null;
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.focus({ preventScroll: true });
+      pendingScrollTargetIdRef.current = null;
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [openModules, openLessons, draft, showValidationHints]);
 
   const cancelDialogCopy =
     cancelDialogVariant === 'new-dirty'
@@ -760,6 +951,22 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             </div>
           )}
 
+          <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/20">
+            <button
+              type="button"
+              onClick={() => setCourseDetailsOpen((v) => !v)}
+              className="flex w-full items-center justify-between px-4 py-3 text-left"
+              aria-expanded={courseDetailsOpen}
+            >
+              <span className="text-sm font-bold text-[var(--text-primary)]">Course details</span>
+              {courseDetailsOpen ? (
+                <ChevronDown size={16} className="text-[var(--text-secondary)]" />
+              ) : (
+                <ChevronRight size={16} className="text-[var(--text-secondary)]" />
+              )}
+            </button>
+            {courseDetailsOpen && (
+              <div className="border-t border-[var(--border-color)] p-4">
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block space-y-1 sm:col-span-2">
               <span className="text-xs font-semibold text-[var(--text-secondary)]">Course title</span>
@@ -865,6 +1072,9 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               />
             </label>
           </div>
+              </div>
+            )}
+          </div>
 
           <div className="space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-2">
@@ -889,8 +1099,20 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/30 p-4 space-y-4"
               >
                 <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--border-color)] pb-3">
-                  <div>
-                    <h4 className="text-sm font-bold text-[var(--text-primary)]">Module {mi + 1}</h4>
+                  <div className="min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => toggleModuleOpen(mi)}
+                      className="inline-flex items-center gap-1.5 text-left"
+                      aria-expanded={!!openModules[mi]}
+                    >
+                      {openModules[mi] ? (
+                        <ChevronDown size={14} className="text-[var(--text-secondary)]" />
+                      ) : (
+                        <ChevronRight size={14} className="text-[var(--text-secondary)]" />
+                      )}
+                      <h4 className="text-sm font-bold text-[var(--text-primary)]">Module {mi + 1}</h4>
+                    </button>
                     <p className="text-xs text-[var(--text-muted)] mt-0.5">
                       Stable id (e.g. C1M1) and display name for this section of the course.
                     </p>
@@ -906,25 +1128,55 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   </button>
                 </div>
 
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-x-3">
-                  <label className="inline-flex w-max max-w-full shrink-0 flex-col gap-1">
+                {openModules[mi] && (
+                <>
+                <div className="flex flex-row flex-wrap items-end gap-x-3 gap-y-2">
+                  <label className="flex min-w-0 flex-[1_1_11rem] max-w-full flex-col gap-1 sm:max-w-[16rem]">
                     <span className="whitespace-nowrap text-xs font-semibold text-[var(--text-secondary)]">
                       Module ID
                     </span>
                     <input
+                      id={`admin-module-id-${mi}`}
                       value={mod.id}
                       onChange={(e) => updateModule(mi, { id: e.target.value })}
-                      className="box-border w-full min-w-0 rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 font-mono text-sm"
+                      className={`box-border w-full min-w-0 rounded-lg border bg-[var(--bg-primary)] px-3 py-2 font-mono text-sm ${
+                        showValidationHints && fieldErrors.moduleId.has(mi)
+                          ? 'border-red-500'
+                          : 'border-[var(--border-color)]'
+                      }`}
                     />
+                    <span
+                      className={`min-h-[16px] text-[11px] ${
+                        showValidationHints && fieldErrors.moduleId.has(mi)
+                          ? 'text-red-400'
+                          : 'text-transparent'
+                      }`}
+                    >
+                      Module ID is required.
+                    </span>
                   </label>
-                  <label className="block min-w-0 flex-1 space-y-1">
+                  <label className="flex min-w-0 flex-[3_1_12rem] flex-col gap-1">
                     <span className="text-xs font-semibold text-[var(--text-secondary)]">Module title</span>
                     <input
+                      id={`admin-module-title-${mi}`}
                       value={mod.title}
                       onChange={(e) => updateModule(mi, { title: e.target.value })}
-                      className="w-full text-sm bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2"
+                      className={`w-full text-sm bg-[var(--bg-primary)] border rounded-lg px-3 py-2 ${
+                        showValidationHints && fieldErrors.moduleTitle.has(mi)
+                          ? 'border-red-500'
+                          : 'border-[var(--border-color)]'
+                      }`}
                       placeholder="e.g. HTML & CSS fundamentals — section title in the syllabus"
                     />
+                    <span
+                      className={`min-h-[16px] text-[11px] ${
+                        showValidationHints && fieldErrors.moduleTitle.has(mi)
+                          ? 'text-red-400'
+                          : 'text-transparent'
+                      }`}
+                    >
+                      Module title is required.
+                    </span>
                   </label>
                 </div>
 
@@ -937,36 +1189,92 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       key={`lesson-slot-${mi}-${li}`}
                       className="rounded-lg bg-[var(--bg-secondary)]/80 p-4 space-y-3 border border-[var(--border-color)]/60"
                     >
-                      <p className="text-xs font-bold text-[var(--text-primary)]">Lesson {li + 1}</p>
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-x-3">
-                        <label className="inline-flex w-max max-w-full shrink-0 flex-col gap-1">
+                      <button
+                        type="button"
+                        onClick={() => toggleLessonOpen(mi, li)}
+                        className="inline-flex items-center gap-1.5 text-left"
+                        aria-expanded={!!openLessons[`${mi}:${li}`]}
+                      >
+                        {openLessons[`${mi}:${li}`] ? (
+                          <ChevronDown size={14} className="text-[var(--text-secondary)]" />
+                        ) : (
+                          <ChevronRight size={14} className="text-[var(--text-secondary)]" />
+                        )}
+                        <p className="text-xs font-bold text-[var(--text-primary)]">Lesson {li + 1}</p>
+                      </button>
+                      {openLessons[`${mi}:${li}`] && (
+                        <>
+                      <div className="flex flex-row flex-wrap items-end gap-x-3 gap-y-2">
+                        <label className="flex min-w-0 flex-[1_1_11rem] max-w-full flex-col gap-1 sm:max-w-[16rem]">
                           <span className="whitespace-nowrap text-xs font-semibold text-[var(--text-secondary)]">
                             Lesson ID
                           </span>
                           <input
+                            id={`admin-lesson-id-${mi}-${li}`}
                             value={lesson.id}
                             onChange={(e) => updateLesson(mi, li, { id: e.target.value })}
-                            className="box-border w-full min-w-0 rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 font-mono text-sm"
+                            className={`box-border w-full min-w-0 rounded-lg border bg-[var(--bg-primary)] px-3 py-2 font-mono text-sm ${
+                              showValidationHints && fieldErrors.lessonId.has(`${mi}:${li}`)
+                                ? 'border-red-500'
+                                : 'border-[var(--border-color)]'
+                            }`}
                           />
+                          <span
+                            className={`min-h-[16px] text-[11px] ${
+                              showValidationHints && fieldErrors.lessonId.has(`${mi}:${li}`)
+                                ? 'text-red-400'
+                                : 'text-transparent'
+                            }`}
+                          >
+                            Lesson ID is required.
+                          </span>
                         </label>
-                        <label className="block min-w-0 flex-1 space-y-1">
+                        <label className="flex min-w-0 flex-[3_1_12rem] flex-col gap-1">
                           <span className="text-xs font-semibold text-[var(--text-secondary)]">Lesson title</span>
                           <input
+                            id={`admin-lesson-title-${mi}-${li}`}
                             value={lesson.title}
                             onChange={(e) => updateLesson(mi, li, { title: e.target.value })}
-                            className="w-full text-sm bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2"
+                            className={`w-full text-sm bg-[var(--bg-primary)] border rounded-lg px-3 py-2 ${
+                              showValidationHints && fieldErrors.lessonTitle.has(`${mi}:${li}`)
+                                ? 'border-red-500'
+                                : 'border-[var(--border-color)]'
+                            }`}
                             placeholder="e.g. Semantic HTML & page structure — lesson name under the module"
                           />
+                          <span
+                            className={`min-h-[16px] text-[11px] ${
+                              showValidationHints && fieldErrors.lessonTitle.has(`${mi}:${li}`)
+                                ? 'text-red-400'
+                                : 'text-transparent'
+                            }`}
+                          >
+                            Lesson title is required.
+                          </span>
                         </label>
                       </div>
                       <label className="block space-y-1">
                         <span className="text-xs font-semibold text-[var(--text-secondary)]">Video URL</span>
                         <input
+                          id={`admin-lesson-url-${mi}-${li}`}
                           value={lesson.videoUrl}
                           onChange={(e) => updateLesson(mi, li, { videoUrl: e.target.value })}
-                          className="w-full text-sm font-mono bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2"
+                          className={`w-full text-sm font-mono bg-[var(--bg-primary)] border rounded-lg px-3 py-2 ${
+                            showValidationHints && fieldErrors.videoUrl.has(`${mi}:${li}`)
+                              ? 'border-red-500'
+                              : 'border-[var(--border-color)]'
+                          }`}
                           placeholder="https://www.youtube.com/watch?v=…"
                         />
+                        <span
+                          className={`min-h-[16px] text-[11px] ${
+                            showValidationHints && fieldErrors.videoUrl.has(`${mi}:${li}`)
+                              ? 'text-red-400'
+                              : 'text-transparent'
+                          }`}
+                        >
+                          Video URL is required and must start with http.
+                        </span>
                       </label>
                       <label className="block space-y-1">
                         <span className="text-xs font-semibold text-[var(--text-secondary)]">Duration label (optional)</span>
@@ -997,6 +1305,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           Remove lesson
                         </button>
                       </div>
+                        </>
+                      )}
                     </div>
                   ))}
                   <button
@@ -1007,6 +1317,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     + Add lesson
                   </button>
                 </div>
+                </>
+                )}
               </div>
             ))}
           </div>
@@ -1098,6 +1410,26 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {actionToastText && (
+          <motion.div
+            initial={{ opacity: 0, y: 12, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.98 }}
+            transition={{ duration: 0.22, ease: 'easeOut' }}
+            className={`pointer-events-none fixed bottom-6 right-6 z-[90] rounded-xl border px-4 py-2.5 text-sm font-semibold shadow-2xl backdrop-blur-sm ${
+              actionToastVariant === 'danger'
+                ? 'border-red-400/50 bg-red-500/15 text-red-300'
+                : 'border-emerald-400/40 bg-emerald-500/15 text-emerald-300'
+            }`}
+            role="status"
+            aria-live="polite"
+          >
+            {actionToastText}
+          </motion.div>
         )}
       </AnimatePresence>
     </div>
