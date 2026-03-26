@@ -309,7 +309,11 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
         const existing =
           progressByLessonRef.current[lessonId] ??
           loadLessonProgressMap(courseRef.current.id, progressUserId)[lessonId];
-        if (existing && isLessonPlaybackComplete(existing) && currentTime < duration * 0.95) {
+        if (
+          existing &&
+          isLessonPlaybackComplete(existing) &&
+          !isLessonPlaybackComplete({ currentTime, duration })
+        ) {
           return false;
         }
       }
@@ -1069,7 +1073,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     if (!v || !Number.isFinite(v.duration) || v.duration <= 0) return;
     const saved = savedProgressForLesson(currentLesson.id);
     if (!saved || !(saved.duration > 0)) return;
-    /* Only strict ≥95% (same as Replay CTA): start at 0. Otherwise resume saved time — e.g. after a partial rewatch. */
+    /* At true end (playback-complete): start at 0 for replay. Otherwise resume saved time. */
     if (isLessonPlaybackComplete(saved)) {
       v.currentTime = 0;
       void v.pause();

@@ -111,13 +111,15 @@ export function progressPercent(p: LessonProgress | undefined): number {
 }
 
 /**
- * ≥95% of the saved timeline (ratio, not rounded percent) so “done” matches the scrubber and
- * doesn’t flicker 94% vs 95% when currentTime/duration almost match.
+ * True only when progress would show ~100% and the learner reached the real end of the timeline.
+ * Avoids the old `duration - 10` rule, which marked short clips “done” near 50% and broke resume.
  */
 export function isLessonPlaybackComplete(p: LessonProgress | undefined): boolean {
   if (!p || !(p.duration > 0)) return false;
-  // Lenient threshold for checkmarks and course completion
-  return p.currentTime >= p.duration * 0.95 || p.currentTime >= p.duration - 10;
+  const ratio = p.currentTime / p.duration;
+  if (ratio >= 0.995) return true;
+  if (p.currentTime >= p.duration - 0.75) return true;
+  return false;
 }
 
 /**
@@ -219,7 +221,7 @@ export function isCourseActuallyFinished(course: Course, progressByLesson: Recor
 }
 
 /**
- * End-of-course flow (rating / overview): same “done” bar as lesson checkmarks (≥95% / near-end rules),
+ * End-of-course flow (rating / overview): same rules as lesson checkmarks (`isLessonPlaybackComplete`),
  * plus the final curriculum lesson must be truly at the end so we don’t finalize mid-last-video.
  */
 export function isCourseReadyToFinalize(course: Course, progressByLesson: Record<string, LessonProgress>): boolean {
