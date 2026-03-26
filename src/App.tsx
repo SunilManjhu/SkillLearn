@@ -718,8 +718,9 @@ export default function App() {
             };
           });
         setNotifications((prev) => {
+          const adminInbox = prev.filter((n) => n.id.startsWith('admin-moderation-'));
           const certs = prev.filter((n) => n.kind === 'certificate');
-          return [...rows, ...certs];
+          return [...adminInbox, ...rows, ...certs];
         });
       } catch (error) {
         console.error('Failed to refresh notifications:', error);
@@ -748,6 +749,68 @@ export default function App() {
       unsub();
     };
   }, [user?.uid, user?.metadata.creationTime]);
+
+  useEffect(() => {
+    if (!user?.uid || !isAdminUser) {
+      setNotifications((prev) => prev.filter((n) => !n.id.startsWith('admin-moderation-')));
+      return;
+    }
+
+    let reportCount = 0;
+    let suggestionCount = 0;
+    let cancelled = false;
+
+    const syncAdminInboxNotifications = () => {
+      if (cancelled) return;
+      setNotifications((prev) => {
+        const byId = new Map<string, NavbarNotification>(prev.map((n) => [n.id, n]));
+        const nonAdminRows = prev.filter((n) => !n.id.startsWith('admin-moderation-'));
+        const adminRows: NavbarNotification[] = [];
+        if (reportCount > 0) {
+          const id = 'admin-moderation-reports';
+          adminRows.push({
+            id,
+            kind: 'generic',
+            actionView: 'admin',
+            adminTab: 'moderation',
+            actionLabel: 'Open moderation',
+            message: `Moderation inbox: Reports (${reportCount}) need review.`,
+            time: 'Now',
+            read: byId.get(id)?.read ?? false,
+          });
+        }
+        if (suggestionCount > 0) {
+          const id = 'admin-moderation-suggestions';
+          adminRows.push({
+            id,
+            kind: 'generic',
+            actionView: 'admin',
+            adminTab: 'moderation',
+            actionLabel: 'Open moderation',
+            message: `Moderation inbox: URL suggestions (${suggestionCount}) need review.`,
+            time: 'Now',
+            read: byId.get(id)?.read ?? false,
+          });
+        }
+        return [...adminRows, ...nonAdminRows];
+      });
+    };
+
+    const unsubReports = onSnapshot(collection(db, 'reports'), (snap) => {
+      reportCount = snap.size;
+      syncAdminInboxNotifications();
+    });
+    const unsubSuggestions = onSnapshot(collection(db, 'suggestions'), (snap) => {
+      suggestionCount = snap.size;
+      syncAdminInboxNotifications();
+    });
+
+    return () => {
+      cancelled = true;
+      unsubReports();
+      unsubSuggestions();
+    };
+  }, [user?.uid, isAdminUser]);
 
   useEffect(() => {
     if (user?.uid) return;
@@ -1080,6 +1143,12 @@ export default function App() {
         return;
       }
       if (n.kind === 'generic' && n.actionView) {
+        if (n.actionView === 'admin' && n.adminTab) {
+          setAdminTab(n.adminTab);
+          setCurrentView('admin');
+          scrollDocumentToTop();
+          return;
+        }
         handleNavigate(n.actionView);
         return;
       }

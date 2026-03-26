@@ -3,6 +3,8 @@ import { CheckCircle2, Flag, Lightbulb, RefreshCw, Trash2 } from 'lucide-react';
 import {
   listReportsForAdmin,
   listSuggestionsForAdmin,
+  subscribeReportsForAdmin,
+  subscribeSuggestionsForAdmin,
   deleteReportAsAdmin,
   deleteSuggestionAsAdmin,
   type AdminReportRow,
@@ -41,6 +43,37 @@ export const AdminModerationSection: React.FC = () => {
   React.useEffect(() => {
     void load();
   }, [load]);
+
+  React.useEffect(() => {
+    setLoading(true);
+    let firstReportsSeen = false;
+    let firstSuggestionsSeen = false;
+    const markReady = () => {
+      if (firstReportsSeen && firstSuggestionsSeen) setLoading(false);
+    };
+
+    const unsubReports = subscribeReportsForAdmin(
+      (rows) => {
+        setReports(rows);
+        firstReportsSeen = true;
+        markReady();
+      },
+      () => setMsg('Failed to subscribe to reports.')
+    );
+    const unsubSuggestions = subscribeSuggestionsForAdmin(
+      (rows) => {
+        setSuggestions(rows);
+        firstSuggestionsSeen = true;
+        markReady();
+      },
+      () => setMsg('Failed to subscribe to suggestions.')
+    );
+
+    return () => {
+      unsubReports();
+      unsubSuggestions();
+    };
+  }, []);
 
   const removeReport = async (id: string) => {
     setConfirmState({ type: 'delete-report', reportId: id });

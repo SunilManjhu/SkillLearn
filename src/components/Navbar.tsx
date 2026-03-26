@@ -13,6 +13,7 @@ export interface NavbarNotification {
   time: string;
   kind?: 'certificate' | 'broadcast' | 'generic';
   actionView?: 'home' | 'catalog' | 'contact' | 'profile' | 'settings' | 'admin';
+  adminTab?: 'alerts' | 'catalog' | 'moderation';
   actionLabel?: string;
   courseId?: string;
   lessonId?: string;

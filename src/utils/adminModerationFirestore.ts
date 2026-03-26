@@ -1,4 +1,4 @@
-import { collection, deleteDoc, doc, getDocs } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDocs, onSnapshot, type QuerySnapshot } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 
 function tsToMs(v: unknown): number {
@@ -28,33 +28,60 @@ export interface AdminSuggestionRow {
   timestampMs: number;
 }
 
+function mapReportsSnapshot(snap: QuerySnapshot): AdminReportRow[] {
+  const rows: AdminReportRow[] = [];
+  for (const d of snap.docs) {
+    const data = d.data();
+    if (
+      typeof data.lessonId !== 'string' ||
+      typeof data.userId !== 'string' ||
+      typeof data.reason !== 'string'
+    ) {
+      continue;
+    }
+    rows.push({
+      id: d.id,
+      lessonId: data.lessonId,
+      courseId: typeof data.courseId === 'string' ? data.courseId : undefined,
+      courseTitle: typeof data.courseTitle === 'string' ? data.courseTitle : undefined,
+      lessonTitle: typeof data.lessonTitle === 'string' ? data.lessonTitle : undefined,
+      userId: data.userId,
+      reason: data.reason,
+      details: typeof data.details === 'string' ? data.details : '',
+      timestampMs: tsToMs(data.timestamp),
+    });
+  }
+  rows.sort((a, b) => b.timestampMs - a.timestampMs);
+  return rows;
+}
+
+function mapSuggestionsSnapshot(snap: QuerySnapshot): AdminSuggestionRow[] {
+  const rows: AdminSuggestionRow[] = [];
+  for (const d of snap.docs) {
+    const data = d.data();
+    if (
+      typeof data.lessonId !== 'string' ||
+      typeof data.userId !== 'string' ||
+      typeof data.suggestedUrl !== 'string'
+    ) {
+      continue;
+    }
+    rows.push({
+      id: d.id,
+      lessonId: data.lessonId,
+      userId: data.userId,
+      suggestedUrl: data.suggestedUrl,
+      timestampMs: tsToMs(data.timestamp),
+    });
+  }
+  rows.sort((a, b) => b.timestampMs - a.timestampMs);
+  return rows;
+}
+
 export async function listReportsForAdmin(): Promise<AdminReportRow[]> {
   try {
     const snap = await getDocs(collection(db, 'reports'));
-    const rows: AdminReportRow[] = [];
-    for (const d of snap.docs) {
-      const data = d.data();
-      if (
-        typeof data.lessonId !== 'string' ||
-        typeof data.userId !== 'string' ||
-        typeof data.reason !== 'string'
-      ) {
-        continue;
-      }
-      rows.push({
-        id: d.id,
-        lessonId: data.lessonId,
-        courseId: typeof data.courseId === 'string' ? data.courseId : undefined,
-        courseTitle: typeof data.courseTitle === 'string' ? data.courseTitle : undefined,
-        lessonTitle: typeof data.lessonTitle === 'string' ? data.lessonTitle : undefined,
-        userId: data.userId,
-        reason: data.reason,
-        details: typeof data.details === 'string' ? data.details : '',
-        timestampMs: tsToMs(data.timestamp),
-      });
-    }
-    rows.sort((a, b) => b.timestampMs - a.timestampMs);
-    return rows;
+    return mapReportsSnapshot(snap);
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'reports');
     return [];
@@ -64,30 +91,39 @@ export async function listReportsForAdmin(): Promise<AdminReportRow[]> {
 export async function listSuggestionsForAdmin(): Promise<AdminSuggestionRow[]> {
   try {
     const snap = await getDocs(collection(db, 'suggestions'));
-    const rows: AdminSuggestionRow[] = [];
-    for (const d of snap.docs) {
-      const data = d.data();
-      if (
-        typeof data.lessonId !== 'string' ||
-        typeof data.userId !== 'string' ||
-        typeof data.suggestedUrl !== 'string'
-      ) {
-        continue;
-      }
-      rows.push({
-        id: d.id,
-        lessonId: data.lessonId,
-        userId: data.userId,
-        suggestedUrl: data.suggestedUrl,
-        timestampMs: tsToMs(data.timestamp),
-      });
-    }
-    rows.sort((a, b) => b.timestampMs - a.timestampMs);
-    return rows;
+    return mapSuggestionsSnapshot(snap);
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'suggestions');
     return [];
   }
+}
+
+export function subscribeReportsForAdmin(
+  onData: (rows: AdminReportRow[]) => void,
+  onError?: (error: unknown) => void
+): () => void {
+  return onSnapshot(
+    collection(db, 'reports'),
+    (snap) => onData(mapReportsSnapshot(snap)),
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'reports');
+      onError?.(error);
+    }
+  );
+}
+
+export function subscribeSuggestionsForAdmin(
+  onData: (rows: AdminSuggestionRow[]) => void,
+  onError?: (error: unknown) => void
+): () => void {
+  return onSnapshot(
+    collection(db, 'suggestions'),
+    (snap) => onData(mapSuggestionsSnapshot(snap)),
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'suggestions');
+      onError?.(error);
+    }
+  );
 }
 
 export async function deleteReportAsAdmin(reportId: string): Promise<boolean> {
