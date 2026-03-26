@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Shield, Send, Database, BookOpen, Flag } from 'lucide-react';
 import type { Course } from '../data/courses';
 import { STATIC_CATALOG_FALLBACK } from '../data/courses';
@@ -38,15 +38,38 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   const [lessonId, setLessonId] = useState('');
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showValidationHints, setShowValidationHints] = useState(false);
+  const [targetingOpen, setTargetingOpen] = useState(false);
+  const courseRef = useRef<HTMLSelectElement | null>(null);
+  const titleRef = useRef<HTMLInputElement | null>(null);
+  const messageRef = useRef<HTMLTextAreaElement | null>(null);
 
   const selectedCourse = courses.find((c) => c.id === courseId);
+  const courseMissing = !courseId;
+  const titleMissing = !title.trim();
+  const messageMissing = !message.trim();
 
   const handleSend = async () => {
-    if (!courseId || !title.trim() || !message.trim()) {
-      setStatus('Course, title, and message are required.');
+    if (courseMissing) {
+      setShowValidationHints(true);
+      setStatus('Course is required.');
+      courseRef.current?.focus();
+      return;
+    }
+    if (titleMissing) {
+      setShowValidationHints(true);
+      setStatus('Title is required.');
+      titleRef.current?.focus();
+      return;
+    }
+    if (messageMissing) {
+      setShowValidationHints(true);
+      setStatus('Message is required.');
+      messageRef.current?.focus();
       return;
     }
     setBusy(true);
+    setShowValidationHints(false);
     setStatus(null);
     const id = await createBroadcastAlert({
       type,
@@ -63,6 +86,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       setMessage('');
       setModuleId('');
       setLessonId('');
+      setShowValidationHints(false);
     } else {
       setStatus('Failed to publish (check console / rules).');
     }
@@ -87,6 +111,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       onClick={() => {
         onTabChange(id);
         setStatus(null);
+        setShowValidationHints(false);
       }}
       className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold transition-colors ${
         tab === id
@@ -140,82 +165,131 @@ export const AdminPage: React.FC<AdminPageProps> = ({
             Only users enrolled in the selected course receive this in their notification bell.
           </p>
 
-          <label className="block text-xs font-semibold text-[var(--text-secondary)]">Type</label>
-          <select
-            value={type}
-            onChange={(e) => setType(e.target.value as BroadcastAlertType)}
-            className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm"
-          >
-            {ALERT_TYPES.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
-              </option>
-            ))}
-          </select>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="space-y-1">
+              <label className="block text-xs font-semibold text-[var(--text-secondary)]">Type</label>
+              <select
+                value={type}
+                onChange={(e) => setType(e.target.value as BroadcastAlertType)}
+                className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm"
+              >
+                {ALERT_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          <label className="block text-xs font-semibold text-[var(--text-secondary)]">Course</label>
-          <select
-            value={courseId}
-            onChange={(e) => setCourseId(e.target.value)}
-            className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm"
-          >
-            {courses.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.title}
-              </option>
-            ))}
-          </select>
+            <div className="space-y-1">
+              <label className="block text-xs font-semibold text-[var(--text-secondary)]">Course</label>
+              <select
+                ref={courseRef}
+                value={courseId}
+                onChange={(e) => setCourseId(e.target.value)}
+                aria-invalid={showValidationHints && courseMissing ? true : undefined}
+                className={`w-full bg-[var(--bg-primary)] border rounded-lg px-3 py-2 text-sm ${
+                  showValidationHints && courseMissing ? 'border-red-500/70' : 'border-[var(--border-color)]'
+                }`}
+              >
+                {courses.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.title}
+                  </option>
+                ))}
+              </select>
+              {showValidationHints && courseMissing && (
+                <p className="text-xs text-red-400">Course is required.</p>
+              )}
+            </div>
+          </div>
 
-          <label className="block text-xs font-semibold text-[var(--text-secondary)]">Title</label>
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm"
-            placeholder="Short headline"
-          />
-
-          <label className="block text-xs font-semibold text-[var(--text-secondary)]">Message</label>
-          <textarea
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            rows={4}
-            className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm resize-none"
-            placeholder="What changed?"
-          />
-
-          <label className="block text-xs font-semibold text-[var(--text-secondary)]">
-            Module ID (optional)
-          </label>
-          <select
-            value={moduleId}
-            onChange={(e) => setModuleId(e.target.value)}
-            className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm"
-          >
-            <option value="">— None —</option>
-            {(selectedCourse?.modules ?? []).map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.title} ({m.id})
-              </option>
-            ))}
-          </select>
-
-          <label className="block text-xs font-semibold text-[var(--text-secondary)]">
-            Lesson ID (optional)
-          </label>
-          <select
-            value={lessonId}
-            onChange={(e) => setLessonId(e.target.value)}
-            className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm"
-          >
-            <option value="">— None —</option>
-            {(selectedCourse?.modules ?? []).flatMap((m) =>
-              m.lessons.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.title} ({l.id})
-                </option>
-              ))
+          <div className="space-y-1">
+            <label className="block text-xs font-semibold text-[var(--text-secondary)]">Title</label>
+            <input
+              ref={titleRef}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              aria-invalid={showValidationHints && titleMissing ? true : undefined}
+              className={`w-full bg-[var(--bg-primary)] border rounded-lg px-3 py-2 text-sm ${
+                showValidationHints && titleMissing ? 'border-red-500/70' : 'border-[var(--border-color)]'
+              }`}
+              placeholder="Short headline"
+            />
+            {showValidationHints && titleMissing && (
+              <p className="text-xs text-red-400">Title is required.</p>
             )}
-          </select>
+          </div>
+
+          <div className="space-y-1">
+            <label className="block text-xs font-semibold text-[var(--text-secondary)]">Message</label>
+            <textarea
+              ref={messageRef}
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              rows={3}
+              aria-invalid={showValidationHints && messageMissing ? true : undefined}
+              className={`w-full bg-[var(--bg-primary)] border rounded-lg px-3 py-2 text-sm resize-none ${
+                showValidationHints && messageMissing ? 'border-red-500/70' : 'border-[var(--border-color)]'
+              }`}
+              placeholder="What changed?"
+            />
+            {showValidationHints && messageMissing && (
+              <p className="text-xs text-red-400">Message is required.</p>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2.5">
+            <button
+              type="button"
+              onClick={() => setTargetingOpen((v) => !v)}
+              className="w-full flex items-center justify-between text-xs font-semibold text-[var(--text-secondary)]"
+            >
+              Optional targeting (module / lesson)
+              <span className="text-[10px]">{targetingOpen ? 'Hide' : 'Show'}</span>
+            </button>
+            {targetingOpen && (
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-[var(--text-secondary)]">
+                    Module ID (optional)
+                  </label>
+                  <select
+                    value={moduleId}
+                    onChange={(e) => setModuleId(e.target.value)}
+                    className="w-full bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm"
+                  >
+                    <option value="">— None —</option>
+                    {(selectedCourse?.modules ?? []).map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.title} ({m.id})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-[var(--text-secondary)]">
+                    Lesson ID (optional)
+                  </label>
+                  <select
+                    value={lessonId}
+                    onChange={(e) => setLessonId(e.target.value)}
+                    className="w-full bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm"
+                  >
+                    <option value="">— None —</option>
+                    {(selectedCourse?.modules ?? []).flatMap((m) =>
+                      m.lessons.map((l) => (
+                        <option key={l.id} value={l.id}>
+                          {l.title} ({l.id})
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
 
           <button
             type="button"
