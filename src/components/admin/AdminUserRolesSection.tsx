@@ -1,10 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { RefreshCw, ShieldCheck, Users, UserCircle } from 'lucide-react';
-import {
-  listUsersForAdmin,
-  updateUserRoleAsAdmin,
-  type AdminUserRow,
-} from '../../utils/adminUsersFirestore';
+import { subscribeUsersForAdmin, updateUserRoleAsAdmin, type AdminUserRow } from '../../utils/adminUsersFirestore';
 import { countFirestoreAdminUsers, type UserRole } from '../../utils/userProfileFirestore';
 import { useAdminActionToast } from './useAdminActionToast';
 
@@ -14,21 +10,30 @@ interface AdminUserRolesSectionProps {
 
 export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ currentAdminUid }) => {
   const [rows, setRows] = useState<AdminUserRow[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [listError, setListError] = useState<string | null>(null);
+  /** Bumping this re-attaches the Firestore listener (used for Refresh / Retry after errors). */
+  const [subscriptionKey, setSubscriptionKey] = useState(0);
   const { showActionToast, actionToast } = useAdminActionToast();
   const [search, setSearch] = useState('');
   const [savingUserId, setSavingUserId] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const next = await listUsersForAdmin();
-    setRows(next);
-    setLoading(false);
-  }, []);
-
   useEffect(() => {
-    void load();
-  }, [load]);
+    setLoading(true);
+    setListError(null);
+    const unsub = subscribeUsersForAdmin(
+      (next) => {
+        setRows(next);
+        setLoading(false);
+        setListError(null);
+      },
+      () => {
+        setLoading(false);
+        setListError('Could not load users. Check your connection and Firestore permissions.');
+      }
+    );
+    return () => unsub();
+  }, [subscriptionKey]);
 
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -74,7 +79,6 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
       setSavingUserId(null);
       return;
     }
-    setRows((prev) => prev.map((r) => (r.id === userId ? { ...r, role: nextRole } : r)));
     showActionToast('Role updated successfully.');
     setSavingUserId(null);
   };
@@ -88,9 +92,10 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
         </h2>
         <button
           type="button"
-          onClick={() => void load()}
+          onClick={() => setSubscriptionKey((k) => k + 1)}
           disabled={loading}
           className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-semibold hover:bg-[var(--hover-bg)] disabled:opacity-50"
+          title="Re-attach the live listener"
         >
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           Refresh
@@ -100,8 +105,21 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
       <p className="text-xs text-[var(--text-muted)]">
         Update any user to <code className="text-orange-500/90">admin</code> or{' '}
         <code className="text-orange-500/90">user</code> from this panel. Counts reflect documents in
-        the <code className="text-orange-500/80">users</code> collection.
+        the <code className="text-orange-500/80">users</code> collection and update live when profiles
+        are added or removed.
       </p>
+      {listError && (
+        <p className="text-sm text-red-500" role="alert">
+          {listError}{' '}
+          <button
+            type="button"
+            onClick={() => setSubscriptionKey((k) => k + 1)}
+            className="font-semibold underline underline-offset-2 hover:text-red-400"
+          >
+            Retry
+          </button>
+        </p>
+      )}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/60 px-4 py-3.5">

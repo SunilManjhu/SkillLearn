@@ -16,6 +16,7 @@ import {
   fetchUserRole,
   countFirestoreAdminUsers,
   subscribeUserRole,
+  deleteUserProfileDocument,
 } from './utils/userProfileFirestore';
 import { peekResolvedCatalogCourses, resolveCatalogCourses } from './utils/publishedCoursesFirestore';
 import { enrollUserInCourse, fetchEnrolledCourseIds } from './utils/enrollmentsFirestore';
@@ -1188,7 +1189,9 @@ export default function App() {
     []
   );
 
-  const handleDeleteAccount = useCallback(async (): Promise<{ ok: true } | { ok: false; error: string }> => {
+  const handleDeleteAccount = useCallback(async (): Promise<
+    { ok: true } | { ok: false; error?: string }
+  > => {
     const uid = auth.currentUser?.uid;
     if (!uid) {
       return { ok: false, error: 'No signed-in user.' };
@@ -1201,8 +1204,20 @@ export default function App() {
       }
       return { ok: false, error: ADMIN_DELETE_BLOCKED_MULTI_MSG };
     }
+    const firestoreDelete = await deleteUserProfileDocument(uid);
+    if (firestoreDelete.ok === false) {
+      return {
+        ok: false,
+        error:
+          firestoreDelete.message ||
+          'Could not remove your profile from the database. Deploy the latest Firestore rules if this persists.',
+      };
+    }
     const result = await deleteCurrentUserAccount();
-    if (!result.ok) {
+    if (result.ok === false) {
+      if (result.code === 'redirecting') {
+        return { ok: false };
+      }
       if (result.code === 'auth/requires-recent-login') {
         return {
           ok: false,

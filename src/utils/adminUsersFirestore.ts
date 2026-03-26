@@ -1,4 +1,14 @@
-import { collection, doc, getDocs, query, setDoc, updateDoc } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  getDocs,
+  onSnapshot,
+  query,
+  setDoc,
+  updateDoc,
+  type QuerySnapshot,
+  type Unsubscribe,
+} from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import type { UserRole } from './userProfileFirestore';
 
@@ -19,12 +29,34 @@ function toAdminUserRow(id: string, data: Record<string, unknown>): AdminUserRow
   return { id, displayName, email, role };
 }
 
+function adminUserRowsFromSnapshot(snap: QuerySnapshot): AdminUserRow[] {
+  return snap.docs
+    .map((d) => toAdminUserRow(d.id, d.data() as Record<string, unknown>))
+    .sort((a, b) => a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' }));
+}
+
+/** Live updates when `users` documents are created, updated, or removed. */
+export function subscribeUsersForAdmin(
+  onRows: (rows: AdminUserRow[]) => void,
+  onError?: (error: unknown) => void
+): Unsubscribe {
+  const q = query(collection(db, 'users'));
+  return onSnapshot(
+    q,
+    (snap) => {
+      onRows(adminUserRowsFromSnapshot(snap));
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'users');
+      onError?.(error);
+    }
+  );
+}
+
 export async function listUsersForAdmin(): Promise<AdminUserRow[]> {
   try {
     const snap = await getDocs(query(collection(db, 'users')));
-    return snap.docs
-      .map((d) => toAdminUserRow(d.id, d.data() as Record<string, unknown>))
-      .sort((a, b) => a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' }));
+    return adminUserRowsFromSnapshot(snap);
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'users');
     return [];

@@ -8,6 +8,8 @@ import {
   signOut,
   onAuthStateChanged,
   deleteUser,
+  reauthenticateWithPopup,
+  reauthenticateWithRedirect,
   User,
 } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer, Firestore } from 'firebase/firestore';
@@ -120,20 +122,61 @@ export type DeleteAccountResult =
   | { ok: true }
   | { ok: false; code: string; message: string };
 
-/** Deletes the currently signed-in Firebase Auth user. May require recent login (`auth/requires-recent-login`). */
+/** Deletes the currently signed-in Firebase Auth user. Google users: re-authenticates in-app when Firebase requires a recent login. */
 export async function deleteCurrentUserAccount(): Promise<DeleteAccountResult> {
   const u = auth.currentUser;
   if (!u) {
     return { ok: false, code: 'no-user', message: 'No signed-in user.' };
   }
-  try {
+
+  const tryDelete = async () => {
     await deleteUser(u);
+  };
+
+  try {
+    await tryDelete();
     return { ok: true };
   } catch (e: unknown) {
     const code =
       typeof e === 'object' && e !== null && 'code' in e ? String((e as { code: string }).code) : 'unknown';
-    const message = e instanceof Error ? e.message : 'Could not delete account.';
-    return { ok: false, code, message };
+    if (code !== 'auth/requires-recent-login') {
+      const message = e instanceof Error ? e.message : 'Could not delete account.';
+      return { ok: false, code, message };
+    }
+
+    const isGoogle = u.providerData.some((p) => p.providerId === 'google.com');
+    if (!isGoogle) {
+      const message = e instanceof Error ? e.message : 'Could not delete account.';
+      return { ok: false, code, message };
+    }
+
+    try {
+      await reauthenticateWithPopup(u, googleProvider);
+    } catch (reErr: unknown) {
+      const reCode =
+        typeof reErr === 'object' && reErr !== null && 'code' in reErr
+          ? String((reErr as { code: string }).code)
+          : '';
+      if (
+        reCode === 'auth/popup-blocked' ||
+        reCode === 'auth/operation-not-supported-in-this-environment'
+      ) {
+        await reauthenticateWithRedirect(u, googleProvider);
+        return { ok: false, code: 'redirecting', message: '' };
+      }
+      const message = reErr instanceof Error ? reErr.message : 'Could not verify identity.';
+      return { ok: false, code: reCode || 'unknown', message };
+    }
+
+    try {
+      await tryDelete();
+      return { ok: true };
+    } catch (e2: unknown) {
+      const code2 =
+        typeof e2 === 'object' && e2 !== null && 'code' in e2 ? String((e2 as { code: string }).code) : 'unknown';
+      const message2 = e2 instanceof Error ? e2.message : 'Could not delete account.';
+      return { ok: false, code: code2, message: message2 };
+    }
   }
 }
 

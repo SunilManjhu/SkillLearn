@@ -27,8 +27,8 @@ interface ProfilePageProps {
   /** Hide course/admin bell items; certificates still appear in the bell. */
   alertsMuted?: boolean;
   onAlertsMutedChange?: (muted: boolean) => void;
-  /** Permanently delete Firebase Auth user (may require recent login). */
-  onDeleteAccount?: () => Promise<{ ok: true } | { ok: false; error: string }>;
+  /** Permanently delete Firebase Auth user (Google users get an in-app re-auth prompt when needed). */
+  onDeleteAccount?: () => Promise<{ ok: true } | { ok: false; error?: string }>;
   /** When set, delete is disabled and this explanation is shown (e.g. Firestore role is still admin). */
   accountDeletionBlockedMessage?: string | null;
   /** True while resolving admin count for delete-account messaging. */
@@ -551,7 +551,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                       const result = await onDeleteAccount();
                       setDeleteBusy(false);
                       if (!result.ok) {
-                        setDeleteError(result.error);
+                        if (result.error) setDeleteError(result.error);
                         return;
                       }
                       setShowDeleteConfirm(false);

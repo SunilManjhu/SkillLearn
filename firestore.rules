@@ -295,6 +295,8 @@ service cloud.firestore {
           (isOwner(userId) && request.resource.data.role == resource.data.role) ||
           isAdmin()
         );
+      // Account deletion: remove Firestore profile before Firebase Auth `deleteUser` (Auth alone does not delete this doc).
+      allow delete: if isOwner(userId) || isAdmin();
     }
 
     function isValidEnrollment(data) {

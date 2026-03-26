@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -41,6 +42,28 @@ export async function ensureUserProfile(user: User): Promise<void> {
     );
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}`);
+  }
+}
+
+/**
+ * Deletes `users/{uid}` while the account is still signed in. Call this before Firebase Auth
+ * `deleteUser` — Authentication does not remove Firestore documents automatically.
+ */
+export async function deleteUserProfileDocument(
+  uid: string
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  try {
+    await deleteDoc(doc(db, 'users', uid));
+    return { ok: true };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `users/${uid}`);
+    return {
+      ok: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : 'Could not remove your profile from the database. Try again or contact support.',
+    };
   }
 }
 
