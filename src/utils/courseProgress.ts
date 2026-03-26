@@ -163,6 +163,17 @@ export function getFirstIncompleteLesson(
   return null;
 }
 
+/** Matches course player startup: first incomplete lesson in order, else first lesson (e.g. completed course / empty map). */
+export function getResumeOrStartLesson(
+  course: Course,
+  progressByLesson: Record<string, LessonProgress>
+): Lesson | null {
+  const next = getFirstIncompleteLesson(course, progressByLesson);
+  if (next) return next;
+  const first = course.modules[0]?.lessons[0];
+  return first ?? null;
+}
+
 /** True when the course is not finished but the learner has at least one completed lesson or partial playback on a lesson. */
 export function hasResumableCourseProgress(course: Course, progressByLesson: Record<string, LessonProgress>): boolean {
   if (isCourseComplete(course, progressByLesson)) return false;

@@ -941,6 +941,26 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     setCurrentLesson(next);
   }, [flushCurrentLessonProgress, stopPlayback, scheduleFinalizeFromStorage]);
 
+  /**
+   * When App changes `initialLesson` (navigation / auth return), follow it.
+   * Do not re-sync when only `currentLesson` diverges — the user may have picked another chapter in the sidebar
+   * while `initialLesson` stays the overview “started” lesson.
+   */
+  const initialLessonIdFromParentRef = useRef<string | undefined>(undefined);
+  useLayoutEffect(() => {
+    const fromParent = initialLesson?.id;
+    const prevParent = initialLessonIdFromParentRef.current;
+    if (fromParent === prevParent) return;
+    initialLessonIdFromParentRef.current = fromParent;
+    if (fromParent === undefined) return;
+    const match = course.modules.flatMap((m) => m.lessons).find((l) => l.id === fromParent);
+    if (!match || match.id === currentLesson.id) return;
+    flushCurrentLessonProgress();
+    stopPlayback();
+    playNextAfterEndRef.current = false;
+    setCurrentLesson(match);
+  }, [initialLesson?.id, course.modules, currentLesson.id, flushCurrentLessonProgress, stopPlayback, initialLesson]);
+
   useLayoutEffect(() => {
     if (wasActuallyFinishedOnOpenRef.current) return;
     if (!mediaPaused) return;

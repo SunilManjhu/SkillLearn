@@ -33,7 +33,9 @@ import {
 } from './utils/certificateFirestore';
 import {
   ensureSyntheticProgressForRecordedCompletions,
+  getResumeOrStartLesson,
   hydrateAllUserProgressFromFirestore,
+  loadLessonProgressMap,
   markCourseCompletedTimestampInFirestore,
 } from './utils/courseProgress';
 import { hydrateAllCourseRatingsFromFirestore } from './utils/courseRating';
@@ -87,24 +89,82 @@ function formatAlertListTime(ms: number): string {
   return `${Math.floor(d / 86_400_000)}d ago`;
 }
 
+/** Hash asked for overview/player before this course existed in the catalog slice used on first paint (e.g. cold load vs Firestore). */
+type DeferredCourseRoute = { view: 'overview' | 'player'; courseId: string; lessonId?: string };
+
 function getInitialRouteState(catalog: Course[] = STATIC_CATALOG_FALLBACK): {
   view: View;
   selectedCourse: Course | null;
   initialLesson: Lesson | undefined;
   adminTab: AdminHistoryTab;
+  deferredCourseRoute: DeferredCourseRoute | null;
 } {
   if (typeof window === 'undefined') {
-    return { view: 'home', selectedCourse: null, initialLesson: undefined, adminTab: 'alerts' };
+    return {
+      view: 'home',
+      selectedCourse: null,
+      initialLesson: undefined,
+      adminTab: 'alerts',
+      deferredCourseRoute: null,
+    };
   }
   const params = new URLSearchParams(window.location.search);
   if (params.get('cert_id')) {
-    return { view: 'home', selectedCourse: null, initialLesson: undefined, adminTab: 'alerts' };
+    return {
+      view: 'home',
+      selectedCourse: null,
+      initialLesson: undefined,
+      adminTab: 'alerts',
+      deferredCourseRoute: null,
+    };
   }
   const parsed = parseHashToPayload(window.location.hash);
   if (!parsed) {
-    return { view: 'home', selectedCourse: null, initialLesson: undefined, adminTab: 'alerts' };
+    return {
+      view: 'home',
+      selectedCourse: null,
+      initialLesson: undefined,
+      adminTab: 'alerts',
+      deferredCourseRoute: null,
+    };
   }
-  const resolved = resolvePayloadForCourses(parsed, catalog, findLessonById);
+
+  if (
+    (parsed.view === 'overview' || parsed.view === 'player') &&
+    parsed.courseId &&
+    !catalog.some((x) => x.id === parsed.courseId)
+  ) {
+    return {
+      view: parsed.view as View,
+      selectedCourse: null,
+      initialLesson: undefined,
+      adminTab: 'alerts',
+      deferredCourseRoute: {
+        view: parsed.view,
+        courseId: parsed.courseId,
+        lessonId: parsed.lessonId ?? undefined,
+      },
+    };
+  }
+
+  let routeParsed: AppHistoryPayload = parsed;
+  if (
+    parsed.view === 'player' &&
+    parsed.courseId &&
+    !parsed.lessonId &&
+    catalog.some((x) => x.id === parsed.courseId)
+  ) {
+    const c = catalog.find((x) => x.id === parsed.courseId);
+    if (c) {
+      const uid = readCachedAuthProfile()?.uid ?? null;
+      const resume = getResumeOrStartLesson(c, loadLessonProgressMap(c.id, uid));
+      if (resume) {
+        routeParsed = { ...parsed, lessonId: resume.id };
+      }
+    }
+  }
+
+  const resolved = resolvePayloadForCourses(routeParsed, catalog, findLessonById);
 
   if (resolved.view === 'overview' || resolved.view === 'player') {
     const c = resolved.courseId ? (catalog.find((x) => x.id === resolved.courseId) ?? null) : null;
@@ -115,13 +175,26 @@ function getInitialRouteState(catalog: Course[] = STATIC_CATALOG_FALLBACK): {
         selectedCourse: c,
         initialLesson: l,
         adminTab: 'alerts',
+        deferredCourseRoute: null,
       };
     }
-    return { view: 'catalog', selectedCourse: null, initialLesson: undefined, adminTab: 'alerts' };
+    return {
+      view: 'catalog',
+      selectedCourse: null,
+      initialLesson: undefined,
+      adminTab: 'alerts',
+      deferredCourseRoute: null,
+    };
   }
 
   if (resolved.view === 'certificate') {
-    return { view: 'home', selectedCourse: null, initialLesson: undefined, adminTab: 'alerts' };
+    return {
+      view: 'home',
+      selectedCourse: null,
+      initialLesson: undefined,
+      adminTab: 'alerts',
+      deferredCourseRoute: null,
+    };
   }
 
   const adminTab: AdminHistoryTab =
@@ -132,6 +205,7 @@ function getInitialRouteState(catalog: Course[] = STATIC_CATALOG_FALLBACK): {
     selectedCourse: null,
     initialLesson: undefined,
     adminTab,
+    deferredCourseRoute: null,
   };
 }
 
@@ -191,12 +265,17 @@ function PlayerSignInGate({
 }
 
 export default function App() {
-  const [initialRoute] = useState(() => getInitialRouteState(STATIC_CATALOG_FALLBACK));
+  const [initialRoute] = useState(() =>
+    getInitialRouteState(peekResolvedCatalogCourses() ?? STATIC_CATALOG_FALLBACK)
+  );
   const [currentView, setCurrentView] = useState<View>(initialRoute.view);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(initialRoute.selectedCourse);
   const [initialLesson, setInitialLesson] = useState<Lesson | undefined>(initialRoute.initialLesson);
   const [adminTab, setAdminTab] = useState<AdminHistoryTab>(() => initialRoute.adminTab);
+  const [deferredCourseRoute, setDeferredCourseRoute] = useState<DeferredCourseRoute | null>(
+    () => initialRoute.deferredCourseRoute
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [showMoreCategories, setShowMoreCategories] = useState(false);
@@ -269,11 +348,9 @@ export default function App() {
 
   const buildHistoryPayload = useCallback((): AppHistoryPayload => {
     const p: AppHistoryPayload = { v: 1, view: currentView as AppHistoryPayload['view'] };
+    /* Player hash is always `#/course/<id>/player` (no lesson segment); lesson lives in state + CoursePlayer. */
     if (currentView === 'overview' || currentView === 'player') {
-      p.courseId = selectedCourse?.id ?? null;
-      if (currentView === 'player' && initialLesson?.id) {
-        p.lessonId = initialLesson.id;
-      }
+      p.courseId = selectedCourse?.id ?? deferredCourseRoute?.courseId ?? null;
     }
     if (currentView === 'certificate' && certificateData) {
       p.certificate = { ...certificateData };
@@ -282,7 +359,7 @@ export default function App() {
       p.adminTab = adminTab;
     }
     return p;
-  }, [currentView, selectedCourse?.id, initialLesson?.id, certificateData, adminTab]);
+  }, [currentView, selectedCourse?.id, deferredCourseRoute, certificateData, adminTab]);
 
   const applyHistoryPayload = useCallback((raw: AppHistoryPayload) => {
     const resolved = resolvePayloadForCourses(raw, catalogCoursesRef.current, findLessonById);
@@ -331,7 +408,19 @@ export default function App() {
     if (view === 'overview' || view === 'player') {
       const c = resolved.courseId ? (catalogCoursesRef.current.find((x) => x.id === resolved.courseId) ?? null) : null;
       setSelectedCourse(c);
-      setInitialLesson(c && resolved.lessonId ? findLessonById(c, resolved.lessonId) : undefined);
+      if (view === 'overview') {
+        setInitialLesson(undefined);
+      } else if (view === 'player' && c) {
+        if (resolved.lessonId) {
+          setInitialLesson(findLessonById(c, resolved.lessonId) ?? undefined);
+        } else {
+          const uid = readCachedAuthProfile()?.uid ?? null;
+          const resume = getResumeOrStartLesson(c, loadLessonProgressMap(c.id, uid));
+          setInitialLesson(resume ?? undefined);
+        }
+      } else {
+        setInitialLesson(undefined);
+      }
     } else {
       setSelectedCourse(null);
       setInitialLesson(undefined);
@@ -358,10 +447,11 @@ export default function App() {
   }, [buildHistoryPayload]);
 
   useEffect(() => {
-    const onPop = (e: PopStateEvent) => {
-      const fromState = readPayloadFromHistoryState(e.state);
+    const onPop = (_e: PopStateEvent) => {
+      /** Hash is the visible deep link; prefer it over history.state when they diverge (lesson segment / back-forward). */
       const fromHash = parseHashToPayload(window.location.hash);
-      const raw = fromState ?? fromHash;
+      const fromState = readPayloadFromHistoryState(window.history.state);
+      const raw = fromHash ?? fromState;
       if (!raw) return;
       applyHistoryPayload(raw);
     };
@@ -395,7 +485,7 @@ export default function App() {
     }
 
     window.history.pushState(state, '', url);
-  }, [buildHistoryPayload, currentView, selectedCourse?.id, initialLesson?.id, certificateData, adminTab]);
+  }, [buildHistoryPayload, currentView, selectedCourse?.id, deferredCourseRoute, certificateData, adminTab]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
@@ -471,13 +561,45 @@ export default function App() {
     if (!fresh) return;
     setSelectedCourse(fresh);
     if (resolved.view === 'player') {
-      setInitialLesson(
-        resolved.lessonId ? findLessonById(fresh, resolved.lessonId) ?? undefined : undefined
-      );
+      if (resolved.lessonId) {
+        setInitialLesson(findLessonById(fresh, resolved.lessonId) ?? undefined);
+      } else {
+        const uid = user?.uid ?? readCachedAuthProfile()?.uid ?? null;
+        const resume = getResumeOrStartLesson(fresh, loadLessonProgressMap(fresh.id, uid));
+        setInitialLesson(resume ?? undefined);
+      }
     } else if (resolved.view === 'overview') {
       setInitialLesson(undefined);
     }
-  }, [catalogCourses, currentView]);
+  }, [catalogCourses, currentView, user?.uid]);
+
+  /** Apply deep link once the live catalog contains a course that was missing on first paint (cold refresh). */
+  useLayoutEffect(() => {
+    if (!deferredCourseRoute) return;
+    const fresh = catalogCourses.find((c) => c.id === deferredCourseRoute.courseId);
+    if (fresh) {
+      setSelectedCourse(fresh);
+      if (deferredCourseRoute.view === 'player') {
+        if (deferredCourseRoute.lessonId) {
+          setInitialLesson(findLessonById(fresh, deferredCourseRoute.lessonId) ?? undefined);
+        } else {
+          const uid = user?.uid ?? readCachedAuthProfile()?.uid ?? null;
+          const resume = getResumeOrStartLesson(fresh, loadLessonProgressMap(fresh.id, uid));
+          setInitialLesson(resume ?? undefined);
+        }
+      } else {
+        setInitialLesson(undefined);
+      }
+      setDeferredCourseRoute(null);
+      return;
+    }
+    if (!liveCatalogHydrated) return;
+    setDeferredCourseRoute(null);
+    historyActionRef.current = 'replace';
+    setCurrentView('catalog');
+    setSelectedCourse(null);
+    setInitialLesson(undefined);
+  }, [catalogCourses, deferredCourseRoute, liveCatalogHydrated, user?.uid]);
 
   useEffect(() => {
     if (!isAuthReady) {
@@ -625,9 +747,10 @@ export default function App() {
     }
     if (payload.view === 'player' && course) {
       setSelectedCourse(course);
-      setInitialLesson(
-        payload.initialLessonId ? findLessonById(course, payload.initialLessonId) : undefined
-      );
+      const explicit = payload.initialLessonId ? findLessonById(course, payload.initialLessonId) : undefined;
+      const uid = auth.currentUser?.uid ?? null;
+      const resume = getResumeOrStartLesson(course, loadLessonProgressMap(course.id, uid));
+      setInitialLesson(explicit ?? resume ?? undefined);
       setCurrentView('player');
       scrollDocumentToTop();
       return;
@@ -1744,50 +1867,56 @@ export default function App() {
         >
           {mainView === 'home' && renderHome()}
           {mainView === 'catalog' && renderCatalog()}
-          {mainView === 'overview' && selectedCourseResolved && (
-            !liveCatalogHydrated ? (
+          {mainView === 'overview' &&
+            (selectedCourseResolved ? (
+              !liveCatalogHydrated ? (
+                <CourseCatalogLoadingSkeleton variant="overview" />
+              ) : (
+                <CourseOverview
+                  key={`${selectedCourseResolved.id}:${courseCurriculumSignature(selectedCourseResolved)}`}
+                  course={selectedCourseResolved}
+                  onStartCourse={(lesson) => {
+                    setInitialLesson(lesson);
+                    setCurrentView('player');
+                  }}
+                  user={navUser}
+                  onLogin={handleLogin}
+                  onShowCertificate={handleShowCertificate}
+                  remoteDataVersion={remoteProfileDataVersion}
+                  contentDeepLink={overviewContentDeepLink}
+                  onContentDeepLinkConsumed={() => setOverviewContentDeepLink(null)}
+                />
+              )
+            ) : deferredCourseRoute?.view === 'overview' ? (
               <CourseCatalogLoadingSkeleton variant="overview" />
-            ) : (
-              <CourseOverview
-                key={`${selectedCourseResolved.id}:${courseCurriculumSignature(selectedCourseResolved)}`}
-                course={selectedCourseResolved}
-                onStartCourse={(lesson) => {
-                  setInitialLesson(lesson);
-                  setCurrentView('player');
-                }}
-                user={navUser}
-                onLogin={handleLogin}
-                onShowCertificate={handleShowCertificate}
-                remoteDataVersion={remoteProfileDataVersion}
-                contentDeepLink={overviewContentDeepLink}
-                onContentDeepLinkConsumed={() => setOverviewContentDeepLink(null)}
-              />
-            )
-          )}
-          {mainView === 'player' && selectedCourseResolved && (
-            !liveCatalogHydrated ? (
+            ) : null)}
+          {mainView === 'player' &&
+            (selectedCourseResolved ? (
+              !liveCatalogHydrated ? (
+                <CourseCatalogLoadingSkeleton variant="player" />
+              ) : !isAuthReady ? (
+                <div className="min-h-screen pt-28 flex items-center justify-center text-[var(--text-secondary)] text-sm">
+                  Loading…
+                </div>
+              ) : user ? (
+                <CoursePlayer
+                  key={`${selectedCourseResolved.id}:${courseCurriculumSignature(selectedCourseResolved)}`}
+                  course={selectedCourseResolved}
+                  initialLesson={initialLesson}
+                  onCourseFinished={handleCoursePlayerFinished}
+                  user={user}
+                  onLogin={handleLogin}
+                  pauseForAppNavOverlay={profileOrSettingsOpen && mainView === 'player'}
+                />
+              ) : (
+                <PlayerSignInGate
+                  courseTitle={selectedCourseResolved.title}
+                  onLogin={handleLogin}
+                />
+              )
+            ) : deferredCourseRoute?.view === 'player' ? (
               <CourseCatalogLoadingSkeleton variant="player" />
-            ) : !isAuthReady ? (
-              <div className="min-h-screen pt-28 flex items-center justify-center text-[var(--text-secondary)] text-sm">
-                Loading…
-              </div>
-            ) : user ? (
-              <CoursePlayer
-                key={`${selectedCourseResolved.id}:${courseCurriculumSignature(selectedCourseResolved)}`}
-                course={selectedCourseResolved}
-                initialLesson={initialLesson}
-                onCourseFinished={handleCoursePlayerFinished}
-                user={user}
-                onLogin={handleLogin}
-                pauseForAppNavOverlay={profileOrSettingsOpen && mainView === 'player'}
-              />
-            ) : (
-              <PlayerSignInGate
-                courseTitle={selectedCourseResolved.title}
-                onLogin={handleLogin}
-              />
-            )
-          )}
+            ) : null)}
           {mainView === 'certificate' && renderCertificate()}
           {mainView === 'about' && renderAbout()}
           {mainView === 'careers' && renderCareers()}

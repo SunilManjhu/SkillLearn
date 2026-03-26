@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   isCourseComplete,
   hasResumableCourseProgress,
+  getResumeOrStartLesson,
   loadLessonProgressMap,
   reconcileLessonProgressMap,
   isLessonPlaybackComplete,
@@ -188,13 +189,19 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
     setProgressMap({}); // Force re-render and clear local state
     setExistingRating(null);
     setShowRatingPrompt(false);
-    onStartCourse();
-  }, [course.id, progressUserId, onStartCourse]);
+    const start = getResumeOrStartLesson(course, {});
+    if (start) onStartCourse(start);
+    else onStartCourse();
+  }, [course.id, progressUserId, onStartCourse, course]);
 
   const requestPrimaryAction = () => {
     if (user) {
       if (isComplete) void handleRetakeCourse();
-      else onStartCourse();
+      else {
+        const next = getResumeOrStartLesson(course, progressMap);
+        if (next) onStartCourse(next);
+        else onStartCourse();
+      }
       return;
     }
     openPlayLoginModal();
