@@ -12,6 +12,8 @@ export interface NavbarNotification {
   read: boolean;
   time: string;
   kind?: 'certificate' | 'broadcast' | 'generic';
+  actionView?: 'home' | 'catalog' | 'contact' | 'profile' | 'settings' | 'admin';
+  actionLabel?: string;
   courseId?: string;
   lessonId?: string;
   moduleId?: string;
@@ -299,7 +301,10 @@ export const Navbar: React.FC<NavbarProps> = ({
               type="button"
               ref={el => navItemsRef.current[1] = el}
               onKeyDown={(e) => handleTopLevelKeyDown(e, 1, 'browse')}
-              onMouseEnter={() => setOpenDropdown('browse')}
+              onClick={() => {
+                setOpenDropdown(openDropdown === 'browse' ? null : 'browse');
+                setFocusedItemIndex(-1);
+              }}
               tabIndex={focusedNavIndex === 1 ? 0 : -1}
               className={`hover:text-[var(--text-primary)] transition-colors flex items-center gap-1 h-16 focus:outline-none focus:text-[var(--text-primary)] ${activeView === 'catalog' ? 'text-orange-500 border-b-2 border-orange-500' : 'text-[var(--text-secondary)]'}`}
             >
@@ -328,7 +333,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button 
               ref={el => navItemsRef.current[2] = el}
               onKeyDown={(e) => handleTopLevelKeyDown(e, 2, 'paths')}
-              onMouseEnter={() => setOpenDropdown('paths')}
+              onClick={() => {
+                setOpenDropdown(openDropdown === 'paths' ? null : 'paths');
+                setFocusedItemIndex(-1);
+              }}
               tabIndex={focusedNavIndex === 2 ? 0 : -1}
               className="hover:text-[var(--text-primary)] transition-colors flex items-center gap-1 h-16 focus:outline-none focus:text-[var(--text-primary)]"
             >
@@ -357,7 +365,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button 
               ref={el => navItemsRef.current[3] = el}
               onKeyDown={(e) => handleTopLevelKeyDown(e, 3, 'skills')}
-              onMouseEnter={() => setOpenDropdown('skills')}
+              onClick={() => {
+                setOpenDropdown(openDropdown === 'skills' ? null : 'skills');
+                setFocusedItemIndex(-1);
+              }}
               tabIndex={focusedNavIndex === 3 ? 0 : -1}
               className="hover:text-[var(--text-primary)] transition-colors flex items-center gap-1 h-16 focus:outline-none focus:text-[var(--text-primary)]"
             >
@@ -537,6 +548,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                         )}
                         {n.kind === 'broadcast' && (
                           <span className="mt-1 block text-[10px] font-semibold text-orange-500">Open course</span>
+                        )}
+                        {n.kind === 'generic' && n.actionLabel && (
+                          <span className="mt-1 block text-[10px] font-semibold text-orange-500">{n.actionLabel}</span>
                         )}
                       </button>
                       <button

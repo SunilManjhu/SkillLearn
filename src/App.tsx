@@ -635,6 +635,8 @@ export default function App() {
           read: false,
           time: 'Now',
           kind: 'generic',
+          actionView: 'catalog',
+          actionLabel: 'Open catalog',
         },
       ]);
       return;
@@ -644,8 +646,15 @@ export default function App() {
       const enrolled = await fetchEnrolledCourseIds(user.uid);
       const alerts = await fetchActiveAlertsForCourses(enrolled);
       const st = await loadUserAlertState(user.uid);
+      const accountCreatedAtMs = (() => {
+        const raw = user.metadata.creationTime;
+        if (!raw) return null;
+        const parsed = Date.parse(raw);
+        return Number.isFinite(parsed) ? parsed : null;
+      })();
       if (cancelled) return;
       const rows: NavbarNotification[] = alerts
+        .filter((a) => (accountCreatedAtMs == null ? true : a.createdAtMs >= accountCreatedAtMs))
         .filter((a) => !st.dismissedAlertIds[a.id])
         .map((a) => ({
           id: `broadcast-${a.id}`,
@@ -666,7 +675,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [user?.uid]);
+  }, [user?.uid, user?.metadata.creationTime]);
 
   useEffect(() => {
     if (currentView !== 'admin') return;
@@ -987,6 +996,10 @@ export default function App() {
         handleCertificateNotificationClick();
         return;
       }
+      if (n.kind === 'generic' && n.actionView) {
+        handleNavigate(n.actionView);
+        return;
+      }
       if (n.kind === 'broadcast' && n.courseId && user?.uid) {
         if (n.alertId) void markAlertRead(user.uid, n.alertId);
         const course = catalogCourses.find((c) => c.id === n.courseId);
@@ -1006,7 +1019,7 @@ export default function App() {
         scrollDocumentToTop();
       }
     },
-    [handleCertificateNotificationClick, user?.uid, catalogCourses]
+    [handleCertificateNotificationClick, handleNavigate, user?.uid, catalogCourses]
   );
 
   const handleDismissNotification = useCallback(
