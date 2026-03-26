@@ -11,6 +11,7 @@ import {
   loadLessonProgressMap,
   reconcileLessonProgressMap,
   isLessonPlaybackComplete,
+  progressPercent,
   clearCourseProgress,
   syncProgressToFirestore,
   loadProgressFromFirestore,
@@ -613,31 +614,52 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                         <div className="bg-[var(--bg-primary)]/50">
                           {module.lessons.map((lesson) => {
                             const lessonComplete = isLessonPlaybackComplete(progressMap[lesson.id]);
+                            const pct = progressPercent(progressMap[lesson.id]);
                             return (
                               <button
                                 type="button"
                                 key={lesson.id}
                                 id={`course-lesson-${lesson.id}`}
                                 onClick={() => requestLessonPlay(lesson)}
-                                className="w-full flex items-center justify-between p-4 pl-16 hover:bg-[var(--hover-bg)] transition-colors group text-left"
+                                className="group flex w-full flex-col gap-1.5 p-4 pl-16 text-left transition-colors hover:bg-[var(--hover-bg)]"
                               >
-                                <div className="flex items-center gap-3">
-                                  {lessonComplete ? (
-                                    <CheckCircle2 size={14} className="text-emerald-500" />
-                                  ) : (
-                                    <Play size={14} className="text-[var(--text-secondary)] group-hover:text-orange-500 transition-colors" />
-                                  )}
-                                  <span className={`text-sm font-medium transition-colors ${
-                                    lessonComplete 
-                                      ? 'text-emerald-500/80 group-hover:text-emerald-500' 
-                                      : 'text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]'
-                                  }`}>
-                                    {lesson.title}
+                                <div className="flex min-w-0 w-full items-start justify-between gap-3">
+                                  <div className="min-w-0 flex-1 flex flex-col gap-1.5">
+                                    <div className="flex min-w-0 items-center gap-3">
+                                      {lessonComplete ? (
+                                        <CheckCircle2 size={14} className="shrink-0 text-emerald-500" />
+                                      ) : (
+                                        <Play
+                                          size={14}
+                                          className="shrink-0 text-[var(--text-secondary)] transition-colors group-hover:text-orange-500"
+                                        />
+                                      )}
+                                      <span
+                                        className={`min-w-0 truncate text-sm font-medium transition-colors ${
+                                          lessonComplete
+                                            ? 'text-emerald-500/80 group-hover:text-emerald-500'
+                                            : 'text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]'
+                                        }`}
+                                      >
+                                        {lesson.title}
+                                      </span>
+                                    </div>
+                                    <div className="flex w-full items-center gap-2">
+                                      <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--hover-bg)]">
+                                        <div
+                                          className="h-full rounded-full bg-orange-500 transition-[width] duration-300"
+                                          style={{ width: `${pct}%` }}
+                                        />
+                                      </div>
+                                      <span className="w-9 shrink-0 text-right text-[10px] tabular-nums text-[var(--text-muted)]">
+                                        {pct}%
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <span className="shrink-0 text-xs text-[var(--text-muted)] font-mono pt-0.5">
+                                    {lessonDurationLabel(lesson)}
                                   </span>
                                 </div>
-                                <span className="text-xs text-[var(--text-muted)] font-mono">
-                                  {lessonDurationLabel(lesson)}
-                                </span>
                               </button>
                             );
                           })}
