@@ -8,6 +8,7 @@ import { seedPublishedCoursesFromStaticCatalog } from '../utils/publishedCourses
 import { AdminCourseCatalogSection } from './admin/AdminCourseCatalogSection';
 import { AdminModerationSection } from './admin/AdminModerationSection';
 import { AdminUserRolesSection } from './admin/AdminUserRolesSection';
+import { useAdminActionToast } from './admin/useAdminActionToast';
 
 interface AdminPageProps {
   courses: Course[];
@@ -39,8 +40,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   const [message, setMessage] = useState('');
   const [moduleId, setModuleId] = useState('');
   const [lessonId, setLessonId] = useState('');
-  const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const { showActionToast, actionToast } = useAdminActionToast();
   const [showValidationHints, setShowValidationHints] = useState(false);
   const [targetingOpen, setTargetingOpen] = useState(false);
   const courseRef = useRef<HTMLSelectElement | null>(null);
@@ -55,25 +56,24 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   const handleSend = async () => {
     if (courseMissing) {
       setShowValidationHints(true);
-      setStatus('Course is required.');
+      showActionToast('Course is required.', 'danger');
       courseRef.current?.focus();
       return;
     }
     if (titleMissing) {
       setShowValidationHints(true);
-      setStatus('Title is required.');
+      showActionToast('Title is required.', 'danger');
       titleRef.current?.focus();
       return;
     }
     if (messageMissing) {
       setShowValidationHints(true);
-      setStatus('Message is required.');
+      showActionToast('Message is required.', 'danger');
       messageRef.current?.focus();
       return;
     }
     setBusy(true);
     setShowValidationHints(false);
-    setStatus(null);
     const id = await createBroadcastAlert({
       type,
       title: title.trim(),
@@ -84,26 +84,25 @@ export const AdminPage: React.FC<AdminPageProps> = ({
     });
     setBusy(false);
     if (id) {
-      setStatus('Alert published.');
+      showActionToast('Alert published.');
       setTitle('');
       setMessage('');
       setModuleId('');
       setLessonId('');
       setShowValidationHints(false);
     } else {
-      setStatus('Failed to publish (check console / rules).');
+      showActionToast('Failed to publish (check console / rules).', 'danger');
     }
   };
 
   const handleSeedCatalog = async () => {
     setBusy(true);
-    setStatus(null);
     try {
       await seedPublishedCoursesFromStaticCatalog(STATIC_CATALOG_FALLBACK);
       await onCatalogChanged();
-      setStatus('Seeded. Catalog updated in this session.');
+      showActionToast('Seeded. Catalog updated in this session.');
     } catch {
-      setStatus('Seed failed (check console / rules).');
+      showActionToast('Seed failed (check console / rules).', 'danger');
     }
     setBusy(false);
   };
@@ -113,7 +112,6 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       type="button"
       onClick={() => {
         onTabChange(id);
-        setStatus(null);
         setShowValidationHints(false);
       }}
       className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold transition-colors ${
@@ -331,11 +329,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
         {tab === 'moderation' && <AdminModerationSection />}
         {tab === 'users' && <AdminUserRolesSection currentAdminUid={currentAdminUid} />}
 
-        {status && tab === 'alerts' && (
-          <p className="text-sm text-[var(--text-secondary)] border border-[var(--border-color)] rounded-xl p-4 bg-[var(--bg-secondary)]">
-            {status}
-          </p>
-        )}
+        {actionToast}
       </div>
     </div>
   );

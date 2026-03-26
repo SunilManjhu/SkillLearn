@@ -11,6 +11,7 @@ import {
   type AdminSuggestionRow,
 } from '../../utils/adminModerationFirestore';
 import { createReportResolvedNotice } from '../../utils/alertsFirestore';
+import { useAdminActionToast } from './useAdminActionToast';
 
 function formatWhen(ms: number): string {
   if (!ms) return '—';
@@ -22,7 +23,7 @@ export const AdminModerationSection: React.FC = () => {
   const [reports, setReports] = useState<AdminReportRow[]>([]);
   const [suggestions, setSuggestions] = useState<AdminSuggestionRow[]>([]);
   const [loading, setLoading] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
+  const { showActionToast, actionToast } = useAdminActionToast();
   const [confirmState, setConfirmState] = useState<
     | { type: 'delete-report'; reportId: string }
     | { type: 'resolve-report'; report: AdminReportRow }
@@ -33,7 +34,6 @@ export const AdminModerationSection: React.FC = () => {
 
   const load = useCallback(async () => {
     setLoading(true);
-    setMsg(null);
     const [r, s] = await Promise.all([listReportsForAdmin(), listSuggestionsForAdmin()]);
     setReports(r);
     setSuggestions(s);
@@ -58,7 +58,7 @@ export const AdminModerationSection: React.FC = () => {
         firstReportsSeen = true;
         markReady();
       },
-      () => setMsg('Failed to subscribe to reports.')
+      () => showActionToast('Failed to subscribe to reports.', 'danger')
     );
     const unsubSuggestions = subscribeSuggestionsForAdmin(
       (rows) => {
@@ -66,14 +66,14 @@ export const AdminModerationSection: React.FC = () => {
         firstSuggestionsSeen = true;
         markReady();
       },
-      () => setMsg('Failed to subscribe to suggestions.')
+      () => showActionToast('Failed to subscribe to suggestions.', 'danger')
     );
 
     return () => {
       unsubReports();
       unsubSuggestions();
     };
-  }, []);
+  }, [showActionToast]);
 
   const removeReport = async (id: string) => {
     setConfirmState({ type: 'delete-report', reportId: id });
@@ -91,16 +91,16 @@ export const AdminModerationSection: React.FC = () => {
     const ok = await deleteReportAsAdmin(id);
     if (ok) {
       setReports((prev) => prev.filter((x) => x.id !== id));
-      setMsg('Report deleted.');
-    } else setMsg('Failed to delete report.');
+      showActionToast('Report deleted.');
+    } else showActionToast('Failed to delete report.', 'danger');
   };
 
   const runDeleteSuggestion = async (id: string) => {
     const ok = await deleteSuggestionAsAdmin(id);
     if (ok) {
       setSuggestions((prev) => prev.filter((x) => x.id !== id));
-      setMsg('Suggestion deleted.');
-    } else setMsg('Failed to delete suggestion.');
+      showActionToast('Suggestion deleted.');
+    } else showActionToast('Failed to delete suggestion.', 'danger');
   };
 
   const runResolveReport = async (r: AdminReportRow) => {
@@ -116,16 +116,16 @@ export const AdminModerationSection: React.FC = () => {
       lessonId: r.lessonId,
     });
     if (notice.ok === false) {
-      setMsg(`${notice.userMessage} Report not resolved.`);
+      showActionToast(`${notice.userMessage} Report not resolved.`, 'danger');
       return;
     }
     const deleted = await deleteReportAsAdmin(r.id);
     if (!deleted) {
-      setMsg('User was notified, but report could not be removed from inbox.');
+      showActionToast('User was notified, but report could not be removed from inbox.', 'danger');
       return;
     }
     setReports((prev) => prev.filter((x) => x.id !== r.id));
-    setMsg('Report resolved and user notified.');
+    showActionToast('Report resolved and user notified.');
   };
 
   const closeConfirm = useCallback(() => {
@@ -189,8 +189,6 @@ export const AdminModerationSection: React.FC = () => {
           URL suggestions ({suggestions.length})
         </button>
       </div>
-
-      {msg && <p className="text-xs text-[var(--text-secondary)]">{msg}</p>}
 
       {subTab === 'reports' && (
         <div className="max-h-[min(28rem,55vh)] space-y-2 overflow-y-auto overscroll-contain">
@@ -339,6 +337,7 @@ export const AdminModerationSection: React.FC = () => {
           </div>
         </div>
       )}
+      {actionToast}
     </div>
   );
 };

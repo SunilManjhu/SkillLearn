@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { BookOpen, Copy, Plus, RotateCcw, Save, Trash2, RefreshCw, X, ChevronDown, ChevronRight } from 'lucide-react';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { useDialogKeyboard } from '../../hooks/useDialogKeyboard';
+import { useAdminActionToast } from './useAdminActionToast';
 import type { Course, Lesson, Module } from '../../data/courses';
 import {
   loadPublishedCoursesFromFirestore,
@@ -190,8 +191,6 @@ interface RequiredFieldTarget {
   lessonKey?: string;
 }
 
-type ActionToastVariant = 'success' | 'danger';
-
 export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps> = ({
   onCatalogChanged,
 }) => {
@@ -200,9 +199,6 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const [selector, setSelector] = useState<string>('');
   const [draft, setDraft] = useState<Course | null>(null);
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-  const [actionToastText, setActionToastText] = useState<string | null>(null);
-  const [actionToastVariant, setActionToastVariant] = useState<ActionToastVariant>('success');
   const [listLoading, setListLoading] = useState(false);
   /** True after first focus on Course select or explicit Reload list — then options include New Course + published. */
   const [catalogRequested, setCatalogRequested] = useState(false);
@@ -223,7 +219,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const pendingOpenNewLessonKeyRef = useRef<string | null>(null);
   /** On failed save, scroll/focus the first invalid required field once it is rendered. */
   const pendingScrollTargetIdRef = useRef<string | null>(null);
-  const saveToastHideTimerRef = useRef<number | null>(null);
+  const { showActionToast, actionToast } = useAdminActionToast();
   /** Re-read category option list when extras change in localStorage (same tab). */
   const [categoryOptionsVersion, setCategoryOptionsVersion] = useState(0);
 
@@ -282,28 +278,6 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     [publishedList]
   );
 
-  const showActionToast = useCallback((text: string, variant: ActionToastVariant = 'success') => {
-    if (saveToastHideTimerRef.current) {
-      window.clearTimeout(saveToastHideTimerRef.current);
-      saveToastHideTimerRef.current = null;
-    }
-    setActionToastVariant(variant);
-    setActionToastText(text);
-    saveToastHideTimerRef.current = window.setTimeout(() => {
-      setActionToastText(null);
-      saveToastHideTimerRef.current = null;
-    }, 2200);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (saveToastHideTimerRef.current) {
-        window.clearTimeout(saveToastHideTimerRef.current);
-        saveToastHideTimerRef.current = null;
-      }
-    };
-  }, []);
-
   /** First time draft appears (e.g. initial load) without baseline yet. */
   useEffect(() => {
     if (!draft || baselineJson !== null) return;
@@ -313,7 +287,6 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const pickCourse = (id: string) => {
     if (id === '') return;
     setSelector(id);
-    setMsg(null);
     setRenameDocId('');
     if (id === '__new__') {
       const fresh = emptyCourse(firstAvailableStructuredCourseId(publishedList));
@@ -394,7 +367,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       if (!d || d.modules.length <= 1) return d;
       return { ...d, modules: d.modules.filter((_, i) => i !== mi) };
     });
-    showActionToast('Module deleted.', 'danger');
+    showActionToast('Module deleted.');
   };
 
   const addLesson = (mi: number) => {
@@ -433,7 +406,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       });
       return { ...d, modules };
     });
-    showActionToast('Lesson deleted.', 'danger');
+    showActionToast('Lesson deleted.');
   };
 
   const toggleModuleOpen = (mi: number) => {
@@ -538,35 +511,34 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         setOpenLessons(target.lessonKey ? { [target.lessonKey]: true } : {});
         pendingScrollTargetIdRef.current = target.targetId;
       }
-      setMsg(err);
+      showActionToast(err, 'danger');
       return;
     }
     setBusy(true);
-    setMsg(null);
     const ok = await savePublishedCourse(draft);
     setBusy(false);
     if (ok) {
       setShowValidationHints(false);
       if (draft.category.trim()) addCatalogCategoryExtra(draft.category.trim());
-      setMsg(null);
       showActionToast('Saved to Firestore.');
       await refreshList();
       await onCatalogChanged();
       setSelector(draft.id);
       setBaselineJson(JSON.stringify(draft));
-    } else setMsg('Save failed (check console / rules).');
+    } else {
+      showActionToast('Save failed (check console / rules).', 'danger');
+    }
   };
 
   const duplicatePublishedAsDraft = () => {
-    setMsg(null);
     if (!selector || selector === '__new__') {
-      setMsg('Select an existing published course in the list, then duplicate.');
+      showActionToast('Select an existing published course in the list, then duplicate.', 'danger');
       return;
     }
     const fromEditor =
       draft && draft.id === selector ? draft : publishedList.find((c) => c.id === selector);
     if (!fromEditor) {
-      setMsg('Course not found. Reload the list and try again.');
+      showActionToast('Course not found. Reload the list and try again.', 'danger');
       return;
     }
     const reserveDraftCn =
@@ -579,7 +551,9 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     setDraft(copy);
     setBaselineJson(JSON.stringify(copy));
     setRenameDocId('');
-    setMsg('Copy loaded as a new draft — IDs use C{n}M{m}L{l}. Adjust title if needed, then Save.');
+    showActionToast(
+      'Copy loaded as a new draft — IDs use C{n}M{m}L{l}. Adjust title if needed, then Save.'
+    );
   };
 
   const canRenamePublishedDoc =
@@ -592,20 +566,23 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     const oldId = draft.id;
     const newId = renameDocId.trim();
     if (!newId || newId === oldId) {
-      setMsg('Enter a new document ID that is different from the current one.');
+      showActionToast('Enter a new document ID that is different from the current one.', 'danger');
       return;
     }
     if (!SLUG_RE.test(newId)) {
-      setMsg('Document ID: letters, numbers, hyphens only; 1–119 chars; must start with alphanumeric.');
+      showActionToast(
+        'Document ID: letters, numbers, hyphens only; 1–119 chars; must start with alphanumeric.',
+        'danger'
+      );
       return;
     }
     if (publishedList.some((c) => c.id === newId)) {
-      setMsg('That document ID already exists. Choose another.');
+      showActionToast('That document ID already exists. Choose another.', 'danger');
       return;
     }
     const err = validateDraft(draft);
     if (err) {
-      setMsg(err);
+      showActionToast(err, 'danger');
       return;
     }
     const okConfirm = window.confirm(
@@ -617,12 +594,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     if (!okConfirm) return;
 
     setBusy(true);
-    setMsg(null);
     const coursePayload: Course = { ...draft, id: newId };
     const saved = await savePublishedCourse(coursePayload);
     if (!saved) {
       setBusy(false);
-      setMsg('Could not save under the new document ID (check console / rules).');
+      showActionToast('Could not save under the new document ID (check console / rules).', 'danger');
       return;
     }
     const deleted = await deletePublishedCourse(oldId);
@@ -634,11 +610,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     setSelector(newId);
     setRenameDocId('');
     if (!deleted) {
-      setMsg(
-        `Saved as "${newId}". The old document "${oldId}" could not be deleted — remove the duplicate manually in Firebase Console.`
+      showActionToast(
+        `Saved as "${newId}", but "${oldId}" could not be deleted — check Console or Firebase Console.`,
+        'danger'
       );
     } else {
-      setMsg(null);
       showActionToast(`Document ID updated: "${oldId}" -> "${newId}".`);
     }
   };
@@ -647,7 +623,6 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     if (!draft) return;
     if (!window.confirm('Delete published course "' + draft.id + '" from Firestore?')) return;
     setBusy(true);
-    setMsg(null);
     const ok = await deletePublishedCourse(draft.id);
     setBusy(false);
     if (ok) {
@@ -659,9 +634,10 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       setBaselineJson(JSON.stringify(fresh));
       setSelector('__new__');
       setRenameDocId('');
-      setMsg(null);
-      showActionToast('Course deleted.', 'danger');
-    } else setMsg('Delete failed.');
+      showActionToast('Course deleted.');
+    } else {
+      showActionToast('Delete failed.', 'danger');
+    }
   };
 
   const isDirty =
@@ -686,7 +662,6 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         const fresh = emptyCourse(firstAvailableStructuredCourseId(publishedList));
         setDraft(fresh);
         setBaselineJson(JSON.stringify(fresh));
-        setMsg(null);
         setRenameDocId('');
         setCancelDialogVariant(null);
         return;
@@ -695,14 +670,13 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         const restored = JSON.parse(baselineJson) as Course;
         setDraft(deepClone(restored));
       } catch {
-        setMsg('Could not restore draft.');
+        showActionToast('Could not restore draft.', 'danger');
         return;
       }
       setRenameDocId('');
-      setMsg(null);
       setCancelDialogVariant(null);
     },
-    [draft, baselineJson, publishedList]
+    [draft, baselineJson, publishedList, showActionToast]
   );
 
   useDialogKeyboard({
@@ -907,12 +881,6 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           </div>
         )}
         </div>
-
-        {msg && (
-          <p className="text-sm text-[var(--text-secondary)] border border-[var(--border-color)] rounded-xl px-4 py-3 bg-[var(--bg-primary)]/50">
-            {msg}
-          </p>
-        )}
 
         {draft && (
           <div className="space-y-4 border-t border-[var(--border-color)] pt-4">
@@ -1413,25 +1381,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         )}
       </AnimatePresence>
 
-      <AnimatePresence>
-        {actionToastText && (
-          <motion.div
-            initial={{ opacity: 0, y: 12, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 10, scale: 0.98 }}
-            transition={{ duration: 0.22, ease: 'easeOut' }}
-            className={`pointer-events-none fixed bottom-6 right-6 z-[90] rounded-xl border px-4 py-2.5 text-sm font-semibold shadow-2xl backdrop-blur-sm ${
-              actionToastVariant === 'danger'
-                ? 'border-red-400/50 bg-red-500/15 text-red-300'
-                : 'border-emerald-400/40 bg-emerald-500/15 text-emerald-300'
-            }`}
-            role="status"
-            aria-live="polite"
-          >
-            {actionToastText}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {actionToast}
     </div>
   );
 };

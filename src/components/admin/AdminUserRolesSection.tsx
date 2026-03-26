@@ -6,6 +6,7 @@ import {
   type AdminUserRow,
 } from '../../utils/adminUsersFirestore';
 import { countFirestoreAdminUsers, type UserRole } from '../../utils/userProfileFirestore';
+import { useAdminActionToast } from './useAdminActionToast';
 
 interface AdminUserRolesSectionProps {
   currentAdminUid?: string;
@@ -14,13 +15,12 @@ interface AdminUserRolesSectionProps {
 export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ currentAdminUid }) => {
   const [rows, setRows] = useState<AdminUserRow[]>([]);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const { showActionToast, actionToast } = useAdminActionToast();
   const [search, setSearch] = useState('');
   const [savingUserId, setSavingUserId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    setMessage(null);
     const next = await listUsersForAdmin();
     setRows(next);
     setLoading(false);
@@ -58,25 +58,24 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
     if (currentAdminUid && currentAdminUid === userId && nextRole !== 'admin') {
       const n = await countFirestoreAdminUsers();
       if (n < 0) {
-        setMessage('Could not verify admin count. Refresh the list and try again.');
+        showActionToast('Could not verify admin count. Refresh the list and try again.', 'danger');
         return;
       }
       if (n < 2) {
-        setMessage(soleAdminSelfDemoteMsg);
+        showActionToast(soleAdminSelfDemoteMsg, 'danger');
         return;
       }
     }
 
     setSavingUserId(userId);
-    setMessage(null);
     const ok = await updateUserRoleAsAdmin(userId, nextRole);
     if (!ok) {
-      setMessage('Role update failed. Check rules and console logs.');
+      showActionToast('Role update failed. Check rules and console logs.', 'danger');
       setSavingUserId(null);
       return;
     }
     setRows((prev) => prev.map((r) => (r.id === userId ? { ...r, role: nextRole } : r)));
-    setMessage('Role updated successfully.');
+    showActionToast('Role updated successfully.');
     setSavingUserId(null);
   };
 
@@ -142,8 +141,6 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
         className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm"
       />
 
-      {message && <p className="text-xs text-[var(--text-secondary)]">{message}</p>}
-
       <div className="max-h-[min(30rem,58vh)] overflow-auto rounded-xl border border-[var(--border-color)]">
         <table className="w-full text-sm">
           <thead className="bg-[var(--bg-primary)] text-[var(--text-secondary)]">
@@ -189,6 +186,7 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
           </tbody>
         </table>
       </div>
+      {actionToast}
     </div>
   );
 };
