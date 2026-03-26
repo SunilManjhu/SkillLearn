@@ -158,6 +158,8 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   const [unpauseFrostLinger, setUnpauseFrostLinger] = useState(false);
   /** When playing: chrome hides after idle; any activity in the video rect shows it again (like native / streaming UIs). */
   const [chromeVisible, setChromeVisible] = useState(true);
+  const [seekNudgeSeconds, setSeekNudgeSeconds] = useState<5 | -5>(5);
+  const [seekNudgeVisible, setSeekNudgeVisible] = useState(false);
   const [progressByLesson, setProgressByLesson] = useState<Record<string, LessonProgress>>(() =>
     loadLessonProgressMap(course.id, progressUserId)
   );
@@ -607,6 +609,92 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     [canResumeFromPlayerOverlay, resumePlayback]
   );
 
+  const seekActiveVideoBySeconds = useCallback(
+    (deltaSeconds: number) => {
+      if (!Number.isFinite(deltaSeconds) || deltaSeconds === 0) return;
+      if (
+        isCustomizeModalOpenRef.current ||
+        isReportModalOpenRef.current ||
+        pauseForAppNavOverlayRef.current ||
+        isVoteLoginModalOpenRef.current ||
+        showRatingPromptRef.current
+      ) {
+        return;
+      }
+      if (youtubeEmbedUrl) {
+        const p = ytPlayerRef.current as {
+          getCurrentTime?: () => number;
+          getDuration?: () => number;
+          seekTo?: (t: number, allowSeekAhead: boolean) => void;
+        } | null;
+        if (!p?.getCurrentTime || !p.getDuration || !p.seekTo) return;
+        try {
+          const d = p.getDuration();
+          if (!(Number.isFinite(d) && d > 0)) return;
+          const t = p.getCurrentTime();
+          const nextT = Math.max(0, Math.min(t + deltaSeconds, d));
+          p.seekTo(nextT, true);
+          setYtHudTime({ current: nextT, duration: d });
+          mergeProgress(lessonRef.current.id, nextT, d);
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
+      const v = videoRef.current;
+      if (!v || !(Number.isFinite(v.duration) && v.duration > 0)) return;
+      const nextT = Math.max(0, Math.min(v.currentTime + deltaSeconds, v.duration));
+      v.currentTime = nextT;
+      mergeProgress(lessonRef.current.id, nextT, v.duration);
+    },
+    [mergeProgress, youtubeEmbedUrl]
+  );
+
+  useEffect(() => {
+    const isTypingTarget = (target: EventTarget | null): boolean => {
+      const el = target as HTMLElement | null;
+      if (!el) return false;
+      if (el.isContentEditable) return true;
+      const tag = el.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+      if (el.closest('input, textarea, select, [contenteditable="true"], [role="slider"]')) return true;
+      return false;
+    };
+
+    const onWindowKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if (isTypingTarget(e.target)) return;
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        setSeekNudgeSeconds(5);
+        setSeekNudgeVisible(true);
+        seekActiveVideoBySeconds(5);
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        setSeekNudgeSeconds(-5);
+        setSeekNudgeVisible(true);
+        seekActiveVideoBySeconds(-5);
+      }
+    };
+
+    const onWindowKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        setSeekNudgeVisible(false);
+      }
+    };
+
+    const onWindowBlur = () => setSeekNudgeVisible(false);
+
+    window.addEventListener('keydown', onWindowKeyDown);
+    window.addEventListener('keyup', onWindowKeyUp);
+    window.addEventListener('blur', onWindowBlur);
+    return () => {
+      window.removeEventListener('keydown', onWindowKeyDown);
+      window.removeEventListener('keyup', onWindowKeyUp);
+      window.removeEventListener('blur', onWindowBlur);
+    };
+  }, [seekActiveVideoBySeconds]);
+
   const currentModule = useMemo(
     () => course.modules.find((m) => m.lessons.some((l) => l.id === currentLesson.id)),
     [course.modules, currentLesson.id]
@@ -812,8 +900,10 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     return () => document.removeEventListener('pointerdown', onDocPointerDown, true);
   }, [ytSettingsOpen]);
 
-  /** Mouse: show chrome while cursor is over the player rect; hide as soon as it leaves (iframe-safe via window coords). */
+  /** Mouse: while playing, show on movement and hide after short idle even if pointer stays inside. */
   useEffect(() => {
+    const MOUSE_CHROME_IDLE_MS = 1000;
+
     const isInsideVideoArea = (clientX: number, clientY: number) => {
       const el = videoAreaRef.current;
       if (!el) return false;
@@ -823,8 +913,17 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
 
     const onMove = (e: MouseEvent) => {
       if (mediaPausedRef.current) return;
+      const inside = isInsideVideoArea(e.clientX, e.clientY);
+      if (!inside) {
+        clearChromeHideTimer();
+        setChromeVisible(false);
+        return;
+      }
+      setChromeVisible(true);
       clearChromeHideTimer();
-      setChromeVisible(isInsideVideoArea(e.clientX, e.clientY));
+      chromeHideTimerRef.current = setTimeout(() => {
+        if (!mediaPausedRef.current) setChromeVisible(false);
+      }, MOUSE_CHROME_IDLE_MS);
     };
 
     window.addEventListener('mousemove', onMove, { passive: true });
@@ -1903,6 +2002,21 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
               )}
             </div>
           )}
+
+          <div
+            className={`pointer-events-none absolute top-1/2 z-[22] -translate-y-1/2 transition-opacity duration-200 ${
+              seekNudgeSeconds > 0 ? 'right-5' : 'left-5'
+            } ${seekNudgeVisible ? 'opacity-100' : 'opacity-0'}`}
+            aria-hidden="true"
+          >
+            <div
+              className={`rounded-full border border-white/40 bg-black/55 px-6 py-3 text-2xl font-semibold text-white shadow-lg transition-transform duration-200 ${
+                seekNudgeVisible ? 'scale-100' : 'scale-95'
+              }`}
+            >
+              {seekNudgeSeconds > 0 ? `+${seekNudgeSeconds}` : `${seekNudgeSeconds}`}
+            </div>
+          </div>
 
           {showReplayCta && (
             <div
