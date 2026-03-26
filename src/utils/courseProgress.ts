@@ -105,21 +105,12 @@ export function reconcileLessonProgressMap(
   return { map: migrated ? next : map, migrated };
 }
 
-/** YouTube often stops before `getDuration()`; reported length can also be a few seconds long. */
-const EMBED_GAP_MIN_TAIL_S = 3;
-const EMBED_GAP_MAX_TAIL_S = 15;
-/** Fraction of reported duration treated as “tail” (capped), so 92% on a long clip still qualifies. */
-const EMBED_GAP_DURATION_FRACTION = 0.08;
-/** Below ~90% we do not use the tail rule (avoids marking mid-video as done). */
-const EMBED_GAP_MIN_RATIO = 0.8;
-
 /**
  * Lesson reached the end: checkmarks, resume, course completion, and “Replay from start” all use this.
  *
  * 1) **Primary:** ≥99.5% of saved timeline.
- * 2) **Embed gap:** within a **tail window** of the reported end (at least 3s, up to 8% of duration, cap 15s)
- *    **and** ≥**90%** watched. Fixes (a) 92% UI with ratio just under the old 0.93 bar, and (b) long videos
- *    where “almost done” is >3s remaining but playback has already stalled.
+ * 2) **Embed gap:** YouTube/iframes often stop before `getDuration()`. If **≤3s** remain **and** ≥**80%**
+ *    watched, count as complete.
  */
 export function isLessonPlaybackComplete(p: LessonProgress | undefined): boolean {
   if (!p || !(p.duration > 0)) return false;
@@ -128,11 +119,7 @@ export function isLessonPlaybackComplete(p: LessonProgress | undefined): boolean
   const ratio = t / d;
   if (ratio >= 0.995) return true;
   const remaining = d - t;
-  const tailSeconds = Math.min(
-    EMBED_GAP_MAX_TAIL_S,
-    Math.max(EMBED_GAP_MIN_TAIL_S, d * EMBED_GAP_DURATION_FRACTION)
-  );
-  return remaining <= tailSeconds && ratio >= EMBED_GAP_MIN_RATIO;
+  return remaining <= 3 && ratio >= 0.8;
 }
 
 /** Sidebar/overview bar: **100%** whenever `isLessonPlaybackComplete` (including embed-gap completion). */
