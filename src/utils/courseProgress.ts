@@ -1,5 +1,5 @@
 import { Course, Lesson, STATIC_CATALOG_FALLBACK } from '../data/courses';
-import { flattenLessons, getLastLessonInCourse } from './courseLessons';
+import { flattenLessons } from './courseLessons';
 import { loadCompletionTimestamps, mergeCompletionTimestampFromRemote } from './courseCompletionLog';
 import { db, handleFirestoreError, isFirestorePermissionDenied, OperationType } from '../firebase';
 import {
@@ -105,30 +105,46 @@ export function reconcileLessonProgressMap(
   return { map: migrated ? next : map, migrated };
 }
 
-export function progressPercent(p: LessonProgress | undefined): number {
-  if (!p || !(p.duration > 0)) return 0;
-  return Math.min(100, Math.round((p.currentTime / p.duration) * 100));
-}
+/** YouTube often stops before `getDuration()`; reported length can also be a few seconds long. */
+const EMBED_GAP_MIN_TAIL_S = 3;
+const EMBED_GAP_MAX_TAIL_S = 15;
+/** Fraction of reported duration treated as “tail” (capped), so 92% on a long clip still qualifies. */
+const EMBED_GAP_DURATION_FRACTION = 0.08;
+/** Below ~90% we do not use the tail rule (avoids marking mid-video as done). */
+const EMBED_GAP_MIN_RATIO = 0.8;
 
 /**
- * True only when progress would show ~100% and the learner reached the real end of the timeline.
- * Avoids the old `duration - 10` rule, which marked short clips “done” near 50% and broke resume.
+ * Lesson reached the end: checkmarks, resume, course completion, and “Replay from start” all use this.
+ *
+ * 1) **Primary:** ≥99.5% of saved timeline.
+ * 2) **Embed gap:** within a **tail window** of the reported end (at least 3s, up to 8% of duration, cap 15s)
+ *    **and** ≥**90%** watched. Fixes (a) 92% UI with ratio just under the old 0.93 bar, and (b) long videos
+ *    where “almost done” is >3s remaining but playback has already stalled.
  */
 export function isLessonPlaybackComplete(p: LessonProgress | undefined): boolean {
   if (!p || !(p.duration > 0)) return false;
-  const ratio = p.currentTime / p.duration;
+  const t = p.currentTime;
+  const d = p.duration;
+  const ratio = t / d;
   if (ratio >= 0.995) return true;
-  if (p.currentTime >= p.duration - 0.75) return true;
-  return false;
+  const remaining = d - t;
+  const tailSeconds = Math.min(
+    EMBED_GAP_MAX_TAIL_S,
+    Math.max(EMBED_GAP_MIN_TAIL_S, d * EMBED_GAP_DURATION_FRACTION)
+  );
+  return remaining <= tailSeconds && ratio >= EMBED_GAP_MIN_RATIO;
 }
 
-/**
- * Strict check for UI elements that should only appear when the video is truly at the end
- * (e.g., the "Replay from start" overlay).
- */
+/** Sidebar/overview bar: **100%** whenever `isLessonPlaybackComplete` (including embed-gap completion). */
+export function progressPercent(p: LessonProgress | undefined): number {
+  if (!p || !(p.duration > 0)) return 0;
+  if (isLessonPlaybackComplete(p)) return 100;
+  return Math.min(100, Math.round((p.currentTime / p.duration) * 100));
+}
+
+/** @deprecated Prefer `isLessonPlaybackComplete` — identical semantics (replay overlay + finalize). */
 export function isLessonActuallyFinished(p: LessonProgress | undefined): boolean {
-  if (!p || !(p.duration > 0)) return false;
-  return p.currentTime >= p.duration - 1.5;
+  return isLessonPlaybackComplete(p);
 }
 
 /**
@@ -211,24 +227,14 @@ export function hasResumableCourseProgress(course: Course, progressByLesson: Rec
   return false;
 }
 
-/**
- * Strict check: every lesson within ~1.5s of its video end (used only where full timeline strictness matters).
- */
+/** Every lesson satisfies `isLessonPlaybackComplete` (same as `isCourseComplete`). */
 export function isCourseActuallyFinished(course: Course, progressByLesson: Record<string, LessonProgress>): boolean {
-  return course.modules.every(module =>
-    module.lessons.every(lesson => isLessonActuallyFinished(progressByLesson[lesson.id]))
-  );
+  return isCourseComplete(course, progressByLesson);
 }
 
-/**
- * End-of-course flow (rating / overview): same rules as lesson checkmarks (`isLessonPlaybackComplete`),
- * plus the final curriculum lesson must be truly at the end so we don’t finalize mid-last-video.
- */
+/** End-of-course flow (rating / overview): unified completion bar on every lesson. */
 export function isCourseReadyToFinalize(course: Course, progressByLesson: Record<string, LessonProgress>): boolean {
-  if (!isCourseComplete(course, progressByLesson)) return false;
-  const last = getLastLessonInCourse(course);
-  if (!last) return false;
-  return isLessonActuallyFinished(progressByLesson[last.id]);
+  return isCourseComplete(course, progressByLesson);
 }
 
 export function clearCourseProgress(courseId: string, userId?: string | null): void {

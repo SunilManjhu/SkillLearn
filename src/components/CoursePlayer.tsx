@@ -45,7 +45,6 @@ import {
   progressPercent,
   progressStorageKey,
   isCourseReadyToFinalize,
-  isLessonActuallyFinished,
   syncProgressToFirestore,
   loadProgressFromFirestore,
   type LessonProgress,
@@ -305,6 +304,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
       opts?: { allowDowngradeFromComplete?: boolean }
     ): boolean => {
       if (!(duration > 0) || currentTime < 0) return false;
+      const clampedRaw = Math.min(currentTime, duration);
       if (!opts?.allowDowngradeFromComplete) {
         const existing =
           progressByLessonRef.current[lessonId] ??
@@ -312,12 +312,15 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
         if (
           existing &&
           isLessonPlaybackComplete(existing) &&
-          !isLessonPlaybackComplete({ currentTime, duration })
+          !isLessonPlaybackComplete({ currentTime: clampedRaw, duration })
         ) {
           return false;
         }
       }
-      const clamped = Math.min(currentTime, duration);
+      let clamped = clampedRaw;
+      if (isLessonPlaybackComplete({ currentTime: clamped, duration }) && clamped < duration) {
+        clamped = duration;
+      }
       lastKnownProgressByLessonRef.current[lessonId] = { t: clamped, d: duration };
       setProgressByLesson((prev) => {
         const next = { ...prev, [lessonId]: { currentTime: clamped, duration } };
@@ -646,7 +649,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   }, [course.id, currentLesson.id, progressByLesson, progressUserId]);
 
   const showReplayCta =
-    isLessonActuallyFinished(persistedProgressForCurrentLesson) && !replayUiSuppressed && mediaPaused;
+    isLessonPlaybackComplete(persistedProgressForCurrentLesson) && !replayUiSuppressed && mediaPaused;
 
   const showPauseFrostBackdrop =
     !showReplayCta &&
@@ -1270,8 +1273,9 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                     setYtPauseBlurActive(true);
                     try {
                       const d = player.getDuration?.() ?? 0;
+                      const curT = player.getCurrentTime?.() ?? 0;
                       if (d > 0) {
-                        mergeProgress(lessonRef.current.id, player.getCurrentTime?.() ?? 0, d);
+                        mergeProgress(lessonRef.current.id, curT, d);
                       }
                     } catch {
                       /* ignore */
