@@ -4,6 +4,7 @@ import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { Search, Menu, User, Bell, ChevronDown, X, LogOut, Settings, Moon, Sun, BellRing, LogIn, Shield } from 'lucide-react';
 import { User as FirebaseUser } from '../firebase';
 import type { AuthProfileSnapshot } from '../utils/authProfileCache';
+import { allPresetCatalogCategories } from '../utils/catalogCategoryPresets';
 
 export interface NavbarNotification {
   id: string;
@@ -84,7 +85,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   useBodyScrollLock(mobileMenuOpen || mobileSearchOpen);
 
-  const browseItems = ['Software Development', 'Cloud Computing', 'Data Science', 'Cybersecurity', 'AI & ML', 'Business', 'Design'];
+  const browseItems = allPresetCatalogCategories();
   const pathItems = ['Web Development', 'Mobile Development', 'Data Engineering', 'DevOps', 'Machine Learning'];
   const skillItems = ['React', 'TypeScript', 'Node.js', 'Python', 'Docker', 'Kubernetes', 'AWS'];
 

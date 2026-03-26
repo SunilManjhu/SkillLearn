@@ -70,6 +70,16 @@ interface FirestoreErrorInfo {
   }
 }
 
+/** True for rules rejections; callers may treat as empty reads instead of logging. */
+export function isFirestorePermissionDenied(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code: string }).code === 'permission-denied'
+  );
+}
+
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),

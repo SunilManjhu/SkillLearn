@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { Navbar, type NavbarNotification } from './components/Navbar';
 import { CourseCard } from './components/CourseCard';
 import { CoursePlayer } from './components/CoursePlayer';
 import { CourseOverview } from './components/CourseOverview';
+import { CourseCatalogLoadingSkeleton } from './components/CourseCatalogLoadingSkeleton';
 import { ProfilePage } from './components/ProfilePage';
 import { AccountSettingsPage } from './components/AccountSettingsPage';
 import { Certificate } from './components/Certificate';
@@ -12,7 +13,7 @@ import { DemoLearningAgent } from './components/DemoLearningAgent';
 import { STATIC_CATALOG_FALLBACK, Course, Lesson } from './data/courses';
 import { AdminPage } from './components/AdminPage';
 import { ensureUserProfile, fetchUserRole } from './utils/userProfileFirestore';
-import { resolveCatalogCourses } from './utils/publishedCoursesFirestore';
+import { peekResolvedCatalogCourses, resolveCatalogCourses } from './utils/publishedCoursesFirestore';
 import { enrollUserInCourse, fetchEnrolledCourseIds } from './utils/enrollmentsFirestore';
 import {
   fetchActiveAlertsForCourses,
@@ -46,6 +47,7 @@ import {
 import { stashAuthReturnState, consumeAuthReturnState, type AuthReturnPayload } from './utils/authReturnContext';
 import {
   APP_HISTORY_KEY,
+  type AdminHistoryTab,
   type AppHistoryPayload,
   buildHistoryUrl,
   historyPayloadsEqual,
@@ -53,6 +55,14 @@ import {
   readPayloadFromHistoryState,
   resolvePayloadForCourses,
 } from './utils/appHistory';
+import {
+  CATALOG_CATEGORY_EXTRAS_CHANGED,
+  readCatalogCategoryExtras,
+} from './utils/catalogCategoryExtras';
+import {
+  CATALOG_CATEGORIES_ROW,
+  CATALOG_STATIC_MORE,
+} from './utils/catalogCategoryPresets';
 
 type View = 'home' | 'catalog' | 'player' | 'overview' | 'about' | 'careers' | 'privacy' | 'help' | 'contact' | 'status' | 'enterprise' | 'signup' | 'profile' | 'settings' | 'certificate' | 'admin';
 
@@ -64,6 +74,11 @@ function findLessonById(course: Course, lessonId: string): Lesson | undefined {
   return undefined;
 }
 
+/** React key fragment: changes when any lesson id changes (e.g. live catalog replaces static fallback). */
+function courseCurriculumSignature(course: Course): string {
+  return course.modules.map((m) => m.lessons.map((l) => l.id).join('.')).join('/');
+}
+
 function formatAlertListTime(ms: number): string {
   const d = Date.now() - ms;
   if (d < 60_000) return 'Just now';
@@ -72,41 +87,51 @@ function formatAlertListTime(ms: number): string {
   return `${Math.floor(d / 86_400_000)}d ago`;
 }
 
-function getInitialRouteState(): {
+function getInitialRouteState(catalog: Course[] = STATIC_CATALOG_FALLBACK): {
   view: View;
   selectedCourse: Course | null;
   initialLesson: Lesson | undefined;
+  adminTab: AdminHistoryTab;
 } {
   if (typeof window === 'undefined') {
-    return { view: 'home', selectedCourse: null, initialLesson: undefined };
+    return { view: 'home', selectedCourse: null, initialLesson: undefined, adminTab: 'alerts' };
   }
   const params = new URLSearchParams(window.location.search);
   if (params.get('cert_id')) {
-    return { view: 'home', selectedCourse: null, initialLesson: undefined };
+    return { view: 'home', selectedCourse: null, initialLesson: undefined, adminTab: 'alerts' };
   }
   const parsed = parseHashToPayload(window.location.hash);
   if (!parsed) {
-    return { view: 'home', selectedCourse: null, initialLesson: undefined };
+    return { view: 'home', selectedCourse: null, initialLesson: undefined, adminTab: 'alerts' };
   }
-  const resolved = resolvePayloadForCourses(parsed, STATIC_CATALOG_FALLBACK, findLessonById);
+  const resolved = resolvePayloadForCourses(parsed, catalog, findLessonById);
 
   if (resolved.view === 'overview' || resolved.view === 'player') {
-    const c = resolved.courseId ? (STATIC_CATALOG_FALLBACK.find((x) => x.id === resolved.courseId) ?? null) : null;
+    const c = resolved.courseId ? (catalog.find((x) => x.id === resolved.courseId) ?? null) : null;
     const l = c && resolved.lessonId ? findLessonById(c, resolved.lessonId) : undefined;
     if (c) {
-      return { view: resolved.view as View, selectedCourse: c, initialLesson: l };
+      return {
+        view: resolved.view as View,
+        selectedCourse: c,
+        initialLesson: l,
+        adminTab: 'alerts',
+      };
     }
-    return { view: 'catalog', selectedCourse: null, initialLesson: undefined };
+    return { view: 'catalog', selectedCourse: null, initialLesson: undefined, adminTab: 'alerts' };
   }
 
   if (resolved.view === 'certificate') {
-    return { view: 'home', selectedCourse: null, initialLesson: undefined };
+    return { view: 'home', selectedCourse: null, initialLesson: undefined, adminTab: 'alerts' };
   }
+
+  const adminTab: AdminHistoryTab =
+    resolved.view === 'admin' ? (resolved.adminTab ?? 'alerts') : 'alerts';
 
   return {
     view: resolved.view as View,
     selectedCourse: null,
     initialLesson: undefined,
+    adminTab,
   };
 }
 
@@ -166,11 +191,12 @@ function PlayerSignInGate({
 }
 
 export default function App() {
-  const [initialRoute] = useState(() => getInitialRouteState());
+  const [initialRoute] = useState(() => getInitialRouteState(STATIC_CATALOG_FALLBACK));
   const [currentView, setCurrentView] = useState<View>(initialRoute.view);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(initialRoute.selectedCourse);
   const [initialLesson, setInitialLesson] = useState<Lesson | undefined>(initialRoute.initialLesson);
+  const [adminTab, setAdminTab] = useState<AdminHistoryTab>(() => initialRoute.adminTab);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [showMoreCategories, setShowMoreCategories] = useState(false);
@@ -185,10 +211,32 @@ export default function App() {
   /** Where to return when closing the certificate view (set synchronously before navigation). */
   const certificateReturnRef = useRef<{ view: View; courseId: string | null } | null>(null);
   const [notifications, setNotifications] = useState<NavbarNotification[]>([]);
-  const [catalogCourses, setCatalogCourses] = useState<Course[]>(() => STATIC_CATALOG_FALLBACK);
+  const [catalogCourses, setCatalogCourses] = useState<Course[]>(
+    () => peekResolvedCatalogCourses() ?? STATIC_CATALOG_FALLBACK
+  );
+  /**
+   * False only on cold load when session had no resolved catalog: bundled fallback is incomplete
+   * vs Firestore. Block overview/player until resolveCatalogCourses() finishes so all lessons
+   * appear together (no multi-second stub then "pop-in" of lessons 3+).
+   */
+  const [liveCatalogHydrated, setLiveCatalogHydrated] = useState(
+    () => peekResolvedCatalogCourses() != null
+  );
   const catalogCoursesRef = useRef<Course[]>(catalogCourses);
   catalogCoursesRef.current = catalogCourses;
+
+  /** Prefer the live catalog row for this id so overview/player never render one frame of stale bundled lessons. */
+  const selectedCourseResolved = useMemo((): Course | null => {
+    if (!selectedCourse) return null;
+    return catalogCourses.find((c) => c.id === selectedCourse.id) ?? selectedCourse;
+  }, [selectedCourse, catalogCourses]);
+
   const [isAdminUser, setIsAdminUser] = useState(false);
+  /**
+   * False until Firebase auth is ready and (if signed in) Firestore role fetch finishes.
+   * Prevents treating a brief `isAdminUser === false` as “kick off #/admin”.
+   */
+  const [adminAccessResolved, setAdminAccessResolved] = useState(false);
   /** After opening a broadcast alert: scroll overview curriculum to module/lesson. */
   const [overviewContentDeepLink, setOverviewContentDeepLink] = useState<{
     moduleId?: string;
@@ -206,6 +254,8 @@ export default function App() {
   currentViewRef.current = currentView;
 
   const categoryRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  /** Bumps when admin adds a custom category (localStorage + event). */
+  const [categoryFilterRevision, setCategoryFilterRevision] = useState(0);
   const courseRefs = useRef<(HTMLDivElement | null)[]>([]);
   const footerRefs = useRef<(HTMLLIElement | null)[]>([]);
   /** Guest was on the player sign-in gate; after Google sign-in, send them to overview (no auto-play). */
@@ -228,8 +278,11 @@ export default function App() {
     if (currentView === 'certificate' && certificateData) {
       p.certificate = { ...certificateData };
     }
+    if (currentView === 'admin') {
+      p.adminTab = adminTab;
+    }
     return p;
-  }, [currentView, selectedCourse?.id, initialLesson?.id, certificateData]);
+  }, [currentView, selectedCourse?.id, initialLesson?.id, certificateData, adminTab]);
 
   const applyHistoryPayload = useCallback((raw: AppHistoryPayload) => {
     const resolved = resolvePayloadForCourses(raw, catalogCoursesRef.current, findLessonById);
@@ -276,12 +329,16 @@ export default function App() {
     }
 
     if (view === 'overview' || view === 'player') {
-      const c = resolved.courseId ? (STATIC_CATALOG_FALLBACK.find((x) => x.id === resolved.courseId) ?? null) : null;
+      const c = resolved.courseId ? (catalogCoursesRef.current.find((x) => x.id === resolved.courseId) ?? null) : null;
       setSelectedCourse(c);
       setInitialLesson(c && resolved.lessonId ? findLessonById(c, resolved.lessonId) : undefined);
     } else {
       setSelectedCourse(null);
       setInitialLesson(undefined);
+    }
+
+    if (view === 'admin') {
+      setAdminTab(resolved.adminTab ?? 'alerts');
     }
 
     setCurrentView(view);
@@ -338,45 +395,53 @@ export default function App() {
     }
 
     window.history.pushState(state, '', url);
-  }, [buildHistoryPayload, currentView, selectedCourse?.id, initialLesson?.id, certificateData]);
+  }, [buildHistoryPayload, currentView, selectedCourse?.id, initialLesson?.id, certificateData, adminTab]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
-      setUser(nextUser);
-      setIsAuthReady(true);
-      if (nextUser) {
-        writeCachedAuthProfile(nextUser);
-        setAuthSnapshot(null);
-      } else {
+      if (!nextUser) {
+        setUser(null);
+        setIsAuthReady(true);
         clearCachedAuthProfile();
         setAuthSnapshot(null);
+        return;
       }
+      /** Set user immediately so Firestore-backed flows are not blocked on getIdToken. */
+      setUser(nextUser);
+      setIsAuthReady(true);
+      writeCachedAuthProfile(nextUser);
+      setAuthSnapshot(null);
+      void nextUser.getIdToken();
     });
     return () => unsubscribe();
   }, []);
 
+  /** Same identity the navbar uses: Firebase user or cached profile until auth restores (overview progress row needs this). */
+  const navUser = user ?? (!isAuthReady && authSnapshot ? authSnapshot : null);
+
   useEffect(() => {
-    if (!user?.uid) return;
+    const uid = navUser?.uid;
+    if (!uid) return;
     let cancelled = false;
     void (async () => {
-      await hydrateAllUserProgressFromFirestore(user.uid);
-      await hydrateCompletionTimestampsFromCertificates(user.uid);
-      ensureSyntheticProgressForRecordedCompletions(user.uid, catalogCourses);
-      await hydrateAllCourseRatingsFromFirestore(user.uid);
+      await hydrateAllUserProgressFromFirestore(uid);
+      await hydrateCompletionTimestampsFromCertificates(uid);
+      ensureSyntheticProgressForRecordedCompletions(uid, catalogCourses);
+      await hydrateAllCourseRatingsFromFirestore(uid);
       if (!cancelled) setRemoteProfileDataVersion((v) => v + 1);
     })();
     return () => {
       cancelled = true;
     };
-  }, [user?.uid, catalogCourses]);
-
-  /** Navbar avatar only — Firebase `user` is still null until restore; snapshot fills the gap without faking API access. */
-  const navUser = user ?? (!isAuthReady && authSnapshot ? authSnapshot : null);
+  }, [navUser?.uid, catalogCourses]);
 
   useEffect(() => {
     let cancelled = false;
     void resolveCatalogCourses().then((courses) => {
-      if (!cancelled) setCatalogCourses(courses);
+      if (!cancelled) {
+        setCatalogCourses(courses);
+        setLiveCatalogHydrated(true);
+      }
     });
     return () => {
       cancelled = true;
@@ -386,23 +451,58 @@ export default function App() {
   const refreshCatalogCourses = useCallback(async () => {
     const next = await resolveCatalogCourses();
     setCatalogCourses(next);
+    setLiveCatalogHydrated(true);
   }, []);
 
+  /**
+   * Re-bind overview/player to the live catalog when it loads (or refreshes).
+   * useLayoutEffect: apply before paint so we don’t flash bundled lesson counts, then swap.
+   * Prefer URL hash over history.state so the visible deep link wins if they diverge.
+   */
+  useLayoutEffect(() => {
+    if (currentView !== 'overview' && currentView !== 'player') return;
+    const fromHash = parseHashToPayload(window.location.hash);
+    const fromState = readPayloadFromHistoryState(window.history.state);
+    const raw = fromHash ?? fromState;
+    if (!raw || (raw.view !== 'overview' && raw.view !== 'player')) return;
+    const resolved = resolvePayloadForCourses(raw, catalogCourses, findLessonById);
+    if ((resolved.view !== 'overview' && resolved.view !== 'player') || !resolved.courseId) return;
+    const fresh = catalogCourses.find((c) => c.id === resolved.courseId);
+    if (!fresh) return;
+    setSelectedCourse(fresh);
+    if (resolved.view === 'player') {
+      setInitialLesson(
+        resolved.lessonId ? findLessonById(fresh, resolved.lessonId) ?? undefined : undefined
+      );
+    } else if (resolved.view === 'overview') {
+      setInitialLesson(undefined);
+    }
+  }, [catalogCourses, currentView]);
+
   useEffect(() => {
-    if (!user) {
-      setIsAdminUser(false);
+    if (!isAuthReady) {
+      setAdminAccessResolved(false);
       return;
     }
+    if (!user) {
+      setIsAdminUser(false);
+      setAdminAccessResolved(true);
+      return;
+    }
+    setAdminAccessResolved(false);
     let cancelled = false;
     void (async () => {
       await ensureUserProfile(user);
       const role = await fetchUserRole(user.uid);
-      if (!cancelled) setIsAdminUser(role === 'admin');
+      if (!cancelled) {
+        setIsAdminUser(role === 'admin');
+        setAdminAccessResolved(true);
+      }
     })();
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [isAuthReady, user]);
 
   useEffect(() => {
     if (!user?.uid) {
@@ -448,13 +548,13 @@ export default function App() {
 
   useEffect(() => {
     if (currentView !== 'admin') return;
-    if (!isAuthReady) return;
+    if (!isAuthReady || !adminAccessResolved) return;
     if (!user || !isAdminUser) {
       historyActionRef.current = 'replace';
       setCurrentView('catalog');
       scrollDocumentToTop();
     }
-  }, [currentView, isAuthReady, user, isAdminUser]);
+  }, [currentView, isAuthReady, user, isAdminUser, adminAccessResolved]);
 
   useEffect(() => {
     if (currentView === 'player' && isAuthReady && !user) {
@@ -610,8 +710,20 @@ export default function App() {
     }
   };
 
-  const categories = ['All', 'Software Development', 'Cloud Computing', 'Data Science', 'Cybersecurity', 'AI & ML'];
-  const moreCategories = ['Business', 'Design', 'Marketing', 'Personal Development'];
+  const categories = CATALOG_CATEGORIES_ROW;
+
+  const moreCategories = useMemo(() => {
+    const mainSet = new Set<string>(CATALOG_CATEGORIES_ROW);
+    const pool = new Set<string>([...CATALOG_STATIC_MORE]);
+    for (const c of readCatalogCategoryExtras()) pool.add(c);
+    for (const co of catalogCourses) {
+      const cat = co.category?.trim();
+      if (cat) pool.add(cat);
+    }
+    return [...pool]
+      .filter((c) => !mainSet.has(c))
+      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  }, [catalogCourses, categoryFilterRevision]);
 
   const filteredCourses = catalogCourses.filter(course => {
     const matchesSearch = course.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -627,6 +739,12 @@ export default function App() {
     setSearchQuery('');
     setSelectedCategory('All');
   };
+
+  useEffect(() => {
+    const onExtras = () => setCategoryFilterRevision((r) => r + 1);
+    window.addEventListener(CATALOG_CATEGORY_EXTRAS_CHANGED, onExtras);
+    return () => window.removeEventListener(CATALOG_CATEGORY_EXTRAS_CHANGED, onExtras);
+  }, []);
 
   useEffect(() => {
     if (theme === 'light') {
@@ -690,6 +808,9 @@ export default function App() {
       setFocusedCourseIndex(-1);
       setFocusedCategoryIndex(0);
       setFocusedFooterIndex(-1);
+    }
+    if (view === 'admin') {
+      setAdminTab('alerts');
     }
     setCurrentView(view);
     scrollDocumentToTop();
@@ -1623,31 +1744,37 @@ export default function App() {
         >
           {mainView === 'home' && renderHome()}
           {mainView === 'catalog' && renderCatalog()}
-          {mainView === 'overview' && selectedCourse && (
-            <CourseOverview
-              key={selectedCourse.id}
-              course={selectedCourse}
-              onStartCourse={(lesson) => {
-                setInitialLesson(lesson);
-                setCurrentView('player');
-              }}
-              user={user}
-              onLogin={handleLogin}
-              onShowCertificate={handleShowCertificate}
-              remoteDataVersion={remoteProfileDataVersion}
-              contentDeepLink={overviewContentDeepLink}
-              onContentDeepLinkConsumed={() => setOverviewContentDeepLink(null)}
-            />
+          {mainView === 'overview' && selectedCourseResolved && (
+            !liveCatalogHydrated ? (
+              <CourseCatalogLoadingSkeleton variant="overview" />
+            ) : (
+              <CourseOverview
+                key={`${selectedCourseResolved.id}:${courseCurriculumSignature(selectedCourseResolved)}`}
+                course={selectedCourseResolved}
+                onStartCourse={(lesson) => {
+                  setInitialLesson(lesson);
+                  setCurrentView('player');
+                }}
+                user={navUser}
+                onLogin={handleLogin}
+                onShowCertificate={handleShowCertificate}
+                remoteDataVersion={remoteProfileDataVersion}
+                contentDeepLink={overviewContentDeepLink}
+                onContentDeepLinkConsumed={() => setOverviewContentDeepLink(null)}
+              />
+            )
           )}
-          {mainView === 'player' && selectedCourse && (
-            !isAuthReady ? (
+          {mainView === 'player' && selectedCourseResolved && (
+            !liveCatalogHydrated ? (
+              <CourseCatalogLoadingSkeleton variant="player" />
+            ) : !isAuthReady ? (
               <div className="min-h-screen pt-28 flex items-center justify-center text-[var(--text-secondary)] text-sm">
                 Loading…
               </div>
             ) : user ? (
               <CoursePlayer
-                key={selectedCourse.id}
-                course={selectedCourse}
+                key={`${selectedCourseResolved.id}:${courseCurriculumSignature(selectedCourseResolved)}`}
+                course={selectedCourseResolved}
                 initialLesson={initialLesson}
                 onCourseFinished={handleCoursePlayerFinished}
                 user={user}
@@ -1656,7 +1783,7 @@ export default function App() {
               />
             ) : (
               <PlayerSignInGate
-                courseTitle={selectedCourse.title}
+                courseTitle={selectedCourseResolved.title}
                 onLogin={handleLogin}
               />
             )
@@ -1672,9 +1799,16 @@ export default function App() {
           {mainView === 'admin' && isAdminUser && (
             <AdminPage
               courses={catalogCourses}
+              activeTab={adminTab}
+              onTabChange={setAdminTab}
               onDismiss={() => handleNavigate('catalog', false)}
               onCatalogChanged={refreshCatalogCourses}
             />
+          )}
+          {mainView === 'admin' && isAuthReady && user && !adminAccessResolved && (
+            <div className="min-h-screen pt-28 flex items-center justify-center text-[var(--text-secondary)] text-sm">
+              Checking admin access…
+            </div>
           )}
           {mainView === 'signup' && renderSignup()}
         </div>

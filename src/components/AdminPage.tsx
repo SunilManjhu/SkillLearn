@@ -2,15 +2,16 @@ import React, { useState } from 'react';
 import { Shield, Send, Database, BookOpen, Flag } from 'lucide-react';
 import type { Course } from '../data/courses';
 import { STATIC_CATALOG_FALLBACK } from '../data/courses';
+import type { AdminHistoryTab } from '../utils/appHistory';
 import { createBroadcastAlert, type BroadcastAlertType } from '../utils/alertsFirestore';
 import { seedPublishedCoursesFromStaticCatalog } from '../utils/publishedCoursesFirestore';
 import { AdminCourseCatalogSection } from './admin/AdminCourseCatalogSection';
 import { AdminModerationSection } from './admin/AdminModerationSection';
 
-type AdminTab = 'alerts' | 'catalog' | 'moderation';
-
 interface AdminPageProps {
   courses: Course[];
+  activeTab: AdminHistoryTab;
+  onTabChange: (tab: AdminHistoryTab) => void;
   onDismiss: () => void;
   onCatalogChanged: () => void | Promise<void>;
 }
@@ -22,8 +23,13 @@ const ALERT_TYPES: { value: BroadcastAlertType; label: string }[] = [
   { value: 'course_change', label: 'Other course change' },
 ];
 
-export const AdminPage: React.FC<AdminPageProps> = ({ courses, onDismiss, onCatalogChanged }) => {
-  const [tab, setTab] = useState<AdminTab>('alerts');
+export const AdminPage: React.FC<AdminPageProps> = ({
+  courses,
+  activeTab: tab,
+  onTabChange,
+  onDismiss,
+  onCatalogChanged,
+}) => {
   const [type, setType] = useState<BroadcastAlertType>('course_update');
   const [courseId, setCourseId] = useState(courses[0]?.id ?? '');
   const [title, setTitle] = useState('');
@@ -75,11 +81,11 @@ export const AdminPage: React.FC<AdminPageProps> = ({ courses, onDismiss, onCata
     setBusy(false);
   };
 
-  const tabBtn = (id: AdminTab, label: string, icon: React.ReactNode) => (
+  const tabBtn = (id: AdminHistoryTab, label: string, icon: React.ReactNode) => (
     <button
       type="button"
       onClick={() => {
-        setTab(id);
+        onTabChange(id);
         setStatus(null);
       }}
       className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold transition-colors ${

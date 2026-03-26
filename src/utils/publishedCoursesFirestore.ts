@@ -11,6 +11,52 @@ import type { Course, Lesson, Module } from '../data/courses';
 import { STATIC_CATALOG_FALLBACK } from '../data/courses';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 
+/**
+ * In-memory: survives React 18 Strict Mode remount in the same JS load.
+ * Session: survives full page refresh so overview can hydrate from last Firestore snapshot immediately.
+ */
+let lastResolvedCatalog: Course[] | null = null;
+
+const RESOLVED_CATALOG_SESSION_KEY = 'skilllearn:resolvedCatalog:v1';
+
+function readCatalogFromSession(): Course[] | null {
+  if (typeof sessionStorage === 'undefined') return null;
+  try {
+    const raw = sessionStorage.getItem(RESOLVED_CATALOG_SESSION_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw) as unknown;
+    if (!Array.isArray(data) || data.length === 0) return null;
+    for (const item of data) {
+      if (!item || typeof item !== 'object') return null;
+      const c = item as Record<string, unknown>;
+      if (typeof c.id !== 'string' || !Array.isArray(c.modules)) return null;
+      for (const mod of c.modules) {
+        if (!mod || typeof mod !== 'object') return null;
+        const mo = mod as Record<string, unknown>;
+        if (!Array.isArray(mo.lessons)) return null;
+      }
+    }
+    return data as Course[];
+  } catch {
+    return null;
+  }
+}
+
+function writeCatalogToSession(courses: Course[]): void {
+  if (typeof sessionStorage === 'undefined') return;
+  try {
+    sessionStorage.setItem(RESOLVED_CATALOG_SESSION_KEY, JSON.stringify(courses));
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+/** For catalog `useState` initializer: memory (Strict remount) then session (full refresh) then caller falls back to static. */
+export function peekResolvedCatalogCourses(): Course[] | null {
+  if (lastResolvedCatalog) return lastResolvedCatalog;
+  return readCatalogFromSession();
+}
+
 function parseLesson(raw: unknown): Lesson | null {
   if (!raw || typeof raw !== 'object') return null;
   const o = raw as Record<string, unknown>;
@@ -93,8 +139,10 @@ export async function loadPublishedCoursesFromFirestore(): Promise<Course[]> {
 
 export async function resolveCatalogCourses(): Promise<Course[]> {
   const remote = await loadPublishedCoursesFromFirestore();
-  if (remote.length > 0) return remote;
-  return STATIC_CATALOG_FALLBACK;
+  const result = remote.length > 0 ? remote : STATIC_CATALOG_FALLBACK;
+  lastResolvedCatalog = result;
+  writeCatalogToSession(result);
+  return result;
 }
 
 export function courseToFirestorePayload(course: Course): Record<string, unknown> {

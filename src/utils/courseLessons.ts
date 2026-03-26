@@ -19,3 +19,8 @@ export function getNextLesson(course: Course, current: Lesson): Lesson | null {
   if (i < 0 || i >= flat.length - 1) return null;
   return flat[i + 1];
 }
+
+/** Stable key for effect deps when only lesson ids matter (not object identity). */
+export function courseLessonIdsKey(course: Course): string {
+  return course.modules.map((m) => m.lessons.map((l) => l.id).join('.')).join('/');
+}

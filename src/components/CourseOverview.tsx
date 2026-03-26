@@ -8,12 +8,14 @@ import {
   isCourseComplete,
   hasResumableCourseProgress,
   loadLessonProgressMap,
+  reconcileLessonProgressMap,
   isLessonPlaybackComplete,
   clearCourseProgress,
   syncProgressToFirestore,
   loadProgressFromFirestore,
   progressStorageKey,
 } from '../utils/courseProgress';
+import { courseLessonIdsKey } from '../utils/courseLessons';
 import {
   hasRatedOrDismissed,
   saveCourseRating,
@@ -32,12 +34,16 @@ import {
 } from '../utils/courseCompletionLog';
 import { buildCertificateId } from '../utils/certificateFirestore';
 import type { User as FirebaseUser } from '../firebase';
+import type { AuthProfileSnapshot } from '../utils/authProfileCache';
 import { formatAuthError } from '../utils/authErrors';
+
+type OverviewUser = FirebaseUser | AuthProfileSnapshot;
 
 interface CourseOverviewProps {
   course: Course;
   onStartCourse: (lesson?: Lesson) => void;
-  user: FirebaseUser | null;
+  /** Firebase user or cached profile while session restores (matches navbar). */
+  user: OverviewUser | null;
   onLogin: () => Promise<void>;
   onShowCertificate: (courseId: string, userName: string, date: string, certId: string) => void;
   /** Bumps when cloud data is merged into localStorage (so progress/completion UI refreshes). */
@@ -58,6 +64,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
   onContentDeepLinkConsumed,
 }) => {
   const progressUserId = user?.uid ?? null;
+  const curriculumKey = courseLessonIdsKey(course);
   const { lessonDurationLabel } = useYoutubeResolvedSeconds(course);
   const [expandedModules, setExpandedModules] = useState<string[]>([course.modules[0].id]);
   const [showRatingPrompt, setShowRatingPrompt] = useState(false);
@@ -152,7 +159,14 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
   }, [contentDeepLink, course, onContentDeepLinkConsumed]);
 
   const totalLessons = course.modules.reduce((acc, m) => acc + m.lessons.length, 0);
-  const [progressMap, setProgressMap] = useState(() => loadLessonProgressMap(course.id, progressUserId));
+
+  const [progressMap, setProgressMap] = useState(() => {
+    const uid = user?.uid ?? null;
+    if (!uid) return {};
+    const raw = loadLessonProgressMap(course.id, uid);
+    return reconcileLessonProgressMap(course, raw).map;
+  });
+
   const isComplete = isCourseComplete(course, progressMap);
   const canResume = hasResumableCourseProgress(course, progressMap);
   const completionRecorded =
@@ -225,10 +239,24 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
     onShowCertificate(course.id, userName, date, certId);
   };
 
-  /* Re-load progress from local storage when course or account changes (guest key vs user key). */
+  /* Re-load progress from local storage when course or account changes; remap legacy lesson ids to current catalog. */
   useEffect(() => {
-    setProgressMap(loadLessonProgressMap(course.id, progressUserId));
-  }, [course.id, progressUserId, remoteDataVersion]);
+    if (!progressUserId) {
+      setProgressMap({});
+      return;
+    }
+    const raw = loadLessonProgressMap(course.id, progressUserId);
+    const { map, migrated } = reconcileLessonProgressMap(course, raw);
+    setProgressMap(map);
+    if (migrated) {
+      try {
+        localStorage.setItem(progressStorageKey(course.id, progressUserId), JSON.stringify(map));
+      } catch {
+        /* ignore */
+      }
+      void syncProgressToFirestore(course.id, progressUserId, map);
+    }
+  }, [course.id, curriculumKey, progressUserId, remoteDataVersion]);
 
   /* Ratings + completion prompt track the live progress map (including after Firestore merge). */
   useEffect(() => {
@@ -253,19 +281,21 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
       }
       if (Object.keys(remote.lessonProgress).length === 0) return;
       setProgressMap((prev) => {
-        const next = { ...prev, ...remote.lessonProgress };
+        const merged = { ...prev, ...remote.lessonProgress };
+        const { map, migrated } = reconcileLessonProgressMap(course, merged);
         try {
-          localStorage.setItem(progressStorageKey(course.id, progressUserId), JSON.stringify(next));
+          localStorage.setItem(progressStorageKey(course.id, progressUserId), JSON.stringify(map));
         } catch {
           /* ignore */
         }
-        return next;
+        if (migrated) void syncProgressToFirestore(course.id, progressUserId, map);
+        return map;
       });
     });
     return () => {
       cancelled = true;
     };
-  }, [course.id, progressUserId]);
+  }, [course.id, curriculumKey, progressUserId]);
 
   useEffect(() => {
     if (!progressUserId) return undefined;

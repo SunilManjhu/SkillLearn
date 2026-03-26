@@ -1,4 +1,4 @@
-import { db, handleFirestoreError, OperationType } from '../firebase';
+import { db, handleFirestoreError, isFirestorePermissionDenied, OperationType } from '../firebase';
 import {
   collection,
   deleteDoc,
@@ -96,6 +96,7 @@ export async function loadCourseRatingFromFirestore(
     const comment = data.comment as string | undefined;
     return { stars, ...(comment ? { comment } : {}) };
   } catch (error) {
+    if (isFirestorePermissionDenied(error)) return null;
     handleFirestoreError(error, OperationType.GET, 'courseRatings');
   }
   return null;
@@ -115,6 +116,7 @@ export async function hydrateAllCourseRatingsFromFirestore(userId: string): Prom
       }
     }
   } catch (error) {
+    if (isFirestorePermissionDenied(error)) return;
     handleFirestoreError(error, OperationType.GET, 'courseRatings');
   }
 }

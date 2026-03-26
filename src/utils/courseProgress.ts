@@ -1,7 +1,7 @@
-import { Course, STATIC_CATALOG_FALLBACK } from '../data/courses';
-import { getLastLessonInCourse } from './courseLessons';
+import { Course, Lesson, STATIC_CATALOG_FALLBACK } from '../data/courses';
+import { flattenLessons, getLastLessonInCourse } from './courseLessons';
 import { loadCompletionTimestamps, mergeCompletionTimestampFromRemote } from './courseCompletionLog';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+import { db, handleFirestoreError, isFirestorePermissionDenied, OperationType } from '../firebase';
 import {
   collection,
   doc,
@@ -52,6 +52,59 @@ export function loadLessonProgressMap(courseId: string, userId?: string | null):
   return {};
 }
 
+/**
+ * When a course is republished with new lesson ids, stored maps still use old keys (e.g. wd-l1).
+ * For courses that exist in the bundled fallback, copy progress from stub order → current order by index.
+ */
+export function reconcileLessonProgressMap(
+  course: Course,
+  map: Record<string, LessonProgress>
+): { map: Record<string, LessonProgress>; migrated: boolean } {
+  const stub = STATIC_CATALOG_FALLBACK.find((c) => c.id === course.id);
+  if (!stub) return { map, migrated: false };
+
+  const stubFlat = flattenLessons(stub);
+  const currentFlat = flattenLessons(course);
+  if (stubFlat.length === 0 || currentFlat.length === 0) return { map, migrated: false };
+
+  const currentIds = new Set(currentFlat.map((l) => l.id));
+  const next: Record<string, LessonProgress> = { ...map };
+  let migrated = false;
+
+  for (const [legacyId, progress] of Object.entries(map)) {
+    if (currentIds.has(legacyId)) continue;
+    const idx = stubFlat.findIndex((l) => l.id === legacyId);
+    if (idx < 0 || idx >= currentFlat.length) continue;
+    const targetId = currentFlat[idx].id;
+    if (next[targetId] != null) continue;
+    next[targetId] = progress;
+    if (legacyId !== targetId) {
+      delete next[legacyId];
+      migrated = true;
+    }
+  }
+
+  // Second pass: title match when index alignment skipped (e.g. extra lesson shifted indices).
+  for (const [legacyId, progress] of Object.entries(map)) {
+    if (currentIds.has(legacyId)) continue;
+    if (!(legacyId in next)) continue;
+    const stubLesson = stubFlat.find((l) => l.id === legacyId);
+    if (!stubLesson) continue;
+    const twin = currentFlat.find((l) => l.title.trim() === stubLesson.title.trim());
+    if (!twin) continue;
+    if (next[twin.id] != null) {
+      delete next[legacyId];
+      migrated = true;
+      continue;
+    }
+    next[twin.id] = progress;
+    delete next[legacyId];
+    migrated = true;
+  }
+
+  return { map: migrated ? next : map, migrated };
+}
+
 export function progressPercent(p: LessonProgress | undefined): number {
   if (!p || !(p.duration > 0)) return 0;
   return Math.min(100, Math.round((p.currentTime / p.duration) * 100));
@@ -93,6 +146,21 @@ export function isCourseComplete(course: Course, progressByLesson: Record<string
   return course.modules.every(module =>
     module.lessons.every(lesson => isLessonPlaybackComplete(progressByLesson[lesson.id]))
   );
+}
+
+/** First lesson in catalog order that is not yet playback-complete; null if every lesson is complete or the course has no lessons. */
+export function getFirstIncompleteLesson(
+  course: Course,
+  progressByLesson: Record<string, LessonProgress>
+): Lesson | null {
+  for (const module of course.modules) {
+    for (const lesson of module.lessons) {
+      if (!isLessonPlaybackComplete(progressByLesson[lesson.id])) {
+        return lesson;
+      }
+    }
+  }
+  return null;
 }
 
 /** True when the course is not finished but the learner has at least one completed lesson or partial playback on a lesson. */
@@ -208,6 +276,7 @@ export async function loadProgressFromFirestore(
       return { lessonProgress, completedAtMs };
     }
   } catch (error) {
+    if (isFirestorePermissionDenied(error)) return null;
     handleFirestoreError(error, OperationType.GET, 'progress');
   }
   return null;
@@ -233,6 +302,7 @@ export async function hydrateAllUserProgressFromFirestore(userId: string): Promi
       }
     }
   } catch (error) {
+    if (isFirestorePermissionDenied(error)) return;
     handleFirestoreError(error, OperationType.GET, 'progress');
   }
 }
@@ -264,6 +334,9 @@ export function ensureSyntheticProgressForRecordedCompletions(userId: string, co
     if (completionTs[course.id] == null) continue;
     const m = loadLessonProgressMap(course.id, userId);
     if (isCourseComplete(course, m)) continue;
+    // Only backfill when there is no per-lesson progress yet (Firestore had completion but no breakdown).
+    // If the map is non-empty, real attempts exist—do not synthesize 100% for newly added lesson IDs.
+    if (Object.keys(m).length > 0) continue;
     const filled = buildSyntheticCompletedLessonMap(course, m);
     try {
       localStorage.setItem(progressStorageKey(course.id, userId), JSON.stringify(filled));

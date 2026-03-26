@@ -30,12 +30,16 @@ export interface CertificateHistorySnapshot {
   isPublic: boolean;
 }
 
+/** Admin portal sub-routes (Courses tab uses internal id `catalog`). */
+export type AdminHistoryTab = 'alerts' | 'catalog' | 'moderation';
+
 export interface AppHistoryPayload {
   v: 1;
   view: AppHistoryView;
   courseId?: string | null;
   lessonId?: string | null;
   certificate?: CertificateHistorySnapshot | null;
+  adminTab?: AdminHistoryTab | null;
 }
 
 const SIMPLE_VIEWS: AppHistoryView[] = [
@@ -60,7 +64,7 @@ function isSimpleView(s: string): s is AppHistoryView {
 
 /** Hash path only, e.g. `#/catalog` */
 export function payloadToHash(payload: AppHistoryPayload): string {
-  const { view, courseId, lessonId, certificate: _c } = payload;
+  const { view, courseId, lessonId, certificate: _c, adminTab } = payload;
 
   if (view === 'home') return '#/';
   if (view === 'catalog') return '#/catalog';
@@ -76,7 +80,12 @@ export function payloadToHash(payload: AppHistoryPayload): string {
 
   if (view === 'certificate') return '#/certificate';
 
-  if (view === 'admin') return '#/admin';
+  if (view === 'admin') {
+    const tab = adminTab ?? 'alerts';
+    if (tab === 'alerts') return '#/admin';
+    if (tab === 'catalog') return '#/admin/courses';
+    return '#/admin/moderation';
+  }
 
   if (isSimpleView(view)) return `#/${view}`;
   return '#/';
@@ -117,8 +126,13 @@ export function parseHashToPayload(hash: string): AppHistoryPayload | null {
     return { v: 1, view: 'certificate' };
   }
 
-  if (head === 'admin' && segments.length === 1) {
-    return { v: 1, view: 'admin' };
+  if (head === 'admin') {
+    let adminTab: AdminHistoryTab = 'alerts';
+    const sub = segments[1]?.toLowerCase();
+    if (sub === 'courses' || sub === 'catalog') adminTab = 'catalog';
+    else if (sub === 'moderation') adminTab = 'moderation';
+    else if (sub === 'alerts') adminTab = 'alerts';
+    return { v: 1, view: 'admin', adminTab };
   }
 
   if (segments.length === 1 && isSimpleView(head)) {
@@ -183,6 +197,9 @@ export function historyPayloadsEqual(a: AppHistoryPayload | null, b: AppHistoryP
   const bc = b.certificate;
   if (!!ac !== !!bc) return false;
   if (ac && bc && ac.certificateId !== bc.certificateId) return false;
+  if (a.view === 'admin' && b.view === 'admin') {
+    if ((a.adminTab ?? 'alerts') !== (b.adminTab ?? 'alerts')) return false;
+  }
   return true;
 }
 
