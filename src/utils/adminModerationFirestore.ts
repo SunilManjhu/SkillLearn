@@ -11,6 +11,9 @@ function tsToMs(v: unknown): number {
 export interface AdminReportRow {
   id: string;
   lessonId: string;
+  courseId?: string;
+  courseTitle?: string;
+  lessonTitle?: string;
   userId: string;
   reason: string;
   details: string;
@@ -41,6 +44,9 @@ export async function listReportsForAdmin(): Promise<AdminReportRow[]> {
       rows.push({
         id: d.id,
         lessonId: data.lessonId,
+        courseId: typeof data.courseId === 'string' ? data.courseId : undefined,
+        courseTitle: typeof data.courseTitle === 'string' ? data.courseTitle : undefined,
+        lessonTitle: typeof data.lessonTitle === 'string' ? data.lessonTitle : undefined,
         userId: data.userId,
         reason: data.reason,
         details: typeof data.details === 'string' ? data.details : '',

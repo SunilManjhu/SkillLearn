@@ -1746,6 +1746,9 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     try {
       await addDoc(collection(db, 'reports'), {
         lessonId: currentLesson.id,
+        courseId: course.id,
+        courseTitle: course.title,
+        lessonTitle: currentLesson.title,
         userId: user.uid,
         reason: selectedReportReason,
         details: reportDetails,

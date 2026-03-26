@@ -139,8 +139,20 @@ service cloud.firestore {
 
     function isValidReport(data) {
       return hasRequiredFields(['lessonId', 'userId', 'reason', 'timestamp']) &&
-             hasOnlyAllowedFields(['lessonId', 'userId', 'reason', 'details', 'timestamp']) &&
+             hasOnlyAllowedFields([
+               'lessonId',
+               'courseId',
+               'courseTitle',
+               'lessonTitle',
+               'userId',
+               'reason',
+               'details',
+               'timestamp'
+             ]) &&
              data.lessonId is string && data.lessonId.size() > 0 && data.lessonId.size() < 100 &&
+             (!('courseId' in data) || (data.courseId is string && data.courseId.size() > 0 && data.courseId.size() < 200)) &&
+             (!('courseTitle' in data) || (data.courseTitle is string && data.courseTitle.size() > 0 && data.courseTitle.size() < 500)) &&
+             (!('lessonTitle' in data) || (data.lessonTitle is string && data.lessonTitle.size() > 0 && data.lessonTitle.size() < 500)) &&
              data.userId == request.auth.uid &&
              data.reason in ['Technical issue', 'Misinformation', 'Spam or misleading', 'Legal issue', 'Confusing'] &&
              (!('details' in data) || (data.details is string && data.details.size() < 2000)) &&

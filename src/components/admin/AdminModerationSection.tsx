@@ -71,10 +71,15 @@ export const AdminModerationSection: React.FC = () => {
   };
 
   const runResolveReport = async (r: AdminReportRow) => {
+    const lessonLabel = r.lessonTitle || r.lessonId;
+    const courseLabel = r.courseTitle || r.courseId;
+    const message = courseLabel
+      ? `Your report for "${lessonLabel}" in "${courseLabel}" has been reviewed and marked resolved.`
+      : `Your report for lesson "${lessonLabel}" has been reviewed and marked resolved.`;
     const notice = await createReportResolvedNotice({
       forUserId: r.userId,
       title: 'Report resolved',
-      message: `Your report for lesson "${r.lessonId}" has been reviewed and marked resolved.`,
+      message,
       lessonId: r.lessonId,
     });
     if (notice.ok === false) {
