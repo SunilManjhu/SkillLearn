@@ -174,6 +174,27 @@ export function getResumeOrStartLesson(
   return first ?? null;
 }
 
+/**
+ * Auto-advance: first lesson after `current` in catalog order that is not playback-complete.
+ * Skips lessons already finished (e.g. user completed later lessons before an earlier one).
+ */
+export function getNextIncompleteLessonAfter(
+  course: Course,
+  current: Lesson,
+  progressByLesson: Record<string, LessonProgress>
+): Lesson | null {
+  const flat = flattenLessons(course);
+  const i = flat.findIndex((l) => l.id === current.id);
+  if (i < 0) return null;
+  for (let j = i + 1; j < flat.length; j++) {
+    const l = flat[j]!;
+    if (!isLessonPlaybackComplete(progressByLesson[l.id])) {
+      return l;
+    }
+  }
+  return null;
+}
+
 /** True when the course is not finished but the learner has at least one completed lesson or partial playback on a lesson. */
 export function hasResumableCourseProgress(course: Course, progressByLesson: Record<string, LessonProgress>): boolean {
   if (isCourseComplete(course, progressByLesson)) return false;

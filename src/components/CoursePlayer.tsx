@@ -36,11 +36,11 @@ import {
   youtubeUrlToEmbedUrl,
   youtubeVideoIdFromUrl,
 } from '../utils/youtube';
-import { getNextLesson } from '../utils/courseLessons';
 import { db, User, handleFirestoreError, OperationType } from '../firebase';
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, serverTimestamp, onSnapshot, deleteDoc, limit } from 'firebase/firestore';
 import {
   isLessonPlaybackComplete,
+  getNextIncompleteLessonAfter,
   loadLessonProgressMap,
   progressPercent,
   progressStorageKey,
@@ -278,6 +278,20 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
       progressByLessonRef.current[lessonId] ??
       loadLessonProgressMap(courseRef.current.id, progressUserId)[lessonId]
     );
+  }, [progressUserId]);
+
+  /** In-memory + storage + last-known player times — for auto-advance right after mergeProgress. */
+  const getMergedProgressSnapshot = useCallback((): Record<string, LessonProgress> => {
+    const c = courseRef.current;
+    const merged: Record<string, LessonProgress> = {
+      ...loadLessonProgressMap(c.id, progressUserId),
+    };
+    Object.assign(merged, progressByLessonRef.current);
+    for (const id of Object.keys(lastKnownProgressByLessonRef.current)) {
+      const x = lastKnownProgressByLessonRef.current[id]!;
+      merged[id] = { currentTime: x.t, duration: x.d };
+    }
+    return merged;
   }, [progressUserId]);
 
   const activeVideoUrl = customVideoUrl || userSuggestion || currentLesson.videoUrl;
@@ -932,14 +946,15 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   const goToNextLesson = useCallback(() => {
     flushCurrentLessonProgress();
     stopPlayback();
-    const next = getNextLesson(courseRef.current, lessonRef.current);
+    const merged = getMergedProgressSnapshot();
+    const next = getNextIncompleteLessonAfter(courseRef.current, lessonRef.current, merged);
     if (!next) {
       scheduleFinalizeFromStorage();
       return;
     }
     playNextAfterEndRef.current = true;
     setCurrentLesson(next);
-  }, [flushCurrentLessonProgress, stopPlayback, scheduleFinalizeFromStorage]);
+  }, [flushCurrentLessonProgress, stopPlayback, scheduleFinalizeFromStorage, getMergedProgressSnapshot]);
 
   /**
    * When App changes `initialLesson` (navigation / auth return), follow it.
@@ -1296,7 +1311,12 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
               } catch {
                 /* ignore */
               }
-              const hasNext = !!getNextLesson(courseRef.current, lessonRef.current);
+              const merged = getMergedProgressSnapshot();
+              const hasNext = !!getNextIncompleteLessonAfter(
+                courseRef.current,
+                lessonRef.current,
+                merged
+              );
               if (!hasNext && !autoAdvanceRef.current) {
                 scheduleFinalizeFromStorage();
               }
@@ -1327,6 +1347,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     currentLesson.id,
     activeVideoUrl,
     goToNextLesson,
+    getMergedProgressSnapshot,
     mergeProgress,
     savedProgressForLesson,
     setYoutubeResolvedSeconds,
@@ -1823,11 +1844,16 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
               }
               setMediaPaused(true);
               setNativePauseFrostReady(true);
-              if (!getNextLesson(courseRef.current, lessonRef.current) && !autoAdvanceRef.current) {
+              const mergedNative = getMergedProgressSnapshot();
+              const hasNextNative = !!getNextIncompleteLessonAfter(
+                courseRef.current,
+                lessonRef.current,
+                mergedNative
+              );
+              if (!hasNextNative && !autoAdvanceRef.current) {
                 scheduleFinalizeFromStorage();
               }
-              const willAdvance =
-                autoAdvanceRef.current && !!getNextLesson(courseRef.current, lessonRef.current);
+              const willAdvance = autoAdvanceRef.current && hasNextNative;
               if (!willAdvance) {
                 replayUiSuppressedRef.current = false;
                 setReplayUiSuppressed(false);
