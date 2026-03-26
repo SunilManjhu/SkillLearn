@@ -31,7 +31,7 @@ export interface CertificateHistorySnapshot {
 }
 
 /** Admin portal sub-routes (Courses tab uses internal id `catalog`). */
-export type AdminHistoryTab = 'alerts' | 'catalog' | 'moderation';
+export type AdminHistoryTab = 'alerts' | 'catalog' | 'moderation' | 'users';
 
 export interface AppHistoryPayload {
   v: 1;
@@ -84,7 +84,8 @@ export function payloadToHash(payload: AppHistoryPayload): string {
     const tab = adminTab ?? 'alerts';
     if (tab === 'alerts') return '#/admin';
     if (tab === 'catalog') return '#/admin/courses';
-    return '#/admin/moderation';
+    if (tab === 'moderation') return '#/admin/moderation';
+    return '#/admin/users';
   }
 
   if (isSimpleView(view)) return `#/${view}`;
@@ -131,6 +132,7 @@ export function parseHashToPayload(hash: string): AppHistoryPayload | null {
     const sub = segments[1]?.toLowerCase();
     if (sub === 'courses' || sub === 'catalog') adminTab = 'catalog';
     else if (sub === 'moderation') adminTab = 'moderation';
+    else if (sub === 'users') adminTab = 'users';
     else if (sub === 'alerts') adminTab = 'alerts';
     return { v: 1, view: 'admin', adminTab };
   }

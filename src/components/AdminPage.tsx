@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Shield, Send, Database, BookOpen, Flag } from 'lucide-react';
+import { Shield, Send, Database, BookOpen, Flag, Users } from 'lucide-react';
 import type { Course } from '../data/courses';
 import { STATIC_CATALOG_FALLBACK } from '../data/courses';
 import type { AdminHistoryTab } from '../utils/appHistory';
@@ -7,10 +7,12 @@ import { createBroadcastAlert, type BroadcastAlertType } from '../utils/alertsFi
 import { seedPublishedCoursesFromStaticCatalog } from '../utils/publishedCoursesFirestore';
 import { AdminCourseCatalogSection } from './admin/AdminCourseCatalogSection';
 import { AdminModerationSection } from './admin/AdminModerationSection';
+import { AdminUserRolesSection } from './admin/AdminUserRolesSection';
 
 interface AdminPageProps {
   courses: Course[];
   activeTab: AdminHistoryTab;
+  currentAdminUid?: string;
   onTabChange: (tab: AdminHistoryTab) => void;
   onDismiss: () => void;
   onCatalogChanged: () => void | Promise<void>;
@@ -26,6 +28,7 @@ const ALERT_TYPES: { value: BroadcastAlertType; label: string }[] = [
 export const AdminPage: React.FC<AdminPageProps> = ({
   courses,
   activeTab: tab,
+  currentAdminUid,
   onTabChange,
   onDismiss,
   onCatalogChanged,
@@ -152,6 +155,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
           {tabBtn('alerts', 'Alerts', <Send size={16} />)}
           {tabBtn('catalog', 'Courses', <BookOpen size={16} />)}
           {tabBtn('moderation', 'Moderation', <Flag size={16} />)}
+          {tabBtn('users', 'Users', <Users size={16} />)}
         </div>
 
         {tab === 'alerts' && (
@@ -325,6 +329,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
         {tab === 'catalog' && <AdminCourseCatalogSection onCatalogChanged={onCatalogChanged} />}
 
         {tab === 'moderation' && <AdminModerationSection />}
+        {tab === 'users' && <AdminUserRolesSection currentAdminUid={currentAdminUid} />}
 
         {status && tab === 'alerts' && (
           <p className="text-sm text-[var(--text-secondary)] border border-[var(--border-color)] rounded-xl p-4 bg-[var(--bg-secondary)]">

@@ -2111,6 +2111,7 @@ export default function App() {
             <AdminPage
               courses={catalogCourses}
               activeTab={adminTab}
+              currentAdminUid={user?.uid}
               onTabChange={setAdminTab}
               onDismiss={() => handleNavigate('catalog', false)}
               onCatalogChanged={refreshCatalogCourses}

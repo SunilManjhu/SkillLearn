@@ -249,9 +249,12 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isAuthenticated();
-      allow create: if isOwner(userId) &&
+      allow create: if
         hasOnlyAllowedFields(['role', 'displayName', 'email']) &&
-        request.resource.data.role == 'user';
+        (
+          (isOwner(userId) && request.resource.data.role == 'user') ||
+          (isAdmin() && request.resource.data.role in ['user', 'admin'])
+        );
       allow update: if isAuthenticated() &&
         hasOnlyAllowedFields(['role', 'displayName', 'email']) &&
         (
