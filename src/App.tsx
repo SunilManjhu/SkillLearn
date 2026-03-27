@@ -2005,62 +2005,81 @@ export default function App() {
   );
 
   const renderCatalog = () => {
-    const allCategories = [...categories, ...moreCategories];
-    
+    const catalogFiltersActive = Boolean(searchQuery || selectedCategory !== 'All');
     return (
-      <div className="pt-24 px-6 max-w-7xl mx-auto pb-20">
-        <div className="mb-12">
-          <div className="flex items-center justify-between mb-4">
-            <h1 className="text-4xl font-bold text-[var(--text-primary)]">
+      <div className="mx-auto min-w-0 max-w-7xl px-4 pb-12 pt-20 sm:px-6 sm:pb-20 sm:pt-24">
+        <div className="mb-6 sm:mb-10">
+          <div className="mb-4 flex flex-row items-center justify-between gap-2 sm:mb-4 sm:gap-4">
+            <h1 className="min-w-0 flex-1 break-words pr-1 text-2xl font-bold leading-tight text-[var(--text-primary)] sm:text-3xl md:text-4xl">
               {searchQuery ? `Search Results for "${searchQuery}"` : 'Course Library'}
             </h1>
-            {(searchQuery || selectedCategory !== 'All') && (
-              <button 
-                onClick={clearFilters}
-                className="text-orange-500 hover:text-orange-400 text-sm font-medium flex items-center gap-1 transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 rounded-sm"
-              >
-                <X size={16} /> Clear all filters
-              </button>
-            )}
+            <button
+              type="button"
+              tabIndex={catalogFiltersActive ? 0 : -1}
+              aria-hidden={!catalogFiltersActive}
+              onClick={clearFilters}
+              className={`inline-flex min-h-10 shrink-0 touch-manipulation items-center gap-1 rounded-lg py-1 pl-1 text-sm font-semibold text-orange-500 transition-colors hover:text-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-500 sm:gap-1.5 sm:px-0 sm:py-0 ${!catalogFiltersActive ? 'invisible pointer-events-none' : ''}`}
+            >
+              <X size={16} aria-hidden />
+              <span className="sm:hidden">Clear filters</span>
+              <span className="hidden sm:inline">Clear all filters</span>
+            </button>
           </div>
           {!searchQuery && (
-            <div className="flex flex-wrap items-center gap-4">
+            <div
+              className="-mx-4 flex gap-2 overflow-x-auto overflow-y-hidden px-4 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0 sm:gap-3 md:gap-4 [&::-webkit-scrollbar]:hidden"
+              aria-label="Course categories"
+            >
               {categories.map((cat, index) => (
-                <button 
+                <button
                   key={cat}
-                  ref={el => categoryRefs.current[index] = el}
+                  type="button"
+                  ref={(el) => {
+                    categoryRefs.current[index] = el;
+                  }}
                   onClick={() => setSelectedCategory(cat)}
                   onKeyDown={(e) => handleCategoryKeyDown(e, index)}
                   tabIndex={focusedCategoryIndex === index ? 0 : -1}
-                  className={`px-4 py-2 rounded-full text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 ${selectedCategory === cat ? 'bg-orange-500 text-white' : 'bg-[var(--hover-bg)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]/80'}`}
+                  className={`shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 sm:min-h-11 sm:px-4 sm:text-sm ${selectedCategory === cat ? 'bg-orange-500 text-white' : 'bg-[var(--hover-bg)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]/80'}`}
                 >
                   {cat}
                 </button>
               ))}
-              <div className="relative">
-                <button 
-                  ref={el => categoryRefs.current[categories.length] = el}
+              <div className="relative shrink-0">
+                <button
+                  type="button"
+                  ref={(el) => {
+                    categoryRefs.current[categories.length] = el;
+                  }}
                   onClick={() => setShowMoreCategories(!showMoreCategories)}
                   onKeyDown={(e) => handleCategoryKeyDown(e, categories.length)}
                   tabIndex={focusedCategoryIndex === categories.length ? 0 : -1}
-                  className={`px-4 py-2 rounded-full text-sm font-medium transition-colors flex items-center gap-1 focus:outline-none focus:ring-2 focus:ring-orange-500 ${moreCategories.includes(selectedCategory) ? 'bg-orange-500 text-white' : 'bg-[var(--hover-bg)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]/80'}`}
+                  className={`inline-flex min-h-10 items-center gap-1 rounded-full px-3 py-2 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 sm:min-h-11 sm:px-4 sm:text-sm ${moreCategories.includes(selectedCategory) ? 'bg-orange-500 text-white' : 'bg-[var(--hover-bg)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]/80'}`}
                 >
-                  More <ChevronDown size={14} className={showMoreCategories ? 'rotate-180 transition-transform' : 'transition-transform'} />
+                  More{' '}
+                  <ChevronDown
+                    size={14}
+                    className={showMoreCategories ? 'rotate-180 transition-transform' : 'transition-transform'}
+                    aria-hidden
+                  />
                 </button>
-                
+
                 {showMoreCategories && (
-                  <div className="absolute top-full left-0 mt-2 w-48 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg shadow-xl z-20 py-2 overflow-hidden">
+                  <div className="absolute right-0 top-full z-30 mt-2 w-[min(calc(100vw-2rem),12rem)] overflow-hidden rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] py-2 shadow-xl sm:left-0 sm:right-auto">
                     {moreCategories.map((cat, index) => (
                       <button
                         key={cat}
-                        ref={el => categoryRefs.current[categories.length + 1 + index] = el}
+                        type="button"
+                        ref={(el) => {
+                          categoryRefs.current[categories.length + 1 + index] = el;
+                        }}
                         onClick={() => {
                           setSelectedCategory(cat);
                           setShowMoreCategories(false);
                         }}
                         onKeyDown={(e) => handleCategoryKeyDown(e, categories.length + 1 + index)}
                         tabIndex={focusedCategoryIndex === categories.length + 1 + index ? 0 : -1}
-                        className={`w-full text-left px-4 py-2 text-sm hover:bg-[var(--hover-bg)] transition-colors focus:outline-none ${selectedCategory === cat ? 'text-orange-500' : 'text-[var(--text-secondary)]'} ${focusedCategoryIndex === categories.length + 1 + index ? 'bg-[var(--hover-bg)]' : ''}`}
+                        className={`w-full px-4 py-2.5 text-left text-sm transition-colors hover:bg-[var(--hover-bg)] focus:outline-none sm:py-2 ${selectedCategory === cat ? 'text-orange-500' : 'text-[var(--text-secondary)]'} ${focusedCategoryIndex === categories.length + 1 + index ? 'bg-[var(--hover-bg)]' : ''}`}
                       >
                         {cat}
                       </button>
@@ -2072,7 +2091,7 @@ export default function App() {
           )}
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4">
           {filteredCourses.map((course, index) => (
             <CourseCard 
               key={course.id}
@@ -2086,14 +2105,8 @@ export default function App() {
           ))}
         </div>
         {filteredCourses.length === 0 && (
-          <div className="text-center py-20">
-            <p className="text-[var(--text-muted)] text-lg mb-4">No courses found matching your search.</p>
-            <button 
-              onClick={clearFilters}
-              className="px-6 py-2 bg-orange-500 text-white rounded-md font-medium hover:bg-orange-600 transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500"
-            >
-              Clear all filters
-            </button>
+          <div className="px-2 py-12 text-center sm:py-20">
+            <p className="text-base text-[var(--text-muted)] sm:text-lg">No courses found matching your search.</p>
           </div>
         )}
       </div>
@@ -2574,7 +2587,7 @@ export default function App() {
 
       {currentView !== 'player' && currentView !== 'overview' && currentView !== 'admin' && (
         <footer className="bg-[var(--bg-secondary)] border-t border-[var(--border-color)] py-12 px-6 transition-colors duration-300">
-          <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-12">
+          <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-10 md:gap-12">
             <div className="col-span-1 md:col-span-1">
               <div className="flex items-center gap-2 mb-6">
                 <div className="w-8 h-8 bg-orange-500 rounded-sm flex items-center justify-center font-bold text-white">S</div>
@@ -2584,8 +2597,9 @@ export default function App() {
                 Empowering technology teams and individuals to build the future through expert-led content and skill assessments.
               </p>
             </div>
+            <div className="md:col-span-3 grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-10 md:gap-12">
             <div>
-              <h4 className="text-[var(--text-primary)] font-bold mb-6">Solutions</h4>
+              <h4 className="text-[var(--text-primary)] font-bold mb-4 md:mb-6">Solutions</h4>
               <ul className="space-y-4 text-sm text-[var(--text-secondary)]">
                 <li className="text-[var(--text-secondary)]">For Individuals</li>
                 <li className="text-[var(--text-secondary)]">For Teams</li>
@@ -2593,7 +2607,7 @@ export default function App() {
               </ul>
             </div>
             <div>
-              <h4 className="text-[var(--text-primary)] font-bold mb-6">Support</h4>
+              <h4 className="text-[var(--text-primary)] font-bold mb-4 md:mb-6">Support</h4>
               <ul className="space-y-4 text-sm text-[var(--text-secondary)]">
                 <li 
                   ref={el => footerRefs.current[0] = el as any}
@@ -2624,8 +2638,8 @@ export default function App() {
                 </li>
               </ul>
             </div>
-            <div>
-              <h4 className="text-[var(--text-primary)] font-bold mb-6">Company</h4>
+            <div className="col-span-2 md:col-span-1">
+              <h4 className="text-[var(--text-primary)] font-bold mb-4 md:mb-6">Company</h4>
               <ul className="space-y-4 text-sm text-[var(--text-secondary)]">
                 <li 
                   ref={el => footerRefs.current[3] = el as any}
@@ -2655,6 +2669,7 @@ export default function App() {
                   Privacy Policy
                 </li>
               </ul>
+            </div>
             </div>
           </div>
           <div className="max-w-7xl mx-auto mt-12 pt-8 border-t border-[var(--border-color)] text-center text-[var(--text-secondary)] text-xs">

@@ -27,7 +27,7 @@ export const CourseCard = forwardRef<HTMLDivElement, CourseCardProps>(
         tabIndex={tabIndex}
         onKeyDown={handleKeyDown}
         onClick={() => onClick(course)}
-        className={`group flex flex-col rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] overflow-hidden text-left cursor-pointer transition-all hover:border-orange-500/30 hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 ${
+        className={`group flex flex-col overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-left cursor-pointer transition-all hover:border-orange-500/30 hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 ${
           isFocused ? 'ring-2 ring-orange-500/50' : ''
         }`}
       >
@@ -38,9 +38,11 @@ export const CourseCard = forwardRef<HTMLDivElement, CourseCardProps>(
             className="h-full w-full object-cover transition-transform group-hover:scale-105"
           />
         </div>
-        <div className="flex flex-1 flex-col gap-2 p-4">
+        <div className="flex flex-1 flex-col gap-2 p-3 sm:p-4">
           <span className="text-[10px] font-bold uppercase tracking-wider text-orange-500">{course.category}</span>
-          <h3 className="font-bold text-[var(--text-primary)] line-clamp-2">{course.title}</h3>
+          <h3 className="line-clamp-2 text-[15px] font-bold leading-snug text-[var(--text-primary)] sm:text-base">
+            {course.title}
+          </h3>
           <p className="text-sm text-[var(--text-secondary)]">{course.author}</p>
           <div className="mt-auto flex items-center justify-between gap-2 pt-2 text-xs text-[var(--text-muted)]">
             <span className="flex items-center gap-1 shrink-0">
