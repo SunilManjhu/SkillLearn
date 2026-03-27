@@ -1020,15 +1020,22 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
       <div className="space-y-4">
         <div className="space-y-3">
-        <div className="grid gap-3 grid-cols-1 md:grid-cols-3 md:items-end md:gap-x-3 md:gap-y-3">
-          <div className="min-w-0 space-y-1">
-            <label className="text-xs font-semibold text-[var(--text-secondary)]">Course</label>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3 md:items-start md:gap-x-3 md:gap-y-3">
+          <div className="flex min-w-0 flex-col gap-1">
+            <label
+              htmlFor="admin-published-course-select"
+              className="text-xs font-semibold text-[var(--text-secondary)]"
+            >
+              Course
+            </label>
+            <div className="flex min-w-0 items-stretch gap-2">
             <select
+              id="admin-published-course-select"
               value={selector}
               onFocus={openCourseCatalogOnce}
               onMouseDown={openCourseCatalogOnce}
               onChange={(e) => pickCourse(e.target.value)}
-              className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm"
+              className="box-border min-h-[42px] min-w-0 flex-1 rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
             >
               <option value="" disabled>
                 {!catalogRequested
@@ -1048,11 +1055,28 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 </>
               )}
             </select>
+            {selector !== '__new__' && (
+              <button
+                type="button"
+                disabled={
+                  listLoading ||
+                  !selector ||
+                  !publishedList.some((c) => c.id === selector)
+                }
+                onClick={duplicatePublishedAsDraft}
+                title="Clone the selected course into a new draft with a new document ID"
+                aria-label="Duplicate as new draft"
+                className="inline-flex shrink-0 items-center justify-center rounded-lg border border-[var(--border-color)] px-2.5 min-h-[42px] min-w-[42px] hover:bg-[var(--hover-bg)] disabled:pointer-events-none disabled:opacity-40"
+              >
+                <Copy size={18} aria-hidden />
+              </button>
+            )}
+            </div>
           </div>
-          <div className="min-w-0 space-y-1">
-            <label className="text-xs font-semibold text-[var(--text-secondary)]">Document ID</label>
+          <div className="flex min-w-0 flex-col gap-1">
+            <span className="text-xs font-semibold text-[var(--text-secondary)]">Document ID</span>
             <div
-              className="flex min-h-[42px] w-full min-w-0 items-center rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm font-mono"
+              className="box-border flex min-h-[42px] w-full min-w-0 items-center rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm font-mono text-[var(--text-primary)]"
               aria-live="polite"
             >
               {draft ? (
@@ -1062,15 +1086,21 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               )}
             </div>
           </div>
-          <label className="block min-w-0 space-y-1">
-            <span className="text-xs font-semibold text-[var(--text-secondary)]">Level</span>
+          <div className="flex min-w-0 flex-col gap-1">
+            <label
+              htmlFor="admin-published-course-level"
+              className="text-xs font-semibold text-[var(--text-secondary)]"
+            >
+              Level
+            </label>
             <select
+              id="admin-published-course-level"
               value={draft?.level ?? ''}
               disabled={!draft}
               onChange={(e) =>
                 draft && updateDraft({ level: e.target.value as Course['level'] })
               }
-              className="w-full min-h-[42px] bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              className="box-border w-full min-h-[42px] rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {!draft && (
                 <option value="" disabled>
@@ -1081,28 +1111,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               <option value="Intermediate">Intermediate</option>
               <option value="Advanced">Advanced</option>
             </select>
-          </label>
-        </div>
-        {selector !== '__new__' && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="min-w-0">
-              <button
-                type="button"
-                disabled={
-                  listLoading ||
-                  !selector ||
-                  !publishedList.some((c) => c.id === selector)
-                }
-                onClick={duplicatePublishedAsDraft}
-                title="Clone the selected course into a new draft with a new document ID"
-                className="inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-lg border border-[var(--border-color)] px-3 py-2 text-xs font-semibold hover:bg-[var(--hover-bg)] disabled:opacity-40 disabled:pointer-events-none whitespace-nowrap"
-              >
-                <Copy size={14} />
-                Duplicate as new draft
-              </button>
-            </div>
           </div>
-        )}
+        </div>
         </div>
 
         {draft && (
@@ -1157,49 +1167,35 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             </button>
             {courseDetailsOpen && (
               <div className="border-t border-[var(--border-color)] p-4">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block space-y-1 sm:col-span-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="block min-w-0 space-y-1">
               <span className="text-xs font-semibold text-[var(--text-secondary)]">Course title</span>
               <input
                 id="admin-course-title"
                 value={draft.title}
                 onChange={(e) => updateDraft({ title: e.target.value })}
                 placeholder="e.g. Full-Stack Web Foundations — short name shown in the catalog"
-                className={`w-full bg-[var(--bg-primary)] border rounded-lg px-3 py-2 text-sm ${
+                className={`w-full min-w-0 bg-[var(--bg-primary)] border rounded-lg px-3 py-2 text-sm ${
                   showValidationHints && fieldErrors.courseTitle
                     ? 'border-red-500'
                     : 'border-[var(--border-color)]'
                 }`}
               />
-              <span
-                className={`min-h-[16px] text-[11px] block ${
-                  showValidationHints && fieldErrors.courseTitle ? 'text-red-400' : 'text-transparent'
-                }`}
-              >
-                Title is required.
-              </span>
             </label>
-            <label className="block space-y-1">
+            <label className="block min-w-0 space-y-1">
               <span className="text-xs font-semibold text-[var(--text-secondary)]">Author</span>
               <input
                 id="admin-course-author"
                 value={draft.author}
                 onChange={(e) => updateDraft({ author: e.target.value })}
-                className={`w-full bg-[var(--bg-primary)] border rounded-lg px-3 py-2 text-sm ${
+                className={`w-full min-w-0 bg-[var(--bg-primary)] border rounded-lg px-3 py-2 text-sm ${
                   showValidationHints && fieldErrors.courseAuthor
                     ? 'border-red-500'
                     : 'border-[var(--border-color)]'
                 }`}
               />
-              <span
-                className={`min-h-[16px] text-[11px] block ${
-                  showValidationHints && fieldErrors.courseAuthor ? 'text-red-400' : 'text-transparent'
-                }`}
-              >
-                Author is required.
-              </span>
             </label>
-            <label className="block space-y-1">
+            <label className="block space-y-1 sm:col-span-2">
               <span className="text-xs font-semibold text-[var(--text-secondary)]">Category</span>
               <select
                 value={categorySelectValue}
@@ -1261,13 +1257,6 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         : 'border-[var(--border-color)]'
                     }`}
                   />
-                  <span
-                    className={`min-h-[16px] text-[11px] ${
-                      showValidationHints && fieldErrors.courseRating ? 'text-red-400' : 'text-transparent'
-                    }`}
-                  >
-                    Rating must be 0–5.
-                  </span>
                 </label>
               </div>
               <label className="block min-w-0 flex-1 space-y-1">
@@ -1282,13 +1271,6 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       : 'border-[var(--border-color)]'
                   }`}
                 />
-                <span
-                  className={`min-h-[16px] text-[11px] block ${
-                    showValidationHints && fieldErrors.courseThumbnail ? 'text-red-400' : 'text-transparent'
-                  }`}
-                >
-                  Thumbnail URL is required.
-                </span>
               </label>
             </div>
             <label className="block space-y-1 sm:col-span-2">
