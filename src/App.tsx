@@ -1320,9 +1320,9 @@ export default function App() {
 
   useBodyScrollLock(currentView === 'profile');
 
-  /** Course overview / player replace the main column; reset document scroll. */
+  /** Course overview / player / certificate replace the main column; reset document scroll. */
   useLayoutEffect(() => {
-    if (currentView === 'overview' || currentView === 'player') {
+    if (currentView === 'overview' || currentView === 'player' || currentView === 'certificate') {
       scrollDocumentToTop();
     }
   }, [currentView, selectedCourse?.id]);

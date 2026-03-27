@@ -3,7 +3,7 @@ import { useDialogKeyboard } from '../hooks/useDialogKeyboard';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { ChevronDown, ChevronRight, Play, Star, Clock, BarChart, Layout, User, RotateCcw, CheckCircle2, Award, LogIn, X, AlertTriangle } from 'lucide-react';
 import { Course, Lesson } from '../data/courses';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import {
   isCourseComplete,
   hasResumableCourseProgress,
@@ -68,6 +68,9 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
   const progressUserId = user?.uid ?? null;
   const curriculumKey = courseLessonIdsKey(course);
   const { lessonDurationLabel } = useYoutubeResolvedSeconds(course);
+  const reduceMotion = useReducedMotion();
+  const collapseTransition = { duration: reduceMotion ? 0 : 0.28 };
+  const modalTransition = { duration: reduceMotion ? 0 : 0.2 };
   const [expandedModules, setExpandedModules] = useState<string[]>([course.modules[0].id]);
   const [showRatingPrompt, setShowRatingPrompt] = useState(false);
   const [existingRating, setExistingRating] = useState<CourseRating | null>(null);
@@ -180,6 +183,8 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
   );
   const overallProgressPercent = totalLessons ? Math.min(100, Math.round((completedLessonCount / totalLessons) * 100)) : 0;
 
+  const primaryCtaLabel = isComplete ? 'Retake Course' : canResume ? 'Resume lesson' : 'Start Course';
+
   const handleRetakeCourse = useCallback(async () => {
     if (!progressUserId) return;
     clearCourseProgress(course.id, progressUserId);
@@ -222,6 +227,9 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
     saveCourseRating(course.id, rating, progressUserId);
     setExistingRating(rating);
     setShowRatingPrompt(false);
+    setRatingStars(0);
+    setRatingComment('');
+    setHoverStars(0);
   };
 
   const handleResetRating = () => {
@@ -337,17 +345,19 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
 
   return (
     <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] pb-10 pt-16">
-      {/* Hero Section */}
-      <div className="relative w-full overflow-hidden flex flex-col">
+      {/* Hero Section — min-height matches CourseCatalogLoadingSkeleton hero band */}
+      <div className="relative flex min-h-56 w-full flex-col overflow-hidden md:min-h-72">
         <img
           src={course.thumbnail}
           alt={course.title}
-          className="absolute inset-0 w-full h-full object-cover"
+          className="absolute inset-0 h-full w-full object-cover"
+          fetchPriority="high"
+          loading="eager"
           referrerPolicy="no-referrer"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-[var(--bg-primary)] via-[var(--bg-primary)]/60 to-transparent" />
         
-        <div className="relative max-w-7xl mx-auto px-4 py-4 w-full">
+        <div className="relative mx-auto w-full max-w-7xl px-4 py-4 sm:px-6">
           <div className="max-w-3xl">
               <div className="flex items-center gap-2 mb-1">
                 <span className="px-3 py-1 rounded-full bg-orange-500/10 text-orange-500 text-xs font-bold uppercase tracking-wider">
@@ -399,7 +409,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                     className="flex items-center justify-center gap-2 px-8 py-4 bg-orange-500 hover:bg-orange-600 text-white rounded-2xl font-bold transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-orange-500/20"
                   >
                     {isComplete ? <RotateCcw size={20} /> : <Play size={20} fill="currentColor" />}
-                    {isComplete ? 'Retake Course' : canResume ? 'Resume lesson' : 'Start Course'}
+                    {primaryCtaLabel}
                   </button>
                   {user && showCertificateCta && (
                     <button
@@ -422,13 +432,15 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
           </div>
         </div>
 
-        <div className="max-w-7xl mx-auto px-6 mt-0">
+        <div className="mx-auto mt-0 w-full max-w-7xl px-4 sm:px-6">
         <AnimatePresence>
           {showRatingPrompt && user && (
             <motion.div
+              key="course-overview-rating-prompt"
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
+              transition={collapseTransition}
               className="mb-12 overflow-hidden"
             >
               <div className="bg-orange-500/5 border border-orange-500/20 rounded-3xl p-8 flex flex-col md:flex-row items-center gap-8">
@@ -440,15 +452,17 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                   <h3 className="text-xl font-bold text-[var(--text-primary)] mb-1">You finished this course!</h3>
                   <p className="text-[var(--text-secondary)] text-sm mb-4">Would you like to share your rating with us?</p>
                   
-                  <div className="flex flex-col items-center md:items-start gap-2 mb-4">
-                    <div className="flex items-center gap-1">
+                  <div className="mb-4 flex flex-col items-center gap-2 md:items-start">
+                    <div className="flex flex-wrap items-center justify-center gap-0.5 sm:justify-start">
                       {[1, 2, 3, 4, 5].map((star) => (
                         <button
                           key={star}
+                          type="button"
+                          aria-label={`Rate ${star} out of 5`}
                           onClick={() => setRatingStars(star)}
                           onMouseEnter={() => setHoverStars(star)}
                           onMouseLeave={() => setHoverStars(0)}
-                          className="p-1 transition-transform hover:scale-110"
+                          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg transition-transform hover:scale-110 motion-reduce:transform-none"
                         >
                           <Star
                             size={24}
@@ -463,9 +477,10 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                         {(hoverStars || ratingStars) > 0 && (
                           <motion.p
                             key={hoverStars || ratingStars}
-                            initial={{ opacity: 0, x: -10 }}
+                            initial={{ opacity: 0, x: reduceMotion ? 0 : -10 }}
                             animate={{ opacity: 1, x: 0 }}
-                            exit={{ opacity: 0, x: 10 }}
+                            exit={{ opacity: 0, x: reduceMotion ? 0 : 10 }}
+                            transition={modalTransition}
                             className="text-base font-bold text-orange-500"
                           >
                             {RATING_LABELS[hoverStars || ratingStars]}
@@ -477,8 +492,9 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
 
                   {ratingStars > 0 && (
                     <motion.div
-                      initial={{ opacity: 0, y: 10 }}
+                      initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
                       animate={{ opacity: 1, y: 0 }}
+                      transition={modalTransition}
                       className="space-y-4"
                     >
                       <textarea
@@ -489,73 +505,91 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                       />
                       <div className="flex gap-3">
                         <button
+                          type="button"
                           onClick={handleRatingSubmit}
-                          className="px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-sm font-bold transition-colors"
+                          className="rounded-xl bg-orange-500 px-6 py-2 text-sm font-bold text-white transition-colors hover:bg-orange-600"
                         >
                           Submit Rating
                         </button>
                         <button
+                          type="button"
                           onClick={() => {
                             remindLaterCourseRating(course.id, progressUserId);
                             setShowRatingPrompt(false);
                           }}
-                          className="px-6 py-2 border border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--hover-bg)] rounded-xl text-sm font-bold transition-colors"
+                          className="rounded-xl border border-[var(--border-color)] px-6 py-2 text-sm font-bold text-[var(--text-primary)] transition-colors hover:bg-[var(--hover-bg)]"
                         >
                           Maybe later
                         </button>
                       </div>
                     </motion.div>
                   )}
-                </div>
 
-                {!ratingStars && (
-                  <button
-                    onClick={() => {
-                      remindLaterCourseRating(course.id, progressUserId);
-                      setShowRatingPrompt(false);
-                    }}
-                    className="text-sm font-bold text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-                  >
-                    Maybe later
-                  </button>
-                )}
+                  {ratingStars === 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        remindLaterCourseRating(course.id, progressUserId);
+                        setShowRatingPrompt(false);
+                      }}
+                      className="mt-2 w-full rounded-xl py-3 text-sm font-bold text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] md:mt-0 md:w-auto md:self-center"
+                    >
+                      Maybe later
+                    </button>
+                  )}
+                </div>
               </div>
             </motion.div>
           )}
 
           {user && existingRating && existingRating.stars > 0 && (
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
+              key="course-overview-rating-submitted"
+              role="status"
+              aria-live="polite"
+              initial={{ opacity: 0, y: reduceMotion ? 0 : 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="mb-12 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-3xl p-8"
+              transition={modalTransition}
+              className="mb-12 rounded-3xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-6 sm:p-8"
             >
-              <div className="flex flex-col md:flex-row items-start md:items-center gap-6">
-                <div className="w-12 h-12 bg-orange-500/10 rounded-xl flex items-center justify-center text-orange-500 shrink-0">
-                  <Star size={24} fill="currentColor" />
+              <div className="flex flex-col items-stretch gap-4 md:flex-row md:items-center md:gap-6">
+                {/* Decorative icon only on md+; on mobile it was a sparse full-width row above the copy */}
+                <div className="hidden h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-orange-500/10 text-orange-500 md:flex">
+                  <Star size={24} fill="currentColor" aria-hidden />
                 </div>
-                
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-1">
+
+                <div className="min-w-0 flex-1 text-center md:text-left">
+                  <p className="mb-2 text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                    Thanks — your rating was saved.
+                  </p>
+                  <div className="mb-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 md:justify-start">
                     <h3 className="text-lg font-bold text-[var(--text-primary)]">Your Rating</h3>
-                    <div className="flex items-center gap-0.5 text-orange-500">
+                    <div
+                      className="flex items-center gap-0.5 text-orange-500"
+                      aria-label={`${existingRating.stars} out of 5 stars`}
+                    >
                       {[1, 2, 3, 4, 5].map((star) => (
                         <Star
                           key={star}
-                          size={16}
-                          fill={star <= existingRating.stars ? 'currentColor' : 'none'}
+                          size={18}
                           className={star <= existingRating.stars ? 'text-orange-500' : 'text-[var(--border-color)]'}
+                          fill={star <= existingRating.stars ? 'currentColor' : 'none'}
+                          aria-hidden
                         />
                       ))}
                     </div>
                   </div>
-                  <p className="text-sm text-[var(--text-secondary)]">
-                    {existingRating.comment || "You rated this course " + RATING_LABELS[existingRating.stars]}
+                  <p className="break-words text-sm leading-relaxed text-[var(--text-secondary)]">
+                    {existingRating.comment?.trim()
+                      ? existingRating.comment.trim()
+                      : 'You rated this course ' + RATING_LABELS[existingRating.stars] + '.'}
                   </p>
                 </div>
 
                 <button
+                  type="button"
                   onClick={handleResetRating}
-                  className="px-4 py-2 text-sm font-bold text-orange-500 hover:bg-orange-500/10 rounded-xl transition-colors shrink-0"
+                  className="min-h-11 w-full shrink-0 rounded-xl px-4 py-2.5 text-sm font-bold text-orange-500 transition-colors hover:bg-orange-500/10 md:min-h-0 md:w-auto md:self-center"
                 >
                   Reset Rating
                 </button>
@@ -564,12 +598,15 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
           )}
         </AnimatePresence>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
+        <div className="grid grid-cols-1 gap-12 lg:grid-cols-3">
           {/* Main Content: Table of Contents */}
-          <div className="lg:col-span-2">
-            <h2 id="course-curriculum" className="text-2xl font-bold mb-8 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 whitespace-nowrap">
-              Course Content
-              <span className="text-sm font-normal text-[var(--text-secondary)] whitespace-nowrap">
+          <div className="min-w-0 lg:col-span-2">
+            <h2
+              id="course-curriculum"
+              className="mb-8 flex min-w-0 flex-col gap-1 text-2xl font-bold sm:flex-row sm:items-baseline sm:gap-3"
+            >
+              <span className="shrink-0">Course Content</span>
+              <span className="text-sm font-normal text-[var(--text-secondary)] break-words sm:whitespace-nowrap">
                 {course.modules.length} modules • {totalLessons} lessons
               </span>
             </h2>
@@ -582,14 +619,18 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                   className="border border-[var(--border-color)] rounded-2xl overflow-hidden bg-[var(--bg-secondary)] transition-all"
                 >
                   <button
+                    type="button"
+                    id={`course-module-heading-${module.id}`}
+                    aria-expanded={expandedModules.includes(module.id)}
+                    aria-controls={`module-panel-${module.id}`}
                     onClick={() => toggleModule(module.id)}
-                    className="w-full flex items-center justify-between p-6 hover:bg-[var(--hover-bg)] transition-colors text-left"
+                    className="flex w-full items-center justify-between p-4 text-left transition-colors hover:bg-[var(--hover-bg)] sm:p-6"
                   >
-                    <div className="flex items-center gap-4">
-                      <div className="w-8 h-8 rounded-lg bg-orange-500/10 flex items-center justify-center text-orange-500 font-bold text-sm">
+                    <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-orange-500/10 text-sm font-bold text-orange-500">
                         {idx + 1}
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <h3 className="font-bold text-[var(--text-primary)]">{module.title}</h3>
                         <p className="text-xs text-[var(--text-secondary)] mt-0.5">
                           {module.lessons.length} lessons
@@ -606,9 +647,13 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                   <AnimatePresence>
                     {expandedModules.includes(module.id) && (
                       <motion.div
+                        id={`module-panel-${module.id}`}
+                        role="region"
+                        aria-labelledby={`course-module-heading-${module.id}`}
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: 'auto', opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
+                        transition={collapseTransition}
                         className="border-t border-[var(--border-color)]"
                       >
                         <div className="bg-[var(--bg-primary)]/50">
@@ -621,7 +666,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                                 key={lesson.id}
                                 id={`course-lesson-${lesson.id}`}
                                 onClick={() => requestLessonPlay(lesson)}
-                                className="group flex w-full flex-col gap-1.5 p-4 pl-16 text-left transition-colors hover:bg-[var(--hover-bg)]"
+                                className="group flex w-full flex-col gap-1.5 p-4 pl-6 text-left transition-colors hover:bg-[var(--hover-bg)] sm:pl-12 md:pl-16"
                               >
                                 <div className="flex min-w-0 w-full items-start justify-between gap-3">
                                   <div className="min-w-0 flex-1 flex flex-col gap-1.5">
@@ -635,7 +680,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                                         />
                                       )}
                                       <span
-                                        className={`min-w-0 truncate text-sm font-medium transition-colors ${
+                                        className={`min-w-0 break-words text-sm font-medium transition-colors line-clamp-2 ${
                                           lessonComplete
                                             ? 'text-emerald-500/80 group-hover:text-emerald-500'
                                             : 'text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]'
@@ -673,7 +718,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
           </div>
 
           {/* Sidebar */}
-          <div className="space-y-8">
+          <div className="space-y-8 lg:sticky lg:top-20 lg:self-start">
             {/* Author Info */}
             <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-3xl p-8">
               <h3 className="text-sm font-bold text-orange-500 uppercase tracking-widest mb-6">Course Author</h3>
@@ -724,27 +769,6 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                   <p className="font-bold text-sm">{course.category}</p>
                 </div>
               </div>
-
-              <div className="pt-6 border-t border-[var(--border-color)] space-y-3">
-                <button
-                  type="button"
-                  onClick={requestPrimaryAction}
-                  className="w-full py-4 bg-orange-500 hover:bg-orange-600 text-white rounded-2xl font-bold transition-all shadow-lg shadow-orange-500/20 flex items-center justify-center gap-2"
-                >
-                  {isComplete ? <RotateCcw size={20} /> : null}
-                  {isComplete ? 'Retake Course' : 'Enroll Now'}
-                </button>
-                {user && showCertificateCta && (
-                  <button
-                    type="button"
-                    onClick={handleViewCertificate}
-                    className="w-full py-4 rounded-2xl font-bold transition-all border-2 border-orange-500/60 text-orange-500 hover:bg-orange-500/10 flex items-center justify-center gap-2"
-                  >
-                    <Award size={20} />
-                    View Certificate
-                  </button>
-                )}
-              </div>
             </div>
           </div>
         </div>
@@ -759,10 +783,11 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
             aria-labelledby="course-overview-login-title"
           >
             <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
+              initial={{ scale: reduceMotion ? 1 : 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl"
+              exit={{ scale: reduceMotion ? 1 : 0.9, opacity: 0 }}
+              transition={modalTransition}
+              className="w-full max-w-lg overflow-hidden rounded-3xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl"
             >
               <div className="p-6 border-b border-[var(--border-color)] flex items-center justify-between gap-4">
                 <h2 id="course-overview-login-title" className="text-xl font-bold text-[var(--text-primary)]">
