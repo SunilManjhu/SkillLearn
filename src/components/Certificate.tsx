@@ -191,7 +191,7 @@ export const Certificate: React.FC<CertificateProps> = ({
               </p>
 
               <div
-                className="flex w-full min-w-0 flex-row flex-nowrap items-center gap-2 overflow-x-auto overflow-y-hidden pb-0.5 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] [-ms-overflow-style:none] [scrollbar-width:none] sm:w-auto sm:justify-end sm:overflow-visible sm:pb-0 sm:pl-0 sm:pr-0 [&::-webkit-scrollbar]:hidden"
+                className="flex w-full min-w-0 flex-row flex-nowrap items-center gap-2 overflow-x-auto overflow-y-hidden pb-0.5 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] [-ms-overflow-style:none] [scrollbar-width:none] sm:w-auto sm:items-stretch sm:justify-end sm:overflow-visible sm:pb-0 sm:pl-0 sm:pr-0 [&::-webkit-scrollbar]:hidden"
               >
                 <button
                   type="button"
@@ -250,10 +250,12 @@ export const Certificate: React.FC<CertificateProps> = ({
                   type="button"
                   onClick={handlePrintPdf}
                   title="Download PDF — Tip: In the print dialog, disable “Headers and footers” to remove the date, URL, and page numbers from the PDF."
-                  className="inline-flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg bg-orange-500 text-white transition-colors hover:bg-orange-600 active:bg-orange-700 sm:h-auto sm:min-h-0 sm:min-w-0 sm:rounded-xl"
+                  className="inline-flex h-11 shrink-0 touch-manipulation items-center justify-center gap-1.5 rounded-lg bg-orange-500 px-2.5 text-xs font-bold text-white transition-colors hover:bg-orange-600 active:bg-orange-700 sm:h-auto sm:min-h-0 sm:min-w-0 sm:gap-2 sm:rounded-xl sm:px-4 sm:py-2.5 sm:text-sm"
                   aria-label="Download certificate as PDF"
                 >
-                  <Download size={18} className="h-[18px] w-[18px] shrink-0" aria-hidden />
+                  <Download size={16} className="h-4 w-4 shrink-0 sm:h-[18px] sm:w-[18px]" aria-hidden />
+                  <span className="whitespace-nowrap sm:hidden">Download</span>
+                  <span className="hidden whitespace-nowrap sm:inline">Download PDF</span>
                 </button>
               </div>
             </div>
