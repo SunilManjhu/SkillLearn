@@ -1,6 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { BookOpen, Copy, Plus, RotateCcw, Save, Trash2, RefreshCw, X, ChevronDown, ChevronRight } from 'lucide-react';
+import {
+  BookOpen,
+  Copy,
+  Loader2,
+  Plus,
+  RotateCcw,
+  Save,
+  Trash2,
+  RefreshCw,
+  X,
+  ChevronDown,
+  ChevronRight,
+} from 'lucide-react';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { useDialogKeyboard } from '../../hooks/useDialogKeyboard';
 import { useAdminActionToast } from './useAdminActionToast';
@@ -568,8 +580,10 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     baselineJson !== null &&
     JSON.stringify(draft) !== baselineJson;
 
-  const showCancel =
-    !!draft && baselineJson !== null && (selector === '__new__' || isDirty);
+  /** Keep Cancel in the layout after save (published + clean) so the action row does not jump. */
+  const cancelVisible = !!draft && baselineJson !== null;
+  const cancelDisabled =
+    busy || (selector !== '__new__' && !isDirty);
 
   useEffect(() => {
     onDraftDirtyChange?.(isDirty);
@@ -1466,19 +1480,29 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               type="button"
               disabled={busy || !draft || (baselineJson !== null && !isDirty)}
               onClick={() => void handleSave()}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-500 px-6 py-3 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-50"
+              aria-busy={busy}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-orange-500 px-6 py-3 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-50"
             >
-              <Save size={18} />
-              {busy ? 'Saving…' : 'Save changes'}
+              {busy ? (
+                <Loader2 size={18} className="shrink-0 animate-spin" aria-hidden />
+              ) : (
+                <Save size={18} className="shrink-0" aria-hidden />
+              )}
+              Save changes
             </button>
-            {showCancel && (
+            {cancelVisible && (
               <button
                 type="button"
-                disabled={busy}
+                disabled={cancelDisabled}
+                title={
+                  cancelDisabled && selector !== '__new__' && !isDirty
+                    ? 'No unsaved changes to discard'
+                    : undefined
+                }
                 onClick={openCancelDialog}
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] hover:bg-[var(--hover-bg)] disabled:opacity-50 px-6 py-3 text-sm font-bold text-[var(--text-secondary)]"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] hover:bg-[var(--hover-bg)] disabled:opacity-50 px-6 py-3 text-sm font-bold text-[var(--text-secondary)]"
               >
-                <RotateCcw size={18} />
+                <RotateCcw size={18} className="shrink-0" aria-hidden />
                 Cancel
               </button>
             )}
