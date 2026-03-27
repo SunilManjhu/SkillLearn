@@ -2007,8 +2007,8 @@ export default function App() {
   const renderCatalog = () => {
     const catalogFiltersActive = Boolean(searchQuery || selectedCategory !== 'All');
     return (
-      <div className="mx-auto min-w-0 max-w-7xl px-4 pb-12 pt-20 sm:px-6 sm:pb-20 sm:pt-24">
-        <div className="mb-6 sm:mb-10">
+      <div className="mx-auto min-w-0 max-w-7xl px-4 pb-12 pt-[max(5.5rem,calc(4rem+env(safe-area-inset-top,0px)))] sm:px-6 sm:pb-20 sm:pt-24">
+        <div className="sticky top-16 z-30 -mx-4 mb-6 border-b border-[var(--border-color)]/80 bg-[var(--bg-primary)] px-4 pb-4 sm:static sm:z-auto sm:mx-0 sm:mb-10 sm:border-0 sm:bg-transparent sm:px-0 sm:pb-0">
           <div className="mb-4 flex flex-row items-center justify-between gap-2 sm:mb-4 sm:gap-4">
             <h1 className="min-w-0 flex-1 break-words pr-1 text-2xl font-bold leading-tight text-[var(--text-primary)] sm:text-3xl md:text-4xl">
               {searchQuery ? `Search Results for "${searchQuery}"` : 'Course Library'}
@@ -2027,7 +2027,7 @@ export default function App() {
           </div>
           {!searchQuery && (
             <div
-              className="-mx-4 flex gap-2 overflow-x-auto overflow-y-hidden px-4 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0 sm:gap-3 md:gap-4 [&::-webkit-scrollbar]:hidden"
+              className="-mx-4 flex gap-2 overflow-x-auto px-4 py-1.5 [-ms-overflow-style:none] [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:py-0 sm:gap-3 md:gap-4 [&::-webkit-scrollbar]:hidden"
               aria-label="Course categories"
             >
               {categories.map((cat, index) => (
@@ -2091,7 +2091,7 @@ export default function App() {
           )}
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4">
+        <div className="relative z-0 grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4">
           {filteredCourses.map((course, index) => (
             <CourseCard 
               key={course.id}
