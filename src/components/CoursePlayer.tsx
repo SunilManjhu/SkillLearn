@@ -287,6 +287,9 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   isVoteLoginModalOpenRef.current = isVoteLoginModalOpen;
   const showRatingPromptRef = useRef(showRatingPrompt);
   showRatingPromptRef.current = showRatingPrompt;
+  const showReplayCtaRef = useRef(false);
+  const youtubeEmbedUrlRef = useRef(false);
+  const seekActiveVideoBySecondsRef = useRef<(delta: number) => void>(() => {});
 
   /** User was playing before we auto-paused for customize/report/app overlay/tab visibility. */
   const resumeAfterInterruptionsRef = useRef(false);
@@ -319,6 +322,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
 
   const activeVideoUrl = customVideoUrl || userSuggestion || currentLesson.videoUrl;
   const youtubeEmbedUrl = youtubeUrlToEmbedUrl(activeVideoUrl);
+  youtubeEmbedUrlRef.current = !!youtubeEmbedUrl;
 
   const mergeProgress = useCallback(
     (
@@ -433,7 +437,34 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     }
   }, [youtubeEmbedUrl]);
 
+  const togglePlaybackFromKeyboard = useCallback(() => {
+    if (youtubeEmbedUrl) {
+      const p = ytPlayerRef.current as {
+        getPlayerState?: () => number;
+        pauseVideo?: () => void;
+        playVideo?: () => void;
+      } | null;
+      const YT = window.YT;
+      if (!p?.getPlayerState || !YT?.PlayerState) return;
+      try {
+        const ps = p.getPlayerState();
+        if (ps === YT.PlayerState.PLAYING) p.pauseVideo?.();
+        else p.playVideo?.();
+      } catch {
+        /* ignore */
+      }
+    } else {
+      const v = videoRef.current;
+      if (!v) return;
+      if (v.paused) void v.play().catch(() => {});
+      else void v.pause();
+    }
+  }, [youtubeEmbedUrl]);
+
   const ytOverlayClickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Mobile double-tap ±5s seek (matches desktop arrow keys). */
+  const mobileDoubleTapSeekRef = useRef<{ t: number; zone: 'left' | 'right' } | null>(null);
+  const mobileDoubleTapResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clearYoutubeOverlayClickTimer = useCallback(() => {
     if (ytOverlayClickTimerRef.current) {
@@ -672,6 +703,93 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     [mergeProgress, youtubeEmbedUrl]
   );
 
+  seekActiveVideoBySecondsRef.current = seekActiveVideoBySeconds;
+
+  useEffect(() => {
+    const area = videoAreaRef.current;
+    if (!area) return;
+
+    const DOUBLE_MS = 550;
+
+    const onTouchEnd = (e: TouchEvent) => {
+      if (typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches) return;
+      if (e.changedTouches.length !== 1) return;
+
+      const target = e.target as HTMLElement | null;
+      if (
+        target?.closest(
+          'input, button, label, a[href], [role="menuitem"], [role="tab"], [role="slider"]'
+        )
+      ) {
+        return;
+      }
+
+      if (
+        isCustomizeModalOpenRef.current ||
+        isReportModalOpenRef.current ||
+        pauseForAppNavOverlayRef.current ||
+        isVoteLoginModalOpenRef.current ||
+        showRatingPromptRef.current ||
+        showReplayCtaRef.current
+      ) {
+        return;
+      }
+
+      const rect = area.getBoundingClientRect();
+      const w = rect.width;
+      if (!(w > 0)) return;
+
+      const touch = e.changedTouches[0];
+      const x = touch.clientX - rect.left;
+      const isYt = youtubeEmbedUrlRef.current;
+
+      if (!isYt) {
+        if (x >= w * 0.45 && x <= w * 0.55) {
+          mobileDoubleTapSeekRef.current = null;
+          if (mobileDoubleTapResetTimeoutRef.current) {
+            clearTimeout(mobileDoubleTapResetTimeoutRef.current);
+            mobileDoubleTapResetTimeoutRef.current = null;
+          }
+          return;
+        }
+      }
+
+      const zone: 'left' | 'right' = x < w / 2 ? 'left' : 'right';
+
+      const now = performance.now();
+      const prev = mobileDoubleTapSeekRef.current;
+
+      if (prev && prev.zone === zone && now - prev.t < DOUBLE_MS) {
+        if (mobileDoubleTapResetTimeoutRef.current) {
+          clearTimeout(mobileDoubleTapResetTimeoutRef.current);
+          mobileDoubleTapResetTimeoutRef.current = null;
+        }
+        clearYoutubeOverlayClickTimer();
+        mobileDoubleTapSeekRef.current = null;
+        e.preventDefault();
+        e.stopPropagation();
+        setSeekNudgeSeconds(zone === 'left' ? -5 : 5);
+        setSeekNudgeVisible(true);
+        seekActiveVideoBySecondsRef.current(zone === 'left' ? -5 : 5);
+        window.setTimeout(() => setSeekNudgeVisible(false), 450);
+        return;
+      }
+
+      mobileDoubleTapSeekRef.current = { t: now, zone };
+      if (mobileDoubleTapResetTimeoutRef.current) {
+        clearTimeout(mobileDoubleTapResetTimeoutRef.current);
+      }
+      mobileDoubleTapResetTimeoutRef.current = window.setTimeout(() => {
+        mobileDoubleTapResetTimeoutRef.current = null;
+        const cur = mobileDoubleTapSeekRef.current;
+        if (cur && cur.t === now) mobileDoubleTapSeekRef.current = null;
+      }, DOUBLE_MS + 50);
+    };
+
+    area.addEventListener('touchend', onTouchEnd, { capture: true, passive: false });
+    return () => area.removeEventListener('touchend', onTouchEnd, true);
+  }, [clearYoutubeOverlayClickTimer, currentLesson.id]);
+
   useEffect(() => {
     const isTypingTarget = (target: EventTarget | null): boolean => {
       const el = target as HTMLElement | null;
@@ -685,6 +803,50 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
 
     const onWindowKeyDown = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if (e.key === ' ' || e.code === 'Space') {
+        if (e.repeat) return;
+        if (typeof window !== 'undefined' && !window.matchMedia('(min-width: 1024px)').matches) return;
+        if (
+          isCustomizeModalOpenRef.current ||
+          isReportModalOpenRef.current ||
+          pauseForAppNavOverlayRef.current ||
+          isVoteLoginModalOpenRef.current ||
+          showRatingPromptRef.current ||
+          showReplayCtaRef.current
+        ) {
+          return;
+        }
+        if (isTypingTarget(e.target)) return;
+        const el = e.target as HTMLElement | null;
+        if (
+          el?.closest(
+            'button, [role="button"], a[href], [role="menuitem"], [role="tab"], [role="checkbox"], [role="radio"], [role="switch"], [role="slider"]'
+          )
+        ) {
+          return;
+        }
+        e.preventDefault();
+        togglePlaybackFromKeyboard();
+        return;
+      }
+      if (e.key === 'f' || e.key === 'F') {
+        if (e.repeat) return;
+        if (typeof window !== 'undefined' && !window.matchMedia('(min-width: 1024px)').matches) return;
+        if (
+          isCustomizeModalOpenRef.current ||
+          isReportModalOpenRef.current ||
+          pauseForAppNavOverlayRef.current ||
+          isVoteLoginModalOpenRef.current ||
+          showRatingPromptRef.current ||
+          showReplayCtaRef.current
+        ) {
+          return;
+        }
+        if (isTypingTarget(e.target)) return;
+        e.preventDefault();
+        void toggleVideoAreaFullscreen();
+        return;
+      }
       if (isTypingTarget(e.target)) return;
       if (e.key === 'ArrowRight') {
         e.preventDefault();
@@ -715,7 +877,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
       window.removeEventListener('keyup', onWindowKeyUp);
       window.removeEventListener('blur', onWindowBlur);
     };
-  }, [seekActiveVideoBySeconds]);
+  }, [seekActiveVideoBySeconds, togglePlaybackFromKeyboard, toggleVideoAreaFullscreen]);
 
   const currentModule = useMemo(
     () => course.modules.find((m) => m.lessons.some((l) => l.id === currentLesson.id)),
@@ -760,6 +922,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
 
   const showReplayCta =
     isLessonPlaybackComplete(persistedProgressForCurrentLesson) && !replayUiSuppressed && mediaPaused;
+  showReplayCtaRef.current = showReplayCta;
 
   const showPauseFrostBackdrop =
     !showReplayCta &&
@@ -1993,7 +2156,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
         <div
           ref={videoAreaRef}
           data-skillstream-video-area
-          className={`aspect-video bg-black relative group max-lg:landscape:aspect-auto ${landscapeVideoH} max-lg:landscape:w-full max-lg:landscape:shrink-0 max-lg:landscape:transition-[height,min-height] max-lg:landscape:duration-300 max-lg:landscape:ease-out ${!showTopControls && !mediaPaused ? 'cursor-none' : ''}`}
+          className={`aspect-video touch-manipulation bg-black relative group max-lg:landscape:aspect-auto ${landscapeVideoH} max-lg:landscape:w-full max-lg:landscape:shrink-0 max-lg:landscape:transition-[height,min-height] max-lg:landscape:duration-300 max-lg:landscape:ease-out ${!showTopControls && !mediaPaused ? 'cursor-none' : ''}`}
         >
           <div
             className={`absolute inset-0 overflow-hidden ${youtubeEmbedUrl ? 'z-[1]' : 'hidden'} ${blockPlayerPointerWhilePaused && youtubeEmbedUrl ? 'pointer-events-none' : ''}`}
