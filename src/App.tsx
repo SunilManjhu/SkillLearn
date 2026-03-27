@@ -133,10 +133,10 @@ function writeModerationBellDismissedToStorage(uid: string, state: ModerationBel
 }
 
 const ADMIN_DELETE_BLOCKED_MULTI_MSG =
-  "Admin accounts can't be deleted. In Admin → Users, set your role to user (or ask another admin), then return here to delete your account.";
+  "Admin accounts can't be deleted. In Admin → Roles, set your role to user (or ask another admin), then return here to delete your account.";
 
 const ADMIN_DELETE_BLOCKED_SOLE_MSG =
-  "You're the only admin. Promote another account to admin in Admin → Users first, then set your role to user — after that you can delete your account.";
+  "You're the only admin. Promote another account to admin in Admin → Roles first, then set your role to user — after that you can delete your account.";
 
 function findLessonById(course: Course, lessonId: string): Lesson | undefined {
   for (const mod of course.modules) {

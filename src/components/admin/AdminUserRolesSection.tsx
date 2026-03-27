@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { RefreshCw, ShieldCheck, Users, UserCircle } from 'lucide-react';
+import { Copy, RefreshCw, ShieldCheck } from 'lucide-react';
 import { subscribeUsersForAdmin, updateUserRoleAsAdmin, type AdminUserRow } from '../../utils/adminUsersFirestore';
 import { countFirestoreAdminUsers, type UserRole } from '../../utils/userProfileFirestore';
 import { useAdminActionToast } from './useAdminActionToast';
@@ -16,6 +16,7 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
   const [subscriptionKey, setSubscriptionKey] = useState(0);
   const { showActionToast, actionToast } = useAdminActionToast();
   const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'user'>('all');
   const [savingUserId, setSavingUserId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -36,21 +37,33 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
   }, [subscriptionKey]);
 
   const filteredRows = useMemo(() => {
+    let list = rows;
+    if (roleFilter === 'admin') list = list.filter((r) => r.role === 'admin');
+    else if (roleFilter === 'user') list = list.filter((r) => r.role === 'user');
     const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((r) =>
+    if (!q) return list;
+    return list.filter((r) =>
       [r.displayName, r.email, r.id, r.role].some((part) => part.toLowerCase().includes(q))
     );
-  }, [rows, search]);
+  }, [rows, search, roleFilter]);
+
+  const copyUid = async (uid: string) => {
+    try {
+      await navigator.clipboard.writeText(uid);
+      showActionToast('UID copied to clipboard.');
+    } catch {
+      showActionToast('Could not copy UID.', 'danger');
+    }
+  };
 
   const roleStats = useMemo(() => {
     let admins = 0;
-    let users = 0;
+    let nonAdmins = 0;
     for (const r of rows) {
       if (r.role === 'admin') admins += 1;
-      else users += 1;
+      else nonAdmins += 1;
     }
-    return { total: rows.length, admins, users };
+    return { total: rows.length, admins, nonAdmins };
   }, [rows]);
 
   const soleAdminSelfDemoteMsg =
@@ -84,30 +97,29 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
   };
 
   return (
-    <div className="space-y-4 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 text-lg font-bold">
-          <ShieldCheck size={20} className="text-orange-500" />
-          User roles
-        </h2>
+    <div className="space-y-3 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:p-5">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 pr-1">
+          <h2 className="flex items-center gap-1.5 text-base font-bold sm:text-lg">
+            <ShieldCheck size={18} className="shrink-0 text-orange-500" aria-hidden />
+            Roles
+          </h2>
+          <p className="mt-1 text-[11px] leading-snug text-[var(--text-muted)] sm:text-xs">
+            <code className="text-orange-500/80">users</code> docs use role <code className="text-orange-500/90">admin</code> or{' '}
+            <code className="text-orange-500/90">user</code>. Live updates; keep at least one admin.
+          </p>
+        </div>
         <button
           type="button"
           onClick={() => setSubscriptionKey((k) => k + 1)}
           disabled={loading}
-          className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[var(--border-color)] px-3 py-2 text-xs font-semibold hover:bg-[var(--hover-bg)] disabled:opacity-50"
-          title="Re-attach the live listener"
+          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[var(--border-color)] hover:bg-[var(--hover-bg)] disabled:opacity-50"
+          title="Refresh list"
+          aria-label="Refresh user list"
         >
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-          Refresh
+          <RefreshCw size={16} className={loading ? 'animate-spin' : ''} aria-hidden />
         </button>
       </div>
-
-      <p className="text-xs text-[var(--text-muted)]">
-        Update any user to <code className="text-orange-500/90">admin</code> or{' '}
-        <code className="text-orange-500/90">user</code> from this panel. Counts reflect documents in
-        the <code className="text-orange-500/80">users</code> collection and update live when profiles
-        are added or removed.
-      </p>
       {listError && (
         <p className="text-sm text-red-500" role="alert">
           {listError}{' '}
@@ -121,48 +133,71 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
         </p>
       )}
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/60 px-4 py-3.5">
-          <div className="flex items-center gap-2 text-[var(--text-muted)]">
-            <UserCircle size={18} className="shrink-0 text-[var(--text-secondary)]" aria-hidden />
-            <span className="text-[11px] font-semibold uppercase tracking-wide">Total profiles</span>
-          </div>
-          <p className="mt-2 text-2xl font-bold tabular-nums text-[var(--text-primary)]">
-            {loading ? '—' : roleStats.total}
-          </p>
-        </div>
-        <div className="rounded-xl border border-orange-500/25 bg-orange-500/[0.07] px-4 py-3.5">
-          <div className="flex items-center gap-2 text-orange-500/90">
-            <ShieldCheck size={18} className="shrink-0" aria-hidden />
-            <span className="text-[11px] font-semibold uppercase tracking-wide">Admins</span>
-          </div>
-          <p className="mt-2 text-2xl font-bold tabular-nums text-orange-500">
-            {loading ? '—' : roleStats.admins}
-          </p>
-        </div>
-        <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/60 px-4 py-3.5">
-          <div className="flex items-center gap-2 text-[var(--text-muted)]">
-            <Users size={18} className="shrink-0 text-[var(--text-secondary)]" aria-hidden />
-            <span className="text-[11px] font-semibold uppercase tracking-wide">Users</span>
-          </div>
-          <p className="mt-2 text-2xl font-bold tabular-nums text-[var(--text-primary)]">
-            {loading ? '—' : roleStats.users}
-          </p>
-        </div>
+      <div
+        className="flex flex-wrap items-baseline gap-x-5 gap-y-1 border-b border-[var(--border-color)] pb-2 text-[11px] sm:text-xs"
+        aria-live="polite"
+      >
+        <span className="text-[var(--text-muted)]">
+          Total{' '}
+          <strong className="tabular-nums text-[var(--text-primary)]">{loading ? '—' : roleStats.total}</strong>
+        </span>
+        <span className="text-[var(--border-color)]" aria-hidden>
+          ·
+        </span>
+        <span className="text-[var(--text-muted)]">
+          Admins{' '}
+          <strong className="tabular-nums text-orange-500">{loading ? '—' : roleStats.admins}</strong>
+        </span>
+        <span className="text-[var(--border-color)]" aria-hidden>
+          ·
+        </span>
+        <span className="text-[var(--text-muted)]">
+          Non-admins{' '}
+          <strong className="tabular-nums text-[var(--text-primary)]">{loading ? '—' : roleStats.nonAdmins}</strong>
+        </span>
       </div>
 
-      <input
-        type="text"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search by name, email, role, or UID"
-        className="min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm"
-      />
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+        <div className="flex shrink-0 flex-wrap gap-2" role="group" aria-label="Filter by role type">
+          {(
+            [
+              { id: 'all' as const, label: 'All accounts' },
+              { id: 'admin' as const, label: 'Admins' },
+              { id: 'user' as const, label: 'Non-admins' },
+            ] as const
+          ).map(({ id, label }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setRoleFilter(id)}
+              className={`min-h-9 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors sm:min-h-10 sm:px-3 sm:py-2 ${
+                roleFilter === id
+                  ? 'border-orange-500/60 bg-orange-500/15 text-orange-400'
+                  : 'border-[var(--border-color)] bg-[var(--bg-primary)]/60 text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search name, email, role, or UID"
+          autoComplete="off"
+          className="min-h-10 w-full flex-1 rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-base sm:text-sm"
+        />
+      </div>
 
       <div className="space-y-3 md:hidden">
         {filteredRows.length === 0 ? (
           <p className="py-8 text-center text-sm text-[var(--text-muted)]">
-            {loading ? 'Loading users…' : 'No users found.'}
+            {loading
+              ? 'Loading users…'
+              : rows.length === 0
+                ? 'No user profiles yet.'
+                : 'No users match this filter.'}
           </p>
         ) : (
           filteredRows.map((row) => {
@@ -180,9 +215,19 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Email</p>
                   <p className="break-words text-sm text-[var(--text-secondary)]">{row.email || '—'}</p>
                 </div>
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">UID</p>
-                  <code className="break-all text-xs text-[var(--text-muted)]">{row.id}</code>
+                <div className="flex flex-wrap items-end justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">UID</p>
+                    <code className="break-all text-xs text-[var(--text-muted)]">{row.id}</code>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void copyUid(row.id)}
+                    className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg border border-[var(--border-color)] px-3 py-2 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]"
+                  >
+                    <Copy size={14} aria-hidden />
+                    Copy
+                  </button>
                 </div>
                 <div className="space-y-1">
                   <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Role</span>
@@ -204,19 +249,24 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
 
       <div className="hidden max-h-[min(30rem,58vh)] overflow-auto rounded-xl border border-[var(--border-color)] md:block">
         <table className="w-full text-sm">
-          <thead className="bg-[var(--bg-primary)] text-[var(--text-secondary)]">
+          <thead className="sticky top-0 z-[1] bg-[var(--bg-primary)] text-[var(--text-secondary)] shadow-[0_1px_0_0_var(--border-color)]">
             <tr>
               <th className="px-3 py-2 text-left font-semibold">Name</th>
               <th className="px-3 py-2 text-left font-semibold">Email</th>
               <th className="px-3 py-2 text-left font-semibold">UID</th>
+              <th className="w-[1%] whitespace-nowrap px-3 py-2 text-left font-semibold"> </th>
               <th className="px-3 py-2 text-left font-semibold">Role</th>
             </tr>
           </thead>
           <tbody>
             {filteredRows.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-3 py-8 text-center text-[var(--text-muted)]">
-                  {loading ? 'Loading users...' : 'No users found.'}
+                <td colSpan={5} className="px-3 py-8 text-center text-[var(--text-muted)]">
+                  {loading
+                    ? 'Loading users…'
+                    : rows.length === 0
+                      ? 'No user profiles yet.'
+                      : 'No users match this filter.'}
                 </td>
               </tr>
             ) : (
@@ -226,8 +276,21 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
                   <tr key={row.id} className="border-t border-[var(--border-color)]">
                     <td className="px-3 py-2 text-[var(--text-primary)]">{row.displayName}</td>
                     <td className="px-3 py-2 text-[var(--text-secondary)]">{row.email || '—'}</td>
-                    <td className="px-3 py-2 text-[var(--text-muted)]">
-                      <code className="text-xs">{row.id}</code>
+                    <td className="max-w-[12rem] px-3 py-2 text-[var(--text-muted)]">
+                      <code className="block truncate text-xs" title={row.id}>
+                        {row.id}
+                      </code>
+                    </td>
+                    <td className="px-2 py-2">
+                      <button
+                        type="button"
+                        onClick={() => void copyUid(row.id)}
+                        className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg border border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]"
+                        title="Copy UID"
+                        aria-label={`Copy UID for ${row.displayName}`}
+                      >
+                        <Copy size={16} aria-hidden />
+                      </button>
                     </td>
                     <td className="px-3 py-2">
                       <select

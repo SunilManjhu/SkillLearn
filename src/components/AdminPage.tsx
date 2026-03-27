@@ -201,7 +201,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
     <button
       type="button"
       onClick={() => requestAdminNavigation({ kind: 'tab', tab: id })}
-      className={`inline-flex shrink-0 min-h-11 items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold transition-colors ${
+      className={`inline-flex shrink-0 min-h-10 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-bold transition-colors sm:min-h-11 sm:gap-2 sm:px-4 ${
         tab === id
           ? 'bg-orange-500 text-white'
           : 'bg-[var(--bg-primary)] text-[var(--text-secondary)] border border-[var(--border-color)] hover:bg-[var(--hover-bg)]'
@@ -214,25 +214,27 @@ export const AdminPage: React.FC<AdminPageProps> = ({
 
   return (
     <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] px-4 pb-16 pt-24 sm:px-6">
-      <div className="mx-auto max-w-4xl min-w-0 space-y-6 sm:space-y-8">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="shrink-0 rounded-xl bg-orange-500/15 p-3 text-orange-500">
-              <Shield size={28} />
+      <div className="mx-auto max-w-4xl min-w-0 space-y-5 sm:space-y-6">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
+            <div className="shrink-0 rounded-lg bg-orange-500/15 p-2 text-orange-500">
+              <Shield size={22} />
             </div>
             <div className="min-w-0">
-              <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Admin portal</h1>
-              <p className="mt-1 text-sm text-[var(--text-secondary)]">
-                Alerts, catalog, and moderation. Students do not see this page.
+              <h1 className="text-lg font-bold tracking-tight sm:text-xl">Admin portal</h1>
+              <p className="mt-0.5 line-clamp-2 text-xs text-[var(--text-secondary)] sm:text-sm sm:line-clamp-none">
+                Alerts, catalog, moderation, and roles. Students do not see this page.
               </p>
             </div>
           </div>
           <button
             type="button"
             onClick={() => requestAdminNavigation({ kind: 'dismiss' })}
-            className="inline-flex min-h-11 shrink-0 items-center rounded-lg px-3 text-sm font-semibold text-orange-500 hover:bg-orange-500/10 hover:text-orange-400"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-orange-500 hover:bg-orange-500/10 hover:text-orange-400"
+            aria-label="Close admin portal"
+            title="Close"
           >
-            Close
+            <X size={20} aria-hidden />
           </button>
         </div>
 
@@ -240,7 +242,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
           {tabBtn('alerts', 'Alerts', <Send size={16} />)}
           {tabBtn('catalog', 'Courses', <BookOpen size={16} />)}
           {tabBtn('moderation', 'Moderation', <Flag size={16} />)}
-          {tabBtn('users', 'Users', <Users size={16} />)}
+          {tabBtn('users', 'Roles', <Users size={16} />)}
         </div>
 
         {tab === 'alerts' && (
