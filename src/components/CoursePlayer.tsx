@@ -40,6 +40,7 @@ import { db, User, handleFirestoreError, OperationType } from '../firebase';
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, serverTimestamp, onSnapshot, deleteDoc, limit } from 'firebase/firestore';
 import {
   isLessonPlaybackComplete,
+  isTrivialLessonProgress,
   getNextIncompleteLessonAfter,
   loadLessonProgressMap,
   progressPercent,
@@ -1184,7 +1185,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
       void v.pause();
       return;
     }
-    if (saved.currentTime > 0.5) {
+    if (!isTrivialLessonProgress(saved) && saved.currentTime > 0.5) {
       const cap = Math.max(0, v.duration - 0.05);
       v.currentTime = Math.min(saved.currentTime, cap);
     }
@@ -1325,7 +1326,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                 }
                 return;
               }
-              if (saved.currentTime > 0.5) {
+              if (!isTrivialLessonProgress(saved) && saved.currentTime > 0.5) {
                 const cap = Math.max(0, d - 0.05);
                 player.seekTo(Math.min(saved.currentTime, cap), true);
               }
@@ -1397,19 +1398,6 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
               clearUnpauseFrostLinger();
               setMediaPaused(true);
               setYtPauseBlurActive(true);
-            }
-
-            try {
-              const player = e.target;
-              if (e.data === ps.PLAYING) {
-                const d = player.getDuration();
-                const t = player.getCurrentTime();
-                if (d > 0 && t < 2.5) {
-                  mergeProgress(lessonRef.current.id, t, d);
-                }
-              }
-            } catch {
-              /* ignore */
             }
 
             if (e.data === ps.ENDED) {
@@ -1982,10 +1970,6 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
               setMediaPaused(false);
               if (hadPauseFrost) {
                 startUnpauseFrostLinger();
-              }
-              const v = videoRef.current;
-              if (v && Number.isFinite(v.duration) && v.duration > 0 && v.currentTime < 2.5) {
-                mergeProgress(currentLesson.id, v.currentTime, v.duration);
               }
             }}
             onPause={() => {

@@ -122,10 +122,24 @@ export function isLessonPlaybackComplete(p: LessonProgress | undefined): boolean
   return remaining <= 3 && ratio >= 0.8;
 }
 
+/**
+ * Saved progress that is neither complete nor plausibly intentional viewing (YouTube iframe often reports
+ * PLAYING with a few seconds after load/autoplay without the user meaningfully watching).
+ */
+export function isTrivialLessonProgress(p: LessonProgress | undefined): boolean {
+  if (!p || !(p.duration > 0)) return true;
+  if (isLessonPlaybackComplete(p)) return false;
+  const t = p.currentTime;
+  if (t <= 0) return true;
+  const ratio = t / p.duration;
+  return t < 3 && ratio < 0.12;
+}
+
 /** Sidebar/overview bar: **100%** whenever `isLessonPlaybackComplete` (including embed-gap completion). */
 export function progressPercent(p: LessonProgress | undefined): number {
   if (!p || !(p.duration > 0)) return 0;
   if (isLessonPlaybackComplete(p)) return 100;
+  if (isTrivialLessonProgress(p)) return 0;
   return Math.min(100, Math.round((p.currentTime / p.duration) * 100));
 }
 
@@ -208,7 +222,7 @@ export function hasResumableCourseProgress(course: Course, progressByLesson: Rec
       const p = progressByLesson[lesson.id];
       if (!p) continue;
       if (isLessonPlaybackComplete(p)) return true;
-      if (p.duration > 0 && p.currentTime > 0) return true;
+      if (p.duration > 0 && p.currentTime > 0 && !isTrivialLessonProgress(p)) return true;
     }
   }
   return false;
