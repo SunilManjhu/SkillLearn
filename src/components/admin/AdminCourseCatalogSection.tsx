@@ -5,7 +5,6 @@ import {
   Copy,
   Loader2,
   Plus,
-  RotateCcw,
   Route,
   Save,
   Trash2,
@@ -17,7 +16,10 @@ import {
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { useDialogKeyboard } from '../../hooks/useDialogKeyboard';
 import { useAdminActionToast } from './useAdminActionToast';
+import { PathBuilderSection, type PathBuilderSectionHandle } from './PathBuilderSection';
 import type { Course, Lesson, Module } from '../../data/courses';
+import { STRUCTURED_COURSE_ID_RE, isStructuredCourseId } from '../../utils/courseStructuredIds';
+import { validateCourseDraft } from '../../utils/courseDraftValidation';
 import {
   loadPublishedCoursesFromFirestore,
   savePublishedCourse,
@@ -39,13 +41,6 @@ function deepClone<T>(x: T): T {
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/** C1, C12 — not C0. */
-const STRUCTURED_COURSE_ID_RE = /^C[1-9]\d*$/;
-
-function isStructuredCourseId(courseId: string): boolean {
-  return STRUCTURED_COURSE_ID_RE.test(courseId);
 }
 
 const CN_INDEX_RE = /^C([1-9]\d*)$/;
@@ -166,8 +161,6 @@ function emptyCourse(docId: string): Course {
   };
 }
 
-const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,118}$/i;
-
 /** Remap module/lesson ids to C{n}M{m}L{l} for a duplicate (by order). Always assigns ids even if source omitted them. */
 function remapCourseToStructuredIds(course: Course, newCourseId: string): Course {
   const modules = Array.isArray(course.modules) ? course.modules : [];
@@ -192,20 +185,25 @@ function remapCourseToStructuredIds(course: Course, newCourseId: string): Course
   };
 }
 
-type CancelDialogVariant = 'new-dirty' | 'new-clean' | 'catalog-dirty';
-
 /** Sub-tabs inside Course catalog: course entries vs learning paths. */
 type ContentCatalogSubTab = 'catalog' | 'paths';
+
+/** Pending navigation while the course draft has unsaved edits. */
+type CourseLeaveDialog =
+  | { kind: 'select'; nextId: string }
+  | { kind: 'duplicate' };
 
 interface AdminCourseCatalogSectionProps {
   onCatalogChanged: () => void | Promise<void>;
   /** True while the course editor has unsaved edits (for admin portal navigation guard). */
   onDraftDirtyChange?: (dirty: boolean) => void;
+  /** True while the learning path builder has unsaved edits (navigation guard + sub-tab switch). */
+  onPathsDirtyChange?: (dirty: boolean) => void;
 }
 
 interface RequiredFieldTarget {
   targetId: string;
-  /** Course details vs modules — must match validateDraft order. */
+  /** Course details vs modules — must match validateCourseDraft order. */
   scope: 'course' | 'module';
   moduleIndex: number;
   /** Lessons to expand (module errors include first lesson so lesson 1 is visible). */
@@ -215,6 +213,7 @@ interface RequiredFieldTarget {
 export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps> = ({
   onCatalogChanged,
   onDraftDirtyChange,
+  onPathsDirtyChange,
 }) => {
   const [publishedList, setPublishedList] = useState<Course[]>([]);
   /** '' = none selected; avoids loading Firestore until the user opens the Course dropdown. */
@@ -225,9 +224,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   /** True after first focus on Course select or explicit Reload list — then options include New Course + published. */
   const [catalogRequested, setCatalogRequested] = useState(false);
   const catalogRequestedRef = useRef(false);
-  /** Target id when renaming an already-published course (Firestore doc id change). */
-  const [renameDocId, setRenameDocId] = useState('');
-  /** JSON snapshot of draft when last loaded / saved — for dirty detection and Cancel. */
+  /** JSON snapshot of draft when last loaded / saved — for dirty detection. */
   const [baselineJson, setBaselineJson] = useState<string | null>(null);
   /** Turn on inline field errors after first failed save. */
   const [showValidationHints, setShowValidationHints] = useState(false);
@@ -254,6 +251,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
   const [contentCatalogSubTab, setContentCatalogSubTab] = useState<ContentCatalogSubTab>('catalog');
   const [subTabSwitchConfirmOpen, setSubTabSwitchConfirmOpen] = useState(false);
+  const [pathSubTabSwitchConfirmOpen, setPathSubTabSwitchConfirmOpen] = useState(false);
+  const [courseLeaveDialog, setCourseLeaveDialog] = useState<CourseLeaveDialog | null>(null);
+  const [pathBuilderResetKey, setPathBuilderResetKey] = useState(0);
+  const pathBuilderRef = useRef<PathBuilderSectionHandle | null>(null);
+  const [pathsListLoading, setPathsListLoading] = useState(false);
 
   /** Full list for the Category dropdown (presets, saved extras, categories from published courses). */
   const categorySelectOptions = useMemo(() => {
@@ -301,6 +303,12 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     void refreshList();
   }, [refreshList]);
 
+  useEffect(() => {
+    if (contentCatalogSubTab !== 'paths') return;
+    openCourseCatalogOnce();
+    void refreshList();
+  }, [contentCatalogSubTab, openCourseCatalogOnce, refreshList]);
+
   const sortedCatalogCourses = useMemo(
     () =>
       [...publishedList].sort((a, b) => {
@@ -316,27 +324,29 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     setBaselineJson(JSON.stringify(draft));
   }, [draft, baselineJson]);
 
-  const pickCourse = (id: string) => {
-    if (id === '') return;
-    setSelector(id);
-    setRenameDocId('');
-    if (id === '__new__') {
-      pendingFocusCourseTitleRef.current = true;
-      const fresh = emptyCourse(firstAvailableStructuredCourseId(publishedList));
-      setDraft(fresh);
-      setBaselineJson(JSON.stringify(fresh));
-      return;
-    }
-    const c = publishedList.find((x) => x.id === id);
-    if (c) {
-      const clone = deepClone(c);
-      setDraft(clone);
-      setBaselineJson(JSON.stringify(clone));
-    } else {
-      setDraft(null);
-      setBaselineJson(null);
-    }
-  };
+  const applyPickCourse = useCallback(
+    (id: string) => {
+      if (id === '') return;
+      setSelector(id);
+      if (id === '__new__') {
+        pendingFocusCourseTitleRef.current = true;
+        const fresh = emptyCourse(firstAvailableStructuredCourseId(publishedList));
+        setDraft(fresh);
+        setBaselineJson(JSON.stringify(fresh));
+        return;
+      }
+      const c = publishedList.find((x) => x.id === id);
+      if (c) {
+        const clone = deepClone(c);
+        setDraft(clone);
+        setBaselineJson(JSON.stringify(clone));
+      } else {
+        setDraft(null);
+        setBaselineJson(null);
+      }
+    },
+    [publishedList]
+  );
 
   const updateDraft = (patch: Partial<Course>) => {
     setDraft((d) => (d ? { ...d, ...patch } : null));
@@ -463,29 +473,6 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     });
   };
 
-  const validateDraft = (c: Course): string | null => {
-    if (!c.title.trim()) return 'Title is required.';
-    if (!c.author.trim()) return 'Author is required.';
-    if (!c.thumbnail.trim()) return 'Thumbnail URL is required.';
-    if (!c.modules.length) return 'At least one module is required.';
-    for (let mi = 0; mi < c.modules.length; mi += 1) {
-      const m = c.modules[mi];
-      if (!m.id.trim()) return `Module ${mi + 1}: Module ID is required.`;
-      if (!m.title.trim()) return `Module ${mi + 1}: Module title is required.`;
-      if (!m.lessons.length) return 'Each module needs at least one lesson.';
-      for (let li = 0; li < m.lessons.length; li += 1) {
-        const l = m.lessons[li];
-        if (!l.id.trim()) return `Module ${mi + 1}, Lesson ${li + 1}: Lesson ID is required.`;
-        if (!l.title.trim()) return `Module ${mi + 1}, Lesson ${li + 1}: Lesson title is required.`;
-        if (!l.videoUrl.trim() || !l.videoUrl.startsWith('http')) {
-          return `Module ${mi + 1}, Lesson ${li + 1}: Video URL is required and must start with http.`;
-        }
-      }
-    }
-    if (c.rating < 0 || c.rating > 5) return 'Rating must be 0–5.';
-    return null;
-  };
-
   const getFirstRequiredFieldTarget = (c: Course): RequiredFieldTarget | null => {
     if (!c.title.trim()) return { targetId: 'admin-course-title', scope: 'course', moduleIndex: 0 };
     if (!c.author.trim()) return { targetId: 'admin-course-author', scope: 'course', moduleIndex: 0 };
@@ -590,15 +577,20 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     baselineJson !== null &&
     JSON.stringify(draft) !== baselineJson;
 
-  /** Keep Cancel in the layout after save (published + clean) so the action row does not jump. */
-  const cancelVisible = !!draft && baselineJson !== null;
-  const cancelDisabled =
-    busy || (selector !== '__new__' && !isDirty);
-
   useEffect(() => {
     onDraftDirtyChange?.(isDirty);
     return () => onDraftDirtyChange?.(false);
   }, [isDirty, onDraftDirtyChange]);
+
+  const onCourseSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const id = e.target.value;
+    if (id === '') return;
+    if (isDirty && id !== selector) {
+      setCourseLeaveDialog({ kind: 'select', nextId: id });
+      return;
+    }
+    applyPickCourse(id);
+  };
 
   const handleSave = async () => {
     if (!draft) return;
@@ -606,7 +598,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       showActionToast('No changes to save.', 'neutral');
       return;
     }
-    const err = validateDraft(draft);
+    const err = validateCourseDraft(draft);
     if (err) {
       setShowValidationHints(true);
       const target = getFirstRequiredFieldTarget(draft);
@@ -664,72 +656,38 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     setSelector('__new__');
     setDraft(copy);
     setBaselineJson(JSON.stringify(copy));
-    setRenameDocId('');
     showActionToast(
       'Copy loaded as a new draft — IDs use C{n}M{m}L{l}. Adjust title if needed, then Save.'
     );
   };
 
-  const canRenamePublishedDoc =
-    !!draft &&
-    selector !== '__new__' &&
-    publishedList.some((c) => c.id === draft.id);
+  const requestDuplicateOrConfirm = () => {
+    if (!isDirty) {
+      duplicatePublishedAsDraft();
+      return;
+    }
+    setCourseLeaveDialog({ kind: 'duplicate' });
+  };
 
-  const handleRenameDocumentId = async () => {
-    if (!draft || !canRenamePublishedDoc) return;
-    const oldId = draft.id;
-    const newId = renameDocId.trim();
-    if (!newId || newId === oldId) {
-      showActionToast('Enter a new document ID that is different from the current one.', 'danger');
-      return;
-    }
-    if (!SLUG_RE.test(newId)) {
-      showActionToast(
-        'Document ID: letters, numbers, hyphens only; 1–119 chars; must start with alphanumeric.',
-        'danger'
-      );
-      return;
-    }
-    if (publishedList.some((c) => c.id === newId)) {
-      showActionToast('That document ID already exists. Choose another.', 'danger');
-      return;
-    }
-    const err = validateDraft(draft);
-    if (err) {
-      showActionToast(err, 'danger');
-      return;
-    }
-    const okConfirm = window.confirm(
-      `Change course id from "${oldId}" to "${newId}"?\n\n` +
-        `Learner progress, bookmarks, and links that use the old id will not move automatically. ` +
-        `If you use structured ids (e.g. C1M1L1), update module and lesson ids in the editor to match the new course id before continuing.\n\n` +
-        `Continue?`
-    );
-    if (!okConfirm) return;
+  const closeCourseLeaveDialog = () => setCourseLeaveDialog(null);
 
-    setBusy(true);
-    const coursePayload: Course = { ...draft, id: newId };
-    const saved = await savePublishedCourse(coursePayload);
-    if (!saved) {
-      setBusy(false);
-      showActionToast('Could not save under the new document ID (check console / rules).', 'danger');
-      return;
+  const confirmCourseLeaveDiscard = () => {
+    if (!courseLeaveDialog) return;
+    const pending = courseLeaveDialog;
+    setCourseLeaveDialog(null);
+    if (draft && baselineJson !== null) {
+      try {
+        const restored = JSON.parse(baselineJson) as Course;
+        setDraft(deepClone(restored));
+      } catch {
+        showActionToast('Could not restore draft.', 'danger');
+        return;
+      }
     }
-    const deleted = await deletePublishedCourse(oldId);
-    setBusy(false);
-    await refreshList();
-    await onCatalogChanged();
-    setDraft(deepClone(coursePayload));
-    setBaselineJson(JSON.stringify(coursePayload));
-    setSelector(newId);
-    setRenameDocId('');
-    if (!deleted) {
-      showActionToast(
-        `Saved as "${newId}", but "${oldId}" could not be deleted — check Console or Firebase Console.`,
-        'danger'
-      );
+    if (pending.kind === 'select') {
+      applyPickCourse(pending.nextId);
     } else {
-      showActionToast(`Document ID updated: "${oldId}" -> "${newId}".`);
+      duplicatePublishedAsDraft();
     }
   };
 
@@ -755,48 +713,36 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       setDraft(null);
       setBaselineJson(null);
       setSelector('');
-      setRenameDocId('');
       showActionToast('Course deleted.');
     } else {
       showActionToast('Delete failed.', 'danger');
     }
   }, [draft, refreshList, onCatalogChanged, showActionToast]);
 
-  const [cancelDialogVariant, setCancelDialogVariant] = useState<CancelDialogVariant | null>(null);
-  const cancelDialogOpen = cancelDialogVariant !== null;
+  useBodyScrollLock(
+    deleteDialogOpen ||
+      subTabSwitchConfirmOpen ||
+      pathSubTabSwitchConfirmOpen ||
+      courseLeaveDialog !== null
+  );
 
-  useBodyScrollLock(cancelDialogOpen || deleteDialogOpen || subTabSwitchConfirmOpen);
-
-  const closeCancelDialog = useCallback(() => setCancelDialogVariant(null), []);
-
-  const commitCancel = useCallback(
-    (variant: CancelDialogVariant) => {
-      if (!draft || baselineJson === null) return;
-      if (variant === 'new-dirty' || variant === 'new-clean') {
-        pendingFocusCourseTitleRef.current = true;
-        const fresh = emptyCourse(firstAvailableStructuredCourseId(publishedList));
-        setDraft(fresh);
-        setBaselineJson(JSON.stringify(fresh));
-        setRenameDocId('');
-        setCancelDialogVariant(null);
-        return;
-      }
-      try {
-        const restored = JSON.parse(baselineJson) as Course;
-        setDraft(deepClone(restored));
-      } catch {
-        showActionToast('Could not restore draft.', 'danger');
-        return;
-      }
-      setRenameDocId('');
-      setCancelDialogVariant(null);
+  /** Ref updated by PathBuilder via onPathsDirtyChange — read before opening catalog tab confirm. */
+  const pathBuilderDirtyRef = useRef(false);
+  const setPathBuilderDirty = useCallback(
+    (dirty: boolean) => {
+      pathBuilderDirtyRef.current = dirty;
+      onPathsDirtyChange?.(dirty);
     },
-    [draft, baselineJson, publishedList, showActionToast]
+    [onPathsDirtyChange]
   );
 
   const requestContentCatalogSubTab = useCallback(
     (next: ContentCatalogSubTab) => {
       if (next === 'catalog') {
+        if (pathBuilderDirtyRef.current) {
+          setPathSubTabSwitchConfirmOpen(true);
+          return;
+        }
         setContentCatalogSubTab('catalog');
         return;
       }
@@ -812,18 +758,26 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const closeSubTabSwitchConfirm = useCallback(() => setSubTabSwitchConfirmOpen(false), []);
 
   const confirmSwitchToPathsTab = useCallback(() => {
-    commitCancel('catalog-dirty');
+    if (draft && baselineJson !== null) {
+      try {
+        const restored = JSON.parse(baselineJson) as Course;
+        setDraft(deepClone(restored));
+      } catch {
+        showActionToast('Could not restore draft.', 'danger');
+        return;
+      }
+    }
     setContentCatalogSubTab('paths');
     setSubTabSwitchConfirmOpen(false);
-  }, [commitCancel]);
+  }, [draft, baselineJson, showActionToast]);
 
-  useDialogKeyboard({
-    open: cancelDialogOpen,
-    onClose: closeCancelDialog,
-    onPrimaryAction: () => {
-      if (cancelDialogVariant) commitCancel(cancelDialogVariant);
-    },
-  });
+  const closePathSubTabSwitchConfirm = useCallback(() => setPathSubTabSwitchConfirmOpen(false), []);
+
+  const confirmSwitchToCatalogFromPathsTab = useCallback(() => {
+    setPathBuilderResetKey((k) => k + 1);
+    setPathSubTabSwitchConfirmOpen(false);
+    setContentCatalogSubTab('catalog');
+  }, []);
 
   useDialogKeyboard({
     open: subTabSwitchConfirmOpen,
@@ -832,21 +786,22 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   });
 
   useDialogKeyboard({
+    open: courseLeaveDialog !== null,
+    onClose: closeCourseLeaveDialog,
+    onPrimaryAction: confirmCourseLeaveDiscard,
+  });
+
+  useDialogKeyboard({
+    open: pathSubTabSwitchConfirmOpen,
+    onClose: closePathSubTabSwitchConfirm,
+    onPrimaryAction: confirmSwitchToCatalogFromPathsTab,
+  });
+
+  useDialogKeyboard({
     open: deleteDialogOpen,
     onClose: closeDeleteDialog,
     onPrimaryAction: () => void confirmDeletePublished(),
   });
-
-  const openCancelDialog = () => {
-    if (!draft || baselineJson === null) return;
-    const dirty = JSON.stringify(draft) !== baselineJson;
-    if (selector === '__new__') {
-      setCancelDialogVariant(dirty ? 'new-dirty' : 'new-clean');
-      return;
-    }
-    if (!dirty) return;
-    setCancelDialogVariant('catalog-dirty');
-  };
 
   useEffect(() => {
     pendingOpenNewModuleIndexRef.current = null;
@@ -936,27 +891,6 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     return () => cancelAnimationFrame(rafId);
   }, [selector, baselineJson, courseDetailsOpen]);
 
-  const cancelDialogCopy =
-    cancelDialogVariant === 'new-dirty'
-      ? {
-          title: 'Lose your changes?',
-          body: 'You’ll start over with a blank new course. What you typed so far will be cleared.',
-          primary: 'Yes, start over',
-        }
-      : cancelDialogVariant === 'new-clean'
-        ? {
-            title: 'Start over with a new course?',
-            body: 'The form will clear and you’ll get a fresh template to fill in.',
-            primary: 'Yes, start fresh',
-          }
-        : cancelDialogVariant === 'catalog-dirty'
-          ? {
-              title: 'Lose your changes?',
-              body: 'The course will go back to how it looked when you last saved. Anything you’ve edited since then will be lost.',
-              primary: 'Yes, discard',
-            }
-          : null;
-
   return (
     <div className="min-w-0 space-y-6 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -968,20 +902,43 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         <div className="flex shrink-0 items-center justify-end">
           <button
             type="button"
-            disabled={listLoading || contentCatalogSubTab !== 'catalog'}
-            tabIndex={contentCatalogSubTab === 'catalog' ? undefined : -1}
-            aria-hidden={contentCatalogSubTab !== 'catalog'}
+            disabled={
+              contentCatalogSubTab === 'catalog'
+                ? listLoading
+                : contentCatalogSubTab === 'paths'
+                  ? listLoading || pathsListLoading
+                  : true
+            }
+            tabIndex={contentCatalogSubTab === 'catalog' || contentCatalogSubTab === 'paths' ? undefined : -1}
+            aria-hidden={contentCatalogSubTab !== 'catalog' && contentCatalogSubTab !== 'paths'}
             onClick={() => {
-              if (contentCatalogSubTab !== 'catalog') return;
-              catalogRequestedRef.current = true;
-              setCatalogRequested(true);
-              void refreshList();
+              if (contentCatalogSubTab === 'catalog') {
+                catalogRequestedRef.current = true;
+                setCatalogRequested(true);
+                void refreshList();
+                return;
+              }
+              if (contentCatalogSubTab === 'paths') {
+                void refreshList();
+                void pathBuilderRef.current?.reloadPaths();
+              }
             }}
             className={`inline-flex min-h-10 items-center gap-2 rounded-lg border border-[var(--border-color)] px-3 py-2 text-xs font-semibold hover:bg-[var(--hover-bg)] disabled:opacity-50 ${
-              contentCatalogSubTab !== 'catalog' ? 'invisible pointer-events-none' : ''
+              contentCatalogSubTab !== 'catalog' && contentCatalogSubTab !== 'paths'
+                ? 'invisible pointer-events-none'
+                : ''
             }`}
           >
-            <RefreshCw size={14} className={listLoading ? 'animate-spin' : ''} aria-hidden />
+            <RefreshCw
+              size={14}
+              className={
+                (contentCatalogSubTab === 'catalog' && listLoading) ||
+                (contentCatalogSubTab === 'paths' && (listLoading || pathsListLoading))
+                  ? 'animate-spin'
+                  : ''
+              }
+              aria-hidden
+            />
             Reload list
           </button>
         </div>
@@ -1008,6 +965,21 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           Learning paths
         </button>
       </div>
+
+      {contentCatalogSubTab === 'paths' && (
+        <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+          Saved paths appear in the learner <strong className="text-[var(--text-secondary)]">Paths</strong> menu and
+          filter the course library. Published courses only can be added—use the{' '}
+          <strong className="text-[var(--text-secondary)]">Catalog</strong> tab first if the list is empty (
+          <strong className="text-[var(--text-secondary)]">Catalog bootstrap</strong> on Alerts when needed). Choose{' '}
+          <strong className="text-[var(--text-secondary)]">New path</strong> in the list for a fresh path (smallest unused{' '}
+          <code className="text-orange-500/90">P1</code>, <code className="text-orange-500/90">P2</code>, …) or an
+          existing path (sorted A–Z). Drag to reorder courses; expand a course to reorder modules and lessons—
+          <strong className="text-[var(--text-secondary)]">Save path</strong> stores the path;{' '}
+          <strong className="text-[var(--text-secondary)]">Save course structure</strong> updates the published
+          course document like the catalog editor.
+        </p>
+      )}
 
       {contentCatalogSubTab === 'catalog' && (
         <>
@@ -1037,7 +1009,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               value={selector}
               onFocus={openCourseCatalogOnce}
               onMouseDown={openCourseCatalogOnce}
-              onChange={(e) => pickCourse(e.target.value)}
+              onChange={onCourseSelectChange}
               className="box-border min-h-[42px] min-w-0 flex-1 rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
             >
               <option value="" disabled>
@@ -1066,7 +1038,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   !selector ||
                   !publishedList.some((c) => c.id === selector)
                 }
-                onClick={duplicatePublishedAsDraft}
+                onClick={requestDuplicateOrConfirm}
                 title="Clone the selected course into a new draft with a new document ID"
                 aria-label="Duplicate as new draft"
                 className="inline-flex shrink-0 items-center justify-center rounded-lg border border-[var(--border-color)] px-2.5 min-h-[42px] min-w-[42px] hover:bg-[var(--hover-bg)] disabled:pointer-events-none disabled:opacity-40"
@@ -1116,44 +1088,38 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             </select>
           </div>
         </div>
+
+        {draft && (
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={busy || !draft || (baselineJson !== null && !isDirty)}
+              onClick={() => void handleSave()}
+              aria-busy={busy}
+              className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-orange-500 px-5 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-40"
+            >
+              {busy ? (
+                <Loader2 size={18} className="shrink-0 animate-spin" aria-hidden />
+              ) : (
+                <Save size={18} className="shrink-0" aria-hidden />
+              )}
+              Save changes
+            </button>
+            <button
+              type="button"
+              disabled={busy || !publishedList.some((c) => c.id === draft.id)}
+              onClick={openDeleteDialog}
+              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-red-500/40 px-5 py-2 text-sm font-bold text-red-400 hover:bg-red-500/10 disabled:opacity-40"
+            >
+              <Trash2 size={18} aria-hidden />
+              Delete published
+            </button>
+          </div>
+        )}
         </div>
 
         {draft && (
-          <div className="space-y-4 border-t border-[var(--border-color)] pt-4">
-          {canRenamePublishedDoc && (
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
-              <div>
-                <h4 className="text-sm font-bold text-[var(--text-primary)]">Change document ID</h4>
-                <p className="text-xs text-[var(--text-muted)] mt-1 leading-relaxed">
-                  Publishes this course under a new catalog id and removes the old entry. Fix module/lesson ids below if
-                  they still use the old course prefix (e.g. rename <code className="text-orange-500/80">C1M1</code>{' '}
-                  when moving to <code className="text-orange-500/80">C2</code>).
-                </p>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-                <label className="block space-y-1 flex-1 min-w-0">
-                  <span className="text-xs font-semibold text-[var(--text-secondary)]">
-                    New document ID
-                  </span>
-                  <input
-                    value={renameDocId}
-                    onChange={(e) => setRenameDocId(e.target.value)}
-                    placeholder={`e.g. not ${draft.id}`}
-                    className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm font-mono"
-                  />
-                </label>
-                <button
-                  type="button"
-                  disabled={busy || !renameDocId.trim() || renameDocId.trim() === draft.id}
-                  onClick={() => void handleRenameDocumentId()}
-                  className="inline-flex items-center justify-center rounded-lg border border-amber-500/50 bg-amber-500/15 px-4 py-2 text-sm font-bold text-amber-600 dark:text-amber-400 hover:bg-amber-500/25 disabled:opacity-40 disabled:pointer-events-none shrink-0"
-                >
-                  Apply new document ID
-                </button>
-              </div>
-            </div>
-          )}
-
+          <div className="space-y-4">
           <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/20">
             <button
               type="button"
@@ -1546,48 +1512,6 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               </div>
             ))}
           </div>
-
-          <div className="flex flex-wrap gap-3 pt-2">
-            <button
-              type="button"
-              disabled={busy || !draft || (baselineJson !== null && !isDirty)}
-              onClick={() => void handleSave()}
-              aria-busy={busy}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-orange-500 px-6 py-3 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-50"
-            >
-              {busy ? (
-                <Loader2 size={18} className="shrink-0 animate-spin" aria-hidden />
-              ) : (
-                <Save size={18} className="shrink-0" aria-hidden />
-              )}
-              Save changes
-            </button>
-            {cancelVisible && (
-              <button
-                type="button"
-                disabled={cancelDisabled}
-                title={
-                  cancelDisabled && selector !== '__new__' && !isDirty
-                    ? 'No unsaved changes to discard'
-                    : undefined
-                }
-                onClick={openCancelDialog}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] hover:bg-[var(--hover-bg)] disabled:opacity-50 px-6 py-3 text-sm font-bold text-[var(--text-secondary)]"
-              >
-                <RotateCcw size={18} className="shrink-0" aria-hidden />
-                Cancel
-              </button>
-            )}
-            <button
-              type="button"
-              disabled={busy || !publishedList.some((c) => c.id === draft.id)}
-              onClick={openDeleteDialog}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-500/40 px-6 py-3 text-sm font-bold text-red-400 hover:bg-red-500/10 disabled:opacity-30"
-            >
-              <Trash2 size={18} />
-              Delete published
-            </button>
-          </div>
           </div>
         )}
       </div>
@@ -1595,14 +1519,73 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       )}
 
       {contentCatalogSubTab === 'paths' && (
-        <div className="min-w-0 w-full rounded-xl border border-[var(--border-color)]/60 bg-[var(--bg-primary)]/40 px-4 py-10 text-center sm:px-6">
-          <Route size={28} className="mx-auto mb-3 text-[var(--text-muted)]" aria-hidden />
-          <p className="text-sm font-semibold text-[var(--text-primary)]">Learning paths</p>
-          <p className="mt-2 text-xs text-[var(--text-muted)] leading-relaxed">
-            Path authoring and management will appear here.
-          </p>
-        </div>
+        <PathBuilderSection
+          ref={pathBuilderRef}
+          key={pathBuilderResetKey}
+          publishedList={publishedList}
+          onRefreshPublishedList={refreshList}
+          onCatalogChanged={onCatalogChanged}
+          onPathsDirtyChange={setPathBuilderDirty}
+          onPathsLoadingChange={setPathsListLoading}
+        />
       )}
+
+      <AnimatePresence>
+        {pathSubTabSwitchConfirmOpen && (
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="admin-path-subtab-switch-title"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="w-full max-w-lg overflow-hidden rounded-3xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl"
+            >
+              <div className="flex items-center justify-between gap-4 border-b border-[var(--border-color)] p-6">
+                <h2
+                  id="admin-path-subtab-switch-title"
+                  className="text-xl font-bold text-[var(--text-primary)]"
+                >
+                  Leave without saving?
+                </h2>
+                <button
+                  type="button"
+                  onClick={closePathSubTabSwitchConfirm}
+                  className="shrink-0 rounded-full p-2 transition-colors hover:bg-[var(--hover-bg)]"
+                  aria-label="Close"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="space-y-4 p-6">
+                <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
+                  Switching to Catalog will discard unsaved changes to the learning path builder.
+                </p>
+                <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={closePathSubTabSwitchConfirm}
+                    className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-5 py-3 text-sm font-bold text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)] sm:w-auto"
+                  >
+                    Keep editing
+                  </button>
+                  <button
+                    type="button"
+                    autoFocus
+                    onClick={confirmSwitchToCatalogFromPathsTab}
+                    className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-orange-600 sm:w-auto"
+                  >
+                    Discard and switch
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {subTabSwitchConfirmOpen && (
@@ -1662,61 +1645,56 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       </AnimatePresence>
 
       <AnimatePresence>
-        {cancelDialogOpen && cancelDialogCopy && (
+        {courseLeaveDialog && (
           <div
             className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="admin-catalog-cancel-title"
+            aria-labelledby="admin-catalog-course-leave-title"
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl"
+              className="w-full max-w-lg overflow-hidden rounded-3xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl"
             >
-              <div className="p-6 border-b border-[var(--border-color)] flex items-center justify-between gap-4">
+              <div className="flex items-center justify-between gap-4 border-b border-[var(--border-color)] p-6">
                 <h2
-                  id="admin-catalog-cancel-title"
+                  id="admin-catalog-course-leave-title"
                   className="text-xl font-bold text-[var(--text-primary)]"
                 >
-                  {cancelDialogCopy.title}
+                  Unsaved changes?
                 </h2>
                 <button
                   type="button"
-                  onClick={closeCancelDialog}
-                  className="p-2 hover:bg-[var(--hover-bg)] rounded-full transition-colors shrink-0"
+                  onClick={closeCourseLeaveDialog}
+                  className="shrink-0 rounded-full p-2 transition-colors hover:bg-[var(--hover-bg)]"
                   aria-label="Close"
                 >
                   <X size={20} />
                 </button>
               </div>
-              <div className="p-6 space-y-4">
-                <p className="text-sm text-[var(--text-secondary)] leading-relaxed">{cancelDialogCopy.body}</p>
-                <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
+              <div className="space-y-4 p-6">
+                <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
+                  {courseLeaveDialog.kind === 'select'
+                    ? 'You have unsaved changes. Discard them to switch to another course, or keep editing.'
+                    : 'You have unsaved changes. Discard them to duplicate from the last saved version, or keep editing.'}
+                </p>
+                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:justify-end">
                   <button
                     type="button"
-                    onClick={closeCancelDialog}
-                    className="w-full sm:w-auto inline-flex items-center justify-center rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] hover:bg-[var(--hover-bg)] px-5 py-3 text-sm font-bold text-[var(--text-secondary)] transition-colors"
+                    onClick={closeCourseLeaveDialog}
+                    className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-5 py-3 text-sm font-bold text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)] sm:w-auto"
                   >
                     Keep editing
                   </button>
                   <button
                     type="button"
                     autoFocus
-                    onClick={() => commitCancel(cancelDialogVariant!)}
-                    aria-label={
-                      cancelDialogVariant === 'catalog-dirty'
-                        ? 'Discard unsaved changes and restore the last saved version of this course'
-                        : cancelDialogVariant === 'new-dirty'
-                          ? 'Discard changes and start over with a new course draft'
-                          : cancelDialogVariant === 'new-clean'
-                            ? 'Clear the form and start a fresh course draft'
-                            : undefined
-                    }
-                    className="w-full sm:w-auto inline-flex items-center justify-center rounded-xl bg-orange-500 hover:bg-orange-600 text-white px-5 py-3 text-sm font-bold transition-colors"
+                    onClick={confirmCourseLeaveDiscard}
+                    className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-orange-600 sm:w-auto"
                   >
-                    {cancelDialogCopy.primary}
+                    Discard and continue
                   </button>
                 </div>
               </div>

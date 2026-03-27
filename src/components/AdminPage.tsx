@@ -60,6 +60,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   const [showValidationHints, setShowValidationHints] = useState(false);
   const [targetingOpen, setTargetingOpen] = useState(false);
   const [catalogDirty, setCatalogDirty] = useState(false);
+  const [pathDirty, setPathDirty] = useState(false);
   const [navigationGuardOpen, setNavigationGuardOpen] = useState(false);
   const [pendingNavigation, setPendingNavigation] = useState<PendingAdminNavigation | null>(null);
   const courseRef = useRef<HTMLSelectElement | null>(null);
@@ -76,7 +77,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
     );
   }, [tab, title, message, moduleId, lessonId]);
 
-  const hasUnsavedWork = alertsDirty || catalogDirty;
+  const hasUnsavedWork = alertsDirty || catalogDirty || pathDirty;
 
   useEffect(() => {
     onUnsavedWorkChange?.(hasUnsavedWork);
@@ -417,6 +418,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
           <AdminCourseCatalogSection
             onCatalogChanged={onCatalogChanged}
             onDraftDirtyChange={setCatalogDirty}
+            onPathsDirtyChange={setPathDirty}
           />
         )}
 

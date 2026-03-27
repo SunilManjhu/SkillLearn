@@ -391,6 +391,20 @@ service cloud.firestore {
         (!('updatedAt' in data) || data.updatedAt is timestamp);
     }
 
+    function isValidLearningPathWrite(data) {
+      return data.keys().hasAll(['title', 'courseIds']) &&
+        data.title is string && data.title.size() > 0 && data.title.size() < 500 &&
+        data.courseIds is list && data.courseIds.size() <= 100 &&
+        (!('description' in data) || (data.description is string && data.description.size() < 20000)) &&
+        (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    match /learningPaths/{pathId} {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidLearningPathWrite(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
     match /publishedCourses/{courseId} {
       allow read: if true;
       allow create, update: if isAdmin() && isValidPublishedCourseWrite(request.resource.data);

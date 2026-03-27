@@ -11,6 +11,7 @@ import { useDialogKeyboard } from './hooks/useDialogKeyboard';
 import { ContactForm } from './components/ContactForm';
 import { DemoLearningAgent } from './components/DemoLearningAgent';
 import { STATIC_CATALOG_FALLBACK, Course, Lesson } from './data/courses';
+import type { LearningPath } from './data/learningPaths';
 import { AdminPage } from './components/AdminPage';
 import {
   ensureUserProfile,
@@ -20,6 +21,7 @@ import {
   deleteUserProfileDocument,
 } from './utils/userProfileFirestore';
 import { peekResolvedCatalogCourses, resolveCatalogCourses } from './utils/publishedCoursesFirestore';
+import { loadLearningPathsFromFirestore } from './utils/learningPathsFirestore';
 import { enrollUserInCourse, fetchEnrolledCourseIds } from './utils/enrollmentsFirestore';
 import {
   fetchActiveAlertsForCourses,
@@ -374,6 +376,9 @@ export default function App() {
     () => initialRoute.deferredCourseRoute
   );
   const [searchQuery, setSearchQuery] = useState('');
+  /** When set, catalog lists only courses in this path's `courseIds` (from Firestore `learningPaths`). */
+  const [selectedLearningPathId, setSelectedLearningPathId] = useState<string | null>(null);
+  const [learningPaths, setLearningPaths] = useState<LearningPath[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [showMoreCategories, setShowMoreCategories] = useState(false);
   const [focusedCategoryIndex, setFocusedCategoryIndex] = useState(0);
@@ -640,9 +645,10 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
-    void resolveCatalogCourses().then((courses) => {
+    void Promise.all([resolveCatalogCourses(), loadLearningPathsFromFirestore()]).then(([courses, paths]) => {
       if (!cancelled) {
         setCatalogCourses(courses);
+        setLearningPaths(paths);
         setLiveCatalogHydrated(true);
       }
     });
@@ -652,10 +658,19 @@ export default function App() {
   }, []);
 
   const refreshCatalogCourses = useCallback(async () => {
-    const next = await resolveCatalogCourses();
+    const [next, paths] = await Promise.all([resolveCatalogCourses(), loadLearningPathsFromFirestore()]);
     setCatalogCourses(next);
+    setLearningPaths(paths);
     setLiveCatalogHydrated(true);
   }, []);
+
+  /** Drop path filter if the path document no longer exists (e.g. deleted in admin). */
+  useEffect(() => {
+    if (!selectedLearningPathId) return;
+    if (!learningPaths.some((p) => p.id === selectedLearningPathId)) {
+      setSelectedLearningPathId(null);
+    }
+  }, [learningPaths, selectedLearningPathId]);
 
   /**
    * Re-bind overview/player to the live catalog when it loads (or refreshes).
@@ -1295,18 +1310,28 @@ export default function App() {
       .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   }, [catalogCourses, categoryFilterRevision]);
 
-  const filteredCourses = catalogCourses.filter(course => {
-    const matchesSearch = course.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+  const filteredCourses = catalogCourses.filter((course) => {
+    const pathCourseIds =
+      selectedLearningPathId != null
+        ? learningPaths.find((p) => p.id === selectedLearningPathId)?.courseIds
+        : null;
+    const matchesPath =
+      selectedLearningPathId == null ||
+      (pathCourseIds != null && pathCourseIds.includes(course.id));
+
+    const matchesSearch =
+      course.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       course.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
       course.author.toLowerCase().includes(searchQuery.toLowerCase());
-    
+
     const matchesCategory = selectedCategory === 'All' || course.category === selectedCategory;
-    
-    return matchesSearch && matchesCategory;
+
+    return matchesPath && matchesSearch && matchesCategory;
   });
 
   const clearFilters = () => {
     setSearchQuery('');
+    setSelectedLearningPathId(null);
     setSelectedCategory('All');
   };
 
@@ -1595,18 +1620,21 @@ export default function App() {
 
   const handleCategorySelect = (category: string) => {
     setSearchQuery('');
+    setSelectedLearningPathId(null);
     setSelectedCategory(category);
     handleNavigate('catalog', false);
   };
 
-  const handlePathSelect = (path: string) => {
-    setSearchQuery(path);
+  const handlePathSelect = (pathId: string) => {
+    setSelectedLearningPathId(pathId);
+    setSearchQuery('');
     setSelectedCategory('All');
     handleNavigate('catalog', false);
   };
 
   const handleSkillSelect = (skill: string) => {
     setSearchQuery(skill);
+    setSelectedLearningPathId(null);
     setSelectedCategory('All');
     handleNavigate('catalog', false);
   };
@@ -2005,13 +2033,25 @@ export default function App() {
   );
 
   const renderCatalog = () => {
-    const catalogFiltersActive = Boolean(searchQuery || selectedCategory !== 'All');
+    const catalogFiltersActive = Boolean(
+      searchQuery || selectedCategory !== 'All' || selectedLearningPathId != null
+    );
+    const selectedPathTitle =
+      selectedLearningPathId != null
+        ? learningPaths.find((p) => p.id === selectedLearningPathId)?.title
+        : undefined;
+    const catalogHeading =
+      selectedPathTitle != null
+        ? `Path: ${selectedPathTitle}`
+        : searchQuery
+          ? `Search Results for "${searchQuery}"`
+          : 'Course Library';
     return (
       <div className="mx-auto min-w-0 max-w-7xl px-4 pb-12 pt-[max(5.5rem,calc(4rem+env(safe-area-inset-top,0px)))] sm:px-6 sm:pb-20 sm:pt-24">
         <div className="sticky top-16 z-30 -mx-4 mb-6 border-b border-[var(--border-color)]/80 bg-[var(--bg-primary)] px-4 pb-4 sm:static sm:z-auto sm:mx-0 sm:mb-10 sm:border-0 sm:bg-transparent sm:px-0 sm:pb-0">
           <div className="mb-4 flex flex-row items-center justify-between gap-2 sm:mb-4 sm:gap-4">
             <h1 className="min-w-0 flex-1 break-words pr-1 text-2xl font-bold leading-tight text-[var(--text-primary)] sm:text-3xl md:text-4xl">
-              {searchQuery ? `Search Results for "${searchQuery}"` : 'Course Library'}
+              {catalogHeading}
             </h1>
             <button
               type="button"
@@ -2366,6 +2406,7 @@ export default function App() {
           searchQuery={searchQuery}
           onSearchChange={handleSearchChange}
           onCategorySelect={handleCategorySelect}
+          learningPaths={learningPaths}
           onPathSelect={handlePathSelect}
           onSkillSelect={handleSkillSelect}
           onClearFilters={clearFilters}

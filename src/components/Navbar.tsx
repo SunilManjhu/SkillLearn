@@ -29,7 +29,10 @@ interface NavbarProps {
   searchQuery: string;
   onSearchChange: (query: string) => void;
   onCategorySelect: (category: string) => void;
-  onPathSelect: (path: string) => void;
+  /** Titles and ids from Firestore `learningPaths` (same as admin Path builder). */
+  learningPaths?: ReadonlyArray<{ id: string; title: string }>;
+  /** Path document id from `learningPaths`. */
+  onPathSelect: (pathId: string) => void;
   onSkillSelect: (skill: string) => void;
   onClearFilters: () => void;
   theme: 'dark' | 'light';
@@ -61,6 +64,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   searchQuery, 
   onSearchChange, 
   onCategorySelect,
+  learningPaths = [],
   onPathSelect,
   onSkillSelect,
   onClearFilters,
@@ -100,12 +104,11 @@ export const Navbar: React.FC<NavbarProps> = ({
   useBodyScrollLock(mobileMenuOpen || mobileSearchOpen);
 
   const browseItems = allPresetCatalogCategories();
-  const pathItems = ['Web Development', 'Mobile Development', 'Data Engineering', 'DevOps', 'Machine Learning'];
   const skillItems = ['React', 'TypeScript', 'Node.js', 'Python', 'Docker', 'Kubernetes', 'AWS'];
 
   const getItems = () => {
     if (openDropdown === 'browse') return browseItems;
-    if (openDropdown === 'paths') return pathItems;
+    if (openDropdown === 'paths') return learningPaths.map((p) => p.id);
     if (openDropdown === 'skills') return skillItems;
     return [];
   };
@@ -254,6 +257,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     // If dropdown is open, handle vertical navigation
     if (openDropdown === type && type) {
       const items = getItems();
+      if (items.length === 0) return;
       if (e.key === 'ArrowDown') {
         e.preventDefault();
         setFocusedItemIndex(prev => (prev + 1) % items.length);
@@ -369,16 +373,21 @@ export const Navbar: React.FC<NavbarProps> = ({
               <div 
                 className="absolute top-full left-0 w-56 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-b-lg shadow-xl py-2 z-50"
               >
-                {pathItems.map((item, index) => (
-                  <button
-                    key={item}
-                    onClick={() => handleItemSelect(item)}
-                    onMouseEnter={() => setFocusedItemIndex(index)}
-                    className={`w-full text-left px-4 py-2 transition-colors focus:outline-none ${focusedItemIndex === index ? 'bg-[var(--hover-bg)] text-orange-500' : 'hover:bg-[var(--hover-bg)] hover:text-orange-500'}`}
-                  >
-                    {item}
-                  </button>
-                ))}
+                {learningPaths.length === 0 ? (
+                  <p className="px-4 py-2 text-sm text-[var(--text-muted)]">No learning paths yet</p>
+                ) : (
+                  learningPaths.map((path, index) => (
+                    <button
+                      key={path.id}
+                      type="button"
+                      onClick={() => handleItemSelect(path.id)}
+                      onMouseEnter={() => setFocusedItemIndex(index)}
+                      className={`w-full text-left px-4 py-2 transition-colors focus:outline-none ${focusedItemIndex === index ? 'bg-[var(--hover-bg)] text-orange-500' : 'hover:bg-[var(--hover-bg)] hover:text-orange-500'}`}
+                    >
+                      {path.title || path.id}
+                    </button>
+                  ))
+                )}
               </div>
             )}
           </div>
@@ -819,20 +828,24 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
                 {mobileNavExpand === 'paths' && (
                   <div className="border-t border-[var(--border-color)] bg-[var(--bg-primary)]/30 pb-2">
-                    {pathItems.map((item) => (
-                      <button
-                        key={item}
-                        type="button"
-                        className="w-full px-6 py-2.5 text-left text-sm hover:bg-[var(--hover-bg)] hover:text-orange-500"
-                        onClick={() => {
-                          onPathSelect(item);
-                          setMobileMenuOpen(false);
-                          setMobileNavExpand(null);
-                        }}
-                      >
-                        {item}
-                      </button>
-                    ))}
+                    {learningPaths.length === 0 ? (
+                      <p className="px-6 py-2.5 text-sm text-[var(--text-muted)]">No learning paths yet</p>
+                    ) : (
+                      learningPaths.map((path) => (
+                        <button
+                          key={path.id}
+                          type="button"
+                          className="w-full px-6 py-2.5 text-left text-sm hover:bg-[var(--hover-bg)] hover:text-orange-500"
+                          onClick={() => {
+                            onPathSelect(path.id);
+                            setMobileMenuOpen(false);
+                            setMobileNavExpand(null);
+                          }}
+                        >
+                          {path.title || path.id}
+                        </button>
+                      ))
+                    )}
                   </div>
                 )}
               </div>
