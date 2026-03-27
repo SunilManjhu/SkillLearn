@@ -6,6 +6,7 @@ import {
   Loader2,
   Plus,
   RotateCcw,
+  Route,
   Save,
   Trash2,
   RefreshCw,
@@ -247,6 +248,9 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const { showActionToast, actionToast } = useAdminActionToast();
   /** Re-read category option list when extras change in localStorage (same tab). */
   const [categoryOptionsVersion, setCategoryOptionsVersion] = useState(0);
+
+  const [coursesSubTab, setCoursesSubTab] = useState<'published' | 'paths'>('published');
+  const [subTabSwitchConfirmOpen, setSubTabSwitchConfirmOpen] = useState(false);
 
   /** Full list for the Category dropdown (presets, saved extras, categories from published courses). */
   const categorySelectOptions = useMemo(() => {
@@ -758,7 +762,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const [cancelDialogVariant, setCancelDialogVariant] = useState<CancelDialogVariant | null>(null);
   const cancelDialogOpen = cancelDialogVariant !== null;
 
-  useBodyScrollLock(cancelDialogOpen || deleteDialogOpen);
+  useBodyScrollLock(cancelDialogOpen || deleteDialogOpen || subTabSwitchConfirmOpen);
 
   const closeCancelDialog = useCallback(() => setCancelDialogVariant(null), []);
 
@@ -787,12 +791,41 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     [draft, baselineJson, publishedList, showActionToast]
   );
 
+  const requestCoursesSubTab = useCallback(
+    (next: 'published' | 'paths') => {
+      if (next === 'published') {
+        setCoursesSubTab('published');
+        return;
+      }
+      if (!isDirty) {
+        setCoursesSubTab('paths');
+        return;
+      }
+      setSubTabSwitchConfirmOpen(true);
+    },
+    [isDirty]
+  );
+
+  const closeSubTabSwitchConfirm = useCallback(() => setSubTabSwitchConfirmOpen(false), []);
+
+  const confirmSwitchToPathsTab = useCallback(() => {
+    commitCancel('published-dirty');
+    setCoursesSubTab('paths');
+    setSubTabSwitchConfirmOpen(false);
+  }, [commitCancel]);
+
   useDialogKeyboard({
     open: cancelDialogOpen,
     onClose: closeCancelDialog,
     onPrimaryAction: () => {
       if (cancelDialogVariant) commitCancel(cancelDialogVariant);
     },
+  });
+
+  useDialogKeyboard({
+    open: subTabSwitchConfirmOpen,
+    onClose: closeSubTabSwitchConfirm,
+    onPrimaryAction: confirmSwitchToPathsTab,
   });
 
   useDialogKeyboard({
@@ -922,27 +955,59 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           : null;
 
   return (
-    <div className="space-y-6 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:p-6">
+    <div className="min-w-0 space-y-6 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 text-lg font-bold">
-          <BookOpen size={20} className="text-orange-500" />
-          Published courses
+        <h2 className="flex min-w-0 items-center gap-2 text-lg font-bold">
+          <BookOpen size={20} className="shrink-0 text-orange-500" />
+          <span className="min-w-0">Course catalog</span>
         </h2>
+        {/* Keep a stable slot so the title row does not jump when switching tabs */}
+        <div className="flex shrink-0 items-center justify-end">
+          <button
+            type="button"
+            disabled={listLoading || coursesSubTab !== 'published'}
+            tabIndex={coursesSubTab === 'published' ? undefined : -1}
+            aria-hidden={coursesSubTab !== 'published'}
+            onClick={() => {
+              if (coursesSubTab !== 'published') return;
+              catalogRequestedRef.current = true;
+              setCatalogRequested(true);
+              void refreshList();
+            }}
+            className={`inline-flex min-h-10 items-center gap-2 rounded-lg border border-[var(--border-color)] px-3 py-2 text-xs font-semibold hover:bg-[var(--hover-bg)] disabled:opacity-50 ${
+              coursesSubTab !== 'published' ? 'invisible pointer-events-none' : ''
+            }`}
+          >
+            <RefreshCw size={14} className={listLoading ? 'animate-spin' : ''} aria-hidden />
+            Reload list
+          </button>
+        </div>
+      </div>
+
+      <div className="-mx-1 flex min-h-[2.75rem] gap-2 overflow-x-auto overflow-y-hidden overscroll-x-contain border-b border-[var(--border-color)] px-1 pb-2 [scrollbar-width:none] sm:flex-wrap sm:overflow-visible [&::-webkit-scrollbar]:hidden">
         <button
           type="button"
-          disabled={listLoading}
-          onClick={() => {
-            catalogRequestedRef.current = true;
-            setCatalogRequested(true);
-            void refreshList();
-          }}
-          className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[var(--border-color)] px-3 py-2 text-xs font-semibold hover:bg-[var(--hover-bg)] disabled:opacity-50"
+          onClick={() => requestCoursesSubTab('published')}
+          className={`inline-flex min-h-10 shrink-0 items-center rounded-lg px-3 py-2 text-sm font-semibold ${
+            coursesSubTab === 'published' ? 'bg-orange-500/20 text-orange-500' : 'text-[var(--text-secondary)]'
+          }`}
         >
-          <RefreshCw size={14} className={listLoading ? 'animate-spin' : ''} />
-          Reload list
+          Published courses
+        </button>
+        <button
+          type="button"
+          onClick={() => requestCoursesSubTab('paths')}
+          className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold ${
+            coursesSubTab === 'paths' ? 'bg-orange-500/20 text-orange-500' : 'text-[var(--text-secondary)]'
+          }`}
+        >
+          <Route size={14} aria-hidden />
+          Learning paths
         </button>
       </div>
 
+      {coursesSubTab === 'published' && (
+        <>
       <p className="text-xs text-[var(--text-muted)] leading-relaxed">
         Saved changes appear in the live course catalog for learners. If the list is empty, use{' '}
         <strong className="text-[var(--text-secondary)]">Catalog bootstrap</strong> on the Alerts tab first.
@@ -1541,6 +1606,75 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           </div>
         )}
       </div>
+        </>
+      )}
+
+      {coursesSubTab === 'paths' && (
+        <div className="min-w-0 w-full rounded-xl border border-[var(--border-color)]/60 bg-[var(--bg-primary)]/40 px-4 py-10 text-center sm:px-6">
+          <Route size={28} className="mx-auto mb-3 text-[var(--text-muted)]" aria-hidden />
+          <p className="text-sm font-semibold text-[var(--text-primary)]">Learning paths</p>
+          <p className="mt-2 text-xs text-[var(--text-muted)] leading-relaxed">
+            Path authoring and management will appear here.
+          </p>
+        </div>
+      )}
+
+      <AnimatePresence>
+        {subTabSwitchConfirmOpen && (
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="admin-catalog-subtab-switch-title"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="w-full max-w-lg overflow-hidden rounded-3xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl"
+            >
+              <div className="flex items-center justify-between gap-4 border-b border-[var(--border-color)] p-6">
+                <h2
+                  id="admin-catalog-subtab-switch-title"
+                  className="text-xl font-bold text-[var(--text-primary)]"
+                >
+                  Leave without saving?
+                </h2>
+                <button
+                  type="button"
+                  onClick={closeSubTabSwitchConfirm}
+                  className="shrink-0 rounded-full p-2 transition-colors hover:bg-[var(--hover-bg)]"
+                  aria-label="Close"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="space-y-4 p-6">
+                <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
+                  Switching to Learning paths will discard unsaved changes to this course.
+                </p>
+                <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={closeSubTabSwitchConfirm}
+                    className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-5 py-3 text-sm font-bold text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)] sm:w-auto"
+                  >
+                    Keep editing
+                  </button>
+                  <button
+                    type="button"
+                    autoFocus
+                    onClick={confirmSwitchToPathsTab}
+                    className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-orange-600 sm:w-auto"
+                  >
+                    Discard and switch
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {cancelDialogOpen && cancelDialogCopy && (
