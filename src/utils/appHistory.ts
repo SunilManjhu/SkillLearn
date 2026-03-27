@@ -29,8 +29,8 @@ export interface CertificateHistorySnapshot {
   isPublic: boolean;
 }
 
-/** Admin portal sub-routes (Courses tab uses internal id `catalog`). */
-export type AdminHistoryTab = 'alerts' | 'catalog' | 'moderation' | 'users';
+/** Admin portal sub-routes (Content tab uses internal id `catalog`; Roles tab uses `roles`). */
+export type AdminHistoryTab = 'alerts' | 'catalog' | 'moderation' | 'roles';
 
 export interface AppHistoryPayload {
   v: 1;
@@ -81,9 +81,9 @@ export function payloadToHash(payload: AppHistoryPayload): string {
   if (view === 'admin') {
     const tab = adminTab ?? 'alerts';
     if (tab === 'alerts') return '#/admin';
-    if (tab === 'catalog') return '#/admin/courses';
+    if (tab === 'catalog') return '#/admin/content';
     if (tab === 'moderation') return '#/admin/moderation';
-    return '#/admin/users';
+    return '#/admin/roles';
   }
 
   if (isSimpleView(view)) return `#/${view}`;
@@ -133,9 +133,9 @@ export function parseHashToPayload(hash: string): AppHistoryPayload | null {
   if (head === 'admin') {
     let adminTab: AdminHistoryTab = 'alerts';
     const sub = segments[1]?.toLowerCase();
-    if (sub === 'courses' || sub === 'catalog') adminTab = 'catalog';
+    if (sub === 'content' || sub === 'courses' || sub === 'catalog') adminTab = 'catalog';
     else if (sub === 'moderation') adminTab = 'moderation';
-    else if (sub === 'users') adminTab = 'users';
+    else if (sub === 'roles' || sub === 'users') adminTab = 'roles';
     else if (sub === 'alerts') adminTab = 'alerts';
     return { v: 1, view: 'admin', adminTab };
   }
@@ -156,6 +156,10 @@ export function readPayloadFromHistoryState(state: unknown): AppHistoryPayload |
   /** Legacy history entries used `settings`; map to profile. */
   if ((p.view as string) === 'settings') {
     return { ...p, v: 1, view: 'profile' };
+  }
+  /** Admin tab was renamed `users` → `roles` (URL `#/admin/roles`). */
+  if (p.view === 'admin' && (p.adminTab as string | undefined) === 'users') {
+    return { ...p, v: 1, view: 'admin', adminTab: 'roles' };
   }
   return p;
 }

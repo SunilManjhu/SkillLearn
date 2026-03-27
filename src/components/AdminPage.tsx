@@ -23,7 +23,7 @@ interface AdminPageProps {
   onTabChange: (tab: AdminHistoryTab) => void;
   onDismiss: () => void;
   onCatalogChanged: () => void | Promise<void>;
-  /** Notifies parent when Alerts/Courses drafts have unsaved work (for leaving admin via shell navigation). */
+  /** Notifies parent when Alerts/Content drafts have unsaved work (for leaving admin via shell navigation). */
   onUnsavedWorkChange?: (dirty: boolean) => void;
 }
 
@@ -240,9 +240,9 @@ export const AdminPage: React.FC<AdminPageProps> = ({
 
         <div className="-mx-1 flex gap-2 overflow-x-auto overflow-y-hidden overscroll-x-contain px-1 py-0.5 [scrollbar-width:none] sm:flex-wrap sm:overflow-visible [&::-webkit-scrollbar]:hidden">
           {tabBtn('alerts', 'Alerts', <Send size={16} />)}
-          {tabBtn('catalog', 'Courses', <BookOpen size={16} />)}
+          {tabBtn('catalog', 'Content', <BookOpen size={16} />)}
           {tabBtn('moderation', 'Moderation', <Flag size={16} />)}
-          {tabBtn('users', 'Roles', <Users size={16} />)}
+          {tabBtn('roles', 'Roles', <Users size={16} />)}
         </div>
 
         {tab === 'alerts' && (
@@ -426,7 +426,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
             onInitialSubTabConsumed={onModerationInitialSubTabConsumed}
           />
         )}
-        {tab === 'users' && <AdminUserRolesSection currentAdminUid={currentAdminUid} />}
+        {tab === 'roles' && <AdminUserRolesSection currentAdminUid={currentAdminUid} />}
 
         <AnimatePresence>
           {navigationGuardOpen && (

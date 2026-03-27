@@ -431,7 +431,7 @@ export default function App() {
   const currentViewRef = useRef<View>(currentView);
   currentViewRef.current = currentView;
 
-  /** True while admin has unsaved Alerts or Courses draft (ref for synchronous checks in navigation). */
+  /** True while admin has unsaved Alerts or Content draft (ref for synchronous checks in navigation). */
   const adminPortalUnsavedRef = useRef(false);
   const [adminExitGuardOpen, setAdminExitGuardOpen] = useState(false);
   const pendingAppAdminExitRef = useRef<PendingAppAdminExit | null>(null);

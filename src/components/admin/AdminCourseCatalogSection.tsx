@@ -192,7 +192,10 @@ function remapCourseToStructuredIds(course: Course, newCourseId: string): Course
   };
 }
 
-type CancelDialogVariant = 'new-dirty' | 'new-clean' | 'published-dirty';
+type CancelDialogVariant = 'new-dirty' | 'new-clean' | 'catalog-dirty';
+
+/** Sub-tabs inside Course catalog: course entries vs learning paths. */
+type ContentCatalogSubTab = 'catalog' | 'paths';
 
 interface AdminCourseCatalogSectionProps {
   onCatalogChanged: () => void | Promise<void>;
@@ -249,7 +252,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   /** Re-read category option list when extras change in localStorage (same tab). */
   const [categoryOptionsVersion, setCategoryOptionsVersion] = useState(0);
 
-  const [coursesSubTab, setCoursesSubTab] = useState<'published' | 'paths'>('published');
+  const [contentCatalogSubTab, setContentCatalogSubTab] = useState<ContentCatalogSubTab>('catalog');
   const [subTabSwitchConfirmOpen, setSubTabSwitchConfirmOpen] = useState(false);
 
   /** Full list for the Category dropdown (presets, saved extras, categories from published courses). */
@@ -298,7 +301,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     void refreshList();
   }, [refreshList]);
 
-  const sortedPublishedCourses = useMemo(
+  const sortedCatalogCourses = useMemo(
     () =>
       [...publishedList].sort((a, b) => {
         const byTitle = a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
@@ -791,14 +794,14 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     [draft, baselineJson, publishedList, showActionToast]
   );
 
-  const requestCoursesSubTab = useCallback(
-    (next: 'published' | 'paths') => {
-      if (next === 'published') {
-        setCoursesSubTab('published');
+  const requestContentCatalogSubTab = useCallback(
+    (next: ContentCatalogSubTab) => {
+      if (next === 'catalog') {
+        setContentCatalogSubTab('catalog');
         return;
       }
       if (!isDirty) {
-        setCoursesSubTab('paths');
+        setContentCatalogSubTab('paths');
         return;
       }
       setSubTabSwitchConfirmOpen(true);
@@ -809,8 +812,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const closeSubTabSwitchConfirm = useCallback(() => setSubTabSwitchConfirmOpen(false), []);
 
   const confirmSwitchToPathsTab = useCallback(() => {
-    commitCancel('published-dirty');
-    setCoursesSubTab('paths');
+    commitCancel('catalog-dirty');
+    setContentCatalogSubTab('paths');
     setSubTabSwitchConfirmOpen(false);
   }, [commitCancel]);
 
@@ -842,7 +845,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       return;
     }
     if (!dirty) return;
-    setCancelDialogVariant('published-dirty');
+    setCancelDialogVariant('catalog-dirty');
   };
 
   useEffect(() => {
@@ -946,7 +949,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             body: 'The form will clear and you’ll get a fresh template to fill in.',
             primary: 'Yes, start fresh',
           }
-        : cancelDialogVariant === 'published-dirty'
+        : cancelDialogVariant === 'catalog-dirty'
           ? {
               title: 'Lose your changes?',
               body: 'The course will go back to how it looked when you last saved. Anything you’ve edited since then will be lost.',
@@ -965,17 +968,17 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         <div className="flex shrink-0 items-center justify-end">
           <button
             type="button"
-            disabled={listLoading || coursesSubTab !== 'published'}
-            tabIndex={coursesSubTab === 'published' ? undefined : -1}
-            aria-hidden={coursesSubTab !== 'published'}
+            disabled={listLoading || contentCatalogSubTab !== 'catalog'}
+            tabIndex={contentCatalogSubTab === 'catalog' ? undefined : -1}
+            aria-hidden={contentCatalogSubTab !== 'catalog'}
             onClick={() => {
-              if (coursesSubTab !== 'published') return;
+              if (contentCatalogSubTab !== 'catalog') return;
               catalogRequestedRef.current = true;
               setCatalogRequested(true);
               void refreshList();
             }}
             className={`inline-flex min-h-10 items-center gap-2 rounded-lg border border-[var(--border-color)] px-3 py-2 text-xs font-semibold hover:bg-[var(--hover-bg)] disabled:opacity-50 ${
-              coursesSubTab !== 'published' ? 'invisible pointer-events-none' : ''
+              contentCatalogSubTab !== 'catalog' ? 'invisible pointer-events-none' : ''
             }`}
           >
             <RefreshCw size={14} className={listLoading ? 'animate-spin' : ''} aria-hidden />
@@ -987,18 +990,18 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       <div className="-mx-1 flex min-h-[2.75rem] gap-2 overflow-x-auto overflow-y-hidden overscroll-x-contain border-b border-[var(--border-color)] px-1 pb-2 [scrollbar-width:none] sm:flex-wrap sm:overflow-visible [&::-webkit-scrollbar]:hidden">
         <button
           type="button"
-          onClick={() => requestCoursesSubTab('published')}
+          onClick={() => requestContentCatalogSubTab('catalog')}
           className={`inline-flex min-h-10 shrink-0 items-center rounded-lg px-3 py-2 text-sm font-semibold ${
-            coursesSubTab === 'published' ? 'bg-orange-500/20 text-orange-500' : 'text-[var(--text-secondary)]'
+            contentCatalogSubTab === 'catalog' ? 'bg-orange-500/20 text-orange-500' : 'text-[var(--text-secondary)]'
           }`}
         >
-          Published courses
+          Catalog
         </button>
         <button
           type="button"
-          onClick={() => requestCoursesSubTab('paths')}
+          onClick={() => requestContentCatalogSubTab('paths')}
           className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold ${
-            coursesSubTab === 'paths' ? 'bg-orange-500/20 text-orange-500' : 'text-[var(--text-secondary)]'
+            contentCatalogSubTab === 'paths' ? 'bg-orange-500/20 text-orange-500' : 'text-[var(--text-secondary)]'
           }`}
         >
           <Route size={14} aria-hidden />
@@ -1006,7 +1009,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         </button>
       </div>
 
-      {coursesSubTab === 'published' && (
+      {contentCatalogSubTab === 'catalog' && (
         <>
       <p className="text-xs text-[var(--text-muted)] leading-relaxed">
         Saved changes appear in the live course catalog for learners. If the list is empty, use{' '}
@@ -1023,14 +1026,14 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3 md:items-start md:gap-x-3 md:gap-y-3">
           <div className="flex min-w-0 flex-col gap-1">
             <label
-              htmlFor="admin-published-course-select"
+              htmlFor="admin-catalog-course-select"
               className="text-xs font-semibold text-[var(--text-secondary)]"
             >
               Course
             </label>
             <div className="flex min-w-0 items-stretch gap-2">
             <select
-              id="admin-published-course-select"
+              id="admin-catalog-course-select"
               value={selector}
               onFocus={openCourseCatalogOnce}
               onMouseDown={openCourseCatalogOnce}
@@ -1047,7 +1050,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               {catalogRequested && !listLoading && (
                 <>
                   <option value="__new__">New Course</option>
-                  {sortedPublishedCourses.map((c) => (
+                  {sortedCatalogCourses.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.title} ({c.id})
                     </option>
@@ -1088,13 +1091,13 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           </div>
           <div className="flex min-w-0 flex-col gap-1">
             <label
-              htmlFor="admin-published-course-level"
+              htmlFor="admin-catalog-course-level"
               className="text-xs font-semibold text-[var(--text-secondary)]"
             >
               Level
             </label>
             <select
-              id="admin-published-course-level"
+              id="admin-catalog-course-level"
               value={draft?.level ?? ''}
               disabled={!draft}
               onChange={(e) =>
@@ -1591,7 +1594,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         </>
       )}
 
-      {coursesSubTab === 'paths' && (
+      {contentCatalogSubTab === 'paths' && (
         <div className="min-w-0 w-full rounded-xl border border-[var(--border-color)]/60 bg-[var(--bg-primary)]/40 px-4 py-10 text-center sm:px-6">
           <Route size={28} className="mx-auto mb-3 text-[var(--text-muted)]" aria-hidden />
           <p className="text-sm font-semibold text-[var(--text-primary)]">Learning paths</p>
@@ -1633,7 +1636,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               </div>
               <div className="space-y-4 p-6">
                 <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
-                  Switching to Learning paths will discard unsaved changes to this course.
+                  Switching from Catalog to Learning paths will discard unsaved changes to this course.
                 </p>
                 <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                   <button
@@ -1703,7 +1706,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     autoFocus
                     onClick={() => commitCancel(cancelDialogVariant!)}
                     aria-label={
-                      cancelDialogVariant === 'published-dirty'
+                      cancelDialogVariant === 'catalog-dirty'
                         ? 'Discard unsaved changes and restore the last saved version of this course'
                         : cancelDialogVariant === 'new-dirty'
                           ? 'Discard changes and start over with a new course draft'
