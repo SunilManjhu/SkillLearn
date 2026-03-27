@@ -153,7 +153,8 @@ export function readPayloadFromHistoryState(state: unknown): AppHistoryPayload |
   if (!raw || typeof raw !== 'object') return null;
   const p = raw as AppHistoryPayload;
   if (p.v !== 1 || typeof p.view !== 'string') return null;
-  if (p.view === 'settings') {
+  /** Legacy history entries used `settings`; map to profile. */
+  if ((p.view as string) === 'settings') {
     return { ...p, v: 1, view: 'profile' };
   }
   return p;

@@ -183,6 +183,8 @@ type CancelDialogVariant = 'new-dirty' | 'new-clean' | 'published-dirty';
 
 interface AdminCourseCatalogSectionProps {
   onCatalogChanged: () => void | Promise<void>;
+  /** True while the course editor has unsaved edits (for admin portal navigation guard). */
+  onDraftDirtyChange?: (dirty: boolean) => void;
 }
 
 interface RequiredFieldTarget {
@@ -196,6 +198,7 @@ interface RequiredFieldTarget {
 
 export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps> = ({
   onCatalogChanged,
+  onDraftDirtyChange,
 }) => {
   const [publishedList, setPublishedList] = useState<Course[]>([]);
   /** '' = none selected; avoids loading Firestore until the user opens the Course dropdown. */
@@ -560,8 +563,25 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     return out;
   }, [draft]);
 
+  const isDirty =
+    !!draft &&
+    baselineJson !== null &&
+    JSON.stringify(draft) !== baselineJson;
+
+  const showCancel =
+    !!draft && baselineJson !== null && (selector === '__new__' || isDirty);
+
+  useEffect(() => {
+    onDraftDirtyChange?.(isDirty);
+    return () => onDraftDirtyChange?.(false);
+  }, [isDirty, onDraftDirtyChange]);
+
   const handleSave = async () => {
     if (!draft) return;
+    if (baselineJson !== null && JSON.stringify(draft) === baselineJson) {
+      showActionToast('No changes to save.', 'neutral');
+      return;
+    }
     const err = validateDraft(draft);
     if (err) {
       setShowValidationHints(true);
@@ -589,7 +609,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     if (ok) {
       setShowValidationHints(false);
       if (draft.category.trim()) addCatalogCategoryExtra(draft.category.trim());
-      showActionToast('Saved to Firestore.');
+      showActionToast('Course saved.');
       await refreshList();
       await onCatalogChanged();
       setSelector(draft.id);
@@ -655,8 +675,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       return;
     }
     const okConfirm = window.confirm(
-      `Change Firestore document from "${oldId}" to "${newId}"?\n\n` +
-        `This updates the publishedCourses document path. Learner progress, bookmarks, and URLs that use the old id will not move automatically. ` +
+      `Change course id from "${oldId}" to "${newId}"?\n\n` +
+        `Learner progress, bookmarks, and links that use the old id will not move automatically. ` +
         `If you use structured ids (e.g. C1M1L1), update module and lesson ids in the editor to match the new course id before continuing.\n\n` +
         `Continue?`
     );
@@ -688,11 +708,21 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     }
   };
 
-  const handleDelete = async () => {
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+
+  const closeDeleteDialog = useCallback(() => setDeleteDialogOpen(false), []);
+
+  const openDeleteDialog = useCallback(() => {
+    if (!draft || !publishedList.some((c) => c.id === draft.id)) return;
+    setDeleteDialogOpen(true);
+  }, [draft, publishedList]);
+
+  const confirmDeletePublished = useCallback(async () => {
     if (!draft) return;
-    if (!window.confirm('Delete published course "' + draft.id + '" from Firestore?')) return;
+    const courseId = draft.id;
+    setDeleteDialogOpen(false);
     setBusy(true);
-    const ok = await deletePublishedCourse(draft.id);
+    const ok = await deletePublishedCourse(courseId);
     setBusy(false);
     if (ok) {
       await refreshList();
@@ -705,20 +735,12 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     } else {
       showActionToast('Delete failed.', 'danger');
     }
-  };
-
-  const isDirty =
-    !!draft &&
-    baselineJson !== null &&
-    JSON.stringify(draft) !== baselineJson;
-
-  const showCancel =
-    !!draft && baselineJson !== null && (selector === '__new__' || isDirty);
+  }, [draft, refreshList, onCatalogChanged, showActionToast]);
 
   const [cancelDialogVariant, setCancelDialogVariant] = useState<CancelDialogVariant | null>(null);
   const cancelDialogOpen = cancelDialogVariant !== null;
 
-  useBodyScrollLock(cancelDialogOpen);
+  useBodyScrollLock(cancelDialogOpen || deleteDialogOpen);
 
   const closeCancelDialog = useCallback(() => setCancelDialogVariant(null), []);
 
@@ -752,6 +774,12 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     onPrimaryAction: () => {
       if (cancelDialogVariant) commitCancel(cancelDialogVariant);
     },
+  });
+
+  useDialogKeyboard({
+    open: deleteDialogOpen,
+    onClose: closeDeleteDialog,
+    onPrimaryAction: () => void confirmDeletePublished(),
   });
 
   const openCancelDialog = () => {
@@ -839,28 +867,28 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const cancelDialogCopy =
     cancelDialogVariant === 'new-dirty'
       ? {
-          title: 'Discard unsaved changes?',
-          body: 'Your edits to this new course will be lost. The form will reset to a fresh draft with the next available document ID (e.g. C1, C2…).',
-          primary: 'Discard and reset',
+          title: 'Lose your changes?',
+          body: 'You’ll start over with a blank new course. What you typed so far will be cleared.',
+          primary: 'Yes, start over',
         }
       : cancelDialogVariant === 'new-clean'
         ? {
-            title: 'Start a fresh draft?',
-            body: 'Reset to a new course template with the next available document ID.',
-            primary: 'Reset draft',
+            title: 'Start over with a new course?',
+            body: 'The form will clear and you’ll get a fresh template to fill in.',
+            primary: 'Yes, start fresh',
           }
         : cancelDialogVariant === 'published-dirty'
           ? {
-              title: 'Discard unsaved changes?',
-              body: 'Reload the last saved copy from Firestore. Any edits you have not saved will be lost.',
-              primary: 'Reload saved copy',
+              title: 'Lose your changes?',
+              body: 'The course will go back to how it looked when you last saved. Anything you’ve edited since then will be lost.',
+              primary: 'Yes, discard',
             }
           : null;
 
   return (
-    <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-6 space-y-6">
+    <div className="space-y-6 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold flex items-center gap-2">
+        <h2 className="flex items-center gap-2 text-lg font-bold">
           <BookOpen size={20} className="text-orange-500" />
           Published courses
         </h2>
@@ -872,7 +900,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             setCatalogRequested(true);
             void refreshList();
           }}
-          className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-semibold hover:bg-[var(--hover-bg)] disabled:opacity-50"
+          className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[var(--border-color)] px-3 py-2 text-xs font-semibold hover:bg-[var(--hover-bg)] disabled:opacity-50"
         >
           <RefreshCw size={14} className={listLoading ? 'animate-spin' : ''} />
           Reload list
@@ -880,8 +908,9 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       </div>
 
       <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-        Edits write to <code className="text-orange-500/90">publishedCourses</code>. Seed from the Alerts tab if empty.
-        Open <strong className="text-[var(--text-secondary)]">Course</strong> once to load the list (no query until then).
+        Saved changes appear in the live course catalog for learners. If the list is empty, use{' '}
+        <strong className="text-[var(--text-secondary)]">Catalog bootstrap</strong> on the Alerts tab first.
+        Open <strong className="text-[var(--text-secondary)]">Course</strong> once to load the list.
         Pick <strong className="text-[var(--text-secondary)]">New Course</strong> for a fresh draft (smallest unused{' '}
         <code className="text-orange-500/90">C1</code>, <code className="text-orange-500/90">C2</code>, …) or an existing
         course (sorted A–Z). Modules <code className="text-orange-500/90">C1M1</code>; lessons{' '}
@@ -982,9 +1011,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               <div>
                 <h4 className="text-sm font-bold text-[var(--text-primary)]">Change document ID</h4>
                 <p className="text-xs text-[var(--text-muted)] mt-1 leading-relaxed">
-                  Creates a new <code className="text-orange-500/90">publishedCourses</code> document
-                  with this content and deletes the old one. Fix module/lesson ids below if they still
-                  use the old course prefix (e.g. rename <code className="text-orange-500/80">C1M1</code>{' '}
+                  Publishes this course under a new catalog id and removes the old entry. Fix module/lesson ids below if
+                  they still use the old course prefix (e.g. rename <code className="text-orange-500/80">C1M1</code>{' '}
                   when moving to <code className="text-orange-500/80">C2</code>).
                 </p>
               </div>
@@ -1190,7 +1218,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               <div>
                 <h3 className="text-sm font-bold text-[var(--text-primary)]">Modules and lessons</h3>
                 <p className="text-xs text-[var(--text-muted)] mt-1 max-w-xl">
-                  Each module is a group of lessons. IDs are stored in Firestore and used for progress and links; titles are what learners see.
+                  Each module is a group of lessons. Stable ids are used for learner progress and deep links; titles are
+                  what learners see.
                 </p>
               </div>
               <button
@@ -1435,12 +1464,12 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           <div className="flex flex-wrap gap-3 pt-2">
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || !draft || (baselineJson !== null && !isDirty)}
               onClick={() => void handleSave()}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white px-6 py-3 text-sm font-bold"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-500 px-6 py-3 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-50"
             >
               <Save size={18} />
-              {busy ? 'Saving…' : 'Save to Firestore'}
+              {busy ? 'Saving…' : 'Save changes'}
             </button>
             {showCancel && (
               <button
@@ -1456,8 +1485,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             <button
               type="button"
               disabled={busy || !publishedList.some((c) => c.id === draft.id)}
-              onClick={() => void handleDelete()}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-500/40 text-red-400 hover:bg-red-500/10 disabled:opacity-30 px-6 py-3 text-sm font-bold"
+              onClick={openDeleteDialog}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-500/40 px-6 py-3 text-sm font-bold text-red-400 hover:bg-red-500/10 disabled:opacity-30"
             >
               <Trash2 size={18} />
               Delete published
@@ -1511,9 +1540,78 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     type="button"
                     autoFocus
                     onClick={() => commitCancel(cancelDialogVariant!)}
+                    aria-label={
+                      cancelDialogVariant === 'published-dirty'
+                        ? 'Discard unsaved changes and restore the last saved version of this course'
+                        : cancelDialogVariant === 'new-dirty'
+                          ? 'Discard changes and start over with a new course draft'
+                          : cancelDialogVariant === 'new-clean'
+                            ? 'Clear the form and start a fresh course draft'
+                            : undefined
+                    }
                     className="w-full sm:w-auto inline-flex items-center justify-center rounded-xl bg-orange-500 hover:bg-orange-600 text-white px-5 py-3 text-sm font-bold transition-colors"
                   >
                     {cancelDialogCopy.primary}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {deleteDialogOpen && draft && (
+          <div
+            className="fixed inset-0 z-[101] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="admin-catalog-delete-title"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="w-full max-w-lg overflow-hidden rounded-3xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl"
+            >
+              <div className="flex items-center justify-between gap-4 border-b border-[var(--border-color)] p-6">
+                <h2
+                  id="admin-catalog-delete-title"
+                  className="text-xl font-bold text-[var(--text-primary)]"
+                >
+                  Remove this course?
+                </h2>
+                <button
+                  type="button"
+                  onClick={closeDeleteDialog}
+                  className="shrink-0 rounded-full p-2 transition-colors hover:bg-[var(--hover-bg)]"
+                  aria-label="Close"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="space-y-4 p-6">
+                <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
+                  <span className="font-semibold text-[var(--text-primary)]">{draft.title || draft.id}</span>
+                  {' '}({draft.id}) will be removed from the catalog. Learners will no longer see it. This cannot be
+                  undone.
+                </p>
+                <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={closeDeleteDialog}
+                    className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-5 py-3 text-sm font-bold text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)] sm:w-auto"
+                  >
+                    Keep editing
+                  </button>
+                  <button
+                    type="button"
+                    autoFocus
+                    onClick={() => void confirmDeletePublished()}
+                    aria-label={`Remove ${draft.id} from the catalog permanently`}
+                    className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-red-600 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-red-500 sm:w-auto"
+                  >
+                    Yes, remove
                   </button>
                 </div>
               </div>

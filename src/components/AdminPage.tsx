@@ -1,5 +1,8 @@
-import React, { useRef, useState } from 'react';
-import { Shield, Send, Database, BookOpen, Flag, Users } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+import { Shield, Send, Database, BookOpen, Flag, Users, X } from 'lucide-react';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
+import { useDialogKeyboard } from '../hooks/useDialogKeyboard';
 import type { Course } from '../data/courses';
 import { STATIC_CATALOG_FALLBACK } from '../data/courses';
 import type { AdminHistoryTab } from '../utils/appHistory';
@@ -20,6 +23,8 @@ interface AdminPageProps {
   onTabChange: (tab: AdminHistoryTab) => void;
   onDismiss: () => void;
   onCatalogChanged: () => void | Promise<void>;
+  /** Notifies parent when Alerts/Courses drafts have unsaved work (for leaving admin via shell navigation). */
+  onUnsavedWorkChange?: (dirty: boolean) => void;
 }
 
 const ALERT_TYPES: { value: BroadcastAlertType; label: string }[] = [
@@ -28,6 +33,10 @@ const ALERT_TYPES: { value: BroadcastAlertType; label: string }[] = [
   { value: 'video_update', label: 'New or updated video' },
   { value: 'course_change', label: 'Other course change' },
 ];
+
+type PendingAdminNavigation =
+  | { kind: 'tab'; tab: AdminHistoryTab }
+  | { kind: 'dismiss' };
 
 export const AdminPage: React.FC<AdminPageProps> = ({
   courses,
@@ -38,6 +47,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   onTabChange,
   onDismiss,
   onCatalogChanged,
+  onUnsavedWorkChange,
 }) => {
   const [type, setType] = useState<BroadcastAlertType>('course_update');
   const [courseId, setCourseId] = useState(courses[0]?.id ?? '');
@@ -49,9 +59,84 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   const { showActionToast, actionToast } = useAdminActionToast();
   const [showValidationHints, setShowValidationHints] = useState(false);
   const [targetingOpen, setTargetingOpen] = useState(false);
+  const [catalogDirty, setCatalogDirty] = useState(false);
+  const [navigationGuardOpen, setNavigationGuardOpen] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState<PendingAdminNavigation | null>(null);
   const courseRef = useRef<HTMLSelectElement | null>(null);
   const titleRef = useRef<HTMLInputElement | null>(null);
   const messageRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const alertsDirty = useMemo(() => {
+    if (tab !== 'alerts') return false;
+    return (
+      title.trim() !== '' ||
+      message.trim() !== '' ||
+      moduleId.trim() !== '' ||
+      lessonId.trim() !== ''
+    );
+  }, [tab, title, message, moduleId, lessonId]);
+
+  const hasUnsavedWork = alertsDirty || catalogDirty;
+
+  useEffect(() => {
+    onUnsavedWorkChange?.(hasUnsavedWork);
+  }, [hasUnsavedWork, onUnsavedWorkChange]);
+
+  useEffect(() => {
+    return () => onUnsavedWorkChange?.(false);
+  }, [onUnsavedWorkChange]);
+
+  const closeNavigationGuard = useCallback(() => {
+    setNavigationGuardOpen(false);
+    setPendingNavigation(null);
+  }, []);
+
+  const requestAdminNavigation = useCallback(
+    (target: PendingAdminNavigation) => {
+      if (target.kind === 'tab' && target.tab === tab) return;
+      if (!hasUnsavedWork) {
+        if (target.kind === 'tab') {
+          onTabChange(target.tab);
+          setShowValidationHints(false);
+        } else {
+          onDismiss();
+        }
+        return;
+      }
+      setPendingNavigation(target);
+      setNavigationGuardOpen(true);
+    },
+    [hasUnsavedWork, tab, onTabChange, onDismiss]
+  );
+
+  const confirmLeaveAdmin = useCallback(() => {
+    const pending = pendingNavigation;
+    const wasAlertsDirty = tab === 'alerts' && alertsDirty;
+    setNavigationGuardOpen(false);
+    setPendingNavigation(null);
+    if (!pending) return;
+    if (wasAlertsDirty) {
+      setTitle('');
+      setMessage('');
+      setModuleId('');
+      setLessonId('');
+      setTargetingOpen(false);
+      setShowValidationHints(false);
+    }
+    if (pending.kind === 'tab') {
+      onTabChange(pending.tab);
+      setShowValidationHints(false);
+    } else {
+      onDismiss();
+    }
+  }, [pendingNavigation, tab, alertsDirty, onTabChange, onDismiss]);
+
+  useBodyScrollLock(navigationGuardOpen);
+
+  useDialogKeyboard({
+    open: navigationGuardOpen,
+    onClose: closeNavigationGuard,
+  });
 
   const selectedCourse = courses.find((c) => c.id === courseId);
   const courseMissing = !courseId;
@@ -115,11 +200,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   const tabBtn = (id: AdminHistoryTab, label: string, icon: React.ReactNode) => (
     <button
       type="button"
-      onClick={() => {
-        onTabChange(id);
-        setShowValidationHints(false);
-      }}
-      className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold transition-colors ${
+      onClick={() => requestAdminNavigation({ kind: 'tab', tab: id })}
+      className={`inline-flex shrink-0 min-h-11 items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold transition-colors ${
         tab === id
           ? 'bg-orange-500 text-white'
           : 'bg-[var(--bg-primary)] text-[var(--text-secondary)] border border-[var(--border-color)] hover:bg-[var(--hover-bg)]'
@@ -131,30 +213,30 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   );
 
   return (
-    <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] pt-24 pb-16 px-6">
-      <div className="max-w-4xl mx-auto space-y-8">
+    <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] px-4 pb-16 pt-24 sm:px-6">
+      <div className="mx-auto max-w-4xl min-w-0 space-y-6 sm:space-y-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="p-3 rounded-xl bg-orange-500/15 text-orange-500">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="shrink-0 rounded-xl bg-orange-500/15 p-3 text-orange-500">
               <Shield size={28} />
             </div>
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight">Admin portal</h1>
-              <p className="text-sm text-[var(--text-secondary)] mt-1">
+            <div className="min-w-0">
+              <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Admin portal</h1>
+              <p className="mt-1 text-sm text-[var(--text-secondary)]">
                 Alerts, catalog, and moderation. Students do not see this page.
               </p>
             </div>
           </div>
           <button
             type="button"
-            onClick={onDismiss}
-            className="shrink-0 text-sm font-semibold text-orange-500 hover:text-orange-400"
+            onClick={() => requestAdminNavigation({ kind: 'dismiss' })}
+            className="inline-flex min-h-11 shrink-0 items-center rounded-lg px-3 text-sm font-semibold text-orange-500 hover:bg-orange-500/10 hover:text-orange-400"
           >
             Close
           </button>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="-mx-1 flex gap-2 overflow-x-auto overflow-y-hidden overscroll-x-contain px-1 py-0.5 [scrollbar-width:none] sm:flex-wrap sm:overflow-visible [&::-webkit-scrollbar]:hidden">
           {tabBtn('alerts', 'Alerts', <Send size={16} />)}
           {tabBtn('catalog', 'Courses', <BookOpen size={16} />)}
           {tabBtn('moderation', 'Moderation', <Flag size={16} />)}
@@ -163,8 +245,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({
 
         {tab === 'alerts' && (
         <div className="space-y-8">
-        <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-6 space-y-4">
-          <h2 className="text-lg font-bold flex items-center gap-2">
+        <div className="space-y-4 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:p-6">
+          <h2 className="flex items-center gap-2 text-lg font-bold">
             <Send size={20} className="text-orange-500" />
             Send course alert
           </h2>
@@ -302,34 +384,39 @@ export const AdminPage: React.FC<AdminPageProps> = ({
             type="button"
             disabled={busy}
             onClick={() => void handleSend()}
-            className="w-full py-3 rounded-xl bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white text-sm font-bold"
+            className="min-h-11 w-full rounded-xl bg-orange-500 py-3 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-50"
           >
             {busy ? 'Publishing…' : 'Publish alert'}
           </button>
         </div>
 
-        <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-6 space-y-4">
-          <h2 className="text-lg font-bold flex items-center gap-2">
+        <div className="space-y-4 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:p-6">
+          <h2 className="flex items-center gap-2 text-lg font-bold">
             <Database size={20} className="text-orange-500" />
             Catalog bootstrap
           </h2>
           <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-            One-time: copy the bundled static catalog into <code className="text-orange-500/90">publishedCourses</code>{' '}
-            so the app loads courses from Firestore. Requires admin rules deployed.
+            One-time: populate the live course catalog from the bundled default courses so learners can browse them.
+            Requires admin access and deployed security rules. If seed fails, check the browser console.
           </p>
           <button
             type="button"
             disabled={busy}
             onClick={() => void handleSeedCatalog()}
-            className="w-full py-3 rounded-xl border border-[var(--border-color)] hover:bg-[var(--hover-bg)] disabled:opacity-50 text-sm font-bold"
+            className="min-h-11 w-full rounded-xl border border-[var(--border-color)] py-3 text-sm font-bold hover:bg-[var(--hover-bg)] disabled:opacity-50"
           >
-            Seed published courses from static fallback
+            Sync bundled courses into catalog
           </button>
         </div>
         </div>
         )}
 
-        {tab === 'catalog' && <AdminCourseCatalogSection onCatalogChanged={onCatalogChanged} />}
+        {tab === 'catalog' && (
+          <AdminCourseCatalogSection
+            onCatalogChanged={onCatalogChanged}
+            onDraftDirtyChange={setCatalogDirty}
+          />
+        )}
 
         {tab === 'moderation' && (
           <AdminModerationSection
@@ -338,6 +425,64 @@ export const AdminPage: React.FC<AdminPageProps> = ({
           />
         )}
         {tab === 'users' && <AdminUserRolesSection currentAdminUid={currentAdminUid} />}
+
+        <AnimatePresence>
+          {navigationGuardOpen && (
+            <div
+              className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="admin-nav-guard-title"
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                className="w-full max-w-lg overflow-hidden rounded-3xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl"
+              >
+                <div className="flex items-center justify-between gap-4 border-b border-[var(--border-color)] p-6">
+                  <h2
+                    id="admin-nav-guard-title"
+                    className="text-xl font-bold text-[var(--text-primary)]"
+                  >
+                    Leave without saving?
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={closeNavigationGuard}
+                    className="shrink-0 rounded-full p-2 transition-colors hover:bg-[var(--hover-bg)]"
+                    aria-label="Close"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+                <div className="space-y-4 p-6">
+                  <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
+                    You have unsaved changes. If you leave this tab or close the admin portal now, that work will be
+                    lost.
+                  </p>
+                  <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                    <button
+                      type="button"
+                      autoFocus
+                      onClick={closeNavigationGuard}
+                      className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-5 py-3 text-sm font-bold text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)] sm:w-auto"
+                    >
+                      Keep editing
+                    </button>
+                    <button
+                      type="button"
+                      onClick={confirmLeaveAdmin}
+                      className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-orange-600 sm:w-auto"
+                    >
+                      Leave anyway
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
 
         {actionToast}
       </div>

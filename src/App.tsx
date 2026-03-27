@@ -7,6 +7,7 @@ import { CourseCatalogLoadingSkeleton } from './components/CourseCatalogLoadingS
 import { ProfilePage } from './components/ProfilePage';
 import { Certificate } from './components/Certificate';
 import { useBodyScrollLock } from './hooks/useBodyScrollLock';
+import { useDialogKeyboard } from './hooks/useDialogKeyboard';
 import { ContactForm } from './components/ContactForm';
 import { DemoLearningAgent } from './components/DemoLearningAgent';
 import { STATIC_CATALOG_FALLBACK, Course, Lesson } from './data/courses';
@@ -28,7 +29,7 @@ import {
   reportNoticesFromQuerySnapshot,
 } from './utils/alertsFirestore';
 import { Play, TrendingUp, Award, Users, Globe, ChevronRight, ChevronDown, X, CheckCircle, Mail, LifeBuoy, Briefcase, Shield, Info, Clock, LogIn, AlertTriangle } from 'lucide-react';
-import { motion } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   auth,
   db,
@@ -84,6 +85,10 @@ import {
 } from './utils/catalogCategoryPresets';
 
 type View = 'home' | 'catalog' | 'player' | 'overview' | 'about' | 'careers' | 'privacy' | 'help' | 'contact' | 'status' | 'enterprise' | 'signup' | 'profile' | 'certificate' | 'admin';
+
+type PendingAppAdminExit =
+  | { mode: 'navigate'; view: View; shouldClear: boolean }
+  | { mode: 'history'; payload: AppHistoryPayload };
 
 const alertsMutedStorageKey = (uid: string) => `skilllearn-alerts-muted:${uid}`;
 
@@ -424,6 +429,15 @@ export default function App() {
   const currentViewRef = useRef<View>(currentView);
   currentViewRef.current = currentView;
 
+  /** True while admin has unsaved Alerts or Courses draft (ref for synchronous checks in navigation). */
+  const adminPortalUnsavedRef = useRef(false);
+  const [adminExitGuardOpen, setAdminExitGuardOpen] = useState(false);
+  const pendingAppAdminExitRef = useRef<PendingAppAdminExit | null>(null);
+
+  const handleAdminUnsavedWorkChange = useCallback((dirty: boolean) => {
+    adminPortalUnsavedRef.current = dirty;
+  }, []);
+
   const categoryRefs = useRef<(HTMLButtonElement | null)[]>([]);
   /** Bumps when admin adds a custom category (localStorage + event). */
   const [categoryFilterRevision, setCategoryFilterRevision] = useState(0);
@@ -453,74 +467,83 @@ export default function App() {
     return p;
   }, [currentView, selectedCourse?.id, deferredCourseRoute, certificateData, adminTab]);
 
-  const applyHistoryPayload = useCallback((raw: AppHistoryPayload) => {
-    const resolved = resolvePayloadForCourses(raw, catalogCoursesRef.current, findLessonById);
-    historySkipSyncRef.current = true;
+  const applyHistoryPayload = useCallback(
+    (raw: AppHistoryPayload) => {
+      const resolved = resolvePayloadForCourses(raw, catalogCoursesRef.current, findLessonById);
+      const view = resolved.view as View;
 
-    const view = resolved.view as View;
+      if (currentViewRef.current === 'admin' && view !== 'admin' && adminPortalUnsavedRef.current) {
+        pendingAppAdminExitRef.current = { mode: 'history', payload: raw };
+        setAdminExitGuardOpen(true);
+        historySkipSyncRef.current = true;
+        const restore = buildHistoryPayload();
+        window.history.replaceState({ [APP_HISTORY_KEY]: restore }, '', buildHistoryUrl(restore));
+        return;
+      }
 
-    if (
-      view === 'certificate' &&
-      !resolved.certificate
-    ) {
-      setCertificateData(null);
-      setSelectedCourse(null);
-      setInitialLesson(undefined);
-      setCurrentView('catalog');
-      window.history.replaceState(
-        { [APP_HISTORY_KEY]: { v: 1, view: 'catalog' } },
-        '',
-        buildHistoryUrl({ v: 1, view: 'catalog' })
-      );
-      scrollDocumentToTop();
-      return;
-    }
+      historySkipSyncRef.current = true;
 
-    if (view === 'profile' && currentViewRef.current !== 'profile') {
-      viewBeforeProfileOrSettingsRef.current = currentViewRef.current;
-      setProfileSettingsUnderlayView(currentViewRef.current);
-    }
-
-    if (view === 'certificate' && resolved.certificate) {
-      setCertificateData({
-        courseId: resolved.certificate.courseId,
-        userName: resolved.certificate.userName,
-        date: resolved.certificate.date,
-        certificateId: resolved.certificate.certificateId,
-        isPublic: resolved.certificate.isPublic,
-      });
-    } else {
-      setCertificateData(null);
-    }
-
-    if (view === 'overview' || view === 'player') {
-      const c = resolved.courseId ? (catalogCoursesRef.current.find((x) => x.id === resolved.courseId) ?? null) : null;
-      setSelectedCourse(c);
-      if (view === 'overview') {
+      if (view === 'certificate' && !resolved.certificate) {
+        setCertificateData(null);
+        setSelectedCourse(null);
         setInitialLesson(undefined);
-      } else if (view === 'player' && c) {
-        if (resolved.lessonId) {
-          setInitialLesson(findLessonById(c, resolved.lessonId) ?? undefined);
+        setCurrentView('catalog');
+        window.history.replaceState(
+          { [APP_HISTORY_KEY]: { v: 1, view: 'catalog' } },
+          '',
+          buildHistoryUrl({ v: 1, view: 'catalog' })
+        );
+        scrollDocumentToTop();
+        return;
+      }
+
+      if (view === 'profile' && currentViewRef.current !== 'profile') {
+        viewBeforeProfileOrSettingsRef.current = currentViewRef.current;
+        setProfileSettingsUnderlayView(currentViewRef.current);
+      }
+
+      if (view === 'certificate' && resolved.certificate) {
+        setCertificateData({
+          courseId: resolved.certificate.courseId,
+          userName: resolved.certificate.userName,
+          date: resolved.certificate.date,
+          certificateId: resolved.certificate.certificateId,
+          isPublic: resolved.certificate.isPublic,
+        });
+      } else {
+        setCertificateData(null);
+      }
+
+      if (view === 'overview' || view === 'player') {
+        const c = resolved.courseId ? (catalogCoursesRef.current.find((x) => x.id === resolved.courseId) ?? null) : null;
+        setSelectedCourse(c);
+        if (view === 'overview') {
+          setInitialLesson(undefined);
+        } else if (view === 'player' && c) {
+          if (resolved.lessonId) {
+            setInitialLesson(findLessonById(c, resolved.lessonId) ?? undefined);
+          } else {
+            const uid = readCachedAuthProfile()?.uid ?? null;
+            const resume = getResumeOrStartLesson(c, loadLessonProgressMap(c.id, uid));
+            setInitialLesson(resume ?? undefined);
+          }
         } else {
-          const uid = readCachedAuthProfile()?.uid ?? null;
-          const resume = getResumeOrStartLesson(c, loadLessonProgressMap(c.id, uid));
-          setInitialLesson(resume ?? undefined);
+          setInitialLesson(undefined);
         }
       } else {
+        setSelectedCourse(null);
         setInitialLesson(undefined);
       }
-    } else {
-      setSelectedCourse(null);
-      setInitialLesson(undefined);
-    }
 
-    if (view === 'admin') {
-      setAdminTab(resolved.adminTab ?? 'alerts');
-    }
+      if (view === 'admin') {
+        setAdminTab(resolved.adminTab ?? 'alerts');
+      }
 
-    setCurrentView(view);
-    scrollDocumentToTop();
-  }, []);
+      setCurrentView(view);
+      scrollDocumentToTop();
+    },
+    [buildHistoryPayload]
+  );
 
   useLayoutEffect(() => {
     if (didInitHistoryRef.current) return;
@@ -1318,16 +1341,32 @@ export default function App() {
     }
   }, [currentView, profileSettingsUnderlayView]);
 
-  useBodyScrollLock(currentView === 'profile');
+  const closeAppAdminExitGuard = useCallback(() => {
+    pendingAppAdminExitRef.current = null;
+    setAdminExitGuardOpen(false);
+  }, []);
 
-  /** Course overview / player / certificate replace the main column; reset document scroll. */
+  useBodyScrollLock(currentView === 'profile');
+  useBodyScrollLock(adminExitGuardOpen);
+
+  useDialogKeyboard({
+    open: adminExitGuardOpen,
+    onClose: closeAppAdminExitGuard,
+  });
+
+  /** Full-width views that replace the main column; reset document scroll so content isn’t off-screen. */
   useLayoutEffect(() => {
-    if (currentView === 'overview' || currentView === 'player' || currentView === 'certificate') {
+    if (
+      currentView === 'overview' ||
+      currentView === 'player' ||
+      currentView === 'certificate' ||
+      currentView === 'admin'
+    ) {
       scrollDocumentToTop();
     }
   }, [currentView, selectedCourse?.id]);
 
-  const handleNavigate = (view: View, shouldClear = true) => {
+  const applyNavigate = (view: View, shouldClear = true) => {
     const prev = currentViewRef.current;
 
     /** Profile overlay and course views share one history slot so Back skips dismissed layers (e.g. overview → Back → home). */
@@ -1354,6 +1393,28 @@ export default function App() {
     }
     setCurrentView(view);
     scrollDocumentToTop();
+  };
+
+  const handleNavigate = (view: View, shouldClear = true) => {
+    if (currentViewRef.current === 'admin' && view !== 'admin' && adminPortalUnsavedRef.current) {
+      pendingAppAdminExitRef.current = { mode: 'navigate', view, shouldClear };
+      setAdminExitGuardOpen(true);
+      return;
+    }
+    applyNavigate(view, shouldClear);
+  };
+
+  const confirmAppAdminExit = () => {
+    const pending = pendingAppAdminExitRef.current;
+    pendingAppAdminExitRef.current = null;
+    setAdminExitGuardOpen(false);
+    if (!pending) return;
+    adminPortalUnsavedRef.current = false;
+    if (pending.mode === 'navigate') {
+      applyNavigate(pending.view, pending.shouldClear);
+    } else {
+      applyHistoryPayload(pending.payload);
+    }
   };
 
   /** Restore course context when leaving profile overlay to overview or player (e.g. cert overlay touched selection). */
@@ -2401,6 +2462,7 @@ export default function App() {
               onTabChange={setAdminTab}
               onDismiss={() => handleNavigate('catalog', false)}
               onCatalogChanged={refreshCatalogCourses}
+              onUnsavedWorkChange={handleAdminUnsavedWorkChange}
             />
           )}
           {mainView === 'admin' && isAuthReady && user && !adminAccessResolved && (
@@ -2430,6 +2492,63 @@ export default function App() {
             />
           </div>
         )}
+
+        <AnimatePresence>
+          {adminExitGuardOpen && (
+            <div
+              className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="app-admin-exit-guard-title"
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                className="w-full max-w-lg overflow-hidden rounded-3xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl"
+              >
+                <div className="flex items-center justify-between gap-4 border-b border-[var(--border-color)] p-6">
+                  <h2
+                    id="app-admin-exit-guard-title"
+                    className="text-xl font-bold text-[var(--text-primary)]"
+                  >
+                    Leave without saving?
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={closeAppAdminExitGuard}
+                    className="shrink-0 rounded-full p-2 transition-colors hover:bg-[var(--hover-bg)]"
+                    aria-label="Close"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+                <div className="space-y-4 p-6">
+                  <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
+                    You have unsaved changes. If you leave the admin portal now, that work will be lost.
+                  </p>
+                  <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                    <button
+                      type="button"
+                      autoFocus
+                      onClick={closeAppAdminExitGuard}
+                      className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-5 py-3 text-sm font-bold text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)] sm:w-auto"
+                    >
+                      Keep editing
+                    </button>
+                    <button
+                      type="button"
+                      onClick={confirmAppAdminExit}
+                      className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-orange-600 sm:w-auto"
+                    >
+                      Leave anyway
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
       </main>
 
       <DemoLearningAgent

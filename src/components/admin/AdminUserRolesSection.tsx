@@ -84,9 +84,9 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
   };
 
   return (
-    <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-6 space-y-4">
+    <div className="space-y-4 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold flex items-center gap-2">
+        <h2 className="flex items-center gap-2 text-lg font-bold">
           <ShieldCheck size={20} className="text-orange-500" />
           User roles
         </h2>
@@ -94,7 +94,7 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
           type="button"
           onClick={() => setSubscriptionKey((k) => k + 1)}
           disabled={loading}
-          className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-semibold hover:bg-[var(--hover-bg)] disabled:opacity-50"
+          className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[var(--border-color)] px-3 py-2 text-xs font-semibold hover:bg-[var(--hover-bg)] disabled:opacity-50"
           title="Re-attach the live listener"
         >
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
@@ -156,10 +156,53 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         placeholder="Search by name, email, role, or UID"
-        className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm"
+        className="min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm"
       />
 
-      <div className="max-h-[min(30rem,58vh)] overflow-auto rounded-xl border border-[var(--border-color)]">
+      <div className="space-y-3 md:hidden">
+        {filteredRows.length === 0 ? (
+          <p className="py-8 text-center text-sm text-[var(--text-muted)]">
+            {loading ? 'Loading users…' : 'No users found.'}
+          </p>
+        ) : (
+          filteredRows.map((row) => {
+            const saving = savingUserId === row.id;
+            return (
+              <div
+                key={row.id}
+                className="space-y-3 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/60 p-4"
+              >
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Name</p>
+                  <p className="text-sm font-medium text-[var(--text-primary)]">{row.displayName}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Email</p>
+                  <p className="break-words text-sm text-[var(--text-secondary)]">{row.email || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">UID</p>
+                  <code className="break-all text-xs text-[var(--text-muted)]">{row.id}</code>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Role</span>
+                  <select
+                    value={row.role}
+                    disabled={saving}
+                    onChange={(e) => void handleRoleChange(row.id, e.target.value as UserRole)}
+                    className="min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm disabled:opacity-60"
+                  >
+                    <option value="user">user</option>
+                    <option value="admin">admin</option>
+                  </select>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      <div className="hidden max-h-[min(30rem,58vh)] overflow-auto rounded-xl border border-[var(--border-color)] md:block">
         <table className="w-full text-sm">
           <thead className="bg-[var(--bg-primary)] text-[var(--text-secondary)]">
             <tr>
