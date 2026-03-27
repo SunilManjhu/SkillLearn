@@ -1861,7 +1861,7 @@ export default function App() {
     if (!course) return null;
 
     return (
-      <div className="mx-auto max-w-7xl px-3 pb-16 pt-20 sm:px-6 sm:pb-20 sm:pt-24 md:px-12">
+      <div className="mx-auto max-w-7xl px-3 pb-[max(4rem,env(safe-area-inset-bottom))] pt-20 sm:px-6 sm:pb-20 sm:pt-24 md:px-12">
         <Certificate 
           course={course}
           userName={certificateData.userName}

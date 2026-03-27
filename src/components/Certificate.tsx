@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useDialogKeyboard } from '../hooks/useDialogKeyboard';
-import { Share2, Download, Globe, ShieldCheck, Linkedin, ExternalLink, ShieldAlert, X } from 'lucide-react';
+import { Share2, Download, Globe, ShieldCheck, Linkedin, ExternalLink, ShieldAlert, X, Copy } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { motion } from 'motion/react';
@@ -56,6 +56,13 @@ export const Certificate: React.FC<CertificateProps> = ({
 }) => {
   const [isVerified, setIsVerified] = useState<boolean | null>(null);
   const [verificationError, setVerificationError] = useState(false);
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied'>('idle');
+  const [shareStatus, setShareStatus] = useState<'idle' | 'shared'>('idle');
+
+  const canWebShare = useMemo(
+    () => typeof navigator !== 'undefined' && typeof navigator.share === 'function',
+    []
+  );
 
   useEffect(() => {
     if (isPublic) {
@@ -97,9 +104,33 @@ export const Certificate: React.FC<CertificateProps> = ({
   };
 
   const handleCopyLink = () => {
-    navigator.clipboard.writeText(shareUrl);
-    alert('Certificate link copied to clipboard!');
+    void (async () => {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        setCopyStatus('copied');
+        window.setTimeout(() => setCopyStatus('idle'), 2500);
+      } catch {
+        window.prompt('Copy this certificate link:', shareUrl);
+      }
+    })();
   };
+
+  const handleSystemShare = useCallback(async () => {
+    if (!canWebShare) return;
+    const text = `I just completed "${course.title}" on SkillStream!`;
+    try {
+      await navigator.share({
+        title: 'SkillStream certificate',
+        text,
+        url: shareUrl,
+      });
+      setShareStatus('shared');
+      window.setTimeout(() => setShareStatus('idle'), 2500);
+    } catch (e: unknown) {
+      const name = e && typeof e === 'object' && 'name' in e ? String((e as { name: string }).name) : '';
+      if (name === 'AbortError') return;
+    }
+  }, [canWebShare, course.title, shareUrl]);
 
   const handlePrintPdf = useCallback(() => {
     const root = document.getElementById('root');
@@ -132,56 +163,111 @@ export const Certificate: React.FC<CertificateProps> = ({
   }, []);
 
   return (
-    <div className="mx-auto w-full max-w-5xl">
-      <div className="no-print mb-4 sm:mb-6 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] overflow-hidden shadow-xl">
-        <div className="flex items-center justify-between gap-3 border-b border-[var(--border-color)] p-4 sm:p-6">
-          <div className="min-w-0">
-            <h2 className="text-xl font-bold text-[var(--text-primary)]">
+    <div className="mx-auto w-full min-w-0 max-w-5xl">
+      <div className="no-print mb-4 overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-xl sm:mb-6">
+        <div className="relative flex flex-col gap-3 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 sm:gap-4 sm:px-6 sm:pb-6 sm:pt-6 sm:flex-row sm:items-start sm:justify-start">
+          <div className="min-w-0 flex-1 pr-11 sm:min-w-0 sm:flex-1 sm:pr-0">
+            <h2 className="text-lg font-bold leading-tight text-[var(--text-primary)] sm:text-xl">
               {isPublic ? 'Certificate' : 'Your Certificate'}
             </h2>
             {!isPublic && (
-              <p className="text-sm text-[var(--text-secondary)] mt-1">Congratulations on completing this course!</p>
+              <p className="mt-1.5 text-xs leading-relaxed text-[var(--text-secondary)] sm:text-sm">
+                Congratulations on completing this course!
+              </p>
             )}
           </div>
+
+          {!isPublic && (
+            <div className="flex w-full min-w-0 flex-1 flex-col gap-3 sm:max-w-none sm:items-end">
+              <div className="w-full sm:max-w-md sm:text-right">
+                <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)] sm:text-sm sm:normal-case sm:tracking-normal">
+                  Share your certificate
+                </p>
+              </div>
+
+              <p className="sr-only" aria-live="polite">
+                {copyStatus === 'copied' && 'Certificate link copied to clipboard.'}
+                {shareStatus === 'shared' && 'Share completed.'}
+              </p>
+
+              <div
+                className="flex w-full min-w-0 flex-row flex-nowrap items-center gap-2 overflow-x-auto overflow-y-hidden pb-0.5 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] [-ms-overflow-style:none] [scrollbar-width:none] sm:w-auto sm:justify-end sm:overflow-visible sm:pb-0 sm:pl-0 sm:pr-0 [&::-webkit-scrollbar]:hidden"
+              >
+                <button
+                  type="button"
+                  onClick={handleLinkedInShare}
+                  className="inline-flex h-11 shrink-0 touch-manipulation items-center justify-center gap-1.5 rounded-lg bg-[#0077b5] px-2.5 text-xs font-bold text-white transition-colors hover:bg-[#006396] active:bg-[#005a87] sm:h-auto sm:min-h-0 sm:gap-2 sm:rounded-xl sm:px-4 sm:py-2.5 sm:text-sm"
+                  aria-label="Share certificate on LinkedIn"
+                >
+                  <Linkedin size={16} className="h-4 w-4 shrink-0 sm:h-[18px] sm:w-[18px]" aria-hidden />
+                  <span className="whitespace-nowrap">LinkedIn</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCopyLink}
+                  className={`inline-flex h-11 shrink-0 touch-manipulation items-center justify-center gap-1.5 rounded-lg border px-2.5 text-xs font-bold transition-colors sm:h-auto sm:min-h-0 sm:gap-2 sm:rounded-xl sm:px-4 sm:py-2.5 sm:text-sm ${
+                    copyStatus === 'copied'
+                      ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-700'
+                      : 'border-[var(--border-color)] bg-[var(--hover-bg)] text-[var(--text-primary)] hover:bg-[var(--hover-bg)]/80'
+                  }`}
+                  aria-label={copyStatus === 'copied' ? 'Link copied' : 'Copy certificate link to clipboard'}
+                >
+                  <Copy size={16} className="h-4 w-4 shrink-0 sm:h-[18px] sm:w-[18px]" aria-hidden />
+                  <span className="whitespace-nowrap">
+                    {copyStatus === 'copied' ? (
+                      'Copied!'
+                    ) : (
+                      <>
+                        <span className="sm:hidden">Copy</span>
+                        <span className="hidden sm:inline">Copy link</span>
+                      </>
+                    )}
+                  </span>
+                </button>
+                {canWebShare && (
+                  <button
+                    type="button"
+                    onClick={() => void handleSystemShare()}
+                    className={`inline-flex h-11 shrink-0 touch-manipulation items-center justify-center gap-1.5 rounded-lg border border-[var(--border-color)] bg-[var(--hover-bg)] px-2.5 text-xs font-bold text-[var(--text-primary)] transition-colors hover:bg-[var(--hover-bg)]/80 sm:h-auto sm:min-h-0 sm:min-w-0 sm:gap-2 sm:rounded-xl sm:px-4 sm:py-2.5 sm:text-sm ${
+                      shareStatus === 'shared' ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-700' : ''
+                    }`}
+                    aria-label={
+                      shareStatus === 'shared'
+                        ? 'Shared'
+                        : 'Share certificate link using another app'
+                    }
+                  >
+                    <Share2 size={16} className="h-4 w-4 shrink-0 sm:h-[18px] sm:w-[18px]" aria-hidden />
+                    <span className="whitespace-nowrap sm:hidden">
+                      {shareStatus === 'shared' ? 'Shared' : 'Share'}
+                    </span>
+                    <span className="hidden whitespace-nowrap sm:inline">
+                      {shareStatus === 'shared' ? 'Shared' : 'More apps'}
+                    </span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handlePrintPdf}
+                  title="Download PDF — Tip: In the print dialog, disable “Headers and footers” to remove the date, URL, and page numbers from the PDF."
+                  className="inline-flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg bg-orange-500 text-white transition-colors hover:bg-orange-600 active:bg-orange-700 sm:h-auto sm:min-h-0 sm:min-w-0 sm:rounded-xl"
+                  aria-label="Download certificate as PDF"
+                >
+                  <Download size={18} className="h-[18px] w-[18px] shrink-0" aria-hidden />
+                </button>
+              </div>
+            </div>
+          )}
+
           <button
             type="button"
             onClick={onClose}
-            className="shrink-0 p-2 hover:bg-[var(--hover-bg)] rounded-lg transition-colors text-[var(--text-secondary)]"
+            className="absolute right-3 top-3 inline-flex min-h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg p-2 text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)] sm:static sm:right-auto sm:top-auto sm:self-start"
             aria-label="Close certificate"
           >
             <X size={20} />
           </button>
         </div>
-
-      {!isPublic && (
-        <div className="no-print flex flex-col gap-2 p-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-3 sm:p-6">
-            <button
-              type="button"
-              onClick={handleLinkedInShare}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#0077b5] px-4 py-2.5 font-bold text-white transition-colors hover:bg-[#006396] sm:w-auto"
-            >
-              <Linkedin size={18} />
-              Share on LinkedIn
-            </button>
-            <button
-              type="button"
-              onClick={handleCopyLink}
-              className="flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--hover-bg)] px-4 py-2.5 font-bold text-[var(--text-primary)] transition-colors hover:bg-[var(--hover-bg)]/80 sm:w-auto"
-            >
-              <Share2 size={18} />
-              Copy Link
-            </button>
-            <button
-              type="button"
-              onClick={handlePrintPdf}
-              title="Tip: In the print dialog, disable “Headers and footers” to remove the date, URL, and page numbers from the PDF."
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-orange-500 px-4 py-2.5 font-bold text-white transition-colors hover:bg-orange-600 sm:w-auto"
-            >
-              <Download size={18} />
-              Download PDF
-            </button>
-        </div>
-      )}
       </div>
 
       {/* Revamped Certificate Design — nested borders in document flow so footer stays inside frames */}
