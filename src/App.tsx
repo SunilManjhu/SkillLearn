@@ -2496,7 +2496,7 @@ export default function App() {
         </div>
 
         {currentView === 'profile' && (
-          <div className="fixed inset-x-0 top-16 bottom-0 z-[45] flex items-start justify-center overflow-y-auto bg-black/60 p-4 pb-12 pt-6 backdrop-blur-sm">
+          <div className="fixed inset-x-0 top-16 bottom-0 z-[45] flex items-start justify-center overflow-y-auto overflow-x-hidden bg-black/60 px-3 pt-4 pb-[max(3rem,env(safe-area-inset-bottom))] backdrop-blur-sm sm:px-4 sm:pb-12 sm:pt-6">
             <ProfilePage
               courses={catalogCourses}
               user={user}

@@ -3,12 +3,12 @@ import { useDialogKeyboard } from '../hooks/useDialogKeyboard';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { reload, updateProfile } from 'firebase/auth';
 import { User, auth } from '../firebase';
-import { computeLearningStats } from '../utils/learningStats';
+import { computeCourseEnrollmentCounts, computeLearningStats } from '../utils/learningStats';
 import { loadCompletionTimestamps } from '../utils/courseCompletionLog';
 import { buildCertificateId } from '../utils/certificateFirestore';
 import type { Course } from '../data/courses';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, CheckCircle2, BellOff, Trash2, Info } from 'lucide-react';
+import { X, CheckCircle2, BellOff, Trash2, Info, Save, Loader2 } from 'lucide-react';
 
 const bioStorageKey = (uid: string) => `skilllearn-profile-bio:${uid}`;
 
@@ -55,12 +55,18 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showCompletedModal, setShowCompletedModal] = useState(false);
+  const [showCoursesOverviewModal, setShowCoursesOverviewModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const stats = useMemo(
     () => computeLearningStats(user?.uid, courses),
+    [user?.uid, remoteProfileDataVersion, courses]
+  );
+
+  const courseCounts = useMemo(
+    () => computeCourseEnrollmentCounts(user?.uid, courses),
     [user?.uid, remoteProfileDataVersion, courses]
   );
 
@@ -77,6 +83,8 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   }, [openCompletedCoursesSignal]);
 
   const closeCompletedModal = useCallback(() => setShowCompletedModal(false), []);
+
+  const closeCoursesOverviewModal = useCallback(() => setShowCoursesOverviewModal(false), []);
 
   const handleSave = useCallback(async () => {
     const u = auth.currentUser;
@@ -108,6 +116,12 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
     onPrimaryAction: closeCompletedModal,
   });
 
+  useDialogKeyboard({
+    open: showCoursesOverviewModal,
+    onClose: closeCoursesOverviewModal,
+    onPrimaryAction: closeCoursesOverviewModal,
+  });
+
   const closeDeleteConfirm = useCallback(() => {
     if (deleteBusy) return;
     setShowDeleteConfirm(false);
@@ -120,12 +134,12 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   });
 
   useDialogKeyboard({
-    open: !showCompletedModal && !showDeleteConfirm,
+    open: !showCompletedModal && !showCoursesOverviewModal && !showDeleteConfirm,
     onClose: onDismiss,
     onPrimaryAction: user ? () => void handleSave() : onLogin,
   });
 
-  useBodyScrollLock(showCompletedModal || showDeleteConfirm);
+  useBodyScrollLock(showCompletedModal || showCoursesOverviewModal || showDeleteConfirm);
 
   useEffect(() => {
     if (!user) {
@@ -149,26 +163,26 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   if (!isAuthReady) {
     return (
       <div
-        className="w-full max-w-2xl pb-6"
+        className="w-full min-w-0 max-w-2xl pb-4 sm:pb-6"
         role="dialog"
         aria-modal="true"
         aria-labelledby="profile-dialog-title"
       >
         <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl overflow-hidden shadow-2xl">
-          <div className="px-5 py-3.5 border-b border-[var(--border-color)] flex items-center justify-between">
-            <h2 id="profile-dialog-title" className="text-lg font-semibold text-[var(--text-primary)]">
+          <div className="flex min-h-12 items-center justify-between gap-2 border-b border-[var(--border-color)] px-4 py-3 sm:min-h-0 sm:px-5 sm:py-3.5">
+            <h2 id="profile-dialog-title" className="min-w-0 text-base font-semibold text-[var(--text-primary)] sm:text-lg">
               Profile
             </h2>
             <button
               type="button"
               onClick={onDismiss}
-              className="p-2 hover:bg-[var(--hover-bg)] rounded-lg transition-colors text-[var(--text-secondary)] shrink-0"
+              className="-mr-1 inline-flex min-h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg p-2 text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)]"
               aria-label="Close"
             >
               <X size={20} />
             </button>
           </div>
-          <div className="px-5 py-5">
+          <div className="px-4 py-4 sm:px-5 sm:py-5">
             <p className="text-[var(--text-secondary)]">Loading account…</p>
           </div>
         </div>
@@ -179,31 +193,33 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   if (!user) {
     return (
       <div
-        className="w-full max-w-2xl pb-6"
+        className="w-full min-w-0 max-w-2xl pb-4 sm:pb-6"
         role="dialog"
         aria-modal="true"
         aria-labelledby="profile-dialog-title"
       >
         <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl overflow-hidden shadow-2xl">
-          <div className="px-5 py-3.5 border-b border-[var(--border-color)] flex items-center justify-between">
-            <h2 id="profile-dialog-title" className="text-lg font-semibold text-[var(--text-primary)]">
+          <div className="flex min-h-12 items-center justify-between gap-2 border-b border-[var(--border-color)] px-4 py-3 sm:min-h-0 sm:px-5 sm:py-3.5">
+            <h2 id="profile-dialog-title" className="min-w-0 text-base font-semibold text-[var(--text-primary)] sm:text-lg">
               Your profile
             </h2>
             <button
               type="button"
               onClick={onDismiss}
-              className="p-2 hover:bg-[var(--hover-bg)] rounded-lg transition-colors text-[var(--text-secondary)] shrink-0"
+              className="-mr-1 inline-flex min-h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg p-2 text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)]"
               aria-label="Close"
             >
               <X size={20} />
             </button>
           </div>
-          <div className="px-5 py-8 text-center">
-            <p className="text-[var(--text-secondary)] mb-5">Sign in to see your details and learning stats.</p>
+          <div className="px-4 py-8 text-center sm:px-5">
+            <p className="mb-5 text-sm text-[var(--text-secondary)] sm:text-base">
+              Sign in to see your details and learning stats.
+            </p>
             <button
               type="button"
               onClick={onLogin}
-              className="bg-orange-500 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-orange-600 transition-colors"
+              className="min-h-11 touch-manipulation rounded-lg bg-orange-500 px-6 py-2.5 font-semibold text-white transition-colors hover:bg-orange-600"
             >
               Sign in
             </button>
@@ -215,67 +231,71 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
 
   return (
     <div
-      className="w-full max-w-2xl pb-6"
+      className="w-full min-w-0 max-w-2xl pb-4 sm:pb-6"
       role="dialog"
       aria-modal="true"
       aria-labelledby="profile-dialog-title"
     >
       <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl overflow-hidden shadow-2xl">
-        <div className="px-5 py-3.5 border-b border-[var(--border-color)] flex items-center justify-between gap-2">
-          <h2 id="profile-dialog-title" className="text-lg font-semibold text-[var(--text-primary)]">
+        <div className="flex min-h-12 items-center justify-between gap-2 border-b border-[var(--border-color)] px-4 py-3 sm:min-h-0 sm:px-5 sm:py-3.5">
+          <h2 id="profile-dialog-title" className="min-w-0 text-base font-semibold text-[var(--text-primary)] sm:text-lg">
             Profile
           </h2>
           <button
             type="button"
             onClick={onDismiss}
-            className="p-2 hover:bg-[var(--hover-bg)] rounded-lg transition-colors text-[var(--text-secondary)] shrink-0"
+            className="-mr-1 inline-flex min-h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg p-2 text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)]"
             aria-label="Close profile"
           >
             <X size={20} />
           </button>
         </div>
-        <div className="px-5 py-5 md:px-6 md:py-6">
+        <div className="px-4 py-4 sm:px-5 md:px-6 md:py-6">
         {/* Identity + stats — single compact band */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-5 pb-5 mb-5 border-b border-[var(--border-color)]">
-          <div className="flex items-center gap-4 min-w-0">
-            <div className="w-[4.5rem] h-[4.5rem] rounded-full overflow-hidden border-2 border-orange-500/25 bg-[var(--hover-bg)] shrink-0">
+        <div className="mb-5 flex flex-col gap-4 border-b border-[var(--border-color)] pb-5 sm:flex-row sm:items-start sm:gap-6 md:gap-8">
+          <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
+            <div className="h-16 w-16 shrink-0 overflow-hidden rounded-full border-2 border-orange-500/25 bg-[var(--hover-bg)] sm:h-[4.5rem] sm:w-[4.5rem]">
             {photoUrl ? (
               <img
                 src={photoUrl}
                 alt=""
-                className="w-full h-full object-cover"
+                className="h-full w-full object-cover"
                 referrerPolicy="no-referrer"
               />
             ) : (
-              <div className="w-full h-full flex items-center justify-center text-2xl font-bold text-orange-500">
+              <div className="flex h-full w-full items-center justify-center text-xl font-bold text-orange-500 sm:text-2xl">
                 {heroName.slice(0, 1).toUpperCase()}
               </div>
             )}
             </div>
-            <div className="min-w-0 text-left">
-              <h1 className="text-lg font-semibold text-[var(--text-primary)] truncate">{heroName}</h1>
-              <p className="text-sm text-[var(--text-secondary)] break-all line-clamp-2">{user.email}</p>
+            <div className="min-w-0 flex-1 text-left">
+              <h1 className="truncate text-base font-semibold text-[var(--text-primary)] sm:text-lg">{heroName}</h1>
+              <p className="line-clamp-2 break-words text-xs text-[var(--text-secondary)] sm:text-sm">{user.email}</p>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2.5 sm:justify-end sm:ml-auto">
+          <div className="grid w-full grid-cols-3 gap-2 sm:ml-auto sm:flex sm:w-auto sm:min-w-[13rem] sm:max-w-[16rem] sm:flex-none sm:flex-col sm:gap-0 sm:gap-y-0.5 sm:pt-0.5">
             <button
               type="button"
-              onClick={() => setShowCompletedModal(true)}
-              className="inline-flex items-baseline gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--hover-bg)] px-3 py-1.5 text-left text-sm hover:border-orange-500/40 transition-colors"
+              onClick={() => setShowCoursesOverviewModal(true)}
+              className="inline-flex min-h-11 touch-manipulation flex-col items-center justify-center gap-0.5 rounded-lg border border-[var(--border-color)] bg-[var(--hover-bg)] px-2 py-1.5 text-center text-xs transition-colors hover:border-orange-500/40 sm:min-h-0 sm:w-full sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:border-0 sm:bg-transparent sm:px-0 sm:py-1.5 sm:text-left sm:text-sm sm:hover:bg-[var(--hover-bg)] sm:rounded-md"
             >
-              <span className="text-[var(--text-muted)]">Courses</span>
-              <span className="font-semibold tabular-nums text-[var(--text-primary)]">{stats.completedCourses}</span>
+              <span className="text-[var(--text-muted)] sm:text-[var(--text-secondary)]">Courses</span>
+              <span className="font-semibold tabular-nums text-[var(--text-primary)]">{courses.length}</span>
             </button>
-            <div className="inline-flex items-baseline gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--hover-bg)] px-3 py-1.5 text-sm">
-              <span className="text-[var(--text-muted)]">Pts</span>
+            <div className="inline-flex min-h-11 flex-col items-center justify-center gap-0.5 rounded-lg border border-[var(--border-color)] bg-[var(--hover-bg)] px-2 py-1.5 text-center text-xs sm:min-h-0 sm:w-full sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:border-0 sm:bg-transparent sm:px-0 sm:py-1.5 sm:text-sm">
+              <span className="text-[var(--text-muted)] sm:text-[var(--text-secondary)]">Points</span>
               <span className="font-semibold tabular-nums text-[var(--text-primary)]">
                 {stats.skillPoints.toLocaleString()}
               </span>
             </div>
-            <div className="inline-flex items-baseline gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--hover-bg)] px-3 py-1.5 text-sm">
-              <span className="text-[var(--text-muted)]">Certs</span>
+            <button
+              type="button"
+              onClick={() => setShowCompletedModal(true)}
+              className="inline-flex min-h-11 touch-manipulation flex-col items-center justify-center gap-0.5 rounded-lg border border-[var(--border-color)] bg-[var(--hover-bg)] px-2 py-1.5 text-center text-xs transition-colors hover:border-orange-500/40 sm:min-h-0 sm:w-full sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:border-0 sm:bg-transparent sm:px-0 sm:py-1.5 sm:text-sm sm:hover:bg-[var(--hover-bg)] sm:rounded-md"
+            >
+              <span className="text-[var(--text-muted)] sm:text-[var(--text-secondary)]">Certificates</span>
               <span className="font-semibold tabular-nums text-[var(--text-primary)]">{stats.certificates}</span>
-            </div>
+            </button>
           </div>
         </div>
 
@@ -285,49 +305,74 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
           </h2>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-x-4">
             <div className="sm:col-span-1">
-              <label className="block text-xs text-[var(--text-secondary)] mb-1">Full name</label>
+              <label className="mb-1 block text-xs text-[var(--text-secondary)]">Full name</label>
               <input
                 type="text"
                 value={displayNameEdit}
                 onChange={(e) => setDisplayNameEdit(e.target.value)}
-                className="w-full bg-[var(--hover-bg)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:border-orange-500/50"
+                className="min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--hover-bg)] px-3 py-2 text-base text-[var(--text-primary)] focus:border-orange-500/50 focus:outline-none sm:min-h-0 sm:text-sm"
               />
             </div>
             <div className="sm:col-span-1">
-              <label className="block text-xs text-[var(--text-secondary)] mb-1">Email</label>
+              <label className="mb-1 block text-xs text-[var(--text-secondary)]">Email</label>
               <input
                 type="email"
                 value={user.email || ''}
                 readOnly
-                className="w-full bg-[var(--hover-bg)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm text-[var(--text-muted)] cursor-not-allowed"
+                className="min-h-11 w-full cursor-not-allowed rounded-lg border border-[var(--border-color)] bg-[var(--hover-bg)] px-3 py-2 text-base text-[var(--text-muted)] sm:min-h-0 sm:text-sm"
               />
             </div>
           </div>
-          <p className="text-xs text-[var(--text-muted)] mt-1.5">Email is managed by your sign-in provider.</p>
+          <p className="mt-1.5 text-xs text-[var(--text-muted)]">Email is managed by your sign-in provider.</p>
           <div className="mt-3">
-            <label className="block text-xs text-[var(--text-secondary)] mb-1">Bio</label>
+            <label className="mb-1 block text-xs text-[var(--text-secondary)]">Bio</label>
             <textarea
               rows={3}
               value={bio}
               onChange={(e) => setBio(e.target.value)}
               placeholder="Short note (this device only)…"
-              className="w-full bg-[var(--hover-bg)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:border-orange-500/50 resize-none"
+              className="w-full resize-none rounded-lg border border-[var(--border-color)] bg-[var(--hover-bg)] px-3 py-2 text-base text-[var(--text-primary)] focus:border-orange-500/50 focus:outline-none sm:text-sm"
             />
           </div>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => void handleSave()}
-              disabled={saveState === 'saving'}
-              className="bg-orange-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-orange-600 transition-colors disabled:opacity-60"
-            >
-              {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : 'Save'}
-            </button>
-            {saveError && <p className="text-sm text-red-500">{saveError}</p>}
+          <div className="mt-4 border-t border-[var(--border-color)] pt-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
+              {saveError && (
+                <p className="text-sm text-red-500 sm:min-w-0 sm:flex-1 sm:pt-2.5">{saveError}</p>
+              )}
+              <div className="flex w-full sm:ml-auto sm:w-auto sm:shrink-0 sm:justify-end">
+                <button
+                  type="button"
+                  onClick={() => void handleSave()}
+                  disabled={saveState === 'saving' || saveState === 'saved'}
+                  className={`inline-flex min-h-11 w-full touch-manipulation items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500/45 disabled:cursor-not-allowed sm:w-auto sm:min-w-[9.5rem] ${
+                    saveState === 'saved'
+                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700'
+                      : 'border-orange-500/40 bg-[var(--hover-bg)] text-orange-500 hover:border-orange-500/65 hover:bg-orange-500/10 disabled:opacity-60'
+                  }`}
+                >
+                  {saveState === 'saving' ? (
+                    <>
+                      <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
+                      Saving…
+                    </>
+                  ) : saveState === 'saved' ? (
+                    <>
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden />
+                      Saved
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4 shrink-0" aria-hidden />
+                      Save changes
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
         </section>
 
-        <p className="mt-4 text-sm text-[var(--text-secondary)] leading-relaxed border-t border-[var(--border-color)] pt-4">
+        <p className="mt-4 border-t border-[var(--border-color)] pt-4 text-sm leading-relaxed text-[var(--text-secondary)]">
           Completions and progress sync to your account; more activity insights may appear here later.
         </p>
 
@@ -335,22 +380,23 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
           <div className="mt-5 space-y-5 border-t border-[var(--border-color)] pt-5">
             {onAlertsMutedChange && (
               <div>
-                <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-2.5 flex items-center gap-2">
-                  <BellOff size={16} className="text-orange-500 shrink-0" aria-hidden />
-                  Notifications
-                </h3>
-                <div className="rounded-xl border border-[var(--border-color)] bg-[var(--hover-bg)]/50 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <p className="text-sm text-[var(--text-secondary)] min-w-0">
-                    <span className="font-medium text-[var(--text-primary)]">Mute in-app alerts</span>
-                    {' — '}
-                    hides course/admin bell items; certificates still show.
-                  </p>
+                <div className="flex min-h-11 items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <BellOff size={16} className="shrink-0 text-orange-500" aria-hidden />
+                    <span
+                      id="profile-notifications-label"
+                      className="text-sm font-semibold text-[var(--text-primary)]"
+                    >
+                      Notifications
+                    </span>
+                  </div>
                   <button
                     type="button"
                     role="switch"
                     aria-checked={alertsMuted}
+                    aria-labelledby="profile-notifications-label"
                     onClick={() => onAlertsMutedChange(!alertsMuted)}
-                    className={`relative h-9 w-14 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500/60 self-end sm:self-auto ${
+                    className={`relative h-9 w-14 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500/60 ${
                       alertsMuted ? 'bg-orange-500' : 'bg-[var(--border-color)]'
                     }`}
                   >
@@ -362,6 +408,9 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                     <span className="sr-only">{alertsMuted ? 'Alerts muted' : 'Alerts on'}</span>
                   </button>
                 </div>
+                <p className="mt-1.5 text-xs text-[var(--text-muted)]">
+                  When muted, course and admin items are hidden from the bell; certificate notices still appear.
+                </p>
               </div>
             )}
 
@@ -384,13 +433,13 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                   </div>
                 ) : null}
                 <div
-                  className={`rounded-xl border border-red-500/30 bg-red-500/5 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 ${
+                  className={`flex flex-col gap-3 rounded-xl border border-red-500/30 bg-red-500/5 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4 ${
                     accountDeletionBlockedMessage || accountDeletionBlockLoading ? 'mt-3' : ''
                   }`}
                 >
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-[var(--text-primary)]">Delete account</p>
-                    <p className="text-xs text-[var(--text-secondary)] mt-1 leading-snug">
+                    <p className="mt-1 text-xs leading-snug text-[var(--text-secondary)]">
                       Removes your SkillStream sign-in permanently.
                     </p>
                   </div>
@@ -403,7 +452,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                       setDeleteError(null);
                       setShowDeleteConfirm(true);
                     }}
-                    className="inline-flex items-center justify-center gap-2 shrink-0 rounded-lg border border-red-500/50 bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-500 hover:bg-red-500/20 transition-colors disabled:pointer-events-none disabled:opacity-45"
+                    className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center gap-2 rounded-lg border border-red-500/50 bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-500 transition-colors hover:bg-red-500/20 disabled:pointer-events-none disabled:opacity-45 sm:min-h-0 sm:w-auto"
                   >
                     <Trash2 size={16} />
                     Delete
@@ -417,92 +466,182 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       </div>
 
       <AnimatePresence>
-        {showCompletedModal && (
+        {showCoursesOverviewModal && (
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overflow-x-hidden bg-black/60 p-3 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-sm sm:p-4"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="profile-completed-courses-title"
+            aria-labelledby="profile-courses-overview-title"
           >
             <motion.div
+              key="courses-overview"
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl"
+              className="my-auto w-full max-w-md overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl"
             >
-              <div className="p-6 border-b border-[var(--border-color)] flex items-center justify-between">
-                <h2 id="profile-completed-courses-title" className="text-xl font-bold text-[var(--text-primary)]">
-                  Completed Courses
+              <div className="flex min-h-12 items-center justify-between gap-2 border-b border-[var(--border-color)] p-4 sm:min-h-0 sm:p-6">
+                <h2 id="profile-courses-overview-title" className="min-w-0 text-lg font-bold text-[var(--text-primary)] sm:text-xl">
+                  Courses
                 </h2>
                 <button
                   type="button"
-                  onClick={closeCompletedModal}
-                  className="p-2 hover:bg-[var(--hover-bg)] rounded-lg transition-colors text-[var(--text-secondary)]"
+                  onClick={closeCoursesOverviewModal}
+                  className="-mr-1 inline-flex min-h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg p-2 text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)]"
+                  aria-label="Close"
                 >
                   <X size={20} />
                 </button>
               </div>
-              <div className="p-6 max-h-[60vh] overflow-y-auto">
+              <div className="p-4 sm:p-6">
+                <p className="mb-4 text-sm text-[var(--text-secondary)]">
+                  Your status across courses in the catalog ({courses.length} total).
+                </p>
+                <ul className="space-y-3 rounded-xl border border-[var(--border-color)] bg-[var(--hover-bg)]/50 p-4">
+                  <li className="flex items-center justify-between gap-4 text-sm">
+                    <span className="text-[var(--text-secondary)]">Completed</span>
+                    <span className="font-semibold tabular-nums text-[var(--text-primary)]">
+                      {courseCounts.completed}
+                    </span>
+                  </li>
+                  <li className="flex items-center justify-between gap-4 text-sm">
+                    <span className="text-[var(--text-secondary)]">In progress</span>
+                    <span className="font-semibold tabular-nums text-[var(--text-primary)]">
+                      {courseCounts.inProgress}
+                    </span>
+                  </li>
+                  <li className="flex items-center justify-between gap-4 text-sm">
+                    <span className="text-[var(--text-secondary)]">Not started</span>
+                    <span className="font-semibold tabular-nums text-[var(--text-primary)]">
+                      {courseCounts.notStarted}
+                    </span>
+                  </li>
+                </ul>
+              </div>
+              <div className="border-t border-[var(--border-color)] bg-[var(--hover-bg)]/50 p-4 sm:p-6">
+                <button
+                  type="button"
+                  onClick={closeCoursesOverviewModal}
+                  className="min-h-11 w-full touch-manipulation rounded-xl bg-orange-500 py-3 font-bold text-white transition-colors hover:bg-orange-600"
+                >
+                  Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+        {showCompletedModal && (
+          <div
+            className="fixed inset-0 z-50 flex min-h-0 items-center justify-center overflow-y-auto overflow-x-hidden bg-black/60 px-2 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur-sm sm:px-4 sm:py-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="profile-certificates-title"
+          >
+            <motion.div
+              key="certificates-list"
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="my-auto flex max-h-[min(92dvh,100svh)] w-full max-w-lg min-h-0 flex-col overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl sm:max-h-[min(90vh,44rem)]"
+            >
+              <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[var(--border-color)] px-3 py-3 sm:min-h-0 sm:px-6 sm:py-4">
+                <h2
+                  id="profile-certificates-title"
+                  className="min-w-0 pr-1 text-base font-bold leading-tight text-[var(--text-primary)] sm:text-xl"
+                >
+                  Certificates
+                </h2>
+                <button
+                  type="button"
+                  onClick={closeCompletedModal}
+                  className="-mr-1 inline-flex min-h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg p-2 text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)]"
+                  aria-label="Close"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-3 py-3 sm:px-6 sm:py-5">
+                <p className="mb-3 text-xs leading-relaxed text-[var(--text-secondary)] sm:mb-4 sm:text-sm">
+                  Completed courses — tap View certificate to open yours.
+                </p>
                 {completedCoursesList.length > 0 ? (
-                  <div className="space-y-4">
-                    {completedCoursesList.map(course => (
+                  <div className="space-y-3 sm:space-y-4">
+                    {completedCoursesList.map((course) => (
                       <div
                         key={course.id}
-                        className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 bg-[var(--hover-bg)] rounded-xl border border-[var(--border-color)]"
+                        className="rounded-xl border border-[var(--border-color)] bg-[var(--hover-bg)] p-3 sm:flex sm:items-center sm:gap-4 sm:p-4"
                       >
-                        <div className="w-16 h-10 rounded-lg overflow-hidden shrink-0">
-                          <img
-                            src={course.thumbnail}
-                            alt=""
-                            className="w-full h-full object-cover"
-                            referrerPolicy="no-referrer"
-                          />
+                        <div className="flex gap-3 sm:contents">
+                          <div className="h-12 w-20 shrink-0 overflow-hidden rounded-lg sm:h-10 sm:w-16">
+                            <img
+                              src={course.thumbnail}
+                              alt=""
+                              className="h-full w-full object-cover"
+                              referrerPolicy="no-referrer"
+                            />
+                          </div>
+                          <div className="min-w-0 flex-1 sm:flex sm:min-w-0 sm:flex-1 sm:items-start sm:gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-start gap-2">
+                                <h3 className="line-clamp-2 text-[15px] font-bold leading-snug text-[var(--text-primary)] sm:line-clamp-1 sm:text-base">
+                                  {course.title}
+                                </h3>
+                                <CheckCircle2
+                                  size={18}
+                                  className="mt-0.5 shrink-0 text-orange-500 sm:mt-1 sm:hidden"
+                                  aria-hidden
+                                />
+                              </div>
+                              <p className="mt-0.5 text-xs text-[var(--text-secondary)]">{course.author}</p>
+                            </div>
+                            <CheckCircle2
+                              size={20}
+                              className="mt-1 hidden shrink-0 text-orange-500 sm:block"
+                              aria-hidden
+                            />
+                          </div>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-bold text-[var(--text-primary)] truncate">{course.title}</h3>
-                          <p className="text-xs text-[var(--text-secondary)]">{course.author}</p>
-                        </div>
-                        <div className="flex items-center gap-3 w-full sm:w-auto mt-2 sm:mt-0">
-                          <button
-                            onClick={() => {
-                              if (!user?.uid) return;
-                              const userName = user.displayName || user.email?.split('@')[0] || 'Learner';
-                              const completedAt = loadCompletionTimestamps(user.uid)[course.id];
-                              const date = completedAt
-                                ? new Date(completedAt).toLocaleDateString('en-US', {
-                                    month: 'long',
-                                    day: 'numeric',
-                                    year: 'numeric',
-                                  })
-                                : new Date().toLocaleDateString('en-US', {
-                                    month: 'long',
-                                    day: 'numeric',
-                                    year: 'numeric',
-                                  });
-                              const certId = buildCertificateId(course.id, user.uid);
-                              onShowCertificate(course.id, userName, date, certId);
-                              closeCompletedModal();
-                            }}
-                            className="flex-1 sm:flex-none px-4 py-2 bg-orange-500/10 text-orange-500 hover:bg-orange-500/20 rounded-lg text-xs font-bold transition-colors"
-                          >
-                            View Certificate
-                          </button>
-                          <CheckCircle2 size={20} className="text-orange-500 shrink-0" />
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!user?.uid) return;
+                            const userName = user.displayName || user.email?.split('@')[0] || 'Learner';
+                            const completedAt = loadCompletionTimestamps(user.uid)[course.id];
+                            const date = completedAt
+                              ? new Date(completedAt).toLocaleDateString('en-US', {
+                                  month: 'long',
+                                  day: 'numeric',
+                                  year: 'numeric',
+                                })
+                              : new Date().toLocaleDateString('en-US', {
+                                  month: 'long',
+                                  day: 'numeric',
+                                  year: 'numeric',
+                                });
+                            const certId = buildCertificateId(course.id, user.uid);
+                            onShowCertificate(course.id, userName, date, certId);
+                            closeCompletedModal();
+                          }}
+                          className="mt-3 w-full min-h-11 touch-manipulation rounded-lg bg-orange-500/10 px-4 py-2.5 text-sm font-bold text-orange-500 transition-colors hover:bg-orange-500/20 sm:mt-0 sm:min-h-0 sm:w-auto sm:shrink-0 sm:self-center sm:px-4 sm:py-2 sm:text-xs"
+                        >
+                          View certificate
+                        </button>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="text-center py-8">
-                    <p className="text-[var(--text-secondary)]">No courses completed yet. Keep learning!</p>
+                  <div className="py-10 text-center sm:py-8">
+                    <p className="text-sm text-[var(--text-secondary)]">
+                      No courses completed yet. Keep learning!
+                    </p>
                   </div>
                 )}
               </div>
-              <div className="p-6 border-t border-[var(--border-color)] bg-[var(--hover-bg)]/50">
+              <div className="shrink-0 border-t border-[var(--border-color)] bg-[var(--hover-bg)]/50 px-3 py-3 sm:px-6 sm:py-5">
                 <button
                   type="button"
                   onClick={closeCompletedModal}
-                  className="w-full bg-orange-500 text-white py-3 rounded-xl font-bold hover:bg-orange-600 transition-colors"
+                  className="min-h-11 w-full touch-manipulation rounded-xl bg-orange-500 py-3 text-base font-bold text-white transition-colors hover:bg-orange-600 sm:text-sm"
                 >
                   Close
                 </button>
@@ -514,30 +653,30 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
 
       {showDeleteConfirm && onDeleteAccount && (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto overflow-x-hidden bg-black/60 p-3 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-sm sm:p-4"
           role="dialog"
           aria-modal="true"
           aria-labelledby="profile-delete-title"
         >
-          <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
-            <div className="p-5 border-b border-[var(--border-color)]">
+          <div className="my-auto w-full max-w-md overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl">
+            <div className="border-b border-[var(--border-color)] p-4 sm:p-5">
               <h3 id="profile-delete-title" className="text-lg font-bold text-[var(--text-primary)]">
                 Delete your account?
               </h3>
             </div>
-            <div className="p-5 space-y-4">
-              <p className="text-sm text-[var(--text-secondary)]">
+            <div className="space-y-4 p-4 sm:p-5">
+              <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
                 Your Google-linked account will be removed from SkillStream. Admins must set their role to
                 user in Admin → Roles before deletion; if you are the only admin, promote someone else to
                 admin first.
               </p>
               {deleteError && <p className="text-sm text-red-500">{deleteError}</p>}
-              <div className="flex gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row">
                 <button
                   type="button"
                   disabled={deleteBusy}
                   onClick={closeDeleteConfirm}
-                  className="flex-1 border border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--hover-bg)] py-2.5 rounded-lg text-sm font-semibold disabled:opacity-60"
+                  className="min-h-11 w-full touch-manipulation rounded-lg border border-[var(--border-color)] py-2.5 text-sm font-semibold text-[var(--text-primary)] transition-colors hover:bg-[var(--hover-bg)] disabled:opacity-60 sm:min-h-0 sm:flex-1"
                 >
                   Cancel
                 </button>
@@ -557,7 +696,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                       setShowDeleteConfirm(false);
                     })();
                   }}
-                  className="flex-[1.2] py-2.5 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-500 disabled:opacity-60"
+                  className="min-h-11 w-full touch-manipulation rounded-lg bg-red-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-red-500 disabled:opacity-60 sm:min-h-0 sm:flex-[1.2]"
                 >
                   {deleteBusy ? 'Deleting…' : 'Yes, delete'}
                 </button>
