@@ -354,6 +354,8 @@ export default function App() {
     getInitialRouteState(peekResolvedCatalogCourses() ?? STATIC_CATALOG_FALLBACK)
   );
   const [currentView, setCurrentView] = useState<View>(initialRoute.view);
+  /** Course player: hide global nav + full-bleed video while lesson is playing. */
+  const [playerImmersiveNav, setPlayerImmersiveNav] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   /** In-app bell: hide course/admin alerts; certificates still show. Persisted per uid. */
   const [alertsMuted, setAlertsMuted] = useState(false);
@@ -1326,6 +1328,10 @@ export default function App() {
     if (currentView !== 'profile') {
       setCompletedCoursesModalSignal(0);
     }
+  }, [currentView]);
+
+  useEffect(() => {
+    if (currentView !== 'player') setPlayerImmersiveNav(false);
   }, [currentView]);
 
   useEffect(() => {
@@ -2363,9 +2369,10 @@ export default function App() {
           onClearAllNotifications={handleClearAllNotifications}
           onGuestClearNotifications={handleGuestClearNotifications}
           isAdmin={isAdminUser}
+          immersiveHidden={playerImmersiveNav && currentView === 'player'}
         />
       )}
-      {authBanner && currentView !== 'certificate' && (
+      {authBanner && currentView !== 'certificate' && !(playerImmersiveNav && currentView === 'player') && (
         <div
           role="alert"
           className="border-b border-orange-500/40 bg-orange-500/10 px-4 py-3 text-sm text-[var(--text-primary)]"
@@ -2434,6 +2441,8 @@ export default function App() {
                   user={user}
                   onLogin={handleLogin}
                   pauseForAppNavOverlay={profileOverlayOpen && mainView === 'player'}
+                  immersiveLayout={playerImmersiveNav}
+                  onImmersivePlaybackChange={setPlayerImmersiveNav}
                 />
               ) : (
                 <PlayerSignInGate
@@ -2551,15 +2560,17 @@ export default function App() {
         </AnimatePresence>
       </main>
 
-      <DemoLearningAgent
-        courses={catalogCourses}
-        onOpenCourse={(course) => {
-          setSelectedCourse(course);
-          setInitialLesson(undefined);
-          setCurrentView('overview');
-          scrollDocumentToTop();
-        }}
-      />
+      {!(playerImmersiveNav && currentView === 'player') && (
+        <DemoLearningAgent
+          courses={catalogCourses}
+          onOpenCourse={(course) => {
+            setSelectedCourse(course);
+            setInitialLesson(undefined);
+            setCurrentView('overview');
+            scrollDocumentToTop();
+          }}
+        />
+      )}
 
       {currentView !== 'player' && currentView !== 'overview' && currentView !== 'admin' && (
         <footer className="bg-[var(--bg-secondary)] border-t border-[var(--border-color)] py-12 px-6 transition-colors duration-300">

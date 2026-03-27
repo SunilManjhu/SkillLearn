@@ -69,6 +69,9 @@ const PAUSE_UI_MIN_MS = 10;
 /** Keep pause frost visible this long after playback resumes (video plays underneath; overlay is pointer-events none). */
 const UNPAUSE_FROST_LINGER_MS = 100;
 
+/** Auto-hide player chrome after idle mouse; same delay when playback starts (no cursor required). */
+const PLAYER_CHROME_IDLE_MS = 1000;
+
 function formatYtClock(totalSeconds: number): string {
   if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return '0:00';
   const s = Math.floor(totalSeconds);
@@ -95,6 +98,10 @@ interface CoursePlayerProps {
   initialLesson?: Lesson;
   /** Profile overlay on top of the player (App): pause while true, resume when cleared if playback was interrupted. */
   pauseForAppNavOverlay?: boolean;
+  /** App hides nav + full-bleed video while true (playback without top nav). */
+  immersiveLayout?: boolean;
+  /** Fired when the shell should hide global nav (narrow viewport + landscape + playing). Portrait keeps the nav. */
+  onImmersivePlaybackChange?: (immersive: boolean) => void;
 }
 
 export const CoursePlayer: React.FC<CoursePlayerProps> = ({
@@ -104,6 +111,8 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   onLogin,
   initialLesson,
   pauseForAppNavOverlay = false,
+  immersiveLayout = false,
+  onImmersivePlaybackChange,
 }) => {
   const progressUserId = user?.uid ?? null;
   const { setYoutubeResolvedSeconds, lessonDurationLabel } = useYoutubeResolvedSeconds(course);
@@ -170,6 +179,15 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
    * lesson id change and when the clip ends without auto-advancing.
    */
   const [replayUiSuppressed, setReplayUiSuppressed] = useState(false);
+
+  /** Narrow + landscape: hide site nav / learning agent while playing; portrait keeps the nav bar. */
+  const [immersiveShellViewport, setImmersiveShellViewport] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return (
+      window.matchMedia('(max-width: 1023px)').matches &&
+      window.matchMedia('(orientation: landscape)').matches
+    );
+  });
 
   // Voting & Suggestion State
   const [upvotes, setUpvotes] = useState(0);
@@ -851,8 +869,13 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   }, [pauseForAppNavOverlay, stopPlayback, tryResumePlayback]);
 
   useEffect(() => {
+    let visibleDebounce: number | null = null;
     const onVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
+        if (visibleDebounce != null) {
+          clearTimeout(visibleDebounce);
+          visibleDebounce = null;
+        }
         if (!mediaPausedRef.current) {
           stopPlayback();
           setMediaPaused(true);
@@ -861,27 +884,61 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
         }
         return;
       }
-      if (visibilityPauseOwnedRef.current) {
-        visibilityPauseOwnedRef.current = false;
-      }
-      tryResumePlayback();
+      if (visibleDebounce != null) clearTimeout(visibleDebounce);
+      /** Debounce: rotation / mobile UI can briefly flip visibility and would otherwise resume incorrectly. */
+      visibleDebounce = window.setTimeout(() => {
+        visibleDebounce = null;
+        if (document.visibilityState !== 'visible') return;
+        if (visibilityPauseOwnedRef.current) {
+          visibilityPauseOwnedRef.current = false;
+        }
+        tryResumePlayback();
+      }, 220);
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      if (visibleDebounce != null) clearTimeout(visibleDebounce);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, [stopPlayback, tryResumePlayback]);
 
   useEffect(() => {
     if (mediaPaused) {
       clearChromeHideTimer();
       setChromeVisible(true);
-    } else {
-      setChromeVisible(true);
+      return;
     }
+    /** Playing: auto-hide chrome after the same idle window as mouse (no cursor / not over video required). */
+    clearChromeHideTimer();
+    chromeHideTimerRef.current = window.setTimeout(() => {
+      if (!mediaPausedRef.current) setChromeVisible(false);
+    }, PLAYER_CHROME_IDLE_MS);
   }, [mediaPaused, clearChromeHideTimer]);
 
   useEffect(() => {
     return () => clearChromeHideTimer();
   }, [clearChromeHideTimer]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const narrow = window.matchMedia('(max-width: 1023px)');
+    const landscape = window.matchMedia('(orientation: landscape)');
+    const update = () => {
+      setImmersiveShellViewport(narrow.matches && landscape.matches);
+    };
+    update();
+    narrow.addEventListener('change', update);
+    landscape.addEventListener('change', update);
+    return () => {
+      narrow.removeEventListener('change', update);
+      landscape.removeEventListener('change', update);
+    };
+  }, []);
+
+  useEffect(() => {
+    onImmersivePlaybackChange?.(!mediaPaused && immersiveShellViewport);
+    return () => onImmersivePlaybackChange?.(false);
+  }, [mediaPaused, immersiveShellViewport, onImmersivePlaybackChange]);
 
   useEffect(() => {
     return () => {
@@ -906,8 +963,6 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
 
   /** Mouse: while playing, show on movement and hide after short idle even if pointer stays inside. */
   useEffect(() => {
-    const MOUSE_CHROME_IDLE_MS = 1000;
-
     const isInsideVideoArea = (clientX: number, clientY: number) => {
       const el = videoAreaRef.current;
       if (!el) return false;
@@ -927,7 +982,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
       clearChromeHideTimer();
       chromeHideTimerRef.current = setTimeout(() => {
         if (!mediaPausedRef.current) setChromeVisible(false);
-      }, MOUSE_CHROME_IDLE_MS);
+      }, PLAYER_CHROME_IDLE_MS);
     };
 
     window.addEventListener('mousemove', onMove, { passive: true });
@@ -1066,6 +1121,20 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     setCurrentLesson(next);
   }, [flushCurrentLessonProgress, stopPlayback, scheduleFinalizeFromStorage, getMergedProgressSnapshot]);
 
+  /** Refs so YouTube iframe setup is not torn down when callback identities change (resize / parent re-render). */
+  const mergeProgressRef = useRef(mergeProgress);
+  mergeProgressRef.current = mergeProgress;
+  const savedProgressForLessonRef = useRef(savedProgressForLesson);
+  savedProgressForLessonRef.current = savedProgressForLesson;
+  const getMergedProgressSnapshotRef = useRef(getMergedProgressSnapshot);
+  getMergedProgressSnapshotRef.current = getMergedProgressSnapshot;
+  const scheduleFinalizeFromStorageRef = useRef(scheduleFinalizeFromStorage);
+  scheduleFinalizeFromStorageRef.current = scheduleFinalizeFromStorage;
+  const goToNextLessonRef = useRef(goToNextLesson);
+  goToNextLessonRef.current = goToNextLesson;
+  const startUnpauseFrostLingerRef = useRef(startUnpauseFrostLinger);
+  startUnpauseFrostLingerRef.current = startUnpauseFrostLinger;
+
   /**
    * When App changes `initialLesson` (navigation / auth return), follow it.
    * Do not re-sync when only `currentLesson` diverges — the user may have picked another chapter in the sidebar
@@ -1078,13 +1147,13 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     if (fromParent === prevParent) return;
     initialLessonIdFromParentRef.current = fromParent;
     if (fromParent === undefined) return;
-    const match = course.modules.flatMap((m) => m.lessons).find((l) => l.id === fromParent);
+    const match = courseRef.current.modules.flatMap((m) => m.lessons).find((l) => l.id === fromParent);
     if (!match || match.id === currentLesson.id) return;
     flushCurrentLessonProgress();
     stopPlayback();
     playNextAfterEndRef.current = false;
     setCurrentLesson(match);
-  }, [initialLesson?.id, course.modules, currentLesson.id, flushCurrentLessonProgress, stopPlayback, initialLesson]);
+  }, [initialLesson?.id, course.id, currentLesson.id, flushCurrentLessonProgress, stopPlayback]);
 
   useLayoutEffect(() => {
     if (wasActuallyFinishedOnOpenRef.current) return;
@@ -1241,7 +1310,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     if (mod) {
       setExpandedModules((prev) => (prev.includes(mod.id) ? prev : [...prev, mod.id]));
     }
-  }, [currentLesson.id, course.modules]);
+  }, [currentLesson.id, course.id]);
 
   /**
    * YouTube mutates the host node. Unmounting that div (switching to <video>) while the API still
@@ -1266,7 +1335,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
 
       const chainAutoplay = playNextAfterEndRef.current;
       playNextAfterEndRef.current = false;
-      const savedYt = savedProgressForLesson(lessonRef.current.id);
+      const savedYt = savedProgressForLessonRef.current(lessonRef.current.id);
       const alreadyCompleteYt = isLessonPlaybackComplete(savedYt);
       const shouldAutoplay =
         (chainAutoplay || autoAdvanceRef.current) && !alreadyCompleteYt;
@@ -1312,7 +1381,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
             } catch {
               /* ignore */
             }
-            const saved = savedProgressForLesson(lid);
+            const saved = savedProgressForLessonRef.current(lid);
             if (!saved || !(saved.duration > 0)) return;
             try {
               const d = player.getDuration();
@@ -1357,7 +1426,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
               setMediaPaused(false);
               setYtPauseBlurActive(false);
               if (hadPauseFrost) {
-                startUnpauseFrostLinger();
+                startUnpauseFrostLingerRef.current();
               }
             } else if (e.data === ps.PAUSED) {
               clearYtPauseUiTimer();
@@ -1378,7 +1447,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                       const d = player.getDuration?.() ?? 0;
                       const curT = player.getCurrentTime?.() ?? 0;
                       if (d > 0) {
-                        mergeProgress(lessonRef.current.id, curT, d);
+                        mergeProgressRef.current(lessonRef.current.id, curT, d);
                       }
                     } catch {
                       /* ignore */
@@ -1405,18 +1474,18 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                 const player = e.target;
                 const d = player.getDuration();
                 /* Match native onEnded: full duration so Replay CTA shows when Auto-next is off. */
-                if (d > 0) mergeProgress(lessonRef.current.id, d, d);
+                if (d > 0) mergeProgressRef.current(lessonRef.current.id, d, d);
               } catch {
                 /* ignore */
               }
-              const merged = getMergedProgressSnapshot();
+              const merged = getMergedProgressSnapshotRef.current();
               const hasNext = !!getNextIncompleteLessonAfter(
                 courseRef.current,
                 lessonRef.current,
                 merged
               );
               if (!hasNext && !autoAdvanceRef.current) {
-                scheduleFinalizeFromStorage();
+                scheduleFinalizeFromStorageRef.current();
               }
               const willAdvance = autoAdvanceRef.current && hasNext;
               if (!willAdvance) {
@@ -1424,7 +1493,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                 setReplayUiSuppressed(false);
               }
               if (!autoAdvanceRef.current) return;
-              goToNextLesson();
+              goToNextLessonRef.current();
             }
           },
         },
@@ -1441,18 +1510,24 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
       ytPlayerRef.current?.destroy();
       ytPlayerRef.current = null;
     };
-  }, [
-    currentLesson.id,
-    activeVideoUrl,
-    goToNextLesson,
-    getMergedProgressSnapshot,
-    mergeProgress,
-    savedProgressForLesson,
-    setYoutubeResolvedSeconds,
-    scheduleFinalizeFromStorage,
-    clearUnpauseFrostLinger,
-    startUnpauseFrostLinger,
-  ]);
+  }, [currentLesson.id, activeVideoUrl, clearUnpauseFrostLinger]);
+
+  /** Help YouTube iframe reflow after orientation change without recreating the player. */
+  useEffect(() => {
+    let rafId: number | null = null;
+    const bump = () => {
+      if (rafId != null) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        window.dispatchEvent(new Event('resize'));
+      });
+    };
+    window.addEventListener('orientationchange', bump);
+    return () => {
+      if (rafId != null) cancelAnimationFrame(rafId);
+      window.removeEventListener('orientationchange', bump);
+    };
+  }, []);
 
   useEffect(() => {
     if (!youtubeEmbedUrl) return;
@@ -1906,13 +1981,19 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     setExpandedModules((prev) => (prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]));
   };
 
+  const landscapeVideoH = immersiveLayout
+    ? 'max-lg:landscape:h-[100dvh] max-lg:landscape:min-h-[100dvh]'
+    : 'max-lg:landscape:h-[calc(100dvh-4rem)] max-lg:landscape:min-h-[calc(100dvh-4rem)]';
+
   return (
-    <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] pt-16 flex flex-col lg:flex-row transition-colors duration-300">
-      <div className="flex-1 flex flex-col">
+    <div
+      className={`min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] flex flex-col lg:flex-row transition-[padding-top,colors] duration-300 ease-out ${immersiveLayout ? 'pt-0' : 'pt-16'}`}
+    >
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div
           ref={videoAreaRef}
           data-skillstream-video-area
-          className={`aspect-video bg-black relative group ${!showTopControls && !mediaPaused ? 'cursor-none' : ''}`}
+          className={`aspect-video bg-black relative group max-lg:landscape:aspect-auto ${landscapeVideoH} max-lg:landscape:w-full max-lg:landscape:shrink-0 max-lg:landscape:transition-[height,min-height] max-lg:landscape:duration-300 max-lg:landscape:ease-out ${!showTopControls && !mediaPaused ? 'cursor-none' : ''}`}
         >
           <div
             className={`absolute inset-0 overflow-hidden ${youtubeEmbedUrl ? 'z-[1]' : 'hidden'} ${blockPlayerPointerWhilePaused && youtubeEmbedUrl ? 'pointer-events-none' : ''}`}
@@ -2038,16 +2119,42 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
 
           {showPauseFrostBackdrop && (
             <div
-              className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-black/80 backdrop-blur-[28px] supports-[backdrop-filter]:bg-black/70"
+              className={`pointer-events-none absolute inset-0 z-20 bg-black/80 backdrop-blur-[28px] supports-[backdrop-filter]:bg-black/70 ${
+                youtubeEmbedUrl ? 'flex flex-col' : 'flex items-center justify-center'
+              }`}
               aria-hidden="true"
             >
-              {showPauseFrostLabel && (
-                <div
-                  className="flex h-24 w-24 items-center justify-center rounded-full border-2 border-white/70 bg-black/30 shadow-lg"
-                  role="status"
-                >
-                  <p className="text-center text-lg font-semibold tracking-wide text-white drop-shadow-md">Paused</p>
-                </div>
+              {youtubeEmbedUrl ? (
+                <>
+                  {/* Reserve bottom HUD height so “Paused” centers like landscape on all small viewports */}
+                  <div className="flex min-h-0 flex-1 flex-col items-center justify-center">
+                    {showPauseFrostLabel && (
+                      <div
+                        className="flex h-24 w-24 items-center justify-center rounded-full border-2 border-white/70 bg-black/30 shadow-lg transition-[width,height,border-width] duration-300 ease-out max-lg:portrait:h-[4.75rem] max-lg:portrait:w-[4.75rem] max-lg:portrait:border-[1.75px] max-lg:landscape:h-14 max-lg:landscape:w-14 max-lg:landscape:border-[1.5px]"
+                        role="status"
+                      >
+                        <p className="text-center text-lg font-semibold tracking-wide text-white drop-shadow-md transition-[font-size] duration-300 ease-out max-lg:portrait:text-sm max-lg:portrait:leading-snug max-lg:landscape:text-xs max-lg:landscape:leading-tight max-lg:landscape:px-1">
+                          Paused
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                  <div
+                    className="pointer-events-none shrink-0 max-lg:h-[4.25rem] lg:h-[6.5rem]"
+                    aria-hidden
+                  />
+                </>
+              ) : (
+                showPauseFrostLabel && (
+                  <div
+                    className="flex h-24 w-24 items-center justify-center rounded-full border-2 border-white/70 bg-black/30 shadow-lg transition-[width,height,border-width] duration-300 ease-out max-lg:portrait:h-[4.75rem] max-lg:portrait:w-[4.75rem] max-lg:portrait:border-[1.75px] max-lg:landscape:h-14 max-lg:landscape:w-14 max-lg:landscape:border-[1.5px]"
+                    role="status"
+                  >
+                    <p className="text-center text-lg font-semibold tracking-wide text-white drop-shadow-md transition-[font-size] duration-300 ease-out max-lg:portrait:text-sm max-lg:portrait:leading-snug max-lg:landscape:text-xs max-lg:landscape:leading-tight max-lg:landscape:px-1">
+                      Paused
+                    </p>
+                  </div>
+                )
               )}
             </div>
           )}
@@ -2059,7 +2166,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
             aria-hidden="true"
           >
             <div
-              className={`rounded-full border border-white/40 bg-black/55 px-6 py-3 text-2xl font-semibold text-white shadow-lg transition-transform duration-200 ${
+              className={`rounded-full border border-white/40 bg-black/55 px-6 py-3 text-2xl font-semibold text-white shadow-lg transition-transform duration-200 max-lg:portrait:px-4 max-lg:portrait:py-2 max-lg:portrait:text-lg max-lg:landscape:px-4 max-lg:landscape:py-2 max-lg:landscape:text-base ${
                 seekNudgeVisible ? 'scale-100' : 'scale-95'
               }`}
             >
@@ -2088,14 +2195,14 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
             </div>
           )}
 
-          <div className="pointer-events-none absolute inset-x-0 top-0 z-40 flex justify-between gap-4 px-4 pt-4">
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-40 flex justify-between gap-4 px-4 pt-4 transition-[padding] duration-300 ease-out max-lg:px-2 max-lg:pt-2 lg:px-4 lg:pt-4">
             <div
               className={`flex w-full items-start justify-end gap-4 transition-opacity duration-200 ease-out ${
                 showTopControls ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
               }`}
             >
-              <label className="flex shrink-0 cursor-pointer select-none items-center gap-2 rounded-full bg-black/50 px-3 py-1.5 text-white backdrop-blur-sm">
-                <span className="text-xs">Auto-next</span>
+              <label className="flex shrink-0 cursor-pointer select-none items-center gap-1.5 rounded-full bg-black/50 px-3 py-1.5 text-white backdrop-blur-sm transition-[padding,gap] duration-300 ease-out max-lg:gap-1 max-lg:px-2 max-lg:py-1 max-lg:shadow-none lg:gap-2 lg:px-3 lg:py-1.5">
+                <span className="text-xs max-lg:text-[10px] max-lg:leading-none lg:leading-normal">Auto-next</span>
                 <input
                   type="checkbox"
                   className="peer sr-only"
@@ -2103,26 +2210,26 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                   onChange={(e) => setAutoAdvance(e.target.checked)}
                 />
                 <span
-                  className="relative inline-flex h-6 w-11 shrink-0 rounded-full bg-white/20 transition-colors peer-checked:bg-orange-500 peer-focus-visible:ring-2 peer-focus-visible:ring-orange-400 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-black peer-checked:[&>span]:translate-x-5"
+                  className="relative inline-flex h-6 w-11 shrink-0 rounded-full bg-white/20 transition-[width,height,transform] duration-300 ease-out peer-checked:bg-orange-500 peer-focus-visible:ring-2 peer-focus-visible:ring-orange-400 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-black peer-checked:[&>span]:translate-x-5 max-lg:h-5 max-lg:w-9 max-lg:peer-checked:[&>span]:translate-x-4 max-lg:peer-focus-visible:ring-offset-0"
                   aria-hidden
                 >
-                  <span className="pointer-events-none absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform" />
+                  <span className="pointer-events-none absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform duration-300 ease-out max-lg:top-px max-lg:left-px max-lg:h-4 max-lg:w-4" />
                 </span>
               </label>
             </div>
           </div>
 
           {youtubeEmbedUrl && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-40 px-4 pb-3 pt-8 bg-gradient-to-t from-black/70 to-transparent">
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-40 bg-gradient-to-t from-black/70 to-transparent px-4 pb-3 pt-8 transition-[padding] duration-300 ease-out max-lg:portrait:px-3 max-lg:portrait:pb-2.5 max-lg:portrait:pt-6 max-lg:landscape:px-2 max-lg:landscape:pb-2 max-lg:landscape:pt-4">
               <div
-                className={`mb-2 flex w-full flex-col gap-0 transition-opacity duration-200 ease-out ${
+                className={`mb-2 flex w-full flex-col gap-0 transition-opacity duration-200 ease-out max-lg:portrait:mb-1.5 max-lg:landscape:mb-1 ${
                   showTopControls ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
                 }`}
               >
                 <p className="sr-only" id="yt-seek-label">
                   Seek video position
                 </p>
-                <div className="flex w-full items-center py-1.5">
+                <div className="flex w-full items-center py-1.5 max-lg:portrait:py-1 max-lg:landscape:py-0.5">
                   <input
                     type="range"
                     min={0}
@@ -2184,17 +2291,17 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                       ytPointerSeekRef.current = false;
                       setYtSeekDragging(false);
                     }}
-                    className="h-1.5 w-full cursor-pointer accent-orange-500 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="h-1.5 w-full cursor-pointer accent-orange-500 disabled:cursor-not-allowed disabled:opacity-40 max-lg:landscape:h-1"
                   />
                 </div>
               </div>
               <div
-                className={`flex w-full items-center justify-between gap-3 transition-opacity duration-200 ease-out ${
+                className={`flex w-full items-center justify-between gap-2 transition-opacity duration-200 ease-out max-lg:portrait:gap-2 max-lg:landscape:gap-1.5 sm:gap-3 ${
                   showTopControls ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
                 }`}
               >
                 <p
-                  className="shrink-0 text-xs font-mono tabular-nums text-white drop-shadow-md"
+                  className="shrink-0 font-mono tabular-nums text-white drop-shadow-md text-xs max-lg:portrait:text-[11px] max-lg:portrait:leading-tight max-lg:landscape:text-[10px] max-lg:landscape:leading-none"
                   aria-live="polite"
                 >
                   <span className="text-white/95">
@@ -2203,7 +2310,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                   <span className="text-white/60"> / </span>
                   <span className="text-white/80">{formatYtClock(ytHudTime.duration)}</span>
                 </p>
-                <div className="flex min-w-0 max-w-[72%] items-center gap-2 sm:max-w-md">
+                <div className="flex min-w-0 max-w-[72%] items-center gap-2 sm:max-w-md max-lg:portrait:max-w-[76%] max-lg:portrait:gap-1.5 max-lg:landscape:max-w-[78%] max-lg:landscape:gap-1">
                   <button
                     type="button"
                     onClick={() => {
@@ -2213,13 +2320,13 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                         return next;
                       });
                     }}
-                    className={`rounded-md p-1.5 text-white hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60 ${
+                    className={`rounded-md p-1.5 text-white transition-[padding] duration-300 ease-out hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60 max-lg:portrait:p-1 max-lg:landscape:p-1 ${
                       youtubeCaptionsEnabled ? 'bg-white/15' : ''
                     }`}
                     aria-pressed={youtubeCaptionsEnabled}
                     aria-label={youtubeCaptionsEnabled ? 'Turn off captions' : 'Turn on captions'}
                   >
-                    <span className="flex h-5 w-5 select-none items-center justify-center text-[10px] font-bold leading-none tracking-tight">
+                    <span className="flex h-5 w-5 select-none items-center justify-center text-[10px] font-bold leading-none tracking-tight max-lg:portrait:h-[18px] max-lg:portrait:w-[18px] max-lg:portrait:text-[9px] max-lg:landscape:h-4 max-lg:landscape:w-4 max-lg:landscape:text-[9px]">
                       CC
                     </span>
                   </button>
@@ -2235,14 +2342,18 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                           return next;
                         });
                       }}
-                      className={`rounded-md p-1.5 text-white hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60 ${
+                      className={`rounded-md p-1.5 text-white transition-[padding] duration-300 ease-out hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60 max-lg:portrait:p-1 max-lg:landscape:p-1 ${
                         ytSettingsOpen ? 'bg-white/15' : ''
                       }`}
                       aria-expanded={ytSettingsOpen}
                       aria-haspopup="true"
                       aria-label="Player settings"
                     >
-                      <Cog size={20} aria-hidden />
+                      <Cog
+                        size={20}
+                        className="max-lg:portrait:h-[18px] max-lg:portrait:w-[18px] max-lg:landscape:h-4 max-lg:landscape:w-4"
+                        aria-hidden
+                      />
                     </button>
                     <AnimatePresence>
                       {ytSettingsOpen && (
@@ -2308,10 +2419,22 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                   <button
                     type="button"
                     onClick={handleYtMuteToggle}
-                    className="shrink-0 rounded-md p-1.5 text-white hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+                    className="shrink-0 rounded-md p-1.5 text-white transition-[padding] duration-300 ease-out hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60 max-lg:portrait:p-1 max-lg:landscape:p-1"
                     aria-label={ytMuted ? 'Unmute' : 'Mute'}
                   >
-                    {ytMuted ? <VolumeX size={20} aria-hidden /> : <Volume2 size={20} aria-hidden />}
+                    {ytMuted ? (
+                      <VolumeX
+                        size={20}
+                        className="max-lg:portrait:h-[18px] max-lg:portrait:w-[18px] max-lg:landscape:h-4 max-lg:landscape:w-4"
+                        aria-hidden
+                      />
+                    ) : (
+                      <Volume2
+                        size={20}
+                        className="max-lg:portrait:h-[18px] max-lg:portrait:w-[18px] max-lg:landscape:h-4 max-lg:landscape:w-4"
+                        aria-hidden
+                      />
+                    )}
                   </button>
                   <input
                     type="range"
@@ -2319,7 +2442,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                     max={100}
                     value={ytMuted ? 0 : ytVolume}
                     onChange={(e) => handleYtVolumeSlider(Number(e.target.value))}
-                    className="h-1.5 w-full min-w-[72px] cursor-pointer accent-orange-500 sm:min-w-[100px]"
+                    className="h-1.5 w-full min-w-[72px] cursor-pointer accent-orange-500 transition-[height] duration-300 ease-out sm:min-w-[100px] max-lg:portrait:min-w-[64px] max-lg:landscape:h-1 max-lg:landscape:min-w-[56px]"
                     aria-label="Volume"
                   />
                 </div>
@@ -2855,7 +2978,9 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
         </div>
       </div>
 
-      <div className="w-full lg:w-[400px] border-l border-[var(--border-color)] bg-[var(--bg-secondary)] overflow-y-auto max-h-[calc(100vh-4rem)] transition-colors duration-300">
+      <div
+        className={`w-full lg:w-[400px] border-l border-[var(--border-color)] bg-[var(--bg-secondary)] overflow-y-auto transition-colors duration-300 ${immersiveLayout ? 'max-h-[100dvh]' : 'max-h-[calc(100dvh-4rem)]'}`}
+      >
         <div className="p-6 border-b border-[var(--border-color)]">
           <h2 className="font-bold text-lg text-[var(--text-primary)]">Course Content</h2>
           <div className="text-sm text-[var(--text-secondary)] mt-1">

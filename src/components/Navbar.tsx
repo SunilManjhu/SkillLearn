@@ -51,6 +51,8 @@ interface NavbarProps {
   /** Signed-out: called before clearing the list when "Clear all" removes the welcome tip (avoids badge returning on refresh). */
   onGuestClearNotifications?: () => void;
   isAdmin?: boolean;
+  /** Hide fixed nav (e.g. full-bleed course player while video is playing). */
+  immersiveHidden?: boolean;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ 
@@ -75,6 +77,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onClearAllNotifications,
   onGuestClearNotifications,
   isAdmin = false,
+  immersiveHidden = false,
 }) => {
   const [openDropdown, setOpenDropdown] = useState<'browse' | 'paths' | 'skills' | 'profile' | 'notifications' | null>(null);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
@@ -294,6 +297,10 @@ export const Navbar: React.FC<NavbarProps> = ({
       setFocusedItemIndex(-1);
     }
   };
+
+  if (immersiveHidden) {
+    return null;
+  }
 
   return (
     <>
