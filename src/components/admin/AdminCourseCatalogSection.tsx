@@ -237,6 +237,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const pendingOpenNewLessonKeyRef = useRef<string | null>(null);
   /** On failed save, scroll/focus the first invalid required field once it is rendered. */
   const pendingScrollTargetIdRef = useRef<string | null>(null);
+  /** After choosing New Course (or equivalent), focus Course title once details are expanded. */
+  const pendingFocusCourseTitleRef = useRef(false);
   /** Avoid collapsing the editor when selector moves from __new__ to draft.id after first save (draft id unchanged). */
   const prevCatalogOpenStateRef = useRef<{ selector: string; draftId: string | undefined }>({
     selector: '',
@@ -312,6 +314,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     setSelector(id);
     setRenameDocId('');
     if (id === '__new__') {
+      pendingFocusCourseTitleRef.current = true;
       const fresh = emptyCourse(firstAvailableStructuredCourseId(publishedList));
       setDraft(fresh);
       setBaselineJson(JSON.stringify(fresh));
@@ -650,6 +653,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     const copy = remapCourseToStructuredIds(deepClone(fromEditor), newId);
     const t = fromEditor.title.trim();
     copy.title = t.endsWith(' (copy)') ? t : `${t} (copy)`;
+    pendingFocusCourseTitleRef.current = true;
     setSelector('__new__');
     setDraft(copy);
     setBaselineJson(JSON.stringify(copy));
@@ -762,6 +766,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     (variant: CancelDialogVariant) => {
       if (!draft || baselineJson === null) return;
       if (variant === 'new-dirty' || variant === 'new-clean') {
+        pendingFocusCourseTitleRef.current = true;
         const fresh = emptyCourse(firstAvailableStructuredCourseId(publishedList));
         setDraft(fresh);
         setBaselineJson(JSON.stringify(fresh));
@@ -877,6 +882,23 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     });
     return () => cancelAnimationFrame(rafId);
   }, [openModules, openLessons, draft, showValidationHints, courseDetailsOpen]);
+
+  useEffect(() => {
+    if (!pendingFocusCourseTitleRef.current) return;
+    if (selector !== '__new__' || baselineJson === null) {
+      pendingFocusCourseTitleRef.current = false;
+      return;
+    }
+    if (!courseDetailsOpen) return;
+    const rafId = requestAnimationFrame(() => {
+      const el = document.getElementById('admin-course-title') as HTMLInputElement | null;
+      pendingFocusCourseTitleRef.current = false;
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [selector, baselineJson, courseDetailsOpen]);
 
   const cancelDialogCopy =
     cancelDialogVariant === 'new-dirty'
