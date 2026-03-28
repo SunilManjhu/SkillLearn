@@ -355,10 +355,28 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
         
         <div className="relative mx-auto w-full max-w-7xl px-4 py-4 sm:px-6">
           <div className="max-w-3xl">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="px-3 py-1 rounded-full bg-orange-500/10 text-orange-500 text-xs font-bold uppercase tracking-wider">
-                  {course.category}
-                </span>
+              <div className="mb-1 flex flex-wrap items-center gap-2">
+                {course.categories.map((cat) => (
+                  <span
+                    key={cat}
+                    className="rounded-full bg-orange-500/10 px-3 py-1 text-xs font-bold uppercase tracking-wider text-orange-500"
+                  >
+                    {cat}
+                  </span>
+                ))}
+                {course.skills.slice(0, 6).map((sk) => (
+                  <span
+                    key={sk}
+                    className="rounded-md bg-[var(--bg-primary)]/80 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-secondary)] backdrop-blur-sm"
+                  >
+                    {sk}
+                  </span>
+                ))}
+                {course.skills.length > 6 && (
+                  <span className="text-[10px] font-medium text-[var(--text-muted)]">
+                    +{course.skills.length - 6} skills
+                  </span>
+                )}
                 <div className="flex items-center gap-1 text-yellow-500">
                   <Star size={14} fill="currentColor" />
                   <span className="text-sm font-bold">{course.rating}</span>
@@ -756,13 +774,29 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                 </div>
               </div>
 
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-xl bg-[var(--hover-bg)] flex items-center justify-center text-orange-500">
+              <div className="flex items-start gap-4">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--hover-bg)] text-orange-500">
                   <Layout size={20} />
                 </div>
-                <div>
-                  <p className="text-xs text-[var(--text-secondary)]">Category</p>
-                  <p className="font-bold text-sm">{course.category}</p>
+                <div className="min-w-0 space-y-3">
+                  <div>
+                    <p className="text-xs text-[var(--text-secondary)]">Categories</p>
+                    <p className="text-sm font-bold leading-snug text-[var(--text-primary)]">
+                      {course.categories.length ? course.categories.join(' · ') : '—'}
+                    </p>
+                  </div>
+                  {course.skills.length > 0 && (
+                    <div>
+                      <p className="text-xs text-[var(--text-secondary)]">Skills</p>
+                      <p className="flex flex-wrap gap-1 text-sm font-bold leading-snug text-[var(--text-primary)]">
+                        {course.skills.map((sk) => (
+                          <span key={sk} className="rounded-md bg-[var(--hover-bg)] px-2 py-0.5 text-xs font-semibold">
+                            {sk}
+                          </span>
+                        ))}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

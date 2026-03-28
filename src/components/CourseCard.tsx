@@ -38,8 +38,33 @@ export const CourseCard = forwardRef<HTMLDivElement, CourseCardProps>(
             className="h-full w-full object-cover transition-transform group-hover:scale-105"
           />
         </div>
-        <div className="flex flex-1 flex-col gap-2 p-3 sm:p-4">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-orange-500">{course.category}</span>
+        <div className="flex flex-1 flex-col gap-2 p-3 sm:p-4 min-w-0">
+          <div className="flex min-w-0 flex-col gap-1">
+            <span className="line-clamp-1 text-[10px] font-bold uppercase tracking-wider text-orange-500">
+              {course.categories.length === 0
+                ? 'Uncategorized'
+                : course.categories.length === 1
+                  ? course.categories[0]
+                  : `${course.categories[0]} +${course.categories.length - 1}`}
+            </span>
+            {course.skills.length > 0 && (
+              <div className="flex min-w-0 flex-wrap gap-1">
+                {course.skills.slice(0, 3).map((s) => (
+                  <span
+                    key={s}
+                    className="max-w-[min(100%,8rem)] truncate rounded bg-[var(--hover-bg)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--text-secondary)]"
+                  >
+                    {s}
+                  </span>
+                ))}
+                {course.skills.length > 3 && (
+                  <span className="self-center text-[9px] text-[var(--text-muted)]">
+                    +{course.skills.length - 3}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
           <h3 className="line-clamp-2 text-[15px] font-bold leading-snug text-[var(--text-primary)] sm:text-base">
             {course.title}
           </h3>

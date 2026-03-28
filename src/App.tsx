@@ -5,6 +5,7 @@ import { CoursePlayer } from './components/CoursePlayer';
 import { CourseOverview } from './components/CourseOverview';
 import { CourseCatalogLoadingSkeleton } from './components/CourseCatalogLoadingSkeleton';
 import { LearnerPathMindmapPanel } from './components/LearnerPathMindmapPanel';
+import { CourseLibraryCategoryFilter } from './components/CourseLibraryCategoryFilter';
 import { ProfilePage } from './components/ProfilePage';
 import { Certificate } from './components/Certificate';
 import { useBodyScrollLock } from './hooks/useBodyScrollLock';
@@ -31,7 +32,7 @@ import {
   markAlertRead,
   reportNoticesFromQuerySnapshot,
 } from './utils/alertsFirestore';
-import { Play, TrendingUp, Award, Users, Globe, ChevronRight, ChevronDown, X, CheckCircle, Mail, LifeBuoy, Briefcase, Shield, Info, Clock, LogIn, AlertTriangle } from 'lucide-react';
+import { Play, TrendingUp, Award, Users, Globe, ChevronRight, X, CheckCircle, Mail, LifeBuoy, Briefcase, Shield, Info, Clock, LogIn, AlertTriangle } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   auth,
@@ -83,10 +84,16 @@ import {
   readCatalogCategoryExtras,
 } from './utils/catalogCategoryExtras';
 import {
+  CATALOG_SKILL_EXTRAS_CHANGED,
+  readCatalogSkillExtras,
+} from './utils/catalogSkillExtras';
+import { allPresetCatalogSkills } from './utils/catalogSkillPresets';
+import {
   CATALOG_CATEGORIES_ROW,
   CATALOG_MAIN_PILLS,
   CATALOG_STATIC_MORE,
 } from './utils/catalogCategoryPresets';
+import { courseMatchesLibraryFilters, type LibraryFilterState } from './utils/courseTaxonomy';
 
 type View = 'home' | 'catalog' | 'player' | 'overview' | 'about' | 'careers' | 'privacy' | 'help' | 'contact' | 'status' | 'enterprise' | 'signup' | 'profile' | 'certificate' | 'admin';
 
@@ -382,7 +389,6 @@ export default function App() {
   const [deferredCourseRoute, setDeferredCourseRoute] = useState<DeferredCourseRoute | null>(
     () => initialRoute.deferredCourseRoute
   );
-  const [searchQuery, setSearchQuery] = useState('');
   /** When set, catalog lists only courses in this path's `courseIds` (from Firestore `learningPaths`). */
   const [selectedLearningPathId, setSelectedLearningPathId] = useState<string | null>(
     readInitialLearningPathIdFromHash
@@ -390,9 +396,11 @@ export default function App() {
   const [learningPaths, setLearningPaths] = useState<LearningPath[]>([]);
   /** True after first `loadLearningPathsFromFirestore()` completes (empty array is valid). */
   const [learningPathsFetched, setLearningPathsFetched] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState('All');
-  const [showMoreCategories, setShowMoreCategories] = useState(false);
-  const [focusedCategoryIndex, setFocusedCategoryIndex] = useState(0);
+  const [libraryFilters, setLibraryFilters] = useState<LibraryFilterState>({
+    categoryTags: [],
+    skillTags: [],
+    level: null,
+  });
   const [focusedCourseIndex, setFocusedCourseIndex] = useState(-1);
   const [focusedFooterIndex, setFocusedFooterIndex] = useState(-1);
   const [user, setUser] = useState<User | null>(null);
@@ -458,9 +466,10 @@ export default function App() {
     adminPortalUnsavedRef.current = dirty;
   }, []);
 
-  const categoryRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const catalogCategoryFilterTriggerRef = useRef<HTMLButtonElement | null>(null);
   /** Bumps when admin adds a custom category (localStorage + event). */
   const [categoryFilterRevision, setCategoryFilterRevision] = useState(0);
+  const [skillFilterRevision, setSkillFilterRevision] = useState(0);
   const courseRefs = useRef<(HTMLDivElement | null)[]>([]);
   const footerRefs = useRef<(HTMLLIElement | null)[]>([]);
   /** Guest was on the player sign-in gate; after Google sign-in, send them to overview (no auto-play). */
@@ -1324,15 +1333,15 @@ export default function App() {
         ? ADMIN_DELETE_BLOCKED_SOLE_MSG
         : ADMIN_DELETE_BLOCKED_MULTI_MSG;
 
-  const categories = CATALOG_CATEGORIES_ROW;
-
   const moreCategories = useMemo(() => {
     const mainSet = new Set<string>(CATALOG_CATEGORIES_ROW);
     const pool = new Set<string>([...CATALOG_STATIC_MORE]);
     for (const c of readCatalogCategoryExtras()) pool.add(c);
     for (const co of catalogCourses) {
-      const cat = co.category?.trim();
-      if (cat) pool.add(cat);
+      for (const cat of co.categories ?? []) {
+        const t = cat?.trim();
+        if (t) pool.add(t);
+      }
     }
     return [...pool]
       .filter((c) => !mainSet.has(c))
@@ -1345,6 +1354,26 @@ export default function App() {
     [moreCategories]
   );
 
+  const moreSkills = useMemo(() => {
+    const presetSet = new Set(allPresetCatalogSkills().map((s) => s.toLowerCase()));
+    const pool = new Set<string>();
+    for (const s of readCatalogSkillExtras()) pool.add(s);
+    for (const co of catalogCourses) {
+      for (const sk of co.skills ?? []) {
+        const t = sk?.trim();
+        if (t) pool.add(t);
+      }
+    }
+    return [...pool]
+      .filter((s) => !presetSet.has(s.toLowerCase()))
+      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  }, [catalogCourses, skillFilterRevision]);
+
+  const catalogBrowseSkills = useMemo(
+    () => [...allPresetCatalogSkills(), ...moreSkills],
+    [moreSkills]
+  );
+
   const filteredCourses = catalogCourses.filter((course) => {
     const pathCourseIds =
       selectedLearningPathId != null
@@ -1354,26 +1383,24 @@ export default function App() {
       selectedLearningPathId == null ||
       (pathCourseIds != null && pathCourseIds.includes(course.id));
 
-    const matchesSearch =
-      course.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      course.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      course.author.toLowerCase().includes(searchQuery.toLowerCase());
-
-    const matchesCategory = selectedCategory === 'All' || course.category === selectedCategory;
-
-    return matchesPath && matchesSearch && matchesCategory;
+    return matchesPath && courseMatchesLibraryFilters(course, libraryFilters);
   });
 
   const clearFilters = () => {
-    setSearchQuery('');
     setSelectedLearningPathId(null);
-    setSelectedCategory('All');
+    setLibraryFilters({ categoryTags: [], skillTags: [], level: null });
   };
 
   useEffect(() => {
     const onExtras = () => setCategoryFilterRevision((r) => r + 1);
     window.addEventListener(CATALOG_CATEGORY_EXTRAS_CHANGED, onExtras);
     return () => window.removeEventListener(CATALOG_CATEGORY_EXTRAS_CHANGED, onExtras);
+  }, []);
+
+  useEffect(() => {
+    const onSkillExtras = () => setSkillFilterRevision((r) => r + 1);
+    window.addEventListener(CATALOG_SKILL_EXTRAS_CHANGED, onSkillExtras);
+    return () => window.removeEventListener(CATALOG_SKILL_EXTRAS_CHANGED, onSkillExtras);
   }, []);
 
   useEffect(() => {
@@ -1456,7 +1483,6 @@ export default function App() {
     if (shouldClear && (view === 'home' || view === 'catalog' || view === 'contact' || view === 'profile')) {
       clearFilters();
       setFocusedCourseIndex(-1);
-      setFocusedCategoryIndex(0);
       setFocusedFooterIndex(-1);
     }
     if (view === 'admin') {
@@ -1651,31 +1677,21 @@ export default function App() {
     [user]
   );
 
-  const handleSearchChange = (query: string) => {
-    setSearchQuery(query);
-    if (query && currentView !== 'catalog') {
-      setCurrentView('catalog');
-    }
-  };
-
   const handleCategorySelect = (category: string) => {
-    setSearchQuery('');
     setSelectedLearningPathId(null);
-    setSelectedCategory(category);
+    setLibraryFilters({ categoryTags: [category], skillTags: [], level: null });
     handleNavigate('catalog', false);
   };
 
   const handlePathSelect = (pathId: string) => {
     setSelectedLearningPathId(pathId);
-    setSearchQuery('');
-    setSelectedCategory('All');
+    setLibraryFilters({ categoryTags: [], skillTags: [], level: null });
     handleNavigate('catalog', false);
   };
 
   const handleSkillSelect = (skill: string) => {
-    setSearchQuery(skill);
     setSelectedLearningPathId(null);
-    setSelectedCategory('All');
+    setLibraryFilters({ categoryTags: [], skillTags: [skill], level: null });
     handleNavigate('catalog', false);
   };
 
@@ -1700,50 +1716,14 @@ export default function App() {
   }, [currentView]);
 
   useEffect(() => {
-    if (currentView === 'catalog') {
-      // Small timeout to ensure DOM is ready and refs are populated
-      const timer = setTimeout(() => {
-        if (focusedCourseIndex !== -1 && courseRefs.current[focusedCourseIndex]) {
-          courseRefs.current[focusedCourseIndex]?.focus();
-        } else if (categoryRefs.current[focusedCategoryIndex]) {
-          categoryRefs.current[focusedCategoryIndex]?.focus();
-        }
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, [currentView]);
-
-  const handleCategoryKeyDown = (e: React.KeyboardEvent, index: number) => {
-    const allCategoriesCount = categories.length + 1 + (showMoreCategories ? moreCategories.length : 0);
-    
-    if (e.key === 'ArrowRight') {
-      e.preventDefault();
-      const nextIndex = (index + 1) % allCategoriesCount;
-      setFocusedCategoryIndex(nextIndex);
-      categoryRefs.current[nextIndex]?.focus();
-    } else if (e.key === 'ArrowLeft') {
-      e.preventDefault();
-      const prevIndex = (index - 1 + allCategoriesCount) % allCategoriesCount;
-      setFocusedCategoryIndex(prevIndex);
-      categoryRefs.current[prevIndex]?.focus();
-    } else if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      if (index === categories.length && !showMoreCategories) {
-        setShowMoreCategories(true);
-        setTimeout(() => {
-          setFocusedCategoryIndex(categories.length + 1);
-          categoryRefs.current[categories.length + 1]?.focus();
-        }, 0);
-      } else if (filteredCourses.length > 0) {
-        setFocusedCourseIndex(0);
-        courseRefs.current[0]?.focus();
-      }
-    } else if (e.key === 'Escape') {
-      setShowMoreCategories(false);
-      setFocusedCategoryIndex(categories.length);
-      categoryRefs.current[categories.length]?.focus();
-    }
-  };
+    if (currentView !== 'catalog') return;
+    // Only move focus to a course card — do not focus the filter trigger on load (avoids a visible focus ring on reload).
+    if (focusedCourseIndex < 0) return;
+    const timer = setTimeout(() => {
+      courseRefs.current[focusedCourseIndex]?.focus();
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [currentView, focusedCourseIndex]);
 
   const handleCourseKeyDown = (e: React.KeyboardEvent, index: number) => {
     const cols = window.innerWidth >= 1024 ? 4 : window.innerWidth >= 640 ? 2 : 1;
@@ -1767,7 +1747,7 @@ export default function App() {
       e.preventDefault();
       if (index < cols) {
         setFocusedCourseIndex(-1);
-        categoryRefs.current[focusedCategoryIndex]?.focus();
+        catalogCategoryFilterTriggerRef.current?.focus();
       } else {
         const prevIndex = index - cols;
         setFocusedCourseIndex(prevIndex);
@@ -2073,103 +2053,17 @@ export default function App() {
   );
 
   const renderCatalog = () => {
-    /** Search / category only — path is chosen from nav, so no “clear filters” when path is the only scope. */
-    const showCatalogClearFilters = Boolean(searchQuery || selectedCategory !== 'All');
-    const catalogHeading =
-      selectedLearningPathId == null
-        ? searchQuery
-          ? `Search Results for "${searchQuery}"`
-          : 'Course Library'
-        : null;
+    const catalogHeading = selectedLearningPathId == null ? 'Course Library' : null;
     return (
       <div className="mx-auto min-w-0 max-w-7xl px-4 pb-12 pt-[max(5.5rem,calc(4rem+env(safe-area-inset-top,0px)))] sm:px-6 sm:pb-20 sm:pt-24">
         <div className="sticky top-16 z-30 -mx-4 mb-6 border-b border-[var(--border-color)]/80 bg-[var(--bg-primary)] px-4 pb-4 sm:static sm:z-auto sm:mx-0 sm:mb-10 sm:border-0 sm:bg-transparent sm:px-0 sm:pb-0">
-          <div
-            className={`mb-4 flex flex-row items-center gap-2 sm:mb-4 sm:gap-4 ${
-              selectedLearningPathId == null ? 'justify-between' : 'justify-end'
-            }`}
-          >
-            {catalogHeading != null ? (
-              <h1 className="min-w-0 flex-1 break-words pr-1 text-2xl font-bold leading-tight text-[var(--text-primary)] sm:text-3xl md:text-4xl">
+          {catalogHeading != null ? (
+            <div className="mb-4 sm:mb-4">
+              <h1 className="min-w-0 break-words text-2xl font-bold leading-tight text-[var(--text-primary)] sm:text-3xl md:text-4xl">
                 {catalogHeading}
               </h1>
-            ) : null}
-            <button
-              type="button"
-              tabIndex={showCatalogClearFilters ? 0 : -1}
-              aria-hidden={!showCatalogClearFilters}
-              onClick={clearFilters}
-              className={`inline-flex min-h-10 shrink-0 touch-manipulation items-center gap-1 rounded-lg py-1 pl-1 text-sm font-semibold text-orange-500 transition-colors hover:text-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-500 sm:gap-1.5 sm:px-0 sm:py-0 ${!showCatalogClearFilters ? 'invisible pointer-events-none' : ''}`}
-            >
-              <X size={16} aria-hidden />
-              <span className="sm:hidden">Clear filters</span>
-              <span className="hidden sm:inline">Clear all filters</span>
-            </button>
-          </div>
-          {!searchQuery && selectedLearningPathId == null && (
-            <div
-              className="-mx-4 flex gap-2 overflow-x-auto px-4 py-1.5 [-ms-overflow-style:none] [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:py-0 sm:gap-3 md:gap-4 [&::-webkit-scrollbar]:hidden"
-              aria-label="Course categories"
-            >
-              {categories.map((cat, index) => (
-                <button
-                  key={cat}
-                  type="button"
-                  ref={(el) => {
-                    categoryRefs.current[index] = el;
-                  }}
-                  onClick={() => setSelectedCategory(cat)}
-                  onKeyDown={(e) => handleCategoryKeyDown(e, index)}
-                  tabIndex={focusedCategoryIndex === index ? 0 : -1}
-                  className={`shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 sm:min-h-11 sm:px-4 sm:text-sm ${selectedCategory === cat ? 'bg-orange-500 text-white' : 'bg-[var(--hover-bg)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]/80'}`}
-                >
-                  {cat}
-                </button>
-              ))}
-              <div className="relative shrink-0">
-                <button
-                  type="button"
-                  ref={(el) => {
-                    categoryRefs.current[categories.length] = el;
-                  }}
-                  onClick={() => setShowMoreCategories(!showMoreCategories)}
-                  onKeyDown={(e) => handleCategoryKeyDown(e, categories.length)}
-                  tabIndex={focusedCategoryIndex === categories.length ? 0 : -1}
-                  className={`inline-flex min-h-10 items-center gap-1 rounded-full px-3 py-2 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 sm:min-h-11 sm:px-4 sm:text-sm ${moreCategories.includes(selectedCategory) ? 'bg-orange-500 text-white' : 'bg-[var(--hover-bg)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]/80'}`}
-                >
-                  More{' '}
-                  <ChevronDown
-                    size={14}
-                    className={showMoreCategories ? 'rotate-180 transition-transform' : 'transition-transform'}
-                    aria-hidden
-                  />
-                </button>
-
-                {showMoreCategories && (
-                  <div className="absolute right-0 top-full z-30 mt-2 w-[min(calc(100vw-2rem),12rem)] overflow-hidden rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] py-2 shadow-xl sm:left-0 sm:right-auto">
-                    {moreCategories.map((cat, index) => (
-                      <button
-                        key={cat}
-                        type="button"
-                        ref={(el) => {
-                          categoryRefs.current[categories.length + 1 + index] = el;
-                        }}
-                        onClick={() => {
-                          setSelectedCategory(cat);
-                          setShowMoreCategories(false);
-                        }}
-                        onKeyDown={(e) => handleCategoryKeyDown(e, categories.length + 1 + index)}
-                        tabIndex={focusedCategoryIndex === categories.length + 1 + index ? 0 : -1}
-                        className={`w-full px-4 py-2.5 text-left text-sm transition-colors hover:bg-[var(--hover-bg)] focus:outline-none sm:py-2 ${selectedCategory === cat ? 'text-orange-500' : 'text-[var(--text-secondary)]'} ${focusedCategoryIndex === categories.length + 1 + index ? 'bg-[var(--hover-bg)]' : ''}`}
-                      >
-                        {cat}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
             </div>
-          )}
+          ) : null}
         </div>
 
         {selectedLearningPathId != null ? (
@@ -2222,7 +2116,7 @@ export default function App() {
             {filteredCourses.length === 0 && (
               <div className="px-2 py-12 text-center sm:py-20">
                 <p className="text-base text-[var(--text-muted)] sm:text-lg">
-                  No courses found matching your search.
+                  No courses match these filters.
                 </p>
               </div>
             )}
@@ -2482,14 +2376,25 @@ export default function App() {
           activeView={
             mainView === 'overview' || mainView === 'player' || mainView === 'admin' ? 'catalog' : mainView
           }
-          searchQuery={searchQuery}
-          onSearchChange={handleSearchChange}
+          catalogNavFilter={
+            currentView === 'catalog' && selectedLearningPathId == null ? (
+              <CourseLibraryCategoryFilter
+                ref={catalogCategoryFilterTriggerRef}
+                mainTopics={CATALOG_MAIN_PILLS}
+                moreTopics={moreCategories}
+                mainSkills={allPresetCatalogSkills()}
+                moreSkills={moreSkills}
+                filters={libraryFilters}
+                onFiltersChange={setLibraryFilters}
+              />
+            ) : undefined
+          }
           onCategorySelect={handleCategorySelect}
           catalogBrowseCategories={catalogBrowseCategories}
+          catalogBrowseSkills={catalogBrowseSkills}
           learningPaths={learningPaths}
           onPathSelect={handlePathSelect}
           onSkillSelect={handleSkillSelect}
-          onClearFilters={clearFilters}
           theme={theme}
           onThemeToggle={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')}
           isAuthReady={isAuthReady}

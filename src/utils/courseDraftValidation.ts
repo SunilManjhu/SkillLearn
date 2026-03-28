@@ -1,10 +1,15 @@
 import type { Course } from '../data/courses';
+import { isCourseLevel } from './courseTaxonomy';
 
 /** Same rules as admin catalog `validateDraft`. */
 export function validateCourseDraft(c: Course): string | null {
   if (!c.title.trim()) return 'Title is required.';
   if (!c.author.trim()) return 'Author is required.';
   if (!c.thumbnail.trim()) return 'Thumbnail URL is required.';
+  if (!c.categories?.length || !c.categories.some((x) => x.trim())) {
+    return 'At least one category is required.';
+  }
+  if (!isCourseLevel(c.level)) return 'Level must be Beginner, Intermediate, Advanced, or Proficient.';
   if (!c.modules.length) return 'At least one module is required.';
   for (let mi = 0; mi < c.modules.length; mi += 1) {
     const m = c.modules[mi];

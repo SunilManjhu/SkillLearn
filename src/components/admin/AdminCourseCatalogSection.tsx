@@ -33,9 +33,16 @@ import {
   readCatalogCategoryExtras,
 } from '../../utils/catalogCategoryExtras';
 import {
+  addCatalogSkillExtra,
+  CATALOG_SKILL_EXTRAS_CHANGED,
+  readCatalogSkillExtras,
+} from '../../utils/catalogSkillExtras';
+import { allPresetCatalogSkills } from '../../utils/catalogSkillPresets';
+import {
   allPresetCatalogCategories,
   defaultNewCourseCategory,
 } from '../../utils/catalogCategoryPresets';
+import { dedupeLabelsPreserveOrder, normalizeCourseTaxonomy } from '../../utils/courseTaxonomy';
 
 function deepClone<T>(x: T): T {
   return JSON.parse(JSON.stringify(x)) as T;
@@ -146,7 +153,8 @@ function emptyCourse(docId: string): Course {
     level: 'Beginner',
     duration: '1h',
     rating: 4.5,
-    category: defaultNewCourseCategory(),
+    categories: [defaultNewCourseCategory()],
+    skills: [],
     modules: [
       {
         id: mid,
@@ -248,8 +256,9 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     draftId: undefined,
   });
   const { showActionToast, actionToast } = useAdminActionToast();
-  /** Re-read category option list when extras change in localStorage (same tab). */
+  /** Re-read category / skill option lists when extras change in localStorage (same tab). */
   const [categoryOptionsVersion, setCategoryOptionsVersion] = useState(0);
+  const [skillOptionsVersion, setSkillOptionsVersion] = useState(0);
 
   const [contentCatalogSubTab, setContentCatalogSubTab] = useState<ContentCatalogSubTab>('catalog');
   const [subTabSwitchConfirmOpen, setSubTabSwitchConfirmOpen] = useState(false);
@@ -259,16 +268,31 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const pathBuilderRef = useRef<PathBuilderSectionHandle | null>(null);
   const [pathsListLoading, setPathsListLoading] = useState(false);
 
-  /** Full list for the Category dropdown (presets, saved extras, categories from published courses). */
+  /** Full list for adding categories (presets, saved extras, labels from published courses). */
   const categorySelectOptions = useMemo(() => {
     const s = new Set<string>(allPresetCatalogCategories());
     for (const c of readCatalogCategoryExtras()) s.add(c);
     for (const co of publishedList) {
-      const cat = co.category?.trim();
-      if (cat) s.add(cat);
+      for (const cat of co.categories ?? []) {
+        const t = cat?.trim();
+        if (t) s.add(t);
+      }
     }
     return [...s].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   }, [publishedList, categoryOptionsVersion]);
+
+  /** Full list for adding skills (presets, saved extras, labels from published courses). */
+  const skillSelectOptions = useMemo(() => {
+    const s = new Set<string>(allPresetCatalogSkills());
+    for (const x of readCatalogSkillExtras()) s.add(x);
+    for (const co of publishedList) {
+      for (const sk of co.skills ?? []) {
+        const t = sk?.trim();
+        if (t) s.add(t);
+      }
+    }
+    return [...s].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  }, [publishedList, skillOptionsVersion]);
 
   useEffect(() => {
     const h = () => setCategoryOptionsVersion((v) => v + 1);
@@ -276,19 +300,33 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     return () => window.removeEventListener(CATALOG_CATEGORY_EXTRAS_CHANGED, h);
   }, []);
 
-  const categorySelectValue = useMemo(() => {
-    if (!draft) return '__custom__';
-    const matched = categorySelectOptions.find(
-      (o) => o.toLowerCase() === draft.category.trim().toLowerCase()
-    );
-    return matched ?? '__custom__';
+  useEffect(() => {
+    const h = () => setSkillOptionsVersion((v) => v + 1);
+    window.addEventListener(CATALOG_SKILL_EXTRAS_CHANGED, h);
+    return () => window.removeEventListener(CATALOG_SKILL_EXTRAS_CHANGED, h);
+  }, []);
+
+  const registerDraftTaxonomyExtras = () => {
+    if (!draft) return;
+    for (const c of draft.categories) {
+      if (c.trim()) addCatalogCategoryExtra(c.trim());
+    }
+    for (const s of draft.skills) {
+      if (s.trim()) addCatalogSkillExtra(s.trim());
+    }
+  };
+
+  const categoriesNotOnDraft = useMemo(() => {
+    if (!draft) return categorySelectOptions;
+    const set = new Set(draft.categories.map((c) => c.trim().toLowerCase()));
+    return categorySelectOptions.filter((o) => !set.has(o.toLowerCase()));
   }, [draft, categorySelectOptions]);
 
-  const registerDraftCategoryForFilters = () => {
-    if (!draft) return;
-    const t = draft.category.trim();
-    if (t) addCatalogCategoryExtra(t);
-  };
+  const skillsNotOnDraft = useMemo(() => {
+    if (!draft) return skillSelectOptions;
+    const set = new Set(draft.skills.map((s) => s.trim().toLowerCase()));
+    return skillSelectOptions.filter((o) => !set.has(o.toLowerCase()));
+  }, [draft, skillSelectOptions]);
 
   const refreshList = useCallback(async (): Promise<Course[]> => {
     setListLoading(true);
@@ -320,15 +358,20 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
   const onCategoryRenamedGlobally = useCallback((fromLower: string, newExact: string) => {
     setDraft((d) => {
-      if (!d || d.category.trim().toLowerCase() !== fromLower) return d;
-      return { ...d, category: newExact };
+      if (!d) return d;
+      const next = d.categories.map((c) => (c.trim().toLowerCase() === fromLower ? newExact : c));
+      if (next.every((c, i) => c === d.categories[i])) return d;
+      return { ...d, categories: dedupeLabelsPreserveOrder(next) };
     });
     setBaselineJson((prev) => {
       if (prev === null) return prev;
       try {
         const b = JSON.parse(prev) as Course;
-        if (b.category?.trim().toLowerCase() !== fromLower) return prev;
-        return JSON.stringify({ ...b, category: newExact });
+        const next = (b.categories ?? []).map((c) =>
+          c.trim().toLowerCase() === fromLower ? newExact : c
+        );
+        if (next.every((c, i) => c === (b.categories ?? [])[i])) return prev;
+        return JSON.stringify({ ...b, categories: dedupeLabelsPreserveOrder(next) });
       } catch {
         return prev;
       }
@@ -363,7 +406,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       }
       const c = publishedList.find((x) => x.id === id);
       if (c) {
-        const clone = deepClone(c);
+        const clone = normalizeCourseTaxonomy(deepClone(c));
         setDraft(clone);
         setBaselineJson(JSON.stringify(clone));
       } else {
@@ -377,6 +420,46 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const updateDraft = (patch: Partial<Course>) => {
     setDraft((d) => (d ? { ...d, ...patch } : null));
   };
+
+  const addDraftCategory = useCallback(
+    (raw: string) => {
+      const t = raw.trim();
+      if (!t) return;
+      const canonical = categorySelectOptions.find((o) => o.toLowerCase() === t.toLowerCase()) ?? t;
+      setDraft((d) => {
+        if (!d) return d;
+        if (d.categories.some((c) => c.toLowerCase() === canonical.toLowerCase())) return d;
+        return { ...d, categories: [...d.categories, canonical] };
+      });
+      addCatalogCategoryExtra(canonical);
+    },
+    [categorySelectOptions]
+  );
+
+  const removeDraftCategory = useCallback((label: string) => {
+    const low = label.toLowerCase();
+    setDraft((d) => (d ? { ...d, categories: d.categories.filter((c) => c.toLowerCase() !== low) } : d));
+  }, []);
+
+  const addDraftSkill = useCallback(
+    (raw: string) => {
+      const t = raw.trim();
+      if (!t) return;
+      const canonical = skillSelectOptions.find((o) => o.toLowerCase() === t.toLowerCase()) ?? t;
+      setDraft((d) => {
+        if (!d) return d;
+        if (d.skills.some((s) => s.toLowerCase() === canonical.toLowerCase())) return d;
+        return { ...d, skills: [...d.skills, canonical] };
+      });
+      addCatalogSkillExtra(canonical);
+    },
+    [skillSelectOptions]
+  );
+
+  const removeDraftSkill = useCallback((label: string) => {
+    const low = label.toLowerCase();
+    setDraft((d) => (d ? { ...d, skills: d.skills.filter((s) => s.toLowerCase() !== low) } : d));
+  }, []);
 
   const updateModule = (mi: number, patch: Partial<Module>) => {
     setDraft((d) => {
@@ -503,6 +586,9 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     if (!c.title.trim()) return { targetId: 'admin-course-title', scope: 'course', moduleIndex: 0 };
     if (!c.author.trim()) return { targetId: 'admin-course-author', scope: 'course', moduleIndex: 0 };
     if (!c.thumbnail.trim()) return { targetId: 'admin-course-thumbnail', scope: 'course', moduleIndex: 0 };
+    if (!c.categories?.length || !c.categories.some((x) => x.trim())) {
+      return { targetId: 'admin-course-categories', scope: 'course', moduleIndex: 0 };
+    }
     if (!c.modules.length) return { targetId: 'admin-course-title', scope: 'course', moduleIndex: 0 };
     for (let mi = 0; mi < c.modules.length; mi += 1) {
       const m = c.modules[mi];
@@ -572,6 +658,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       courseAuthor: false,
       courseThumbnail: false,
       courseRating: false,
+      courseCategories: false,
       moduleId: new Set<number>(),
       moduleTitle: new Set<number>(),
       lessonId: new Set<string>(),
@@ -582,6 +669,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     if (!draft.title.trim()) out.courseTitle = true;
     if (!draft.author.trim()) out.courseAuthor = true;
     if (!draft.thumbnail.trim()) out.courseThumbnail = true;
+    if (!draft.categories?.length || !draft.categories.some((x) => x.trim())) out.courseCategories = true;
     if (draft.rating < 0 || draft.rating > 5) out.courseRating = true;
     for (let mi = 0; mi < draft.modules.length; mi += 1) {
       const m = draft.modules[mi];
@@ -624,10 +712,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       showActionToast('No changes to save.', 'neutral');
       return;
     }
-    const err = validateCourseDraft(draft);
+    const normalized = normalizeCourseTaxonomy(draft);
+    const err = validateCourseDraft(normalized);
     if (err) {
       setShowValidationHints(true);
-      const target = getFirstRequiredFieldTarget(draft);
+      const target = getFirstRequiredFieldTarget(normalized);
       if (target) {
         if (target.scope === 'course') {
           setCourseDetailsOpen(true);
@@ -646,16 +735,22 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       return;
     }
     setBusy(true);
-    const ok = await savePublishedCourse(draft);
+    const ok = await savePublishedCourse(normalized);
     setBusy(false);
     if (ok) {
       setShowValidationHints(false);
-      if (draft.category.trim()) addCatalogCategoryExtra(draft.category.trim());
+      setDraft(normalized);
+      for (const cat of normalized.categories) {
+        if (cat.trim()) addCatalogCategoryExtra(cat.trim());
+      }
+      for (const sk of normalized.skills) {
+        if (sk.trim()) addCatalogSkillExtra(sk.trim());
+      }
       showActionToast('Course saved.');
       await refreshList();
       await onCatalogChanged();
-      setSelector(draft.id);
-      setBaselineJson(JSON.stringify(draft));
+      setSelector(normalized.id);
+      setBaselineJson(JSON.stringify(normalized));
     } else {
       showActionToast('Save failed (check console / rules).', 'danger');
     }
@@ -1197,6 +1292,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               <option value="Beginner">Beginner</option>
               <option value="Intermediate">Intermediate</option>
               <option value="Advanced">Advanced</option>
+              <option value="Proficient">Proficient</option>
             </select>
           </div>
         </div>
@@ -1276,38 +1372,156 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 }`}
               />
             </label>
-            <label className="block space-y-1 sm:col-span-2">
-              <span className="text-xs font-semibold text-[var(--text-secondary)]">Category</span>
-              <select
-                value={categorySelectValue}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (v === '__custom__') updateDraft({ category: '' });
-                  else updateDraft({ category: v });
-                }}
-                onBlur={registerDraftCategoryForFilters}
-                className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm"
-              >
-                {categorySelectOptions.map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
-                  </option>
-                ))}
-                <option value="__custom__">Other (type a custom category)…</option>
-              </select>
-              {categorySelectValue === '__custom__' && (
-                <input
-                  value={draft.category}
-                  onChange={(e) => updateDraft({ category: e.target.value })}
-                  onBlur={registerDraftCategoryForFilters}
-                  placeholder="Type a new category name…"
-                  className="mt-2 w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm"
-                />
-              )}
-              <p className="text-[11px] text-[var(--text-muted)] mt-1 leading-relaxed">
-                All preset and known categories appear in the list. Pick <strong className="text-[var(--text-secondary)]">Other</strong> to type a new name; it is added to Course Library filters when you leave the custom field or save.
+            <div
+              id="admin-course-categories"
+              className={`space-y-2 sm:col-span-2 ${showValidationHints && fieldErrors.courseCategories ? 'rounded-lg ring-2 ring-red-500/60 p-2 -m-2' : ''}`}
+            >
+              <span className="text-xs font-semibold text-[var(--text-secondary)]">Categories</span>
+              <div className="flex min-h-10 flex-wrap gap-2">
+                {draft.categories.length === 0 ? (
+                  <span className="text-xs text-[var(--text-muted)]">Add at least one category.</span>
+                ) : (
+                  draft.categories.map((cat) => (
+                    <span
+                      key={cat}
+                      className="inline-flex max-w-full items-center gap-1 rounded-lg border border-[var(--border-color)] bg-[var(--hover-bg)] px-2 py-1 text-xs font-medium text-[var(--text-primary)]"
+                    >
+                      <span className="truncate">{cat}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeDraftCategory(cat)}
+                        className="shrink-0 rounded p-0.5 text-[var(--text-muted)] hover:bg-[var(--bg-primary)] hover:text-[var(--text-primary)] min-h-8 min-w-8 inline-flex items-center justify-center"
+                        aria-label={`Remove category ${cat}`}
+                      >
+                        <X size={14} aria-hidden />
+                      </button>
+                    </span>
+                  ))
+                )}
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v) addDraftCategory(v);
+                    e.target.value = '';
+                  }}
+                  onBlur={registerDraftTaxonomyExtras}
+                  className="w-full min-h-11 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm sm:max-w-xs"
+                  aria-label="Add category from list"
+                >
+                  <option value="">Add category from list…</option>
+                  {categoriesNotOnDraft.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+                <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center">
+                  <input
+                    placeholder="Custom category…"
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter') return;
+                      e.preventDefault();
+                      const el = e.currentTarget;
+                      addDraftCategory(el.value);
+                      el.value = '';
+                    }}
+                    onBlur={registerDraftTaxonomyExtras}
+                    className="w-full min-h-11 min-w-0 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      const prev = e.currentTarget.previousElementSibling;
+                      if (prev instanceof HTMLInputElement) {
+                        addDraftCategory(prev.value);
+                        prev.value = '';
+                      }
+                    }}
+                    className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg border border-[var(--border-color)] px-3 text-xs font-bold text-orange-500 hover:bg-[var(--hover-bg)]"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+              <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+                At least one category is required. Custom names are added to library filters when you save or leave the fields above.
               </p>
-            </label>
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <span className="text-xs font-semibold text-[var(--text-secondary)]">Skills</span>
+              <div className="flex min-h-10 flex-wrap gap-2">
+                {draft.skills.length === 0 ? (
+                  <span className="text-xs text-[var(--text-muted)]">Optional — add skill tags for learners and filters.</span>
+                ) : (
+                  draft.skills.map((sk) => (
+                    <span
+                      key={sk}
+                      className="inline-flex max-w-full items-center gap-1 rounded-lg border border-[var(--border-color)] bg-[var(--hover-bg)] px-2 py-1 text-xs font-medium text-[var(--text-primary)]"
+                    >
+                      <span className="truncate">{sk}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeDraftSkill(sk)}
+                        className="shrink-0 rounded p-0.5 text-[var(--text-muted)] hover:bg-[var(--bg-primary)] hover:text-[var(--text-primary)] min-h-8 min-w-8 inline-flex items-center justify-center"
+                        aria-label={`Remove skill ${sk}`}
+                      >
+                        <X size={14} aria-hidden />
+                      </button>
+                    </span>
+                  ))
+                )}
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v) addDraftSkill(v);
+                    e.target.value = '';
+                  }}
+                  onBlur={registerDraftTaxonomyExtras}
+                  className="w-full min-h-11 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm sm:max-w-xs"
+                  aria-label="Add skill from list"
+                >
+                  <option value="">Add skill from list…</option>
+                  {skillsNotOnDraft.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+                <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center">
+                  <input
+                    placeholder="Custom skill…"
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter') return;
+                      e.preventDefault();
+                      const el = e.currentTarget;
+                      addDraftSkill(el.value);
+                      el.value = '';
+                    }}
+                    onBlur={registerDraftTaxonomyExtras}
+                    className="w-full min-h-11 min-w-0 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      const prev = e.currentTarget.previousElementSibling;
+                      if (prev instanceof HTMLInputElement) {
+                        addDraftSkill(prev.value);
+                        prev.value = '';
+                      }
+                    }}
+                    className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg border border-[var(--border-color)] px-3 text-xs font-bold text-orange-500 hover:bg-[var(--hover-bg)]"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+            </div>
             <div className="sm:col-span-2 flex flex-col gap-3 lg:flex-row lg:items-end lg:gap-x-3">
               <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
                 <label className="inline-flex w-max max-w-full flex-col gap-1">

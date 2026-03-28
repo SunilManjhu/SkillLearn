@@ -50,6 +50,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { useDialogKeyboard } from '../../hooks/useDialogKeyboard';
 import type { Course, Lesson } from '../../data/courses';
+import { formatCourseTaxonomyForSearch } from '../../utils/courseTaxonomy';
 import {
   mindmapDocumentWithCenterChildren,
   newMindmapNodeId,
@@ -549,7 +550,7 @@ function AddPathBranchModal({
     return sortedCourses.filter(
       (c) =>
         c.title.toLowerCase().includes(q) ||
-        c.category.toLowerCase().includes(q) ||
+        formatCourseTaxonomyForSearch(c).toLowerCase().includes(q) ||
         c.id.toLowerCase().includes(q)
     );
   }, [sortedCourses, query]);

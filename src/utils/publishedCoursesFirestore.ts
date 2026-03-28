@@ -9,6 +9,7 @@ import {
 } from 'firebase/firestore';
 import type { Course, Lesson, Module } from '../data/courses';
 import { STATIC_CATALOG_FALLBACK } from '../data/courses';
+import { dedupeLabelsPreserveOrder, isCourseLevel, normalizeCourseTaxonomy } from './courseTaxonomy';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 
 /**
@@ -91,9 +92,9 @@ function docToCourse(id: string, data: Record<string, unknown>): Course | null {
     typeof data.thumbnail !== 'string' ||
     typeof data.description !== 'string' ||
     typeof data.duration !== 'string' ||
-    typeof data.category !== 'string' ||
     typeof data.rating !== 'number' ||
-    !['Beginner', 'Intermediate', 'Advanced'].includes(data.level as string) ||
+    typeof data.level !== 'string' ||
+    !isCourseLevel(data.level) ||
     !Array.isArray(data.modules)
   ) {
     return null;
@@ -104,20 +105,40 @@ function docToCourse(id: string, data: Record<string, unknown>): Course | null {
     if (pm) modules.push(pm);
   }
   if (modules.length === 0) return null;
+
+  const categories: string[] = [];
+  if (Array.isArray(data.categories)) {
+    for (const x of data.categories) {
+      if (typeof x === 'string' && x.trim()) categories.push(x.trim());
+    }
+  }
+  if (categories.length === 0 && typeof data.category === 'string' && data.category.trim()) {
+    categories.push(data.category.trim());
+  }
+  if (categories.length === 0) return null;
+
+  const skills: string[] = [];
+  if (Array.isArray(data.skills)) {
+    for (const x of data.skills) {
+      if (typeof x === 'string' && x.trim()) skills.push(x.trim());
+    }
+  }
+
   const course: Course = {
     id,
     title: data.title,
     author: data.author,
     thumbnail: data.thumbnail,
     description: data.description,
-    level: data.level as Course['level'],
+    level: data.level,
     duration: data.duration,
     rating: data.rating,
-    category: data.category,
+    categories: dedupeLabelsPreserveOrder(categories),
+    skills: dedupeLabelsPreserveOrder(skills),
     modules,
   };
   if (typeof data.authorBio === 'string') course.authorBio = data.authorBio;
-  return course;
+  return normalizeCourseTaxonomy(course);
 }
 
 /** Loads all documents from `publishedCourses`. Returns [] on error or empty collection. */

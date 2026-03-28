@@ -96,7 +96,8 @@ export function DemoLearningAgent({ onOpenCourse, courses = STATIC_CATALOG_FALLB
       courses.map((c) => ({
         id: c.id,
         title: c.title,
-        category: c.category,
+        categories: c.categories,
+        skills: c.skills,
         level: c.level,
       })),
     [courses]

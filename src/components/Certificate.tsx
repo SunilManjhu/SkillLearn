@@ -325,8 +325,16 @@ export const Certificate: React.FC<CertificateProps> = ({
               <h4 className="mx-auto max-w-3xl break-words font-serif text-xl font-bold leading-tight text-slate-900 sm:text-3xl md:text-4xl">
                 {course.title}
               </h4>
-              <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[9px] font-bold uppercase tracking-widest text-slate-400 font-montserrat sm:gap-4 sm:text-[10px]">
-                <span>{course.category}</span>
+              <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center text-[9px] font-bold uppercase tracking-widest text-slate-400 font-montserrat sm:gap-4 sm:text-[10px]">
+                <span className="max-w-full px-1 line-clamp-2">
+                  {course.categories.length ? course.categories.join(' · ') : '—'}
+                </span>
+                {course.skills.length > 0 && (
+                  <>
+                    <span className="hidden h-1 w-1 rounded-full bg-slate-300 sm:inline-block" aria-hidden />
+                    <span className="max-w-full px-1 line-clamp-2">{course.skills.join(' · ')}</span>
+                  </>
+                )}
                 <span className="hidden h-1 w-1 rounded-full bg-slate-300 sm:inline-block" aria-hidden />
                 <span>{course.level} Level</span>
               </div>

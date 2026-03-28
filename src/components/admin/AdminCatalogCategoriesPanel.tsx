@@ -11,6 +11,14 @@ import {
   replaceCatalogCategoryExtra,
 } from '../../utils/catalogCategoryExtras';
 import { allPresetCatalogCategories, defaultNewCourseCategory } from '../../utils/catalogCategoryPresets';
+import { dedupeLabelsPreserveOrder } from '../../utils/courseTaxonomy';
+
+function replaceLabelInCategories(categories: string[], fromLower: string, newExact: string): string[] {
+  const next = categories.map((cat) =>
+    cat.trim().toLowerCase() === fromLower ? newExact : cat
+  );
+  return dedupeLabelsPreserveOrder(next);
+}
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { useDialogKeyboard } from '../../hooks/useDialogKeyboard';
 import type { AdminActionToastVariant } from './useAdminActionToast';
@@ -67,16 +75,20 @@ export const AdminCatalogCategoriesPanel: React.FC<AdminCatalogCategoriesPanelPr
       if (!map.has(k)) map.set(k, t);
     }
     for (const co of publishedList) {
-      const t = co.category?.trim();
-      if (!t || presetLower.has(t.toLowerCase())) continue;
-      const k = t.toLowerCase();
-      if (!map.has(k)) map.set(k, t);
+      for (const raw of co.categories ?? []) {
+        const t = raw?.trim();
+        if (!t || presetLower.has(t.toLowerCase())) continue;
+        const k = t.toLowerCase();
+        if (!map.has(k)) map.set(k, t);
+      }
     }
     return [...map.entries()]
       .map(([keyLower, display]) => ({
         keyLower,
         display,
-        courseCount: publishedList.filter((c) => c.category?.trim().toLowerCase() === keyLower).length,
+        courseCount: publishedList.filter((c) =>
+          (c.categories ?? []).some((cat) => cat.trim().toLowerCase() === keyLower)
+        ).length,
         inExtras: extras.some((e) => e.trim().toLowerCase() === keyLower),
       }))
       .sort((a, b) => a.keyLower.localeCompare(b.keyLower));
@@ -89,8 +101,10 @@ export const AdminCatalogCategoriesPanel: React.FC<AdminCatalogCategoriesPanelPr
       if (t) s.add(t);
     }
     for (const co of publishedList) {
-      const t = co.category?.trim();
-      if (t) s.add(t);
+      for (const raw of co.categories ?? []) {
+        const t = raw?.trim();
+        if (t) s.add(t);
+      }
     }
     return [...s].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   }, [publishedList, extrasTick]);
@@ -115,10 +129,15 @@ export const AdminCatalogCategoriesPanel: React.FC<AdminCatalogCategoriesPanelPr
     }
     setBusy(true);
     try {
-      const affected = publishedList.filter((c) => c.category?.trim().toLowerCase() === renameModal.keyLower);
+      const affected = publishedList.filter((c) =>
+        (c.categories ?? []).some((cat) => cat.trim().toLowerCase() === renameModal.keyLower)
+      );
       let fail = 0;
       for (const c of affected) {
-        const ok = await savePublishedCourse({ ...c, category: next });
+        const ok = await savePublishedCourse({
+          ...c,
+          categories: replaceLabelInCategories(c.categories ?? [], renameModal.keyLower, next),
+        });
         if (!ok) fail += 1;
       }
       replaceCatalogCategoryExtra(renameModal.display, next);
@@ -164,10 +183,15 @@ export const AdminCatalogCategoriesPanel: React.FC<AdminCatalogCategoriesPanelPr
     }
     setBusy(true);
     try {
-      const affected = publishedList.filter((c) => c.category?.trim().toLowerCase() === reassignModal.keyLower);
+      const affected = publishedList.filter((c) =>
+        (c.categories ?? []).some((cat) => cat.trim().toLowerCase() === reassignModal.keyLower)
+      );
       let fail = 0;
       for (const c of affected) {
-        const ok = await savePublishedCourse({ ...c, category: target });
+        const ok = await savePublishedCourse({
+          ...c,
+          categories: replaceLabelInCategories(c.categories ?? [], reassignModal.keyLower, target),
+        });
         if (!ok) fail += 1;
       }
       removeCatalogCategoryExtra(reassignModal.display);

@@ -377,15 +377,16 @@ service cloud.firestore {
     }
 
     function isValidPublishedCourseWrite(data) {
-      return data.keys().hasAll(['title', 'author', 'thumbnail', 'description', 'level', 'duration', 'rating', 'category', 'modules']) &&
+      return data.keys().hasAll(['title', 'author', 'thumbnail', 'description', 'level', 'duration', 'rating', 'categories', 'skills', 'modules']) &&
         data.title is string && data.title.size() > 0 && data.title.size() < 500 &&
         data.author is string && data.author.size() > 0 && data.author.size() < 200 &&
         data.thumbnail is string && data.thumbnail.size() > 0 && data.thumbnail.size() < 2000 &&
         data.description is string && data.description.size() < 20000 &&
-        data.level in ['Beginner', 'Intermediate', 'Advanced'] &&
+        data.level in ['Beginner', 'Intermediate', 'Advanced', 'Proficient'] &&
         data.duration is string && data.duration.size() < 100 &&
         data.rating is number && data.rating >= 0 && data.rating <= 5 &&
-        data.category is string && data.category.size() > 0 && data.category.size() < 200 &&
+        data.categories is list && data.categories.size() > 0 && data.categories.size() <= 40 &&
+        data.skills is list && data.skills.size() <= 40 &&
         data.modules is list &&
         (!('authorBio' in data) || (data.authorBio is string && data.authorBio.size() < 20000)) &&
         (!('updatedAt' in data) || data.updatedAt is timestamp);
