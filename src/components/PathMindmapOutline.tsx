@@ -199,8 +199,10 @@ function ActionChips({
   if (!canOpenCourse && !canOpenLesson && !missingCatalog) return null;
 
   const openCourseBtnClass = coursePlaybackComplete
-    ? `inline-flex w-full shrink-0 items-center justify-center rounded-lg border border-transparent bg-transparent font-medium text-[var(--text-muted)] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 sm:w-[7.25rem] ${btn}`
-    : `inline-flex w-full shrink-0 items-center justify-center rounded border border-orange-500 bg-transparent font-medium text-orange-500 hover:bg-orange-500/10 sm:w-[7.25rem] ${btn}`;
+    ? `inline-flex w-full shrink-0 items-center justify-center rounded-lg border border-[var(--path-review-btn-border)] bg-transparent font-medium text-[var(--text-muted)] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 sm:w-[7.25rem] ${btn}`
+    : courseInProgress
+      ? `inline-flex w-full shrink-0 items-center justify-center rounded-lg border border-orange-500 bg-transparent font-medium text-orange-500 transition-colors hover:bg-orange-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 sm:w-[7.25rem] ${btn}`
+      : `inline-flex w-full shrink-0 items-center justify-center rounded-lg border border-dashed border-[var(--path-open-course-border)] bg-transparent font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 sm:w-[7.25rem] ${btn}`;
 
   const courseCtaLabel = coursePlaybackComplete ? 'Review' : courseInProgress ? 'Continue' : 'Open course';
   const courseCtaAria = coursePlaybackComplete
