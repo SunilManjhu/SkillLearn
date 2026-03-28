@@ -4,8 +4,6 @@ import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { Search, Menu, User, Bell, ChevronDown, X, LogOut, Moon, Sun, BellRing, LogIn, Shield } from 'lucide-react';
 import { User as FirebaseUser } from '../firebase';
 import type { AuthProfileSnapshot } from '../utils/authProfileCache';
-import { allPresetCatalogCategories } from '../utils/catalogCategoryPresets';
-
 export interface NavbarNotification {
   id: string;
   message: string;
@@ -29,6 +27,8 @@ interface NavbarProps {
   searchQuery: string;
   onSearchChange: (query: string) => void;
   onCategorySelect: (category: string) => void;
+  /** Course Library category names (main pills + “More”), same order as filters; excludes “All”. */
+  catalogBrowseCategories: readonly string[];
   /** Titles and ids from Firestore `learningPaths` (same as admin Path builder). */
   learningPaths?: ReadonlyArray<{ id: string; title: string }>;
   /** Path document id from `learningPaths`. */
@@ -64,6 +64,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   searchQuery, 
   onSearchChange, 
   onCategorySelect,
+  catalogBrowseCategories,
   learningPaths = [],
   onPathSelect,
   onSkillSelect,
@@ -103,7 +104,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   useBodyScrollLock(mobileMenuOpen || mobileSearchOpen);
 
-  const browseItems = allPresetCatalogCategories();
+  const browseItems = catalogBrowseCategories;
   const skillItems = ['React', 'TypeScript', 'Node.js', 'Python', 'Docker', 'Kubernetes', 'AWS'];
 
   const getItems = () => {

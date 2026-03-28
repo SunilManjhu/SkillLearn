@@ -84,6 +84,7 @@ import {
 } from './utils/catalogCategoryExtras';
 import {
   CATALOG_CATEGORIES_ROW,
+  CATALOG_MAIN_PILLS,
   CATALOG_STATIC_MORE,
 } from './utils/catalogCategoryPresets';
 
@@ -1338,6 +1339,12 @@ export default function App() {
       .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   }, [catalogCourses, categoryFilterRevision]);
 
+  /** Browse menu categories — same sources as Course Library (main pills + More), excluding “All”. */
+  const catalogBrowseCategories = useMemo(
+    () => [...CATALOG_MAIN_PILLS, ...moreCategories],
+    [moreCategories]
+  );
+
   const filteredCourses = catalogCourses.filter((course) => {
     const pathCourseIds =
       selectedLearningPathId != null
@@ -2478,6 +2485,7 @@ export default function App() {
           searchQuery={searchQuery}
           onSearchChange={handleSearchChange}
           onCategorySelect={handleCategorySelect}
+          catalogBrowseCategories={catalogBrowseCategories}
           learningPaths={learningPaths}
           onPathSelect={handlePathSelect}
           onSkillSelect={handleSkillSelect}
