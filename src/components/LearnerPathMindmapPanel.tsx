@@ -86,9 +86,7 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
             {pathTitle}
           </h2>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[var(--text-secondary)]">
-            Numbered sections and nested topics match your curriculum. Use{' '}
-            <span className="font-medium text-orange-500">Open course</span> or{' '}
-            <span className="font-medium text-[var(--text-primary)]">Open lesson</span> on the right when available.
+            Everything you need, in the right order. Go at your own pace.
           </p>
         </div>
       </div>

@@ -199,7 +199,7 @@ function ActionChips({
   if (!canOpenCourse && !canOpenLesson && !missingCatalog) return null;
 
   const openCourseBtnClass = coursePlaybackComplete
-    ? `inline-flex w-full shrink-0 items-center justify-center rounded border border-orange-500/45 bg-transparent font-medium text-orange-500/90 hover:border-orange-500/65 hover:bg-orange-500/[0.07] hover:text-orange-500 sm:w-[7.25rem] ${btn}`
+    ? `inline-flex w-full shrink-0 items-center justify-center rounded-lg border border-transparent bg-transparent font-medium text-[var(--text-muted)] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 sm:w-[7.25rem] ${btn}`
     : `inline-flex w-full shrink-0 items-center justify-center rounded border border-orange-500 bg-transparent font-medium text-orange-500 hover:bg-orange-500/10 sm:w-[7.25rem] ${btn}`;
 
   const courseCtaLabel = coursePlaybackComplete ? 'Review' : courseInProgress ? 'Continue' : 'Open course';
@@ -525,7 +525,18 @@ function OutlineNode({
                 />
               </button>
             ) : (
-              <span className="flex w-10 shrink-0 sm:w-11" aria-hidden />
+              <button
+                type="button"
+                disabled
+                className="flex min-h-10 min-w-10 shrink-0 cursor-not-allowed items-center justify-center rounded-md text-[var(--text-muted)] opacity-45 sm:min-h-11 sm:min-w-11"
+                aria-label="Nothing to expand. This section has no courses or topics in the list below."
+              >
+                <ChevronDown
+                  size={20}
+                  className="shrink-0 -rotate-90 transition-transform duration-200"
+                  aria-hidden
+                />
+              </button>
             )}
             <div className="flex w-8 shrink-0 items-center justify-end text-lg font-bold leading-snug tabular-nums text-orange-500 sm:w-9 sm:text-xl">
               {sectionIndex + 1}.
@@ -578,9 +589,6 @@ function OutlineNode({
                     )}
                   </div>
                 </div>
-                {!hasExpandableContent ? (
-                  <span className="sr-only">Section has no expandable list.</span>
-                ) : null}
               </div>
               <div
                 className={
