@@ -1,7 +1,7 @@
 import type { Course } from '../data/courses';
 import type { MindmapTreeNode } from '../data/pathMindmap';
 import { loadCompletionTimestamps } from './courseCompletionLog';
-import { isCourseComplete, isLessonPlaybackComplete, loadLessonProgressMap } from './courseProgress';
+import { isCourseComplete, loadLessonProgressMap } from './courseProgress';
 
 /** All catalog `courseId`s referenced under a path section (course nodes and lesson nodes). */
 export function collectCourseIdsInSubtree(root: MindmapTreeNode): Set<string> {
@@ -30,14 +30,15 @@ export function countCatalogCoursesInSubtree(
 }
 
 export type PathSectionProgress = {
-  totalLessons: number;
-  completedLessons: number;
+  totalCourses: number;
+  completedCourses: number;
   percent: number;
 };
 
 /**
- * Lesson-level progress for every catalog course linked under this section.
- * Matches overview semantics: completion timestamps and `isCourseComplete` count as fully done.
+ * Course-level progress for catalog courses linked under this section: each course is either
+ * complete or not (no partial credit by lesson). Matches overview semantics: completion
+ * timestamps and `isCourseComplete` count as done.
  */
 export function computePathSectionProgress(
   sectionRoot: MindmapTreeNode,
@@ -46,29 +47,23 @@ export function computePathSectionProgress(
 ): PathSectionProgress {
   const courseIds = collectCourseIdsInSubtree(sectionRoot);
   const completionTs = loadCompletionTimestamps(userId ?? null);
-  let totalLessons = 0;
-  let completedLessons = 0;
+  let totalCourses = 0;
+  let completedCourses = 0;
   const uid = userId ?? null;
 
   for (const id of courseIds) {
     const course = catalogCourses.find((c) => c.id === id);
     if (!course) continue;
-    const m = loadLessonProgressMap(id, uid);
     const lessons = course.modules.flatMap((mod) => mod.lessons);
-    const n = lessons.length;
-    if (n === 0) continue;
-    totalLessons += n;
-    const fullyDone = isCourseComplete(course, m) || completionTs[id] != null;
-    if (fullyDone) {
-      completedLessons += n;
-      continue;
-    }
-    for (const l of lessons) {
-      if (isLessonPlaybackComplete(m[l.id])) completedLessons++;
-    }
+    if (lessons.length === 0) continue;
+    totalCourses++;
+    const m = loadLessonProgressMap(id, uid);
+    if (isCourseComplete(course, m) || completionTs[id] != null) completedCourses++;
   }
 
   const percent =
-    totalLessons > 0 ? Math.min(100, Math.round((completedLessons / totalLessons) * 100)) : 0;
-  return { totalLessons, completedLessons, percent };
+    totalCourses > 0
+      ? Math.min(100, Math.round((completedCourses / totalCourses) * 100))
+      : 0;
+  return { totalCourses, completedCourses, percent };
 }

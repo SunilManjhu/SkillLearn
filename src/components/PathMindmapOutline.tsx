@@ -1,9 +1,29 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Check, ChevronDown, Circle, Play } from 'lucide-react';
+import { Check, ChevronDown, Circle } from 'lucide-react';
 import type { Course } from '../data/courses';
 import type { MindmapTreeNode } from '../data/pathMindmap';
+import { getCourseLessonProgressSummary, type CourseLessonProgressSummary } from '../utils/courseProgress';
 import { getPathOutlineRowStatus, type PathOutlineRowStatus } from '../utils/pathOutlineRowStatus';
 import { computePathSectionProgress, countCatalogCoursesInSubtree } from '../utils/pathSectionProgress';
+
+/**
+ * Toggle nested branch on row click; ignore links and non-chevron buttons (e.g. Open course).
+ * Chevron uses `data-outline-branch-chevron` so it is not treated as an unrelated button.
+ */
+function handleOutlineBranchHeaderClick(
+  e: React.MouseEvent<HTMLDivElement>,
+  hasNested: boolean,
+  nodeId: string,
+  toggleBranch: (id: string) => void
+) {
+  if (!hasNested) return;
+  const el = e.target as HTMLElement;
+  if (el.closest('a')) return;
+  if (el.closest('[role="progressbar"]')) return;
+  const btn = el.closest('button');
+  if (btn != null && !btn.hasAttribute('data-outline-branch-chevron')) return;
+  toggleBranch(nodeId);
+}
 
 function nodeKind(n: MindmapTreeNode): 'label' | 'course' | 'lesson' {
   if (n.kind === 'course' && n.courseId) return 'course';
@@ -39,6 +59,39 @@ function resolveActions(
     courseId: node.courseId,
     lessonId: node.lessonId,
   };
+}
+
+function OutlineCourseProgressBlock({
+  rowLabel,
+  summary,
+}: {
+  rowLabel: string;
+  summary: CourseLessonProgressSummary;
+}) {
+  if (summary.totalLessons === 0) return null;
+  return (
+    <div className="flex w-full min-w-0 shrink-0 flex-col justify-center gap-1 sm:w-[11rem] sm:flex-none">
+      <div className="flex flex-nowrap items-center justify-between gap-x-2 text-[11px] leading-tight text-[var(--text-secondary)] sm:text-xs">
+        <span className="min-w-0 shrink font-medium">Course progress</span>
+        <span className="shrink-0 font-mono tabular-nums text-[var(--text-muted)]">
+          {summary.percent}% · {summary.completedLessons}/{summary.totalLessons}
+        </span>
+      </div>
+      <div
+        className="h-1.5 w-full min-w-0 overflow-hidden rounded-full bg-[var(--border-color)] sm:h-2"
+        role="progressbar"
+        aria-valuenow={summary.percent}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={`Course progress for ${rowLabel}: ${summary.percent} percent, ${summary.completedLessons} of ${summary.totalLessons} lessons complete`}
+      >
+        <div
+          className="h-full rounded-full bg-orange-500 transition-[width] duration-300 ease-out"
+          style={{ width: `${summary.percent}%` }}
+        />
+      </div>
+    </div>
+  );
 }
 
 function ActionChips({
@@ -106,7 +159,6 @@ function PathRowStatusLead({
 }) {
   const box = 'flex w-7 shrink-0 items-center justify-center self-stretch sm:w-8';
   const ic = compactIcon ? 17 : 20;
-  const playSz = compactIcon ? 15 : 18;
   if (status === 'completed') {
     return (
       <div className={box} role="img" aria-label="Completed">
@@ -114,16 +166,10 @@ function PathRowStatusLead({
       </div>
     );
   }
-  if (status === 'in_progress') {
+  if (status === 'in_progress' || status === 'not_started') {
+    const a11y = status === 'in_progress' ? 'In progress' : 'Not started';
     return (
-      <div className={box} role="img" aria-label="In progress">
-        <Play className="fill-orange-500 text-orange-500" size={playSz} aria-hidden />
-      </div>
-    );
-  }
-  if (status === 'not_started') {
-    return (
-      <div className={box} role="img" aria-label="Not started">
+      <div className={box} role="img" aria-label={a11y}>
         <Circle className="text-[var(--text-muted)]" size={ic} strokeWidth={2} aria-hidden />
       </div>
     );
@@ -144,6 +190,27 @@ function PathRowStatusLead({
       />
     </div>
   );
+}
+
+/** Expandable rows use the chevron only; label rows are structural (no course/lesson status bullets). */
+function OutlineBranchStatusLeadSlot({
+  hasNested,
+  isLabel,
+  depth,
+  status,
+  compactIcon = false,
+}: {
+  hasNested: boolean;
+  isLabel: boolean;
+  depth: number;
+  status: PathOutlineRowStatus | null;
+  compactIcon?: boolean;
+}) {
+  const box = 'flex w-7 shrink-0 items-center justify-center self-stretch sm:w-8';
+  if (hasNested || isLabel) {
+    return <div className={box} aria-hidden />;
+  }
+  return <PathRowStatusLead depth={depth} status={status} compactIcon={compactIcon} />;
 }
 
 /** Vertical rail + rounded corner group; horizontal elbows on each `OutlineNestedBranchItem`. */
@@ -173,11 +240,49 @@ function OutlineNestedBranch({
   );
 }
 
-function OutlineNestedBranchItem({ children }: { children: React.ReactNode }) {
+function OutlineNestedBranchItem({
+  children,
+}: {
+  children: React.ReactNode;
+  /** List `key` is valid on this component; not passed through to the DOM. */
+  key?: React.Key;
+}) {
   return (
     <li className="relative min-w-0 before:pointer-events-none before:absolute before:left-0 before:top-[1.15rem] before:z-0 before:h-px before:w-4 before:-translate-x-full before:bg-[var(--border-color)]/70 sm:before:top-5 sm:before:w-5">
       {children}
     </li>
+  );
+}
+
+/** Chevron + spacer so nested rows with and without children stay aligned. */
+function OutlineBranchExpandControl({
+  nodeId,
+  hasChildren,
+  expanded,
+}: {
+  nodeId: string;
+  hasChildren: boolean;
+  expanded: boolean;
+}) {
+  const panelId = `path-branch-panel-${nodeId}`;
+  if (!hasChildren) {
+    return <span className="flex w-10 shrink-0 sm:w-11" aria-hidden />;
+  }
+  return (
+    <button
+      type="button"
+      data-outline-branch-chevron=""
+      className="flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--hover-bg)]/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 touch-manipulation sm:min-h-11 sm:min-w-11"
+      aria-expanded={expanded}
+      aria-controls={panelId}
+      aria-label={expanded ? 'Collapse nested items' : 'Expand nested items'}
+    >
+      <ChevronDown
+        size={20}
+        className={`shrink-0 transition-transform duration-200 ${expanded ? 'rotate-0' : '-rotate-90'}`}
+        aria-hidden
+      />
+    </button>
   );
 }
 
@@ -192,6 +297,8 @@ function OutlineNode({
   progressSnapshotVersion,
   isSectionExpanded,
   toggleSection,
+  isBranchExpanded,
+  toggleBranch,
 }: {
   node: MindmapTreeNode;
   depth: number;
@@ -204,8 +311,11 @@ function OutlineNode({
   progressSnapshotVersion: number;
   isSectionExpanded: (sectionId: string) => boolean;
   toggleSection: (sectionId: string) => void;
+  isBranchExpanded: (nodeId: string) => boolean;
+  toggleBranch: (nodeId: string) => void;
 }) {
   const label = node.label.trim() || node.id;
+  const isLabelRow = nodeKind(node) === 'label';
 
   const sectionProgress = useMemo(() => {
     if (depth !== 0) return null;
@@ -222,8 +332,15 @@ function OutlineNode({
     return getPathOutlineRowStatus(node, catalogCourses, progressUserId);
   }, [depth, node, catalogCourses, progressUserId, progressSnapshotVersion]);
 
+  const courseLessonProgressSummary = useMemo(() => {
+    if (nodeKind(node) !== 'course' || !node.courseId) return null;
+    const c = catalogCourses.find((x) => x.id === node.courseId);
+    if (!c) return null;
+    return getCourseLessonProgressSummary(c, progressUserId);
+  }, [node, catalogCourses, progressUserId, progressSnapshotVersion]);
+
   if (depth === 0) {
-    const showSectionProgress = sectionProgress != null && sectionProgress.totalLessons > 0;
+    const showSectionProgress = sectionProgress != null && sectionProgress.totalCourses > 0;
     const childCount = node.children.length;
     const hasExpandableContent = childCount > 0;
     const expanded = isSectionExpanded(node.id);
@@ -277,10 +394,10 @@ function OutlineNode({
         {showSectionProgress && sectionProgress ? (
           <div className="mt-2.5 min-w-0 max-w-2xl pl-[5.125rem] sm:mt-3 sm:pl-[6.875rem]">
             <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-[var(--text-secondary)] sm:text-sm">
-              <span>Section progress</span>
+              <span>Section Progress</span>
               <span className="font-mono tabular-nums text-[var(--text-muted)]">
-                {sectionProgress.percent}% · {sectionProgress.completedLessons}/{sectionProgress.totalLessons}{' '}
-                lessons
+                {sectionProgress.percent}% · {sectionProgress.completedCourses}/{sectionProgress.totalCourses}{' '}
+                courses
               </span>
             </div>
             <div
@@ -289,7 +406,7 @@ function OutlineNode({
               aria-valuenow={sectionProgress.percent}
               aria-valuemin={0}
               aria-valuemax={100}
-              aria-label={`Progress for ${label}: ${sectionProgress.percent} percent, ${sectionProgress.completedLessons} of ${sectionProgress.totalLessons} lessons complete`}
+              aria-label={`Section progress for ${label}: ${sectionProgress.percent} percent, ${sectionProgress.completedCourses} of ${sectionProgress.totalCourses} courses complete`}
             >
               <div
                 className="h-full rounded-full bg-orange-500 transition-[width] duration-300 ease-out"
@@ -327,6 +444,8 @@ function OutlineNode({
                       progressSnapshotVersion={progressSnapshotVersion}
                       isSectionExpanded={isSectionExpanded}
                       toggleSection={toggleSection}
+                      isBranchExpanded={isBranchExpanded}
+                      toggleBranch={toggleBranch}
                     />
                   </li>
                 ))}
@@ -339,42 +458,74 @@ function OutlineNode({
   }
 
   if (depth === 1) {
+    const hasNested = node.children.length > 0;
+    const nestedOpen = isBranchExpanded(node.id);
     return (
       <div className="min-w-0">
-        <div className="flex min-w-0 items-stretch gap-3 sm:gap-4">
-          <PathRowStatusLead depth={1} status={rowStatus} compactIcon={false} />
-          <div className="flex min-w-0 flex-1 flex-col gap-2 sm:min-h-10 sm:flex-row sm:items-stretch sm:justify-between sm:gap-4">
-            <span className="flex min-w-0 flex-1 items-center text-base font-semibold leading-snug text-[var(--text-primary)] [overflow-wrap:anywhere]">
-              {label}
-            </span>
+        <div
+          className={`flex min-w-0 items-center gap-1 sm:gap-2${
+            hasNested
+              ? ' min-h-10 cursor-pointer rounded-lg py-1 pl-0.5 pr-1 transition-colors hover:bg-[var(--hover-bg)]/50 sm:min-h-11 sm:py-1 sm:pl-1 sm:pr-1.5'
+              : ''
+          }`}
+          onClick={
+            hasNested
+              ? (e) => handleOutlineBranchHeaderClick(e, hasNested, node.id, toggleBranch)
+              : undefined
+          }
+        >
+          <OutlineBranchExpandControl
+            nodeId={node.id}
+            hasChildren={hasNested}
+            expanded={nestedOpen}
+          />
+          <OutlineBranchStatusLeadSlot
+            hasNested={hasNested}
+            isLabel={isLabelRow}
+            depth={1}
+            status={rowStatus}
+          />
+          <div className="flex min-w-0 flex-1 flex-col gap-2 sm:min-h-10 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
+              <span className="flex min-w-0 items-center text-base font-semibold leading-snug text-[var(--text-primary)] [overflow-wrap:anywhere]">
+                {label}
+              </span>
+            </div>
+            {courseLessonProgressSummary ? (
+              <OutlineCourseProgressBlock rowLabel={label} summary={courseLessonProgressSummary} />
+            ) : null}
             <ActionChips
               node={node}
               catalogCourses={catalogCourses}
               onOpenCourse={onOpenCourse}
               onOpenLesson={onOpenLesson}
               compact
-              className="shrink-0 sm:ml-2 sm:self-stretch"
+              className="shrink-0 sm:ml-2"
             />
           </div>
         </div>
-        {node.children.length > 0 ? (
-          <OutlineNestedBranch parentDepth={1}>
-            {node.children.map((ch) => (
-              <OutlineNestedBranchItem key={ch.id}>
-                <OutlineNode
-                  node={ch}
-                  depth={2}
-                  catalogCourses={catalogCourses}
-                  onOpenCourse={onOpenCourse}
-                  onOpenLesson={onOpenLesson}
-                  progressUserId={progressUserId}
-                  progressSnapshotVersion={progressSnapshotVersion}
-                  isSectionExpanded={isSectionExpanded}
-                  toggleSection={toggleSection}
-                />
-              </OutlineNestedBranchItem>
-            ))}
-          </OutlineNestedBranch>
+        {hasNested ? (
+          <div id={`path-branch-panel-${node.id}`} hidden={!nestedOpen}>
+            <OutlineNestedBranch parentDepth={1}>
+              {node.children.map((ch) => (
+                <OutlineNestedBranchItem key={ch.id}>
+                  <OutlineNode
+                    node={ch}
+                    depth={2}
+                    catalogCourses={catalogCourses}
+                    onOpenCourse={onOpenCourse}
+                    onOpenLesson={onOpenLesson}
+                    progressUserId={progressUserId}
+                    progressSnapshotVersion={progressSnapshotVersion}
+                    isSectionExpanded={isSectionExpanded}
+                    toggleSection={toggleSection}
+                    isBranchExpanded={isBranchExpanded}
+                    toggleBranch={toggleBranch}
+                  />
+                </OutlineNestedBranchItem>
+              ))}
+            </OutlineNestedBranch>
+          </div>
         ) : null}
       </div>
     );
@@ -390,45 +541,74 @@ function OutlineNode({
       ? 'text-xs font-medium leading-snug text-[var(--text-primary)] [overflow-wrap:anywhere] sm:text-sm'
       : 'text-sm font-medium leading-snug text-[var(--text-primary)] [overflow-wrap:anywhere] sm:text-[15px]';
   const nestedLabelClass = isNestedBranch ? nestedBranchLabelClass : nestedLeafLabelClass;
+  const hasNested = node.children.length > 0;
+  const nestedOpen = isBranchExpanded(node.id);
 
   return (
     <div className="min-w-0">
-      <div className="flex min-w-0 items-stretch gap-3 sm:gap-4">
-        <PathRowStatusLead
+      <div
+        className={`flex min-w-0 items-center gap-1 sm:gap-2${
+          hasNested
+            ? ' min-h-10 cursor-pointer rounded-lg py-1 pl-0.5 pr-1 transition-colors hover:bg-[var(--hover-bg)]/50 sm:min-h-11 sm:py-1 sm:pl-1 sm:pr-1.5'
+            : ''
+        }`}
+        onClick={
+          hasNested
+            ? (e) => handleOutlineBranchHeaderClick(e, hasNested, node.id, toggleBranch)
+            : undefined
+        }
+      >
+        <OutlineBranchExpandControl
+          nodeId={node.id}
+          hasChildren={hasNested}
+          expanded={nestedOpen}
+        />
+        <OutlineBranchStatusLeadSlot
+          hasNested={hasNested}
+          isLabel={isLabelRow}
           depth={depth}
           status={rowStatus}
           compactIcon={depth >= 4}
         />
-        <div className="flex min-w-0 flex-1 flex-col gap-2 sm:min-h-10 sm:flex-row sm:items-stretch sm:justify-between sm:gap-4">
-          <span className={`flex min-w-0 flex-1 items-center ${nestedLabelClass}`}>{label}</span>
+        <div className="flex min-w-0 flex-1 flex-col gap-2 sm:min-h-10 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+          <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
+            <span className={`flex min-w-0 items-center ${nestedLabelClass}`}>{label}</span>
+          </div>
+          {courseLessonProgressSummary ? (
+            <OutlineCourseProgressBlock rowLabel={label} summary={courseLessonProgressSummary} />
+          ) : null}
           <ActionChips
             node={node}
             catalogCourses={catalogCourses}
             onOpenCourse={onOpenCourse}
             onOpenLesson={onOpenLesson}
             compact
-            className="shrink-0 sm:ml-2 sm:self-stretch"
+            className="shrink-0 sm:ml-2"
           />
         </div>
       </div>
-      {node.children.length > 0 ? (
-        <OutlineNestedBranch parentDepth={depth}>
-          {node.children.map((ch) => (
-            <OutlineNestedBranchItem key={ch.id}>
-              <OutlineNode
-                node={ch}
-                depth={depth + 1}
-                catalogCourses={catalogCourses}
-                onOpenCourse={onOpenCourse}
-                onOpenLesson={onOpenLesson}
-                progressUserId={progressUserId}
-                progressSnapshotVersion={progressSnapshotVersion}
-                isSectionExpanded={isSectionExpanded}
-                toggleSection={toggleSection}
-              />
-            </OutlineNestedBranchItem>
-          ))}
-        </OutlineNestedBranch>
+      {hasNested ? (
+        <div id={`path-branch-panel-${node.id}`} hidden={!nestedOpen}>
+          <OutlineNestedBranch parentDepth={depth}>
+            {node.children.map((ch) => (
+              <OutlineNestedBranchItem key={ch.id}>
+                <OutlineNode
+                  node={ch}
+                  depth={depth + 1}
+                  catalogCourses={catalogCourses}
+                  onOpenCourse={onOpenCourse}
+                  onOpenLesson={onOpenLesson}
+                  progressUserId={progressUserId}
+                  progressSnapshotVersion={progressSnapshotVersion}
+                  isSectionExpanded={isSectionExpanded}
+                  toggleSection={toggleSection}
+                  isBranchExpanded={isBranchExpanded}
+                  toggleBranch={toggleBranch}
+                />
+              </OutlineNestedBranchItem>
+            ))}
+          </OutlineNestedBranch>
+        </div>
       ) : null}
     </div>
   );
@@ -456,6 +636,7 @@ export const PathMindmapOutline: React.FC<PathMindmapOutlineProps> = ({
   progressSnapshotVersion,
 }) => {
   const [sectionExpanded, setSectionExpanded] = useState<Record<string, boolean>>({});
+  const [branchExpanded, setBranchExpanded] = useState<Record<string, boolean>>({});
 
   const isSectionExpanded = useCallback(
     (sectionId: string) => sectionExpanded[sectionId] !== false,
@@ -466,6 +647,18 @@ export const PathMindmapOutline: React.FC<PathMindmapOutlineProps> = ({
     setSectionExpanded((prev) => {
       const open = prev[sectionId] !== false;
       return { ...prev, [sectionId]: !open };
+    });
+  }, []);
+
+  const isBranchExpanded = useCallback(
+    (nodeId: string) => branchExpanded[nodeId] !== false,
+    [branchExpanded]
+  );
+
+  const toggleBranch = useCallback((nodeId: string) => {
+    setBranchExpanded((prev) => {
+      const open = prev[nodeId] !== false;
+      return { ...prev, [nodeId]: !open };
     });
   }, []);
 
@@ -489,6 +682,8 @@ export const PathMindmapOutline: React.FC<PathMindmapOutlineProps> = ({
               progressSnapshotVersion={progressSnapshotVersion}
               isSectionExpanded={isSectionExpanded}
               toggleSection={toggleSection}
+              isBranchExpanded={isBranchExpanded}
+              toggleBranch={toggleBranch}
             />
           </React.Fragment>
         ))}

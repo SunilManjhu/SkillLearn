@@ -167,6 +167,42 @@ export function isCourseComplete(course: Course, progressByLesson: Record<string
   );
 }
 
+export type CourseLessonProgressSummary = {
+  totalLessons: number;
+  completedLessons: number;
+  percent: number;
+};
+
+/**
+ * Lesson counts and bar percent (same formula as CourseOverview): each lesson counts complete only when
+ * `isLessonPlaybackComplete`.
+ */
+export function getCourseLessonProgressSummaryFromMap(
+  course: Course,
+  progressByLesson: Record<string, LessonProgress>
+): CourseLessonProgressSummary {
+  const totalLessons = course.modules.reduce((acc, m) => acc + m.lessons.length, 0);
+  if (totalLessons === 0) {
+    return { totalLessons: 0, completedLessons: 0, percent: 0 };
+  }
+  const completedLessons = course.modules.reduce(
+    (acc, m) => acc + m.lessons.filter((l) => isLessonPlaybackComplete(progressByLesson[l.id])).length,
+    0
+  );
+  const percent = Math.min(100, Math.round((completedLessons / totalLessons) * 100));
+  return { totalLessons, completedLessons, percent };
+}
+
+/** Loads from storage, reconciles stub ids, then same aggregate as the overview. */
+export function getCourseLessonProgressSummary(
+  course: Course,
+  userId: string | null | undefined
+): CourseLessonProgressSummary {
+  const raw = loadLessonProgressMap(course.id, userId ?? null);
+  const { map } = reconcileLessonProgressMap(course, raw);
+  return getCourseLessonProgressSummaryFromMap(course, map);
+}
+
 /** First lesson in catalog order that is not yet playback-complete; null if every lesson is complete or the course has no lessons. */
 export function getFirstIncompleteLesson(
   course: Course,

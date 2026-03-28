@@ -1436,7 +1436,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     (id: string) => {
       setExpandedBranchIds((prev) => {
         if (prev.has(id)) {
-          const next = new Set(prev);
+          const next = new Set<string>(prev);
           stripBranchExpandState(next, pathBranchTree, id);
           return next;
         }

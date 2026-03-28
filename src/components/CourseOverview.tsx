@@ -11,6 +11,7 @@ import {
   loadLessonProgressMap,
   reconcileLessonProgressMap,
   isLessonPlaybackComplete,
+  getCourseLessonProgressSummaryFromMap,
   progressPercent,
   clearCourseProgress,
   syncProgressToFirestore,
@@ -163,8 +164,6 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
     return () => window.clearTimeout(t);
   }, [contentDeepLink, course, onContentDeepLinkConsumed]);
 
-  const totalLessons = course.modules.reduce((acc, m) => acc + m.lessons.length, 0);
-
   const [progressMap, setProgressMap] = useState(() => {
     const uid = user?.uid ?? null;
     if (!uid) return {};
@@ -177,11 +176,8 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
   const completionRecorded =
     !!progressUserId && loadCompletionTimestamps(progressUserId)[course.id] != null;
   const showCertificateCta = isComplete || completionRecorded;
-  const completedLessonCount = course.modules.reduce(
-    (acc, m) => acc + m.lessons.filter((l) => isLessonPlaybackComplete(progressMap[l.id])).length,
-    0
-  );
-  const overallProgressPercent = totalLessons ? Math.min(100, Math.round((completedLessonCount / totalLessons) * 100)) : 0;
+  const { totalLessons, completedLessons: completedLessonCount, percent: overallProgressPercent } =
+    getCourseLessonProgressSummaryFromMap(course, progressMap);
 
   const primaryCtaLabel = isComplete ? 'Retake Course' : canResume ? 'Resume lesson' : 'Start Course';
 
