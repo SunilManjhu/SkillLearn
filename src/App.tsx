@@ -2080,6 +2080,10 @@ export default function App() {
 
   const renderCatalog = () => {
     const catalogHeading = selectedLearningPathId == null ? 'Course Library' : null;
+    const activePathTitle =
+      selectedLearningPathId != null
+        ? learningPaths.find((p) => p.id === selectedLearningPathId)?.title?.trim() || selectedLearningPathId
+        : null;
     return (
       <div className="mx-auto min-w-0 max-w-7xl px-4 pb-12 pt-[max(5.5rem,calc(4rem+env(safe-area-inset-top,0px)))] sm:px-6 sm:pb-20 sm:pt-24">
         <div className="sticky top-16 z-30 -mx-4 mb-6 border-b border-[var(--border-color)]/80 bg-[var(--bg-primary)] px-4 pb-4 sm:static sm:z-auto sm:mx-0 sm:mb-10 sm:border-0 sm:bg-transparent sm:px-0 sm:pb-0">
@@ -2087,6 +2091,13 @@ export default function App() {
             <div className="mb-4 sm:mb-4">
               <h1 className="min-w-0 break-words text-2xl font-bold leading-tight text-[var(--text-primary)] sm:text-3xl md:text-4xl">
                 {catalogHeading}
+              </h1>
+            </div>
+          ) : activePathTitle != null ? (
+            <div className="min-w-0 md:hidden">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-orange-500">Learning path</p>
+              <h1 className="mt-1 min-w-0 break-words text-xl font-bold leading-snug text-[var(--text-primary)]">
+                {activePathTitle}
               </h1>
             </div>
           ) : null}

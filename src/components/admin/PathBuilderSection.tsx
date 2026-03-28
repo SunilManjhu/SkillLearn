@@ -2020,7 +2020,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
       {actionToast}
 
       <div className="space-y-3">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3 md:items-start md:gap-x-3 md:gap-y-3">
+        <div className="flex flex-col gap-3 md:grid md:grid-cols-3 md:items-start md:gap-x-3 md:gap-y-3">
           <div className="flex min-w-0 flex-col gap-1">
             <label
               htmlFor="admin-learning-path-select"
@@ -2050,30 +2050,32 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
               )}
             </select>
           </div>
-          <div className="flex min-w-0 flex-col gap-1">
-            <span className="text-xs font-semibold text-[var(--text-secondary)]">Document ID</span>
-            <div
-              className="box-border flex min-h-[42px] w-full min-w-0 items-center rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm font-mono text-[var(--text-primary)]"
-              aria-live="polite"
-            >
-              {pathDraft ? (
-                <span className="truncate text-orange-500/90">{pathDraft.id}</span>
-              ) : (
-                <span className="text-[var(--text-muted)]">—</span>
-              )}
+          <div className="grid min-w-0 grid-cols-2 gap-2 md:contents">
+            <div className="flex min-w-0 flex-col gap-1">
+              <span className="text-xs font-semibold text-[var(--text-secondary)]">Document ID</span>
+              <div
+                className="box-border flex min-h-[42px] w-full min-w-0 items-center rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm font-mono text-[var(--text-primary)] md:px-3"
+                aria-live="polite"
+              >
+                {pathDraft ? (
+                  <span className="truncate text-orange-500/90">{pathDraft.id}</span>
+                ) : (
+                  <span className="text-[var(--text-muted)]">—</span>
+                )}
+              </div>
             </div>
-          </div>
-          <div className="flex min-w-0 flex-col gap-1">
-            <span className="text-xs font-semibold text-[var(--text-secondary)]">Courses in path</span>
-            <div
-              className="box-border flex min-h-[42px] w-full min-w-0 items-center rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
-              aria-live="polite"
-            >
-              {pathDraft ? (
-                <span>{pathDraft.courseIds.length}</span>
-              ) : (
-                <span className="text-[var(--text-muted)]">—</span>
-              )}
+            <div className="flex min-w-0 flex-col gap-1">
+              <span className="text-xs font-semibold text-[var(--text-secondary)]">Courses in path</span>
+              <div
+                className="box-border flex min-h-[42px] w-full min-w-0 items-center rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm text-[var(--text-primary)] md:px-3"
+                aria-live="polite"
+              >
+                {pathDraft ? (
+                  <span>{pathDraft.courseIds.length}</span>
+                ) : (
+                  <span className="text-[var(--text-muted)]">—</span>
+                )}
+              </div>
             </div>
           </div>
         </div>

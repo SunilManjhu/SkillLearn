@@ -1280,7 +1280,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
       <div className="space-y-4">
         <div className="space-y-3">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3 md:items-start md:gap-x-3 md:gap-y-3">
+        <div className="flex flex-col gap-3 md:grid md:grid-cols-3 md:items-start md:gap-x-3 md:gap-y-3">
           <div className="flex min-w-0 flex-col gap-1">
             <label
               htmlFor="admin-catalog-course-select"
@@ -1333,72 +1333,78 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             )}
             </div>
           </div>
-          <div className="flex min-w-0 flex-col gap-1">
-            <span className="text-xs font-semibold text-[var(--text-secondary)]">Document ID</span>
-            <div
-              className="box-border flex min-h-[42px] w-full min-w-0 items-center rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm font-mono text-[var(--text-primary)]"
-              aria-live="polite"
-            >
-              {draft ? (
-                <span className="truncate text-orange-500/90">{draft.id}</span>
-              ) : (
-                <span className="text-[var(--text-muted)]">—</span>
-              )}
+          <div className="grid min-w-0 grid-cols-2 gap-2 md:contents">
+            <div className="flex min-w-0 flex-col gap-1">
+              <span className="text-xs font-semibold text-[var(--text-secondary)]">Document ID</span>
+              <div
+                className="box-border flex min-h-[42px] w-full min-w-0 items-center rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm font-mono text-[var(--text-primary)] md:px-3"
+                aria-live="polite"
+              >
+                {draft ? (
+                  <span className="truncate text-orange-500/90">{draft.id}</span>
+                ) : (
+                  <span className="text-[var(--text-muted)]">—</span>
+                )}
+              </div>
             </div>
-          </div>
-          <div className="flex min-w-0 flex-col gap-1">
-            <label
-              htmlFor="admin-catalog-course-level"
-              className="text-xs font-semibold text-[var(--text-secondary)]"
-            >
-              Level
-            </label>
-            <select
-              id="admin-catalog-course-level"
-              value={draft?.level ?? ''}
-              disabled={!draft}
-              onChange={(e) =>
-                draft && updateDraft({ level: e.target.value as Course['level'] })
-              }
-              className="box-border w-full min-h-[42px] rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {!draft && (
-                <option value="" disabled>
-                  —
-                </option>
-              )}
-              <option value="Beginner">Beginner</option>
-              <option value="Intermediate">Intermediate</option>
-              <option value="Advanced">Advanced</option>
-              <option value="Proficient">Proficient</option>
-            </select>
+            <div className="flex min-w-0 flex-col gap-1">
+              <label
+                htmlFor="admin-catalog-course-level"
+                className="text-xs font-semibold text-[var(--text-secondary)]"
+              >
+                Level
+              </label>
+              <select
+                id="admin-catalog-course-level"
+                value={draft?.level ?? ''}
+                disabled={!draft}
+                onChange={(e) =>
+                  draft && updateDraft({ level: e.target.value as Course['level'] })
+                }
+                className="box-border w-full min-w-0 min-h-[42px] rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50 md:px-3"
+              >
+                {!draft && (
+                  <option value="" disabled>
+                    —
+                  </option>
+                )}
+                <option value="Beginner">Beginner</option>
+                <option value="Intermediate">Intermediate</option>
+                <option value="Advanced">Advanced</option>
+                <option value="Proficient">Proficient</option>
+              </select>
+            </div>
           </div>
         </div>
 
         {draft && (
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex min-w-0 flex-row flex-nowrap items-stretch gap-2">
             <button
               type="button"
               disabled={busy || !draft || (baselineJson !== null && !isDirty)}
               onClick={() => void handleSave()}
               aria-busy={busy}
-              className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-orange-500 px-5 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-40"
+              aria-label={busy ? 'Saving changes…' : 'Save changes to catalog'}
+              className="inline-flex min-h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl bg-orange-500 px-3 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-40 md:flex-initial md:gap-2 md:px-5"
             >
               {busy ? (
                 <Loader2 size={18} className="shrink-0 animate-spin" aria-hidden />
               ) : (
                 <Save size={18} className="shrink-0" aria-hidden />
               )}
-              Save changes
+              <span className="md:hidden">Save</span>
+              <span className="hidden md:inline">Save changes</span>
             </button>
             <button
               type="button"
               disabled={busy || !publishedList.some((c) => c.id === draft.id)}
               onClick={openDeleteDialog}
-              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-red-500/40 px-5 py-2 text-sm font-bold text-red-400 hover:bg-red-500/10 disabled:opacity-40"
+              aria-label="Delete published course from catalog"
+              className="inline-flex min-h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl border border-red-500/40 px-3 py-2 text-sm font-bold text-red-400 hover:bg-red-500/10 disabled:opacity-40 md:flex-initial md:gap-2 md:px-5"
             >
-              <Trash2 size={18} aria-hidden />
-              Delete published
+              <Trash2 size={18} className="shrink-0" aria-hidden />
+              <span className="md:hidden">Delete</span>
+              <span className="hidden md:inline">Delete published</span>
             </button>
           </div>
         )}

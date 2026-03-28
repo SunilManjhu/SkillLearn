@@ -68,10 +68,14 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
 
   return (
     <section
-      className="min-w-0 max-w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)]/80 p-3 shadow-sm sm:p-5"
+      className="min-w-0 max-w-full rounded-none border-0 bg-transparent p-0 shadow-none md:rounded-2xl md:border md:border-[var(--border-color)] md:bg-[var(--bg-secondary)]/80 md:p-5 md:shadow-sm"
       aria-labelledby="learner-path-mindmap-heading"
     >
-      <div className="mb-2 flex flex-wrap items-start gap-3 sm:mb-3">
+      <h2 id="learner-path-mindmap-heading" className="sr-only">
+        Learning path: {pathTitle}
+      </h2>
+      {/* Full visual header from md up; mobile uses catalog sticky title in App. */}
+      <div className="mb-2 hidden flex-wrap items-start gap-3 sm:mb-3 md:flex">
         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-orange-500/35 bg-orange-500/10 text-orange-500">
           <LayoutGrid size={22} aria-hidden />
         </div>
@@ -79,12 +83,9 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
           <p className="text-xs font-semibold uppercase tracking-wide text-orange-500">
             Learning path
           </p>
-          <h2
-            id="learner-path-mindmap-heading"
-            className="mt-1 text-xl font-bold tracking-tight text-[var(--text-primary)] sm:text-2xl"
-          >
+          <p className="mt-1 text-xl font-bold tracking-tight text-[var(--text-primary)] sm:text-2xl" aria-hidden="true">
             {pathTitle}
-          </h2>
+          </p>
           <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-[var(--text-secondary)]">
             Everything you need, in the right order. Go at your own pace.
           </p>
