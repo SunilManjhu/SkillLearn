@@ -64,3 +64,20 @@ export function courseMatchesLibraryFilters(course: Course, filters: LibraryFilt
 
   return true;
 }
+
+function canonicalLabelFromPool(tag: string, pool: readonly string[]): string {
+  const k = tag.trim().toLowerCase();
+  return pool.find((p) => p.toLowerCase() === k) ?? tag.trim();
+}
+
+/** Add or remove a label in a multi-select filter; uses pool for canonical casing. */
+export function toggleFilterTag(selected: string[], tag: string, pool: readonly string[]): string[] {
+  const k = tag.trim().toLowerCase();
+  const has = selected.some((s) => s.toLowerCase() === k);
+  if (has) {
+    return selected.filter((s) => s.toLowerCase() !== k);
+  }
+  const c = canonicalLabelFromPool(tag, pool);
+  if (selected.some((s) => s.toLowerCase() === c.toLowerCase())) return selected;
+  return [...selected, c];
+}

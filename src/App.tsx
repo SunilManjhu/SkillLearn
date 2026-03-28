@@ -96,7 +96,11 @@ import {
   type CatalogCategoryPresetsState,
 } from './utils/catalogCategoryPresets';
 import { loadCatalogCategoryPresets } from './utils/catalogCategoryPresetsFirestore';
-import { courseMatchesLibraryFilters, type LibraryFilterState } from './utils/courseTaxonomy';
+import {
+  courseMatchesLibraryFilters,
+  toggleFilterTag,
+  type LibraryFilterState,
+} from './utils/courseTaxonomy';
 
 type View = 'home' | 'catalog' | 'player' | 'overview' | 'about' | 'careers' | 'privacy' | 'help' | 'contact' | 'status' | 'enterprise' | 'signup' | 'profile' | 'certificate' | 'admin';
 
@@ -1695,7 +1699,10 @@ export default function App() {
 
   const handleCategorySelect = (category: string) => {
     setSelectedLearningPathId(null);
-    setLibraryFilters({ categoryTags: [category], skillTags: [], level: null });
+    setLibraryFilters((f) => ({
+      ...f,
+      categoryTags: toggleFilterTag(f.categoryTags, category, catalogBrowseCategories),
+    }));
     handleNavigate('catalog', false);
   };
 
@@ -1707,7 +1714,10 @@ export default function App() {
 
   const handleSkillSelect = (skill: string) => {
     setSelectedLearningPathId(null);
-    setLibraryFilters({ categoryTags: [], skillTags: [skill], level: null });
+    setLibraryFilters((f) => ({
+      ...f,
+      skillTags: toggleFilterTag(f.skillTags, skill, catalogBrowseSkills),
+    }));
     handleNavigate('catalog', false);
   };
 
@@ -2408,6 +2418,8 @@ export default function App() {
           onCategorySelect={handleCategorySelect}
           catalogBrowseCategories={catalogBrowseCategories}
           catalogBrowseSkills={catalogBrowseSkills}
+          catalogActiveCategoryTags={libraryFilters.categoryTags}
+          catalogActiveSkillTags={libraryFilters.skillTags}
           learningPaths={learningPaths}
           onPathSelect={handlePathSelect}
           onSkillSelect={handleSkillSelect}

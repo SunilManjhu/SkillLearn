@@ -31,6 +31,10 @@ interface NavbarProps {
   catalogBrowseCategories: readonly string[];
   /** Skill tags for Browse → Skills (presets + extras + from published courses). */
   catalogBrowseSkills: readonly string[];
+  /** Active Course Library category filters (for menu/dropdown selected state and toggling). */
+  catalogActiveCategoryTags?: readonly string[];
+  /** Active Course Library skill filters. */
+  catalogActiveSkillTags?: readonly string[];
   /** Titles and ids from Firestore `learningPaths` (same as admin Path builder). */
   learningPaths?: ReadonlyArray<{ id: string; title: string }>;
   /** Path document id from `learningPaths`. */
@@ -66,6 +70,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onCategorySelect,
   catalogBrowseCategories,
   catalogBrowseSkills,
+  catalogActiveCategoryTags = [],
+  catalogActiveSkillTags = [],
   learningPaths = [],
   onPathSelect,
   onSkillSelect,
@@ -102,6 +108,11 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const browseItems = catalogBrowseCategories;
   const skillItems = catalogBrowseSkills;
+
+  const tagIsActive = (active: readonly string[], item: string) => {
+    const k = item.trim().toLowerCase();
+    return active.some((t) => t.trim().toLowerCase() === k);
+  };
 
   const getItems = () => {
     if (openDropdown === 'browse') return browseItems;
@@ -309,16 +320,21 @@ export const Navbar: React.FC<NavbarProps> = ({
               <div 
                 className="absolute top-full left-0 w-56 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-b-lg shadow-xl py-2 z-50"
               >
-                {browseItems.map((item, index) => (
-                  <button
-                    key={item}
-                    onClick={() => handleItemSelect(item)}
-                    onMouseEnter={() => setFocusedItemIndex(index)}
-                    className={`w-full text-left px-4 py-2 transition-colors focus:outline-none ${focusedItemIndex === index ? 'bg-[var(--hover-bg)] text-orange-500' : 'hover:bg-[var(--hover-bg)] hover:text-orange-500'}`}
-                  >
-                    {item}
-                  </button>
-                ))}
+                {browseItems.map((item, index) => {
+                  const selected = tagIsActive(catalogActiveCategoryTags, item);
+                  return (
+                    <button
+                      key={item}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => handleItemSelect(item)}
+                      onMouseEnter={() => setFocusedItemIndex(index)}
+                      className={`w-full min-h-10 text-left px-4 py-2 transition-colors focus:outline-none ${selected ? 'bg-orange-500/15 font-medium text-orange-500' : ''} ${focusedItemIndex === index ? 'bg-[var(--hover-bg)] text-orange-500' : 'hover:bg-[var(--hover-bg)] hover:text-orange-500'}`}
+                    >
+                      {item}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -378,16 +394,21 @@ export const Navbar: React.FC<NavbarProps> = ({
               <div 
                 className="absolute top-full left-0 w-56 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-b-lg shadow-xl py-2 z-50"
               >
-                {skillItems.map((item, index) => (
-                  <button
-                    key={item}
-                    onClick={() => handleItemSelect(item)}
-                    onMouseEnter={() => setFocusedItemIndex(index)}
-                    className={`w-full text-left px-4 py-2 transition-colors focus:outline-none ${focusedItemIndex === index ? 'bg-[var(--hover-bg)] text-orange-500' : 'hover:bg-[var(--hover-bg)] hover:text-orange-500'}`}
-                  >
-                    {item}
-                  </button>
-                ))}
+                {skillItems.map((item, index) => {
+                  const selected = tagIsActive(catalogActiveSkillTags, item);
+                  return (
+                    <button
+                      key={item}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => handleItemSelect(item)}
+                      onMouseEnter={() => setFocusedItemIndex(index)}
+                      className={`w-full min-h-10 text-left px-4 py-2 transition-colors focus:outline-none ${selected ? 'bg-orange-500/15 font-medium text-orange-500' : ''} ${focusedItemIndex === index ? 'bg-[var(--hover-bg)] text-orange-500' : 'hover:bg-[var(--hover-bg)] hover:text-orange-500'}`}
+                    >
+                      {item}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -692,20 +713,22 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
                 {mobileNavExpand === 'browse' && (
                   <div className="border-t border-[var(--border-color)] bg-[var(--bg-primary)]/30 pb-2">
-                    {browseItems.map((item) => (
-                      <button
-                        key={item}
-                        type="button"
-                        className="w-full px-6 py-2.5 text-left text-sm hover:bg-[var(--hover-bg)] hover:text-orange-500"
-                        onClick={() => {
-                          onCategorySelect(item);
-                          setMobileMenuOpen(false);
-                          setMobileNavExpand(null);
-                        }}
-                      >
-                        {item}
-                      </button>
-                    ))}
+                    {browseItems.map((item) => {
+                      const selected = tagIsActive(catalogActiveCategoryTags, item);
+                      return (
+                        <button
+                          key={item}
+                          type="button"
+                          aria-pressed={selected}
+                          className={`w-full min-h-11 px-6 py-2.5 text-left text-sm transition-colors ${selected ? 'bg-orange-500/15 font-medium text-orange-500' : 'hover:bg-[var(--hover-bg)] hover:text-orange-500'}`}
+                          onClick={() => {
+                            onCategorySelect(item);
+                          }}
+                        >
+                          {item}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -754,20 +777,22 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
                 {mobileNavExpand === 'skills' && (
                   <div className="border-t border-[var(--border-color)] bg-[var(--bg-primary)]/30 pb-2">
-                    {skillItems.map((item) => (
-                      <button
-                        key={item}
-                        type="button"
-                        className="w-full px-6 py-2.5 text-left text-sm hover:bg-[var(--hover-bg)] hover:text-orange-500"
-                        onClick={() => {
-                          onSkillSelect(item);
-                          setMobileMenuOpen(false);
-                          setMobileNavExpand(null);
-                        }}
-                      >
-                        {item}
-                      </button>
-                    ))}
+                    {skillItems.map((item) => {
+                      const selected = tagIsActive(catalogActiveSkillTags, item);
+                      return (
+                        <button
+                          key={item}
+                          type="button"
+                          aria-pressed={selected}
+                          className={`w-full min-h-11 px-6 py-2.5 text-left text-sm transition-colors ${selected ? 'bg-orange-500/15 font-medium text-orange-500' : 'hover:bg-[var(--hover-bg)] hover:text-orange-500'}`}
+                          onClick={() => {
+                            onSkillSelect(item);
+                          }}
+                        >
+                          {item}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>

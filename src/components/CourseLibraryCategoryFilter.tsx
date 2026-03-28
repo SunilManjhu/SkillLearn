@@ -2,7 +2,7 @@ import React, { forwardRef, useEffect, useId, useMemo, useRef, useState } from '
 import { ChevronDown, Search, X } from 'lucide-react';
 import type { Course } from '../data/courses';
 import type { LibraryFilterState } from '../utils/courseTaxonomy';
-import { COURSE_LEVELS } from '../utils/courseTaxonomy';
+import { COURSE_LEVELS, toggleFilterTag } from '../utils/courseTaxonomy';
 
 export type CourseLibraryCategoryFilterProps = {
   mainTopics: readonly string[];
@@ -12,22 +12,6 @@ export type CourseLibraryCategoryFilterProps = {
   filters: LibraryFilterState;
   onFiltersChange: (next: LibraryFilterState) => void;
 };
-
-function canonicalLabel(tag: string, pool: readonly string[]): string {
-  const k = tag.trim().toLowerCase();
-  return pool.find((p) => p.toLowerCase() === k) ?? tag.trim();
-}
-
-function toggleInList(selected: string[], tag: string, pool: readonly string[]): string[] {
-  const k = tag.trim().toLowerCase();
-  const has = selected.some((s) => s.toLowerCase() === k);
-  if (has) {
-    return selected.filter((s) => s.toLowerCase() !== k);
-  }
-  const c = canonicalLabel(tag, pool);
-  if (selected.some((s) => s.toLowerCase() === c.toLowerCase())) return selected;
-  return [...selected, c];
-}
 
 function removeFromList(selected: string[], tag: string): string[] {
   const k = tag.toLowerCase();
@@ -166,14 +150,14 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
     const toggleCategory = (label: string) => {
       onFiltersChange({
         ...filters,
-        categoryTags: toggleInList(filters.categoryTags, label, categoryPool),
+        categoryTags: toggleFilterTag(filters.categoryTags, label, categoryPool),
       });
     };
 
     const toggleSkill = (label: string) => {
       onFiltersChange({
         ...filters,
-        skillTags: toggleInList(filters.skillTags, label, skillPool),
+        skillTags: toggleFilterTag(filters.skillTags, label, skillPool),
       });
     };
 
@@ -192,12 +176,36 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
         visibleLevels.length >
       0;
 
+    const firstMobileCloseSection =
+      visibleMainCat.length > 0
+        ? 'mainCat'
+        : visibleMoreCat.length > 0
+          ? 'moreCat'
+          : visibleMainSkill.length > 0
+            ? 'mainSkill'
+            : visibleMoreSkill.length > 0
+              ? 'moreSkill'
+              : visibleLevels.length > 0
+                ? 'level'
+                : 'empty';
+
+    const mobileFilterClose = (slot: typeof firstMobileCloseSection) =>
+      firstMobileCloseSection === slot ? (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpen(false);
+          }}
+          className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-full text-[var(--text-muted)] outline-none transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus-visible:ring-2 focus-visible:ring-orange-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)] md:hidden"
+          aria-label="Close filters"
+        >
+          <X size={18} strokeWidth={2} aria-hidden />
+        </button>
+      ) : null;
+
     const inputPlaceholder =
-      filterFocusedWithin || query.trim() !== ''
-        ? ''
-        : activeCount > 0
-          ? 'Find tags to add…'
-          : 'Filter courses…';
+      filterFocusedWithin || query.trim() !== '' ? '' : 'Filter courses…';
 
     return (
       <div
@@ -218,32 +226,33 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
         >
           <Search size={16} className="ml-1 shrink-0 self-center text-[var(--text-muted)]" aria-hidden />
           <div className="flex min-h-10 min-w-0 flex-1 items-center gap-1.5 overflow-x-auto overscroll-x-contain py-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {filters.categoryTags.map((tag) =>
-              renderActiveChip(
-                `c-${tag}`,
-                'category',
-                tag,
-                () =>
-                  onFiltersChange({ ...filters, categoryTags: removeFromList(filters.categoryTags, tag) })
-              )
-            )}
-            {filters.skillTags.map((tag) =>
-              renderActiveChip(
-                `s-${tag}`,
-                'skill',
-                tag,
-                () => onFiltersChange({ ...filters, skillTags: removeFromList(filters.skillTags, tag) })
-              )
-            )}
-            {filters.level != null
-              ? renderActiveChip('level', 'level', filters.level, () =>
-                  onFiltersChange({ ...filters, level: null })
+            {/* Below md, active tags live in the nav drawer (Categories / Skills); bar stays search-only. */}
+            <div className="hidden md:contents">
+              {filters.categoryTags.map((tag) =>
+                renderActiveChip(
+                  `c-${tag}`,
+                  'category',
+                  tag,
+                  () =>
+                    onFiltersChange({ ...filters, categoryTags: removeFromList(filters.categoryTags, tag) })
                 )
-              : null}
+              )}
+              {filters.skillTags.map((tag) =>
+                renderActiveChip(
+                  `s-${tag}`,
+                  'skill',
+                  tag,
+                  () => onFiltersChange({ ...filters, skillTags: removeFromList(filters.skillTags, tag) })
+                )
+              )}
+              {filters.level != null
+                ? renderActiveChip('level', 'level', filters.level, () =>
+                    onFiltersChange({ ...filters, level: null })
+                  )
+                : null}
+            </div>
             <label htmlFor={inputId} className="sr-only">
-              {activeCount > 0
-                ? 'Find more topics, skills, or a level to add to your filters'
-                : 'Search topics, skills, and levels to filter the catalog'}
+              Search topics, skills, and levels to filter the catalog
             </label>
             <input
               ref={ref}
@@ -273,7 +282,7 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
               }}
               aria-expanded={open}
               aria-controls={panelId}
-              className="inline-flex h-full min-h-10 min-w-10 items-center justify-center rounded-full text-[var(--text-muted)] outline-none transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus-visible:ring-2 focus-visible:ring-orange-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)]"
+              className="hidden h-full min-h-10 min-w-10 items-center justify-center rounded-full text-[var(--text-muted)] outline-none transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus-visible:ring-2 focus-visible:ring-orange-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)] md:inline-flex"
               aria-label={open ? 'Close filter options' : 'Open filter options'}
             >
               <ChevronDown size={18} className={`transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden />
@@ -297,13 +306,16 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
             id={panelId}
             role="dialog"
             aria-label="Course filters"
-            className="filterWindow dropdown card absolute left-0 right-0 top-full z-50 mt-2 max-h-[min(75vh,32rem)] overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl sm:left-0 sm:right-auto sm:w-[min(100%,26rem)]"
+            className="filterWindow dropdown card absolute left-0 right-0 top-full z-50 mt-2 max-h-[min(75vh,32rem)] overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl sm:left-0 sm:right-auto sm:w-[min(100%,26rem)] max-md:fixed max-md:left-[5vw] max-md:right-[5vw] max-md:top-[calc(4rem+env(safe-area-inset-top,0px)+0.375rem)] max-md:mt-0 max-md:z-[60] max-md:flex max-md:h-[calc((100dvh-4.5rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))*0.9)] max-md:max-h-[calc((100dvh-4.5rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))*0.9)] max-md:w-auto max-md:flex-col"
           >
-            <div className="max-h-[min(65vh,28rem)] overflow-y-auto overscroll-contain px-3 py-3">
+            <div className="max-h-[min(65vh,28rem)] overflow-y-auto overscroll-contain px-3 py-3 max-md:max-h-none max-md:min-h-0 max-md:flex-1">
               {visibleMainCat.length > 0 ? (
                 <section className="mb-4">
-                  <div className="title mb-2 text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
-                    Popular topics
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <div className="title min-w-0 flex-1 text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
+                      Popular topics
+                    </div>
+                    {mobileFilterClose('mainCat')}
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {visibleMainCat.map((label) => (
@@ -325,8 +337,11 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
 
               {visibleMoreCat.length > 0 ? (
                 <section className="mb-4">
-                  <div className="title mb-2 text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
-                    More topics
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <div className="title min-w-0 flex-1 text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
+                      More topics
+                    </div>
+                    {mobileFilterClose('moreCat')}
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {visibleMoreCat.map((label) => (
@@ -349,8 +364,11 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
 
               {visibleMainSkill.length > 0 ? (
                 <section className="mb-4">
-                  <div className="title mb-2 text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
-                    Popular skills
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <div className="title min-w-0 flex-1 text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
+                      Popular skills
+                    </div>
+                    {mobileFilterClose('mainSkill')}
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {visibleMainSkill.map((label) => (
@@ -368,8 +386,11 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
 
               {visibleMoreSkill.length > 0 ? (
                 <section className="mb-4">
-                  <div className="title mb-2 text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
-                    More skills
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <div className="title min-w-0 flex-1 text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
+                      More skills
+                    </div>
+                    {mobileFilterClose('moreSkill')}
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {visibleMoreSkill.map((label) => (
@@ -387,8 +408,11 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
 
               {visibleLevels.length > 0 ? (
                 <section>
-                  <div className="title mb-2 text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
-                    Level
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <div className="title min-w-0 flex-1 text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
+                      Level
+                    </div>
+                    {mobileFilterClose('level')}
                   </div>
                   <p className="mb-2 text-[11px] text-[var(--text-muted)]">Pick one level to narrow results.</p>
                   <div className="flex flex-wrap gap-2">
@@ -406,7 +430,12 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
               ) : null}
 
               {!anyVisible ? (
-                <p className="py-6 text-center text-sm text-[var(--text-muted)]">Nothing matches that search.</p>
+                <>
+                  <div className="mb-2 flex items-center justify-end gap-2 md:hidden">
+                    {mobileFilterClose('empty')}
+                  </div>
+                  <p className="py-6 text-center text-sm text-[var(--text-muted)]">Nothing matches that search.</p>
+                </>
               ) : null}
             </div>
           </div>
