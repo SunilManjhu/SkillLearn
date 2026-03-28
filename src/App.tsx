@@ -429,6 +429,8 @@ export default function App() {
   const [completedCoursesModalSignal, setCompletedCoursesModalSignal] = useState(0);
   /** Bumps after cloud progress/ratings hydrate into localStorage so profile stats refresh. */
   const [remoteProfileDataVersion, setRemoteProfileDataVersion] = useState(0);
+  /** Bumps when the catalog (with path outline) is shown so section progress bars re-read lesson progress. */
+  const [pathProgressSnapshot, setPathProgressSnapshot] = useState(0);
   const [authBanner, setAuthBanner] = useState<string | null>(null);
   const [profileSettingsUnderlayView, setProfileSettingsUnderlayView] = useState<View | null>(null);
   const viewBeforeProfileOrSettingsRef = useRef<View>('catalog');
@@ -1366,6 +1368,11 @@ export default function App() {
     }
   }, [currentView]);
 
+  useEffect(() => {
+    if (currentView !== 'catalog') return;
+    setPathProgressSnapshot((n) => n + 1);
+  }, [currentView, selectedLearningPathId]);
+
   useLayoutEffect(() => {
     if (currentView === 'profile' && profileSettingsUnderlayView === null) {
       viewBeforeProfileOrSettingsRef.current = 'catalog';
@@ -2140,6 +2147,8 @@ export default function App() {
                 selectedLearningPathId
               }
               catalogCourses={catalogCourses}
+              progressUserId={user?.uid ?? null}
+              progressSnapshotVersion={pathProgressSnapshot + remoteProfileDataVersion}
               onOpenCourse={(courseId) => {
                 const c = catalogCourses.find((x) => x.id === courseId);
                 if (c) handleCourseClick(c);

@@ -11,6 +11,9 @@ export type LearnerPathMindmapPanelProps = {
   catalogCourses: readonly Course[];
   onOpenCourse: (courseId: string) => void;
   onOpenLesson: (courseId: string, lessonId: string) => void;
+  progressUserId: string | null;
+  /** From App when catalog/path is shown again so section bars re-read local progress. */
+  progressSnapshotVersion: number;
 };
 
 export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = ({
@@ -19,9 +22,29 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
   catalogCourses,
   onOpenCourse,
   onOpenLesson,
+  progressUserId,
+  progressSnapshotVersion,
 }) => {
   const [loading, setLoading] = useState(true);
   const [branches, setBranches] = useState<MindmapTreeNode[] | null>(null);
+  const [storageProgressTick, setStorageProgressTick] = useState(0);
+
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      const k = e.key ?? '';
+      if (
+        k.includes('skilllearn-progress') ||
+        k.includes('skilllearn-course-completed-at') ||
+        k.startsWith('skilllearn-progress:')
+      ) {
+        setStorageProgressTick((t) => t + 1);
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  const outlineProgressVersion = progressSnapshotVersion + storageProgressTick;
 
   useEffect(() => {
     let cancelled = false;
@@ -48,26 +71,25 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
       className="min-w-0 max-w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)]/80 p-4 shadow-sm sm:p-6"
       aria-labelledby="learner-path-mindmap-heading"
     >
-      <div className="mb-4 flex flex-wrap items-start gap-3">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-orange-500/15 text-orange-500">
+      <div className="mb-5 flex flex-wrap items-start gap-3 sm:mb-6">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-orange-500/35 bg-orange-500/10 text-orange-500">
           <LayoutGrid size={22} aria-hidden />
         </div>
         <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold uppercase tracking-wide text-orange-500">
+            Learning path
+          </p>
           <h2
             id="learner-path-mindmap-heading"
-            className="text-lg font-bold tracking-tight text-[var(--text-primary)] sm:text-xl"
+            className="mt-1 text-xl font-bold tracking-tight text-[var(--text-primary)] sm:text-2xl"
           >
-            Path outline
+            {pathTitle}
           </h2>
-          <div className="mt-2 space-y-1.5 text-sm leading-relaxed text-[var(--text-secondary)]">
-            <p>
-              Topics and courses are listed in order. Use <strong className="font-semibold text-[var(--text-primary)]">Open course</strong> or{' '}
-              <strong className="font-semibold text-[var(--text-primary)]">Open lesson</strong> when those actions are available.
-            </p>
-            <p className="text-xs text-[var(--text-muted)] sm:text-sm">
-              Sections are numbered; nested bullets show how topics group under each part of the path.
-            </p>
-          </div>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[var(--text-secondary)]">
+            Numbered sections and nested topics match your curriculum. Use{' '}
+            <span className="font-medium text-orange-500">Open course</span> or{' '}
+            <span className="font-medium text-[var(--text-primary)]">Open lesson</span> on the right when available.
+          </p>
         </div>
       </div>
 
@@ -101,6 +123,8 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
           catalogCourses={catalogCourses}
           onOpenCourse={onOpenCourse}
           onOpenLesson={onOpenLesson}
+          progressUserId={progressUserId}
+          progressSnapshotVersion={outlineProgressVersion}
         />
       )}
     </section>
