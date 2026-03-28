@@ -7,6 +7,7 @@ import {
   Plus,
   Route,
   Save,
+  Tags,
   Trash2,
   RefreshCw,
   X,
@@ -17,6 +18,7 @@ import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { useDialogKeyboard } from '../../hooks/useDialogKeyboard';
 import { useAdminActionToast } from './useAdminActionToast';
 import { PathBuilderSection, type PathBuilderSectionHandle } from './PathBuilderSection';
+import { AdminCatalogCategoriesPanel } from './AdminCatalogCategoriesPanel';
 import type { Course, Lesson, Module } from '../../data/courses';
 import { STRUCTURED_COURSE_ID_RE, isStructuredCourseId } from '../../utils/courseStructuredIds';
 import { validateCourseDraft } from '../../utils/courseDraftValidation';
@@ -185,8 +187,8 @@ function remapCourseToStructuredIds(course: Course, newCourseId: string): Course
   };
 }
 
-/** Sub-tabs inside Course catalog: course entries, learning paths. */
-type ContentCatalogSubTab = 'catalog' | 'paths';
+/** Sub-tabs inside Course catalog: course entries, learning paths, category management. */
+type ContentCatalogSubTab = 'catalog' | 'paths' | 'categories';
 
 /** Pending navigation while the course draft has unsaved edits. */
 type CourseLeaveDialog =
@@ -308,6 +310,30 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     openCourseCatalogOnce();
     void refreshList();
   }, [contentCatalogSubTab, openCourseCatalogOnce, refreshList]);
+
+  useEffect(() => {
+    if (contentCatalogSubTab !== 'categories') return;
+    catalogRequestedRef.current = true;
+    setCatalogRequested(true);
+    void refreshList();
+  }, [contentCatalogSubTab, refreshList]);
+
+  const onCategoryRenamedGlobally = useCallback((fromLower: string, newExact: string) => {
+    setDraft((d) => {
+      if (!d || d.category.trim().toLowerCase() !== fromLower) return d;
+      return { ...d, category: newExact };
+    });
+    setBaselineJson((prev) => {
+      if (prev === null) return prev;
+      try {
+        const b = JSON.parse(prev) as Course;
+        if (b.category?.trim().toLowerCase() !== fromLower) return prev;
+        return JSON.stringify({ ...b, category: newExact });
+      } catch {
+        return prev;
+      }
+    });
+  }, []);
 
   const sortedCatalogCourses = useMemo(
     () =>
@@ -728,6 +754,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
   /** Ref updated by PathBuilder via onPathsDirtyChange — read before opening catalog tab confirm. */
   const pathBuilderDirtyRef = useRef(false);
+  const courseDiscardTargetRef = useRef<'paths' | 'categories' | 'catalog'>('paths');
+  const pathDiscardTargetRef = useRef<'catalog' | 'categories'>('catalog');
   const setPathBuilderDirty = useCallback(
     (dirty: boolean) => {
       pathBuilderDirtyRef.current = dirty;
@@ -738,21 +766,74 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
   const requestContentCatalogSubTab = useCallback(
     (next: ContentCatalogSubTab) => {
-      if (next === 'catalog') {
-        if (pathBuilderDirtyRef.current) {
-          setPathSubTabSwitchConfirmOpen(true);
+      if (next === contentCatalogSubTab) return;
+
+      if (contentCatalogSubTab === 'paths') {
+        if (next === 'catalog') {
+          if (pathBuilderDirtyRef.current) {
+            pathDiscardTargetRef.current = 'catalog';
+            setPathSubTabSwitchConfirmOpen(true);
+            return;
+          }
+          setContentCatalogSubTab('catalog');
           return;
         }
-        setContentCatalogSubTab('catalog');
+        if (next === 'categories') {
+          if (pathBuilderDirtyRef.current) {
+            pathDiscardTargetRef.current = 'categories';
+            setPathSubTabSwitchConfirmOpen(true);
+            return;
+          }
+          setContentCatalogSubTab('categories');
+          return;
+        }
         return;
       }
-      if (!isDirty) {
-        setContentCatalogSubTab('paths');
+
+      if (contentCatalogSubTab === 'catalog') {
+        if (next === 'paths') {
+          if (!isDirty) {
+            setContentCatalogSubTab('paths');
+            return;
+          }
+          courseDiscardTargetRef.current = 'paths';
+          setSubTabSwitchConfirmOpen(true);
+          return;
+        }
+        if (next === 'categories') {
+          if (!isDirty) {
+            setContentCatalogSubTab('categories');
+            return;
+          }
+          courseDiscardTargetRef.current = 'categories';
+          setSubTabSwitchConfirmOpen(true);
+          return;
+        }
         return;
       }
-      setSubTabSwitchConfirmOpen(true);
+
+      if (contentCatalogSubTab === 'categories') {
+        if (next === 'catalog') {
+          if (!isDirty) {
+            setContentCatalogSubTab('catalog');
+            return;
+          }
+          courseDiscardTargetRef.current = 'catalog';
+          setSubTabSwitchConfirmOpen(true);
+          return;
+        }
+        if (next === 'paths') {
+          if (!isDirty) {
+            setContentCatalogSubTab('paths');
+            return;
+          }
+          courseDiscardTargetRef.current = 'paths';
+          setSubTabSwitchConfirmOpen(true);
+          return;
+        }
+      }
     },
-    [isDirty]
+    [contentCatalogSubTab, isDirty]
   );
 
   const closeSubTabSwitchConfirm = useCallback(() => setSubTabSwitchConfirmOpen(false), []);
@@ -767,7 +848,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         return;
       }
     }
-    setContentCatalogSubTab('paths');
+    setContentCatalogSubTab(courseDiscardTargetRef.current);
     setSubTabSwitchConfirmOpen(false);
   }, [draft, baselineJson, showActionToast]);
 
@@ -778,7 +859,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     pathBuilderDirtyRef.current = false;
     onPathsDirtyChange?.(false);
     setPathSubTabSwitchConfirmOpen(false);
-    setContentCatalogSubTab('catalog');
+    setContentCatalogSubTab(pathDiscardTargetRef.current);
   }, [onPathsDirtyChange]);
 
   useDialogKeyboard({
@@ -909,12 +990,22 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 ? listLoading
                 : contentCatalogSubTab === 'paths'
                   ? listLoading || pathsListLoading
-                  : true
+                  : contentCatalogSubTab === 'categories'
+                    ? listLoading
+                    : true
             }
             tabIndex={
-              contentCatalogSubTab === 'catalog' || contentCatalogSubTab === 'paths' ? undefined : -1
+              contentCatalogSubTab === 'catalog' ||
+              contentCatalogSubTab === 'paths' ||
+              contentCatalogSubTab === 'categories'
+                ? undefined
+                : -1
             }
-            aria-hidden={contentCatalogSubTab !== 'catalog' && contentCatalogSubTab !== 'paths'}
+            aria-hidden={
+              contentCatalogSubTab !== 'catalog' &&
+              contentCatalogSubTab !== 'paths' &&
+              contentCatalogSubTab !== 'categories'
+            }
             onClick={() => {
               if (contentCatalogSubTab === 'catalog') {
                 catalogRequestedRef.current = true;
@@ -925,10 +1016,16 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               if (contentCatalogSubTab === 'paths') {
                 void refreshList();
                 void pathBuilderRef.current?.reloadPaths();
+                return;
+              }
+              if (contentCatalogSubTab === 'categories') {
+                void refreshList();
               }
             }}
             className={`inline-flex min-h-10 items-center gap-2 rounded-lg border border-[var(--border-color)] px-3 py-2 text-xs font-semibold hover:bg-[var(--hover-bg)] disabled:opacity-50 ${
-              contentCatalogSubTab !== 'catalog' && contentCatalogSubTab !== 'paths'
+              contentCatalogSubTab !== 'catalog' &&
+              contentCatalogSubTab !== 'paths' &&
+              contentCatalogSubTab !== 'categories'
                 ? 'invisible pointer-events-none'
                 : ''
             }`}
@@ -937,7 +1034,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               size={14}
               className={
                 (contentCatalogSubTab === 'catalog' && listLoading) ||
-                (contentCatalogSubTab === 'paths' && (listLoading || pathsListLoading))
+                (contentCatalogSubTab === 'paths' && (listLoading || pathsListLoading)) ||
+                (contentCatalogSubTab === 'categories' && listLoading)
                   ? 'animate-spin'
                   : ''
               }
@@ -967,6 +1065,16 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         >
           <Route size={14} aria-hidden />
           Learning paths
+        </button>
+        <button
+          type="button"
+          onClick={() => requestContentCatalogSubTab('categories')}
+          className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold ${
+            contentCatalogSubTab === 'categories' ? 'bg-orange-500/20 text-orange-500' : 'text-[var(--text-secondary)]'
+          }`}
+        >
+          <Tags size={14} aria-hidden />
+          Categories
         </button>
       </div>
 
@@ -1522,6 +1630,16 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         </>
       )}
 
+      {contentCatalogSubTab === 'categories' && (
+        <AdminCatalogCategoriesPanel
+          publishedList={publishedList}
+          onRefreshList={refreshList}
+          onCatalogChanged={onCatalogChanged}
+          showActionToast={showActionToast}
+          onCategoryRenamedGlobally={onCategoryRenamedGlobally}
+        />
+      )}
+
       {contentCatalogSubTab === 'paths' && (
         <PathBuilderSection
           ref={pathBuilderRef}
@@ -1566,7 +1684,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               </div>
               <div className="space-y-4 p-6">
                 <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
-                  Switching to Catalog will discard unsaved changes to the learning path builder.
+                  Leaving Learning paths will discard unsaved changes to the path builder.
                 </p>
                 <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                   <button
@@ -1623,7 +1741,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               </div>
               <div className="space-y-4 p-6">
                 <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
-                  Switching from Catalog to Learning paths will discard unsaved changes to this course.
+                  Switching tabs will discard unsaved changes to this course draft.
                 </p>
                 <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                   <button
