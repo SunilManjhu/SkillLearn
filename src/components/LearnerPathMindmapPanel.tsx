@@ -68,10 +68,10 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
 
   return (
     <section
-      className="min-w-0 max-w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)]/80 p-4 shadow-sm sm:p-6"
+      className="min-w-0 max-w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)]/80 p-3 shadow-sm sm:p-5"
       aria-labelledby="learner-path-mindmap-heading"
     >
-      <div className="mb-5 flex flex-wrap items-start gap-3 sm:mb-6">
+      <div className="mb-2 flex flex-wrap items-start gap-3 sm:mb-3">
         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-orange-500/35 bg-orange-500/10 text-orange-500">
           <LayoutGrid size={22} aria-hidden />
         </div>
@@ -85,7 +85,7 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
           >
             {pathTitle}
           </h2>
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[var(--text-secondary)]">
+          <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-[var(--text-secondary)]">
             Everything you need, in the right order. Go at your own pace.
           </p>
         </div>

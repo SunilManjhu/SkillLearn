@@ -117,7 +117,7 @@ function PathOutlineProgressColumn({
   ariaLabel: string;
 }) {
   return (
-    <div className="flex w-full min-w-0 shrink-0 flex-col justify-center gap-1 sm:w-[11rem] sm:flex-none">
+    <div className="flex w-full min-w-0 shrink-0 flex-col justify-center gap-0.5 sm:w-[11rem] sm:flex-none">
       <div className="flex flex-nowrap items-center justify-between gap-x-2 text-[11px] leading-tight text-[var(--text-secondary)] sm:text-xs">
         <span className="min-w-0 shrink font-medium">{label}</span>
         <span className="shrink-0 font-mono tabular-nums text-[var(--text-muted)]">{monoStats}</span>
@@ -210,7 +210,9 @@ function ActionChips({
       : `Open course: ${rowLabel}`;
 
   return (
-    <span className={`flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center ${className ?? ''}`}>
+    <span
+      className={`flex flex-col items-stretch ${compact === true ? 'gap-1 sm:gap-1.5' : 'gap-2'} sm:flex-row sm:flex-wrap sm:items-center ${className ?? ''}`}
+    >
       {canOpenCourse && courseId ? (
         <button
           type="button"
@@ -354,12 +356,12 @@ function OutlineNestedBranch({
       : parentDepth === 2
         ? 'pl-8 sm:pl-10'
         : 'pl-6 sm:pl-8';
-  const marginTop = parentDepth === 1 ? 'mt-2 sm:mt-2.5' : 'mt-1.5 sm:mt-2';
+  const marginTop = parentDepth === 1 ? 'mt-0.5 sm:mt-1' : 'mt-0.5 sm:mt-1';
   return (
     <div className={`min-w-0 ${marginTop} ${outerPad}`}>
       <ul
         role="list"
-        className="relative list-none space-y-2 rounded-bl-md rounded-tl-md border-l-2 border-[var(--border-color)]/70 bg-[var(--bg-primary)]/20 py-1.5 pl-3 sm:space-y-2.5 sm:rounded-bl-lg sm:rounded-tl-lg sm:py-2 sm:pl-4"
+        className="relative list-none space-y-1 rounded-bl-md rounded-tl-md border-l-2 border-[var(--border-color)]/70 bg-[var(--bg-primary)]/20 py-0.5 pl-3 sm:space-y-1 sm:rounded-bl-lg sm:rounded-tl-lg sm:py-1 sm:pl-4"
       >
         {children}
       </ul>
@@ -375,7 +377,7 @@ function OutlineNestedBranchItem({
   key?: React.Key;
 }) {
   return (
-    <li className="relative min-w-0 before:pointer-events-none before:absolute before:left-0 before:top-[1.05rem] before:z-0 before:h-px before:w-4 before:-translate-x-full before:bg-[var(--border-color)]/70 sm:before:top-[1.15rem] sm:before:w-5">
+    <li className="relative min-w-0 before:pointer-events-none before:absolute before:left-0 before:top-[0.95rem] before:z-0 before:h-px before:w-4 before:-translate-x-full before:bg-[var(--border-color)]/70 sm:before:top-4 sm:before:w-5">
       {children}
     </li>
   );
@@ -494,12 +496,12 @@ function OutlineNode({
       ) : null;
 
     return (
-      <section className="mt-8 scroll-mt-4 border-t border-[var(--border-color)] pt-8 first:mt-0 first:border-t-0 first:pt-0">
-        <h3 className="min-w-0 pl-4 leading-snug text-[var(--text-primary)] sm:pl-8">
+      <section className="mt-1.5 scroll-mt-2 border-t border-[var(--border-color)] pt-1.5 first:mt-0 first:border-t-0 first:pt-0">
+        <h3 className="min-w-0 pl-3 leading-snug text-[var(--text-primary)] sm:pl-6">
           <div
-            className={`flex min-w-0 items-center gap-1 sm:gap-2${
+            className={`flex min-w-0 items-center gap-0.5 sm:gap-1.5${
               hasExpandableContent
-                ? ' min-h-11 cursor-pointer rounded-lg py-1 pl-0.5 pr-1 transition-colors hover:bg-[var(--hover-bg)]/80 sm:min-h-12 sm:pl-1 sm:pr-1.5'
+                ? ' cursor-pointer rounded-lg py-1 pl-0.5 pr-1 transition-colors hover:bg-[var(--hover-bg)]/80 sm:pl-1 sm:pr-1.5'
                 : ' py-1'
             }`}
             onClick={
@@ -541,8 +543,8 @@ function OutlineNode({
             <div className="flex w-8 shrink-0 items-center justify-end text-lg font-bold leading-snug tabular-nums text-orange-500 sm:w-9 sm:text-xl">
               {sectionIndex + 1}.
             </div>
-            <div className="flex min-w-0 flex-1 flex-col gap-2 sm:min-h-10 sm:flex-row sm:items-center sm:gap-4">
-              <div className="flex min-w-0 flex-1 flex-col justify-center gap-1 sm:min-w-0 sm:flex-row sm:items-center sm:gap-3">
+            <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-center sm:gap-2.5">
+              <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 sm:min-w-0 sm:flex-row sm:items-center sm:gap-2.5">
                 <span
                   id={`path-section-title-${node.id}`}
                   className="flex min-w-0 items-center text-lg font-bold leading-snug [overflow-wrap:anywhere] sm:text-xl"
@@ -620,7 +622,7 @@ function OutlineNode({
               catalogCourses={catalogCourses}
               onOpenCourse={onOpenCourse}
               onOpenLesson={onOpenLesson}
-              className="mt-3 pl-[5.125rem] sm:mt-2 sm:pl-[6.875rem]"
+              className="mt-1 pl-[4.875rem] sm:mt-1 sm:pl-[6.375rem]"
             />
             {hasExpandableContent ? (
               <ul
@@ -628,7 +630,7 @@ function OutlineNode({
                 role="list"
                 aria-labelledby={`path-section-title-${node.id}`}
                 hidden={!expanded}
-                className="ml-4 mt-4 min-w-0 max-w-full list-none space-y-3 rounded-xl border border-[var(--border-color)]/60 bg-[var(--bg-primary)]/25 py-3 pl-4 pr-3 ring-1 ring-[var(--border-color)]/25 sm:ml-8 sm:mt-5 sm:space-y-3.5 sm:py-4 sm:pl-7 sm:pr-5"
+                className="ml-4 mt-1 min-w-0 max-w-full list-none space-y-1 rounded-xl border border-[var(--border-color)]/60 bg-[var(--bg-primary)]/25 py-1 pl-4 pr-3 ring-1 ring-[var(--border-color)]/25 sm:ml-8 sm:mt-1.5 sm:space-y-1 sm:py-1.5 sm:pl-7 sm:pr-5"
               >
                 {node.children.map((ch) => (
                   <li key={ch.id} className="min-w-0">
@@ -661,9 +663,9 @@ function OutlineNode({
     return (
       <div className="min-w-0">
         <div
-          className={`flex min-w-0 items-center gap-1 sm:gap-2${
+          className={`flex min-w-0 items-center gap-0.5 sm:gap-1.5${
             hasNested
-              ? ' min-h-10 cursor-pointer rounded-lg py-1 pl-0.5 pr-1 transition-colors hover:bg-[var(--hover-bg)]/50 sm:min-h-11 sm:py-1 sm:pl-1 sm:pr-1.5'
+              ? ' min-h-10 cursor-pointer rounded-lg py-0.5 pl-0.5 pr-1 transition-colors hover:bg-[var(--hover-bg)]/50 sm:min-h-11 sm:py-0.5 sm:pl-1 sm:pr-1.5'
               : ''
           }`}
           onClick={
@@ -683,7 +685,7 @@ function OutlineNode({
             depth={1}
             status={rowStatus}
           />
-          <div className="flex min-w-0 flex-1 flex-col gap-2 sm:min-h-10 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+          <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
             <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
               <span className="flex min-w-0 items-center text-base font-semibold leading-snug text-[var(--text-primary)] [overflow-wrap:anywhere]">
                 {label}
@@ -746,9 +748,9 @@ function OutlineNode({
   return (
     <div className="min-w-0">
       <div
-        className={`flex min-w-0 items-center gap-1 sm:gap-2${
+        className={`flex min-w-0 items-center gap-0.5 sm:gap-1.5${
           hasNested
-            ? ' min-h-10 cursor-pointer rounded-lg py-1 pl-0.5 pr-1 transition-colors hover:bg-[var(--hover-bg)]/50 sm:min-h-11 sm:py-1 sm:pl-1 sm:pr-1.5'
+            ? ' min-h-10 cursor-pointer rounded-lg py-0.5 pl-0.5 pr-1 transition-colors hover:bg-[var(--hover-bg)]/50 sm:min-h-11 sm:py-0.5 sm:pl-1 sm:pr-1.5'
             : ''
         }`}
         onClick={
@@ -769,7 +771,7 @@ function OutlineNode({
           status={rowStatus}
           compactIcon={depth >= 4}
         />
-        <div className="flex min-w-0 flex-1 flex-col gap-2 sm:min-h-10 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
           <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
             <span className={`flex min-w-0 items-center ${nestedLabelClass}`}>{label}</span>
           </div>
@@ -898,7 +900,7 @@ export const PathMindmapOutline: React.FC<PathMindmapOutlineProps> = ({
 
   return (
     <div
-      className="min-w-0 rounded-xl border border-[var(--border-color)]/90 bg-[var(--bg-primary)]/25 px-4 py-5 sm:px-6 sm:py-7"
+      className="min-w-0 rounded-xl border border-[var(--border-color)]/90 bg-[var(--bg-primary)]/25 px-4 py-2 sm:px-6 sm:py-2"
       role="region"
       aria-label={`Path syllabus: ${pathTitle}`}
     >

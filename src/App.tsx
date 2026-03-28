@@ -2166,7 +2166,7 @@ export default function App() {
         </div>
 
         {selectedLearningPathId != null ? (
-          <div className="mb-8 min-w-0 max-w-full sm:mb-10">
+          <div className="mb-4 min-w-0 max-w-full sm:mb-6">
             <LearnerPathMindmapPanel
               pathId={selectedLearningPathId}
               pathTitle={
