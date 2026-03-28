@@ -25,6 +25,34 @@ function handleOutlineBranchHeaderClick(
   toggleBranch(nodeId);
 }
 
+/**
+ * For each outline node with nested children, the ids of its **siblings** (same parent)
+ * that also have nested children. Accordion closes siblings only, not ancestors.
+ */
+function buildNestedBranchSiblingMap(sectionRoots: MindmapTreeNode[]): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+
+  const registerUnderParent = (parent: MindmapTreeNode) => {
+    const siblingToggleIds = parent.children.filter((c) => c.children.length > 0).map((c) => c.id);
+    for (const ch of parent.children) {
+      if (ch.children.length > 0) {
+        map.set(ch.id, siblingToggleIds);
+      }
+      walk(ch);
+    }
+  };
+
+  const walk = (n: MindmapTreeNode) => {
+    if (n.children.length === 0) return;
+    registerUnderParent(n);
+  };
+
+  for (const section of sectionRoots) {
+    registerUnderParent(section);
+  }
+  return map;
+}
+
 function nodeKind(n: MindmapTreeNode): 'label' | 'course' | 'lesson' {
   if (n.kind === 'course' && n.courseId) return 'course';
   if (n.kind === 'lesson' && n.courseId && n.lessonId) return 'lesson';
@@ -638,29 +666,63 @@ export const PathMindmapOutline: React.FC<PathMindmapOutlineProps> = ({
   const [sectionExpanded, setSectionExpanded] = useState<Record<string, boolean>>({});
   const [branchExpanded, setBranchExpanded] = useState<Record<string, boolean>>({});
 
+  const nestedBranchSiblingMap = useMemo(
+    () => buildNestedBranchSiblingMap(branches),
+    [branches]
+  );
+
   const isSectionExpanded = useCallback(
     (sectionId: string) => sectionExpanded[sectionId] !== false,
     [sectionExpanded]
   );
 
-  const toggleSection = useCallback((sectionId: string) => {
-    setSectionExpanded((prev) => {
-      const open = prev[sectionId] !== false;
-      return { ...prev, [sectionId]: !open };
-    });
-  }, []);
+  const toggleSection = useCallback(
+    (sectionId: string) => {
+      let openedThisSection = false;
+      setSectionExpanded((prev) => {
+        const wasOpen = prev[sectionId] !== false;
+        if (wasOpen) {
+          return { ...prev, [sectionId]: false };
+        }
+        openedThisSection = true;
+        const next: Record<string, boolean> = {};
+        for (const b of branches) {
+          next[b.id] = b.id === sectionId;
+        }
+        return next;
+      });
+      if (openedThisSection) {
+        setBranchExpanded({});
+      }
+    },
+    [branches]
+  );
 
   const isBranchExpanded = useCallback(
     (nodeId: string) => branchExpanded[nodeId] !== false,
     [branchExpanded]
   );
 
-  const toggleBranch = useCallback((nodeId: string) => {
-    setBranchExpanded((prev) => {
-      const open = prev[nodeId] !== false;
-      return { ...prev, [nodeId]: !open };
-    });
-  }, []);
+  const toggleBranch = useCallback(
+    (nodeId: string) => {
+      setBranchExpanded((prev) => {
+        const wasOpen = prev[nodeId] !== false;
+        if (wasOpen) {
+          return { ...prev, [nodeId]: false };
+        }
+        const next = { ...prev };
+        const siblingIds = nestedBranchSiblingMap.get(nodeId);
+        if (siblingIds) {
+          for (const sid of siblingIds) {
+            if (sid !== nodeId) next[sid] = false;
+          }
+        }
+        delete next[nodeId];
+        return next;
+      });
+    },
+    [nestedBranchSiblingMap]
+  );
 
   return (
     <div

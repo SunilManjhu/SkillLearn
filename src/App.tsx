@@ -282,6 +282,11 @@ function getInitialRouteState(catalog: Course[] = STATIC_CATALOG_FALLBACK): {
   };
 }
 
+function readInitialLearningPathIdFromHash(): string | null {
+  if (typeof window === 'undefined') return null;
+  return parseHashToPayload(window.location.hash)?.learningPathId ?? null;
+}
+
 interface CertificateData {
   courseId: string;
   userName: string;
@@ -378,8 +383,12 @@ export default function App() {
   );
   const [searchQuery, setSearchQuery] = useState('');
   /** When set, catalog lists only courses in this path's `courseIds` (from Firestore `learningPaths`). */
-  const [selectedLearningPathId, setSelectedLearningPathId] = useState<string | null>(null);
+  const [selectedLearningPathId, setSelectedLearningPathId] = useState<string | null>(
+    readInitialLearningPathIdFromHash
+  );
   const [learningPaths, setLearningPaths] = useState<LearningPath[]>([]);
+  /** True after first `loadLearningPathsFromFirestore()` completes (empty array is valid). */
+  const [learningPathsFetched, setLearningPathsFetched] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [showMoreCategories, setShowMoreCategories] = useState(false);
   const [focusedCategoryIndex, setFocusedCategoryIndex] = useState(0);
@@ -474,8 +483,11 @@ export default function App() {
     if (currentView === 'admin') {
       p.adminTab = adminTab;
     }
+    if (selectedLearningPathId) {
+      p.learningPathId = selectedLearningPathId;
+    }
     return p;
-  }, [currentView, selectedCourse?.id, deferredCourseRoute, certificateData, adminTab]);
+  }, [currentView, selectedCourse?.id, deferredCourseRoute, certificateData, adminTab, selectedLearningPathId]);
 
   const applyHistoryPayload = useCallback(
     (raw: AppHistoryPayload) => {
@@ -497,6 +509,7 @@ export default function App() {
         setCertificateData(null);
         setSelectedCourse(null);
         setInitialLesson(undefined);
+        setSelectedLearningPathId(null);
         setCurrentView('catalog');
         window.history.replaceState(
           { [APP_HISTORY_KEY]: { v: 1, view: 'catalog' } },
@@ -549,6 +562,7 @@ export default function App() {
         setAdminTab(resolved.adminTab ?? 'alerts');
       }
 
+      setSelectedLearningPathId(resolved.learningPathId ?? null);
       setCurrentView(view);
       scrollDocumentToTop();
     },
@@ -606,7 +620,15 @@ export default function App() {
     }
 
     window.history.pushState(state, '', url);
-  }, [buildHistoryPayload, currentView, selectedCourse?.id, deferredCourseRoute, certificateData, adminTab]);
+  }, [
+    buildHistoryPayload,
+    currentView,
+    selectedCourse?.id,
+    deferredCourseRoute,
+    certificateData,
+    adminTab,
+    selectedLearningPathId,
+  ]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
@@ -653,6 +675,7 @@ export default function App() {
         setCatalogCourses(courses);
         setLearningPaths(paths);
         setLiveCatalogHydrated(true);
+        setLearningPathsFetched(true);
       }
     });
     return () => {
@@ -665,15 +688,17 @@ export default function App() {
     setCatalogCourses(next);
     setLearningPaths(paths);
     setLiveCatalogHydrated(true);
+    setLearningPathsFetched(true);
   }, []);
 
   /** Drop path filter if the path document no longer exists (e.g. deleted in admin). */
   useEffect(() => {
+    if (!learningPathsFetched) return;
     if (!selectedLearningPathId) return;
     if (!learningPaths.some((p) => p.id === selectedLearningPathId)) {
       setSelectedLearningPathId(null);
     }
-  }, [learningPaths, selectedLearningPathId]);
+  }, [learningPathsFetched, learningPaths, selectedLearningPathId]);
 
   /**
    * Re-bind overview/player to the live catalog when it loads (or refreshes).
@@ -2043,23 +2068,25 @@ export default function App() {
   const renderCatalog = () => {
     /** Search / category only — path is chosen from nav, so no “clear filters” when path is the only scope. */
     const showCatalogClearFilters = Boolean(searchQuery || selectedCategory !== 'All');
-    const selectedPathTitle =
-      selectedLearningPathId != null
-        ? learningPaths.find((p) => p.id === selectedLearningPathId)?.title
-        : undefined;
     const catalogHeading =
-      selectedLearningPathId != null
-        ? (selectedPathTitle?.trim() || selectedLearningPathId)
-        : searchQuery
+      selectedLearningPathId == null
+        ? searchQuery
           ? `Search Results for "${searchQuery}"`
-          : 'Course Library';
+          : 'Course Library'
+        : null;
     return (
       <div className="mx-auto min-w-0 max-w-7xl px-4 pb-12 pt-[max(5.5rem,calc(4rem+env(safe-area-inset-top,0px)))] sm:px-6 sm:pb-20 sm:pt-24">
         <div className="sticky top-16 z-30 -mx-4 mb-6 border-b border-[var(--border-color)]/80 bg-[var(--bg-primary)] px-4 pb-4 sm:static sm:z-auto sm:mx-0 sm:mb-10 sm:border-0 sm:bg-transparent sm:px-0 sm:pb-0">
-          <div className="mb-4 flex flex-row items-center justify-between gap-2 sm:mb-4 sm:gap-4">
-            <h1 className="min-w-0 flex-1 break-words pr-1 text-2xl font-bold leading-tight text-[var(--text-primary)] sm:text-3xl md:text-4xl">
-              {catalogHeading}
-            </h1>
+          <div
+            className={`mb-4 flex flex-row items-center gap-2 sm:mb-4 sm:gap-4 ${
+              selectedLearningPathId == null ? 'justify-between' : 'justify-end'
+            }`}
+          >
+            {catalogHeading != null ? (
+              <h1 className="min-w-0 flex-1 break-words pr-1 text-2xl font-bold leading-tight text-[var(--text-primary)] sm:text-3xl md:text-4xl">
+                {catalogHeading}
+              </h1>
+            ) : null}
             <button
               type="button"
               tabIndex={showCatalogClearFilters ? 0 : -1}

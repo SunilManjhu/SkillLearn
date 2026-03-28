@@ -39,6 +39,8 @@ export interface AppHistoryPayload {
   lessonId?: string | null;
   certificate?: CertificateHistorySnapshot | null;
   adminTab?: AdminHistoryTab | null;
+  /** Firestore learning path id when catalog is scoped to a path (shareable / survives reload). */
+  learningPathId?: string | null;
 }
 
 const SIMPLE_VIEWS: AppHistoryView[] = [
@@ -62,10 +64,15 @@ function isSimpleView(s: string): s is AppHistoryView {
 
 /** Hash path only, e.g. `#/catalog` */
 export function payloadToHash(payload: AppHistoryPayload): string {
-  const { view, courseId, lessonId, certificate: _c, adminTab } = payload;
+  const { view, courseId, lessonId, certificate: _c, adminTab, learningPathId } = payload;
 
   if (view === 'home') return '#/';
-  if (view === 'catalog') return '#/catalog';
+  if (view === 'catalog') {
+    if (learningPathId && learningPathId.length > 0) {
+      return `#/catalog/path/${encodeURIComponent(learningPathId)}`;
+    }
+    return '#/catalog';
+  }
 
   if (view === 'overview' && courseId) {
     return `#/course/${encodeURIComponent(courseId)}/overview`;
@@ -102,6 +109,14 @@ export function parseHashToPayload(hash: string): AppHistoryPayload | null {
   const head = segments[0]!;
 
   if (head === 'catalog' && segments.length === 1) {
+    return { v: 1, view: 'catalog' };
+  }
+
+  if (head === 'catalog' && segments.length === 3 && segments[1] === 'path') {
+    const pathId = decodeURIComponent(segments[2]!);
+    if (pathId.length > 0) {
+      return { v: 1, view: 'catalog', learningPathId: pathId };
+    }
     return { v: 1, view: 'catalog' };
   }
 
@@ -213,6 +228,7 @@ export function historyPayloadsEqual(a: AppHistoryPayload | null, b: AppHistoryP
   if (a.view === 'admin' && b.view === 'admin') {
     if ((a.adminTab ?? 'alerts') !== (b.adminTab ?? 'alerts')) return false;
   }
+  if ((a.learningPathId ?? null) !== (b.learningPathId ?? null)) return false;
   return true;
 }
 
@@ -227,7 +243,7 @@ export function resolvePayloadForCourses(
 
   const course = next.courseId ? courses.find((c) => c.id === next.courseId) : undefined;
   if (!course) {
-    return { v: 1, view: 'catalog' };
+    return { v: 1, view: 'catalog', learningPathId: payload.learningPathId };
   }
   if (next.view === 'player' && next.lessonId) {
     const lesson = findLessonById(course, next.lessonId);
