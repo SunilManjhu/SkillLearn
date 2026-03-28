@@ -385,6 +385,57 @@ function findBranchNode(roots: PathBranchNode[], id: string): PathBranchNode | n
   return null;
 }
 
+/** Ids of nodes that share the same parent as `targetId` (top-level roots are siblings of each other). */
+function findSiblingBranchIds(roots: PathBranchNode[], targetId: string): string[] | null {
+  const rootIdx = roots.findIndex((r) => r.id === targetId);
+  if (rootIdx >= 0) return roots.map((r) => r.id);
+  for (const n of roots) {
+    const childIdx = n.children.findIndex((c) => c.id === targetId);
+    if (childIdx >= 0) return n.children.map((c) => c.id);
+    const nested = findSiblingBranchIds(n.children, targetId);
+    if (nested) return nested;
+  }
+  return null;
+}
+
+/** All descendant branch ids under `ancestorId` (not including `ancestorId`). */
+function collectDescendantBranchIds(roots: PathBranchNode[], ancestorId: string): Set<string> {
+  const node = findBranchNode(roots, ancestorId);
+  if (!node) return new Set();
+  const out = new Set<string>();
+  const walk = (ns: PathBranchNode[]) => {
+    for (const n of ns) {
+      out.add(n.id);
+      walk(n.children);
+    }
+  };
+  walk(node.children);
+  return out;
+}
+
+function stripBranchExpandState(next: Set<string>, tree: PathBranchNode[], nodeId: string) {
+  next.delete(nodeId);
+  for (const d of collectDescendantBranchIds(tree, nodeId)) {
+    next.delete(d);
+  }
+}
+
+/** Collapse sibling branches (and their open descendants); expand `id` when it has children. */
+function accordionExpandBranchRow(prev: Set<string>, tree: PathBranchNode[], id: string): Set<string> {
+  const node = findBranchNode(tree, id);
+  const siblings = findSiblingBranchIds(tree, id);
+  const next = new Set(prev);
+  if (siblings) {
+    for (const sid of siblings) {
+      if (sid !== id) stripBranchExpandState(next, tree, sid);
+    }
+  }
+  if (node && node.children.length > 0) {
+    next.add(id);
+  }
+  return next;
+}
+
 /** Ids of branches that have children (for pruning expand state when the tree changes). */
 function collectBranchIdsWithChildren(nodes: PathBranchNode[]): Set<string> {
   const out = new Set<string>();
@@ -837,6 +888,7 @@ function PathBranchSortableRow({
   onLabelChange,
   onRequestEditCourse,
   onRequestEditLesson,
+  onBranchRowFocus,
   dndDisabled,
 }: {
   b: PathBranchNode;
@@ -853,6 +905,7 @@ function PathBranchSortableRow({
   onLabelChange: (id: string, label: string) => void;
   onRequestEditCourse: (id: string) => void;
   onRequestEditLesson: (id: string) => void;
+  onBranchRowFocus: (id: string) => void;
   dndDisabled: boolean;
 }) {
   const hasChildren = b.children.length > 0;
@@ -897,7 +950,15 @@ function PathBranchSortableRow({
 
   return (
     <li ref={setNodeRef} style={style} className={`min-w-0 list-none overflow-hidden rounded-xl border border-[var(--border-color)] ${cardBg}`}>
-      <div className="flex flex-wrap items-stretch gap-2 px-3 py-3 sm:px-4">
+      <div
+        className="flex flex-wrap items-stretch gap-2 px-3 py-3 sm:px-4"
+        onFocusCapture={(e) => {
+          const header = e.currentTarget;
+          const related = e.relatedTarget as Node | null;
+          if (related && header.contains(related)) return;
+          onBranchRowFocus(b.id);
+        }}
+      >
         <button
           type="button"
           ref={setActivatorNodeRef}
@@ -1026,6 +1087,7 @@ function PathBranchSortableRow({
             onLabelChange={onLabelChange}
             onRequestEditCourse={onRequestEditCourse}
             onRequestEditLesson={onRequestEditLesson}
+            onBranchRowFocus={onBranchRowFocus}
             dndDisabled={dndDisabled}
           />
         </div>
@@ -1046,6 +1108,7 @@ function PathBranchTreeList({
   onLabelChange,
   onRequestEditCourse,
   onRequestEditLesson,
+  onBranchRowFocus,
   dndDisabled = false,
 }: {
   nodes: PathBranchNode[];
@@ -1059,6 +1122,7 @@ function PathBranchTreeList({
   onLabelChange: (id: string, label: string) => void;
   onRequestEditCourse: (id: string) => void;
   onRequestEditLesson: (id: string) => void;
+  onBranchRowFocus: (id: string) => void;
   dndDisabled?: boolean;
 }) {
   if (nodes.length === 0) return null;
@@ -1088,6 +1152,7 @@ function PathBranchTreeList({
               onLabelChange={onLabelChange}
               onRequestEditCourse={onRequestEditCourse}
               onRequestEditLesson={onRequestEditLesson}
+              onBranchRowFocus={onBranchRowFocus}
               dndDisabled={dndDisabled}
             />
           </Fragment>
@@ -1344,7 +1409,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     | { kind: 'editCourse'; nodeId: string }
     | { kind: 'editLesson'; nodeId: string; courseId: string; lessonId: string };
   const [branchModal, setBranchModal] = useState<BranchModalState>({ kind: 'closed' });
-  /** Branch rows with children are collapsed unless their id is in this set (independent expand per row). */
+  /** Branch rows with children are collapsed unless their id is in this set. Siblings accordion (only one expanded among same-parent children at any depth). */
   const [expandedBranchIds, setExpandedBranchIds] = useState<Set<string>>(() => new Set());
   const [branchDragActiveId, setBranchDragActiveId] = useState<string | null>(null);
 
@@ -1367,14 +1432,26 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  const toggleBranchCollapse = useCallback((id: string) => {
-    setExpandedBranchIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
+  const toggleBranchCollapse = useCallback(
+    (id: string) => {
+      setExpandedBranchIds((prev) => {
+        if (prev.has(id)) {
+          const next = new Set(prev);
+          stripBranchExpandState(next, pathBranchTree, id);
+          return next;
+        }
+        return accordionExpandBranchRow(prev, pathBranchTree, id);
+      });
+    },
+    [pathBranchTree]
+  );
+
+  const focusBranchRow = useCallback(
+    (id: string) => {
+      setExpandedBranchIds((prev) => accordionExpandBranchRow(prev, pathBranchTree, id));
+    },
+    [pathBranchTree]
+  );
 
   const handleBranchDragStart = useCallback((e: DragStartEvent) => {
     setBranchDragActiveId(String(e.active.id));
@@ -2175,6 +2252,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                       publishedList={publishedList}
                       expandedBranchIds={expandedBranchIds}
                       onToggleCollapse={toggleBranchCollapse}
+                      onBranchRowFocus={focusBranchRow}
                       onAddUnder={(parentId) => setBranchModal({ kind: 'add', parentId })}
                       onRemove={(id) => setPathBranchTree((roots) => removeNodeById(roots, id))}
                       onMove={(id, delta) =>
