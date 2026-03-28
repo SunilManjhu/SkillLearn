@@ -11,6 +11,8 @@ export type MindmapTreeNode = {
   kind?: MindmapNodeKind;
   courseId?: string;
   lessonId?: string;
+  /** When true, learners see an explicit “locked” message (e.g. empty section not yet available). */
+  locked?: boolean;
 };
 
 export type MindmapDocument = {
@@ -49,19 +51,24 @@ export function normalizeMindmapNode(raw: unknown): MindmapTreeNode | null {
     if (n) children.push(n);
   }
   const base: MindmapTreeNode = { id: o.id, label: o.label, children };
+  let node: MindmapTreeNode;
   if (o.kind === 'course' && typeof o.courseId === 'string' && o.courseId.length > 0) {
-    return { ...base, kind: 'course', courseId: o.courseId };
-  }
-  if (
+    node = { ...base, kind: 'course', courseId: o.courseId };
+  } else if (
     o.kind === 'lesson' &&
     typeof o.courseId === 'string' &&
     o.courseId.length > 0 &&
     typeof o.lessonId === 'string' &&
     o.lessonId.length > 0
   ) {
-    return { ...base, kind: 'lesson', courseId: o.courseId, lessonId: o.lessonId };
+    node = { ...base, kind: 'lesson', courseId: o.courseId, lessonId: o.lessonId };
+  } else {
+    node = base;
   }
-  return base;
+  if (o.locked === true) {
+    return { ...node, locked: true };
+  }
+  return node;
 }
 
 export function parseMindmapDocument(raw: unknown): MindmapDocument | null {

@@ -1,6 +1,5 @@
 import type { Course } from '../data/courses';
 import type { MindmapTreeNode } from '../data/pathMindmap';
-import { loadCompletionTimestamps } from './courseCompletionLog';
 import {
   isCourseComplete,
   isLessonPlaybackComplete,
@@ -13,8 +12,8 @@ export type PathOutlineRowStatus = 'completed' | 'in_progress' | 'not_started';
 
 function courseRowStatus(course: Course, userId: string | null): PathOutlineRowStatus {
   const m = loadLessonProgressMap(course.id, userId);
-  const ts = loadCompletionTimestamps(userId ?? null);
-  if (isCourseComplete(course, m) || ts[course.id] != null) return 'completed';
+  /** Same source of truth as the path progress bar and Open / Continue / Review CTAs (`getCourseLessonProgressSummary`). Completion timestamps alone must not show a green check after retake when the lesson map was cleared. */
+  if (isCourseComplete(course, m)) return 'completed';
   for (const mod of course.modules) {
     for (const l of mod.lessons) {
       const p = m[l.id];

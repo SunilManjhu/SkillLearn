@@ -77,7 +77,7 @@ function deepClone<T>(x: T): T {
 
 /** Tree node for path mind map — synced to `pathMindmap` on save (nested branches allowed). */
 type PathBranchNode =
-  | { id: string; kind: 'label'; label: string; children: PathBranchNode[] }
+  | { id: string; kind: 'label'; label: string; children: PathBranchNode[]; locked?: boolean }
   | { id: string; kind: 'course'; courseId: string; children: PathBranchNode[] }
   | { id: string; kind: 'lesson'; courseId: string; lessonId: string; children: PathBranchNode[] };
 
@@ -322,6 +322,7 @@ function branchNodeToMindmap(n: PathBranchNode, publishedList: Course[]): Mindma
       label: n.label.trim() || 'Untitled',
       children,
       kind: 'label',
+      ...(n.locked ? { locked: true } : {}),
     };
   }
   if (n.kind === 'course') {
@@ -460,7 +461,13 @@ function mindmapNodeToPathBranch(n: MindmapTreeNode): PathBranchNode {
   if (n.kind === 'lesson' && n.courseId && n.lessonId) {
     return { id: n.id, kind: 'lesson', courseId: n.courseId, lessonId: n.lessonId, children };
   }
-  return { id: n.id, kind: 'label', label: n.label, children };
+  return {
+    id: n.id,
+    kind: 'label',
+    label: n.label,
+    children,
+    ...(n.locked ? { locked: true } : {}),
+  };
 }
 
 type BranchModalStep = 'kind' | 'label' | 'course' | 'lessonCourse' | 'lessonPick';

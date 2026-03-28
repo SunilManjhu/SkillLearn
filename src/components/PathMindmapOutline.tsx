@@ -1,5 +1,5 @@
-import React, { useCallback, useMemo, useState } from 'react';
-import { Check, ChevronDown, Circle } from 'lucide-react';
+import React, { useCallback, useId, useMemo, useState } from 'react';
+import { Check, ChevronDown, Circle, Info, Lock } from 'lucide-react';
 import type { Course } from '../data/courses';
 import type { MindmapTreeNode } from '../data/pathMindmap';
 import { getCourseLessonProgressSummary, type CourseLessonProgressSummary } from '../utils/courseProgress';
@@ -7,7 +7,7 @@ import { getPathOutlineRowStatus, type PathOutlineRowStatus } from '../utils/pat
 import { computePathSectionProgress, countCatalogCoursesInSubtree } from '../utils/pathSectionProgress';
 
 /**
- * Toggle nested branch on row click; ignore links and non-chevron buttons (e.g. Open course).
+ * Toggle nested branch on row click; ignore links and non-chevron buttons (e.g. Open course / Continue / Review).
  * Chevron uses `data-outline-branch-chevron` so it is not treated as an unrelated button.
  */
 function handleOutlineBranchHeaderClick(
@@ -23,6 +23,21 @@ function handleOutlineBranchHeaderClick(
   const btn = el.closest('button');
   if (btn != null && !btn.hasAttribute('data-outline-branch-chevron')) return;
   toggleBranch(nodeId);
+}
+
+function handleSectionHeaderClick(
+  e: React.MouseEvent<HTMLDivElement>,
+  hasExpandable: boolean,
+  nodeId: string,
+  toggleSection: (id: string) => void
+) {
+  if (!hasExpandable) return;
+  const el = e.target as HTMLElement;
+  if (el.closest('a')) return;
+  if (el.closest('[role="progressbar"]')) return;
+  const btn = el.closest('button');
+  if (btn != null && !btn.hasAttribute('data-outline-section-chevron')) return;
+  toggleSection(nodeId);
 }
 
 /**
@@ -89,6 +104,41 @@ function resolveActions(
   };
 }
 
+/** Same layout as course rows: fixed `sm:w-[11rem]` column for label + bar. */
+function PathOutlineProgressColumn({
+  label,
+  monoStats,
+  percent,
+  ariaLabel,
+}: {
+  label: string;
+  monoStats: string;
+  percent: number;
+  ariaLabel: string;
+}) {
+  return (
+    <div className="flex w-full min-w-0 shrink-0 flex-col justify-center gap-1 sm:w-[11rem] sm:flex-none">
+      <div className="flex flex-nowrap items-center justify-between gap-x-2 text-[11px] leading-tight text-[var(--text-secondary)] sm:text-xs">
+        <span className="min-w-0 shrink font-medium">{label}</span>
+        <span className="shrink-0 font-mono tabular-nums text-[var(--text-muted)]">{monoStats}</span>
+      </div>
+      <div
+        className="h-1.5 w-full min-w-0 overflow-hidden rounded-full bg-[var(--border-color)] sm:h-2"
+        role="progressbar"
+        aria-valuenow={percent}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={ariaLabel}
+      >
+        <div
+          className="h-full rounded-full bg-orange-500 transition-[width] duration-300 ease-out"
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
 function OutlineCourseProgressBlock({
   rowLabel,
   summary,
@@ -98,27 +148,12 @@ function OutlineCourseProgressBlock({
 }) {
   if (summary.totalLessons === 0) return null;
   return (
-    <div className="flex w-full min-w-0 shrink-0 flex-col justify-center gap-1 sm:w-[11rem] sm:flex-none">
-      <div className="flex flex-nowrap items-center justify-between gap-x-2 text-[11px] leading-tight text-[var(--text-secondary)] sm:text-xs">
-        <span className="min-w-0 shrink font-medium">Course progress</span>
-        <span className="shrink-0 font-mono tabular-nums text-[var(--text-muted)]">
-          {summary.percent}% · {summary.completedLessons}/{summary.totalLessons}
-        </span>
-      </div>
-      <div
-        className="h-1.5 w-full min-w-0 overflow-hidden rounded-full bg-[var(--border-color)] sm:h-2"
-        role="progressbar"
-        aria-valuenow={summary.percent}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-label={`Course progress for ${rowLabel}: ${summary.percent} percent, ${summary.completedLessons} of ${summary.totalLessons} lessons complete`}
-      >
-        <div
-          className="h-full rounded-full bg-orange-500 transition-[width] duration-300 ease-out"
-          style={{ width: `${summary.percent}%` }}
-        />
-      </div>
-    </div>
+    <PathOutlineProgressColumn
+      label="Course progress"
+      monoStats={`${summary.percent}% · ${summary.completedLessons}/${summary.totalLessons}`}
+      percent={summary.percent}
+      ariaLabel={`Course progress for ${rowLabel}: ${summary.percent} percent, ${summary.completedLessons} of ${summary.totalLessons} lessons complete`}
+    />
   );
 }
 
@@ -129,6 +164,7 @@ function ActionChips({
   onOpenLesson,
   compact,
   className,
+  courseLessonProgressSummary,
 }: {
   node: MindmapTreeNode;
   catalogCourses: readonly Course[];
@@ -136,6 +172,8 @@ function ActionChips({
   onOpenLesson: (courseId: string, lessonId: string) => void;
   compact?: boolean;
   className?: string;
+  /** When set for a course row: complete → “Review”, in progress → “Continue”, not started → “Open course”. */
+  courseLessonProgressSummary?: CourseLessonProgressSummary | null;
 }) {
   const { canOpenCourse, canOpenLesson, missingCatalog, courseId, lessonId } = resolveActions(
     node,
@@ -146,7 +184,30 @@ function ActionChips({
       ? 'min-h-10 px-2.5 text-[11px] sm:px-3 sm:text-xs'
       : 'min-h-10 px-3 text-xs';
 
+  const rowLabel = node.label.trim() || node.id;
+  const summary = courseLessonProgressSummary;
+  const coursePlaybackComplete =
+    summary != null &&
+    summary.totalLessons > 0 &&
+    summary.completedLessons === summary.totalLessons;
+  const courseInProgress =
+    summary != null &&
+    summary.totalLessons > 0 &&
+    summary.completedLessons > 0 &&
+    summary.completedLessons < summary.totalLessons;
+
   if (!canOpenCourse && !canOpenLesson && !missingCatalog) return null;
+
+  const openCourseBtnClass = coursePlaybackComplete
+    ? `inline-flex w-full shrink-0 items-center justify-center rounded border border-orange-500/45 bg-transparent font-medium text-orange-500/90 hover:border-orange-500/65 hover:bg-orange-500/[0.07] hover:text-orange-500 sm:w-[7.25rem] ${btn}`
+    : `inline-flex w-full shrink-0 items-center justify-center rounded border border-orange-500 bg-transparent font-medium text-orange-500 hover:bg-orange-500/10 sm:w-[7.25rem] ${btn}`;
+
+  const courseCtaLabel = coursePlaybackComplete ? 'Review' : courseInProgress ? 'Continue' : 'Open course';
+  const courseCtaAria = coursePlaybackComplete
+    ? `Review completed course: ${rowLabel}`
+    : courseInProgress
+      ? `Continue course: ${rowLabel}`
+      : `Open course: ${rowLabel}`;
 
   return (
     <span className={`flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center ${className ?? ''}`}>
@@ -154,9 +215,10 @@ function ActionChips({
         <button
           type="button"
           onClick={() => onOpenCourse(courseId)}
-          className={`inline-flex w-full shrink-0 items-center justify-center rounded border border-orange-500 bg-transparent font-medium text-orange-500 hover:bg-orange-500/10 sm:w-[7.25rem] ${btn}`}
+          className={openCourseBtnClass}
+          aria-label={courseCtaAria}
         >
-          Open course
+          {courseCtaLabel}
         </button>
       ) : null}
       {canOpenLesson && courseId && lessonId ? (
@@ -172,6 +234,37 @@ function ActionChips({
         <span className="text-right text-xs text-[var(--text-muted)] sm:text-left">Not in catalog</span>
       ) : null}
     </span>
+  );
+}
+
+/** Half-filled disk (right semicircle) inside a stroked ring — reads as partial progress vs empty ○ for not started. */
+function OutlineInProgressLeadIcon({ size }: { size: number }) {
+  const clipId = `path-outline-ip-${useId().replace(/:/g, '')}`;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className="shrink-0"
+      aria-hidden
+    >
+      <defs>
+        <clipPath id={clipId}>
+          <rect x="12" y="0" width="12" height="24" />
+        </clipPath>
+      </defs>
+      <circle
+        cx="12"
+        cy="12"
+        r="9"
+        className="stroke-[var(--text-muted)]"
+        strokeWidth="2"
+        fill="none"
+      />
+      <circle cx="12" cy="12" r="7" className="fill-orange-500" clipPath={`url(#${clipId})`} />
+    </svg>
   );
 }
 
@@ -194,10 +287,16 @@ function PathRowStatusLead({
       </div>
     );
   }
-  if (status === 'in_progress' || status === 'not_started') {
-    const a11y = status === 'in_progress' ? 'In progress' : 'Not started';
+  if (status === 'in_progress') {
     return (
-      <div className={box} role="img" aria-label={a11y}>
+      <div className={box} role="img" aria-label="In progress">
+        <OutlineInProgressLeadIcon size={ic} />
+      </div>
+    );
+  }
+  if (status === 'not_started') {
+    return (
+      <div className={box} role="img" aria-label="Not started">
         <Circle className="text-[var(--text-muted)]" size={ic} strokeWidth={2} aria-hidden />
       </div>
     );
@@ -255,12 +354,12 @@ function OutlineNestedBranch({
       : parentDepth === 2
         ? 'pl-8 sm:pl-10'
         : 'pl-6 sm:pl-8';
-  const marginTop = parentDepth === 1 ? 'mt-4 sm:mt-5' : 'mt-3 sm:mt-3.5';
+  const marginTop = parentDepth === 1 ? 'mt-2 sm:mt-2.5' : 'mt-1.5 sm:mt-2';
   return (
     <div className={`min-w-0 ${marginTop} ${outerPad}`}>
       <ul
         role="list"
-        className="relative list-none space-y-4 rounded-bl-md rounded-tl-md border-l-2 border-[var(--border-color)]/70 bg-[var(--bg-primary)]/20 py-2 pl-4 sm:space-y-5 sm:rounded-bl-lg sm:rounded-tl-lg sm:py-3 sm:pl-5"
+        className="relative list-none space-y-2 rounded-bl-md rounded-tl-md border-l-2 border-[var(--border-color)]/70 bg-[var(--bg-primary)]/20 py-1.5 pl-3 sm:space-y-2.5 sm:rounded-bl-lg sm:rounded-tl-lg sm:py-2 sm:pl-4"
       >
         {children}
       </ul>
@@ -276,7 +375,7 @@ function OutlineNestedBranchItem({
   key?: React.Key;
 }) {
   return (
-    <li className="relative min-w-0 before:pointer-events-none before:absolute before:left-0 before:top-[1.15rem] before:z-0 before:h-px before:w-4 before:-translate-x-full before:bg-[var(--border-color)]/70 sm:before:top-5 sm:before:w-5">
+    <li className="relative min-w-0 before:pointer-events-none before:absolute before:left-0 before:top-[1.05rem] before:z-0 before:h-px before:w-4 before:-translate-x-full before:bg-[var(--border-color)]/70 sm:before:top-[1.15rem] sm:before:w-5">
       {children}
     </li>
   );
@@ -373,76 +472,139 @@ function OutlineNode({
     const hasExpandableContent = childCount > 0;
     const expanded = isSectionExpanded(node.id);
     const panelId = `path-section-panel-${node.id}`;
+    const isEmptySection = !hasExpandableContent && childCount === 0;
+    /** Has subtree rows but nothing maps to the published catalog (shows “0 courses” otherwise). */
+    const isZeroCatalogCourses = !isEmptySection && catalogCourseCount === 0;
+    const showNoCoursesInSectionUx = isEmptySection || isZeroCatalogCourses;
     const courseCountLabel =
-      !hasExpandableContent && childCount === 0
-        ? 'Empty'
+      showNoCoursesInSectionUx
+        ? null
         : catalogCourseCount === 1
           ? '1 course'
           : `${catalogCourseCount} courses`;
 
+    const sectionProgressColumn =
+      showSectionProgress && sectionProgress ? (
+        <PathOutlineProgressColumn
+          label="Section Progress"
+          monoStats={`${sectionProgress.percent}% · ${sectionProgress.completedCourses}/${sectionProgress.totalCourses}`}
+          percent={sectionProgress.percent}
+          ariaLabel={`Section progress for ${label}: ${sectionProgress.percent} percent, ${sectionProgress.completedCourses} of ${sectionProgress.totalCourses} courses complete`}
+        />
+      ) : null;
+
     return (
       <section className="mt-8 scroll-mt-4 border-t border-[var(--border-color)] pt-8 first:mt-0 first:border-t-0 first:pt-0">
-        <h3 className="min-w-0 pl-4 text-lg font-bold leading-snug text-[var(--text-primary)] sm:pl-8 sm:text-xl">
-          {hasExpandableContent ? (
-            <button
-              type="button"
-              className="flex min-h-11 w-full min-w-0 touch-manipulation items-center gap-x-2 rounded-lg py-1 text-left transition-colors hover:bg-[var(--hover-bg)]/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 sm:min-h-12 sm:gap-x-3"
-              aria-expanded={expanded}
-              aria-controls={panelId}
-              id={`path-section-trigger-${node.id}`}
-              onClick={() => toggleSection(node.id)}
-            >
-              <ChevronDown
-                size={22}
-                className={`shrink-0 text-[var(--text-muted)] transition-transform duration-200 ${expanded ? 'rotate-0' : '-rotate-90'}`}
-                aria-hidden
-              />
-              <span className="flex w-7 shrink-0 justify-end tabular-nums text-orange-500 sm:w-8">
-                {sectionIndex + 1}.
-              </span>
-              <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{label}</span>
-              <span className="shrink-0 text-xs font-medium normal-case text-[var(--text-muted)] sm:text-sm">
-                {courseCountLabel}
-              </span>
-            </button>
-          ) : (
-            <div className="flex min-w-0 items-center gap-x-2 py-1 sm:gap-x-3">
-              <span className="flex w-[22px] shrink-0 sm:w-[22px]" aria-hidden />
-              <span className="flex w-7 shrink-0 justify-end tabular-nums text-orange-500 sm:w-8">
-                {sectionIndex + 1}.
-              </span>
-              <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{label}</span>
-              <span className="shrink-0 text-xs font-medium normal-case text-[var(--text-muted)] sm:text-sm">
-                {courseCountLabel}
-              </span>
-              <span className="sr-only">Section has no expandable list.</span>
+        <h3 className="min-w-0 pl-4 leading-snug text-[var(--text-primary)] sm:pl-8">
+          <div
+            className={`flex min-w-0 items-center gap-1 sm:gap-2${
+              hasExpandableContent
+                ? ' min-h-11 cursor-pointer rounded-lg py-1 pl-0.5 pr-1 transition-colors hover:bg-[var(--hover-bg)]/80 sm:min-h-12 sm:pl-1 sm:pr-1.5'
+                : ' py-1'
+            }`}
+            onClick={
+              hasExpandableContent
+                ? (e) => handleSectionHeaderClick(e, hasExpandableContent, node.id, toggleSection)
+                : undefined
+            }
+          >
+            {hasExpandableContent ? (
+              <button
+                type="button"
+                data-outline-section-chevron=""
+                className="flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--hover-bg)]/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 touch-manipulation sm:min-h-11 sm:min-w-11"
+                aria-expanded={expanded}
+                aria-controls={panelId}
+                id={`path-section-trigger-${node.id}`}
+                aria-label={expanded ? 'Collapse section' : 'Expand section'}
+              >
+                <ChevronDown
+                  size={20}
+                  className={`shrink-0 transition-transform duration-200 ${expanded ? 'rotate-0' : '-rotate-90'}`}
+                  aria-hidden
+                />
+              </button>
+            ) : (
+              <span className="flex w-10 shrink-0 sm:w-11" aria-hidden />
+            )}
+            <div className="flex w-8 shrink-0 items-center justify-end text-lg font-bold leading-snug tabular-nums text-orange-500 sm:w-9 sm:text-xl">
+              {sectionIndex + 1}.
             </div>
-          )}
-        </h3>
-        {showSectionProgress && sectionProgress ? (
-          <div className="mt-2.5 min-w-0 max-w-2xl pl-[5.125rem] sm:mt-3 sm:pl-[6.875rem]">
-            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-[var(--text-secondary)] sm:text-sm">
-              <span>Section Progress</span>
-              <span className="font-mono tabular-nums text-[var(--text-muted)]">
-                {sectionProgress.percent}% · {sectionProgress.completedCourses}/{sectionProgress.totalCourses}{' '}
-                courses
-              </span>
-            </div>
-            <div
-              className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-[var(--border-color)]"
-              role="progressbar"
-              aria-valuenow={sectionProgress.percent}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-label={`Section progress for ${label}: ${sectionProgress.percent} percent, ${sectionProgress.completedCourses} of ${sectionProgress.totalCourses} courses complete`}
-            >
+            <div className="flex min-w-0 flex-1 flex-col gap-2 sm:min-h-10 sm:flex-row sm:items-center sm:gap-4">
+              <div className="flex min-w-0 flex-1 flex-col justify-center gap-1 sm:min-w-0 sm:flex-row sm:items-center sm:gap-3">
+                <span
+                  id={`path-section-title-${node.id}`}
+                  className="flex min-w-0 items-center text-lg font-bold leading-snug [overflow-wrap:anywhere] sm:text-xl"
+                  aria-describedby={
+                    showNoCoursesInSectionUx
+                      ? node.locked
+                        ? `path-section-locked-hint-${node.id}`
+                        : `path-section-empty-hint-${node.id}`
+                      : undefined
+                  }
+                >
+                  {label}
+                </span>
+                <div className="flex min-w-0 w-full flex-1 justify-end">
+                  <div className="flex w-[18rem] max-w-full min-w-0 flex-col items-end justify-center sm:items-start">
+                    {showNoCoursesInSectionUx ? (
+                      node.locked ? (
+                        <span className="inline-flex max-w-full items-center gap-1.5 text-xs font-medium normal-case text-[var(--text-muted)] sm:text-sm">
+                          <Lock
+                            size={15}
+                            className="shrink-0 text-[var(--text-muted)]"
+                            strokeWidth={2.25}
+                            aria-hidden
+                          />
+                          <span className="[overflow-wrap:anywhere]">Content locked</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex max-w-full items-center gap-0.5 text-xs font-medium normal-case text-[var(--text-muted)] sm:gap-1.5 sm:text-sm">
+                          <span className="[overflow-wrap:anywhere]">No courses added yet</span>
+                          <button
+                            type="button"
+                            title="No courses are linked to this section yet. Check back later—more content may be added."
+                            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[var(--hover-bg)]/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 touch-manipulation sm:min-h-8 sm:min-w-8 sm:hover:bg-transparent"
+                            aria-label="Details: No courses are linked to this section yet. Check back later—more content may be added."
+                          >
+                            <Info size={15} strokeWidth={2.25} aria-hidden />
+                          </button>
+                        </span>
+                      )
+                    ) : (
+                      <span className="text-xs font-medium normal-case text-[var(--text-muted)] sm:text-sm">
+                        {courseCountLabel}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {!hasExpandableContent ? (
+                  <span className="sr-only">Section has no expandable list.</span>
+                ) : null}
+              </div>
               <div
-                className="h-full rounded-full bg-orange-500 transition-[width] duration-300 ease-out"
-                style={{ width: `${sectionProgress.percent}%` }}
-              />
+                className={
+                  showSectionProgress
+                    ? 'w-full min-w-0 shrink-0 sm:w-[11rem] sm:flex-none'
+                    : 'hidden min-h-0 w-full shrink-0 sm:block sm:w-[11rem] sm:flex-none'
+                }
+                aria-hidden={!showSectionProgress}
+              >
+                {sectionProgressColumn}
+              </div>
             </div>
           </div>
-        ) : null}
+          {showNoCoursesInSectionUx && node.locked ? (
+            <span id={`path-section-locked-hint-${node.id}`} className="sr-only">
+              This section is locked. You do not have access yet. Nothing is wrong with your account.
+            </span>
+          ) : null}
+          {showNoCoursesInSectionUx && !node.locked ? (
+            <span id={`path-section-empty-hint-${node.id}`} className="sr-only">
+              No courses are linked to this section yet. Check back later—new content may be added.
+            </span>
+          ) : null}
+        </h3>
         {expanded || !hasExpandableContent ? (
           <>
             <ActionChips
@@ -456,9 +618,9 @@ function OutlineNode({
               <ul
                 id={panelId}
                 role="list"
-                aria-labelledby={`path-section-trigger-${node.id}`}
+                aria-labelledby={`path-section-title-${node.id}`}
                 hidden={!expanded}
-                className="ml-4 mt-6 min-w-0 max-w-full list-none space-y-5 rounded-xl border border-[var(--border-color)]/60 bg-[var(--bg-primary)]/25 py-4 pl-4 pr-3 ring-1 ring-[var(--border-color)]/25 sm:ml-8 sm:mt-7 sm:space-y-6 sm:py-5 sm:pl-7 sm:pr-5"
+                className="ml-4 mt-4 min-w-0 max-w-full list-none space-y-3 rounded-xl border border-[var(--border-color)]/60 bg-[var(--bg-primary)]/25 py-3 pl-4 pr-3 ring-1 ring-[var(--border-color)]/25 sm:ml-8 sm:mt-5 sm:space-y-3.5 sm:py-4 sm:pl-7 sm:pr-5"
               >
                 {node.children.map((ch) => (
                   <li key={ch.id} className="min-w-0">
@@ -529,6 +691,7 @@ function OutlineNode({
               onOpenLesson={onOpenLesson}
               compact
               className="shrink-0 sm:ml-2"
+              courseLessonProgressSummary={courseLessonProgressSummary}
             />
           </div>
         </div>
@@ -612,6 +775,7 @@ function OutlineNode({
             onOpenLesson={onOpenLesson}
             compact
             className="shrink-0 sm:ml-2"
+            courseLessonProgressSummary={courseLessonProgressSummary}
           />
         </div>
       </div>

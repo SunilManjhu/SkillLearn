@@ -1,6 +1,5 @@
 import type { Course } from '../data/courses';
 import type { MindmapTreeNode } from '../data/pathMindmap';
-import { loadCompletionTimestamps } from './courseCompletionLog';
 import { isCourseComplete, loadLessonProgressMap } from './courseProgress';
 
 /** All catalog `courseId`s referenced under a path section (course nodes and lesson nodes). */
@@ -37,8 +36,8 @@ export type PathSectionProgress = {
 
 /**
  * Course-level progress for catalog courses linked under this section: each course is either
- * complete or not (no partial credit by lesson). Matches overview semantics: completion
- * timestamps and `isCourseComplete` count as done.
+ * complete or not (no partial credit by lesson). Uses `isCourseComplete` on the lesson map only,
+ * matching the path row progress bar and status icons (not completion timestamps alone).
  */
 export function computePathSectionProgress(
   sectionRoot: MindmapTreeNode,
@@ -46,7 +45,6 @@ export function computePathSectionProgress(
   userId: string | null | undefined
 ): PathSectionProgress {
   const courseIds = collectCourseIdsInSubtree(sectionRoot);
-  const completionTs = loadCompletionTimestamps(userId ?? null);
   let totalCourses = 0;
   let completedCourses = 0;
   const uid = userId ?? null;
@@ -58,7 +56,7 @@ export function computePathSectionProgress(
     if (lessons.length === 0) continue;
     totalCourses++;
     const m = loadLessonProgressMap(id, uid);
-    if (isCourseComplete(course, m) || completionTs[id] != null) completedCourses++;
+    if (isCourseComplete(course, m)) completedCourses++;
   }
 
   const percent =
