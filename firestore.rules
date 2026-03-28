@@ -396,7 +396,8 @@ service cloud.firestore {
         data.title is string && data.title.size() > 0 && data.title.size() < 500 &&
         data.courseIds is list && data.courseIds.size() <= 100 &&
         (!('description' in data) || (data.description is string && data.description.size() < 20000)) &&
-        (!('updatedAt' in data) || data.updatedAt is timestamp);
+        (!('updatedAt' in data) || data.updatedAt is timestamp) &&
+        (!('pathMindmap' in data) || data.pathMindmap is map);
     }
 
     match /learningPaths/{pathId} {

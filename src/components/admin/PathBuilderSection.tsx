@@ -8,12 +8,19 @@ import React, {
   useState,
 } from 'react';
 import {
+  closestCorners,
   DndContext,
+  DragOverlay,
+  type CollisionDetection,
   type DragEndEvent,
+  type DragStartEvent,
   KeyboardSensor,
   PointerSensor,
+  pointerWithin,
+  useDroppable,
   useSensor,
   useSensors,
+  useDndContext,
 } from '@dnd-kit/core';
 import {
   arrayMove,
@@ -25,18 +32,29 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import {
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
+  GraduationCap,
   GripVertical,
+  ListVideo,
   Loader2,
+  Pencil,
+  Plus,
   Route,
   Save,
   Trash2,
+  Type,
   X,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { useDialogKeyboard } from '../../hooks/useDialogKeyboard';
-import type { Course } from '../../data/courses';
+import type { Course, Lesson } from '../../data/courses';
+import {
+  mindmapDocumentWithCenterChildren,
+  newMindmapNodeId,
+  type MindmapTreeNode,
+} from '../../data/pathMindmap';
 import type { LearningPath } from '../../data/learningPaths';
 import { firstAvailableStructuredLearningPathId } from '../../utils/learningPathStructuredIds';
 import {
@@ -50,10 +68,1041 @@ import {
   saveLearningPath,
 } from '../../utils/learningPathsFirestore';
 import { savePublishedCourse } from '../../utils/publishedCoursesFirestore';
+import { fetchPathMindmapFromFirestore, savePathMindmapToFirestore } from '../../utils/pathMindmapFirestore';
 import { useAdminActionToast } from './useAdminActionToast';
 
 function deepClone<T>(x: T): T {
   return JSON.parse(JSON.stringify(x)) as T;
+}
+
+/** Tree node for path mind map — synced to `pathMindmap` on save (nested branches allowed). */
+type PathBranchNode =
+  | { id: string; kind: 'label'; label: string; children: PathBranchNode[] }
+  | { id: string; kind: 'course'; courseId: string; children: PathBranchNode[] }
+  | { id: string; kind: 'lesson'; courseId: string; lessonId: string; children: PathBranchNode[] };
+
+function updateNodeChildren(n: PathBranchNode, children: PathBranchNode[]): PathBranchNode {
+  if (n.kind === 'label') return { ...n, children };
+  if (n.kind === 'course') return { ...n, children };
+  return { ...n, children };
+}
+
+function collectCourseIdsFromTree(nodes: PathBranchNode[]): string[] {
+  const out: string[] = [];
+  function walk(ns: PathBranchNode[]) {
+    for (const n of ns) {
+      if (n.kind === 'course' || n.kind === 'lesson') {
+        if (!out.includes(n.courseId)) out.push(n.courseId);
+      }
+      walk(n.children);
+    }
+  }
+  walk(nodes);
+  return out;
+}
+
+function mergeCourseIdsFromBranches(draft: LearningPath, roots: PathBranchNode[]): string[] {
+  const merged = [...draft.courseIds];
+  for (const cid of collectCourseIdsFromTree(roots)) {
+    if (!merged.includes(cid)) merged.push(cid);
+  }
+  return merged;
+}
+
+function addChildAtParent(
+  nodes: PathBranchNode[],
+  parentId: string | null,
+  child: PathBranchNode
+): PathBranchNode[] {
+  if (parentId === null) {
+    return [...nodes, child];
+  }
+  return nodes.map((n) => {
+    if (n.id === parentId) {
+      return updateNodeChildren(n, [...n.children, child]);
+    }
+    return updateNodeChildren(n, addChildAtParent(n.children, parentId, child));
+  });
+}
+
+function removeNodeById(nodes: PathBranchNode[], id: string): PathBranchNode[] {
+  return nodes
+    .filter((n) => n.id !== id)
+    .map((n) => updateNodeChildren(n, removeNodeById(n.children, id)));
+}
+
+function mapBranchNodeById(
+  nodes: PathBranchNode[],
+  id: string,
+  fn: (n: PathBranchNode) => PathBranchNode
+): PathBranchNode[] {
+  return nodes.map((n) => {
+    if (n.id === id) return fn(n);
+    return updateNodeChildren(n, mapBranchNodeById(n.children, id, fn));
+  });
+}
+
+/** Droppable id prefix — must not collide with branch node ids used as sortable ids. */
+const PATH_BRANCH_NEST_ID_PREFIX = 'path-branch-nest:';
+
+/** Drop here to become a root-level sibling (nested SortableContexts often miss cross-level `over`). */
+const PATH_BRANCH_ROOT_HEAD = 'path-branch-root:head';
+const PATH_BRANCH_ROOT_TAIL = 'path-branch-root:tail';
+
+function pathBranchNestDroppableId(nodeId: string): string {
+  return PATH_BRANCH_NEST_ID_PREFIX + nodeId;
+}
+
+/** Prefer nest / root drop targets over the sortable row `li` so row-body drops nest instead of reordering. */
+const pathBranchCollisionDetection: CollisionDetection = (args) => {
+  const byPointer = pointerWithin(args);
+  if (byPointer.length > 0) {
+    const nestColl = byPointer.find(
+      (c) => typeof c.id === 'string' && c.id.startsWith(PATH_BRANCH_NEST_ID_PREFIX)
+    );
+    if (nestColl) return [nestColl];
+    const rootHead = byPointer.find((c) => c.id === PATH_BRANCH_ROOT_HEAD);
+    if (rootHead) return [rootHead];
+    const rootTail = byPointer.find((c) => c.id === PATH_BRANCH_ROOT_TAIL);
+    if (rootTail) return [rootTail];
+    return byPointer;
+  }
+  return closestCorners(args);
+};
+
+function findParentAndIndex(
+  nodes: PathBranchNode[],
+  id: string,
+  parentId: string | null = null
+): { parentId: string | null; index: number } | null {
+  for (let i = 0; i < nodes.length; i++) {
+    if (nodes[i].id === id) return { parentId, index: i };
+    const found = findParentAndIndex(nodes[i].children, id, nodes[i].id);
+    if (found) return found;
+  }
+  return null;
+}
+
+function extractNodeById(
+  nodes: PathBranchNode[],
+  id: string
+): { node: PathBranchNode | null; roots: PathBranchNode[] } {
+  const idx = nodes.findIndex((n) => n.id === id);
+  if (idx !== -1) {
+    const node = nodes[idx];
+    return { node, roots: [...nodes.slice(0, idx), ...nodes.slice(idx + 1)] };
+  }
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i];
+    const inner = extractNodeById(n.children, id);
+    if (inner.node) {
+      return {
+        node: inner.node,
+        roots: nodes.map((n2, j) => (j === i ? updateNodeChildren(n2, inner.roots) : n2)),
+      };
+    }
+  }
+  return { node: null, roots: nodes };
+}
+
+function isDescendantOf(roots: PathBranchNode[], ancestorId: string, maybeDescendantId: string): boolean {
+  const ancestor = findBranchNode(roots, ancestorId);
+  if (!ancestor) return false;
+  function walk(ns: PathBranchNode[]): boolean {
+    for (const n of ns) {
+      if (n.id === maybeDescendantId) return true;
+      if (walk(n.children)) return true;
+    }
+    return false;
+  }
+  return walk(ancestor.children);
+}
+
+function getChildrenArray(roots: PathBranchNode[], parentId: string | null): PathBranchNode[] {
+  if (parentId === null) return roots;
+  const p = findBranchNode(roots, parentId);
+  return p?.children ?? [];
+}
+
+function setChildrenAtParent(
+  roots: PathBranchNode[],
+  parentId: string | null,
+  children: PathBranchNode[]
+): PathBranchNode[] {
+  if (parentId === null) return children;
+  return mapBranchNodeById(roots, parentId, (n) => updateNodeChildren(n, children));
+}
+
+function insertSiblingAt(
+  nodes: PathBranchNode[],
+  parentId: string | null,
+  index: number,
+  node: PathBranchNode
+): PathBranchNode[] {
+  if (parentId === null) {
+    const next = [...nodes];
+    next.splice(index, 0, node);
+    return next;
+  }
+  return nodes.map((n) => {
+    if (n.id === parentId) {
+      const ch = [...n.children];
+      ch.splice(index, 0, node);
+      return updateNodeChildren(n, ch);
+    }
+    return updateNodeChildren(n, insertSiblingAt(n.children, parentId, index, node));
+  });
+}
+
+function moveNodeToParentLast(
+  roots: PathBranchNode[],
+  activeId: string,
+  newParentId: string
+): PathBranchNode[] {
+  if (activeId === newParentId) return roots;
+  if (isDescendantOf(roots, activeId, newParentId)) return roots;
+  const { node, roots: without } = extractNodeById(roots, activeId);
+  if (!node) return roots;
+  return addChildAtParent(without, newParentId, node);
+}
+
+function applyBranchDragEnd(roots: PathBranchNode[], activeId: string, overId: string): PathBranchNode[] {
+  if (activeId === overId) return roots;
+
+  if (overId === PATH_BRANCH_ROOT_HEAD) {
+    const { node, roots: without } = extractNodeById(roots, activeId);
+    if (!node) return roots;
+    return insertSiblingAt(without, null, 0, node);
+  }
+  if (overId === PATH_BRANCH_ROOT_TAIL) {
+    const { node, roots: without } = extractNodeById(roots, activeId);
+    if (!node) return roots;
+    return insertSiblingAt(without, null, without.length, node);
+  }
+
+  if (overId.startsWith(PATH_BRANCH_NEST_ID_PREFIX)) {
+    const targetId = overId.slice(PATH_BRANCH_NEST_ID_PREFIX.length);
+    return moveNodeToParentLast(roots, activeId, targetId);
+  }
+
+  if (isDescendantOf(roots, activeId, overId)) return roots;
+
+  const pa = findParentAndIndex(roots, activeId);
+  const pb = findParentAndIndex(roots, overId);
+  if (!pa || !pb) return roots;
+
+  if (pa.parentId === pb.parentId) {
+    const parentId = pa.parentId;
+    const siblings = getChildrenArray(roots, parentId);
+    return setChildrenAtParent(roots, parentId, arrayMove(siblings, pa.index, pb.index));
+  }
+
+  const { node, roots: without } = extractNodeById(roots, activeId);
+  if (!node) return roots;
+  const pOver = findParentAndIndex(without, overId);
+  if (!pOver) return roots;
+  return insertSiblingAt(without, pOver.parentId, pOver.index, node);
+}
+
+function moveNodeInTree(nodes: PathBranchNode[], nodeId: string, delta: -1 | 1): PathBranchNode[] {
+  const idx = nodes.findIndex((n) => n.id === nodeId);
+  if (idx !== -1) {
+    const j = idx + delta;
+    if (j < 0 || j >= nodes.length) return nodes;
+    return arrayMove(nodes, idx, j);
+  }
+  return nodes.map((n) => updateNodeChildren(n, moveNodeInTree(n.children, nodeId, delta)));
+}
+
+function branchNodeToMindmap(n: PathBranchNode, publishedList: Course[]): MindmapTreeNode {
+  const children = n.children.map((c) => branchNodeToMindmap(c, publishedList));
+  if (n.kind === 'label') {
+    return {
+      id: n.id,
+      label: n.label.trim() || 'Untitled',
+      children,
+      kind: 'label',
+    };
+  }
+  if (n.kind === 'course') {
+    const c = publishedList.find((x) => x.id === n.courseId);
+    return {
+      id: n.id,
+      label: c?.title ?? n.courseId,
+      children,
+      kind: 'course',
+      courseId: n.courseId,
+    };
+  }
+  const c = publishedList.find((x) => x.id === n.courseId);
+  let lessonLabel = n.lessonId;
+  if (c) {
+    for (const m of c.modules) {
+      const les = m.lessons.find((l) => l.id === n.lessonId);
+      if (les) {
+        lessonLabel = les.title?.trim() || n.lessonId;
+        break;
+      }
+    }
+  }
+  return {
+    id: n.id,
+    label: lessonLabel,
+    children,
+    kind: 'lesson',
+    courseId: n.courseId,
+    lessonId: n.lessonId,
+  };
+}
+
+function branchTreeToMindmapForest(roots: PathBranchNode[], publishedList: Course[]): MindmapTreeNode[] {
+  return roots.map((r) => branchNodeToMindmap(r, publishedList));
+}
+
+function branchNodeDisplayLabel(n: PathBranchNode, publishedList: Course[]): string {
+  if (n.kind === 'label') return n.label || 'Untitled';
+  if (n.kind === 'course') return publishedList.find((c) => c.id === n.courseId)?.title ?? n.courseId;
+  const c = publishedList.find((x) => x.id === n.courseId);
+  let t = n.lessonId;
+  if (c) {
+    for (const m of c.modules) {
+      const les = m.lessons.find((l) => l.id === n.lessonId);
+      if (les) {
+        t = les.title || n.lessonId;
+        break;
+      }
+    }
+  }
+  return t;
+}
+
+function findBranchNode(roots: PathBranchNode[], id: string): PathBranchNode | null {
+  for (const n of roots) {
+    if (n.id === id) return n;
+    const sub = findBranchNode(n.children, id);
+    if (sub) return sub;
+  }
+  return null;
+}
+
+/** Ids of branches that have children (for pruning expand state when the tree changes). */
+function collectBranchIdsWithChildren(nodes: PathBranchNode[]): Set<string> {
+  const out = new Set<string>();
+  function walk(ns: PathBranchNode[]) {
+    for (const n of ns) {
+      if (n.children.length > 0) {
+        out.add(n.id);
+        walk(n.children);
+      }
+    }
+  }
+  walk(nodes);
+  return out;
+}
+
+/** Restore admin branch tree from Firestore mind map nodes. */
+function mindmapNodeToPathBranch(n: MindmapTreeNode): PathBranchNode {
+  const children = n.children.map(mindmapNodeToPathBranch);
+  if (n.kind === 'course' && n.courseId) {
+    return { id: n.id, kind: 'course', courseId: n.courseId, children };
+  }
+  if (n.kind === 'lesson' && n.courseId && n.lessonId) {
+    return { id: n.id, kind: 'lesson', courseId: n.courseId, lessonId: n.lessonId, children };
+  }
+  return { id: n.id, kind: 'label', label: n.label, children };
+}
+
+type BranchModalStep = 'kind' | 'label' | 'course' | 'lessonCourse' | 'lessonPick';
+
+function AddPathBranchModal({
+  open,
+  onClose,
+  catalogCourses,
+  onCommit,
+  contextHint,
+  mode = 'add',
+  editLessonPreset,
+  addPreset,
+}: {
+  open: boolean;
+  onClose: () => void;
+  catalogCourses: readonly Course[];
+  onCommit: (branch: PathBranchNode) => void;
+  /** Where the new node will attach (top level vs nested). */
+  contextHint?: string;
+  /** `editCourse` / `editLesson` skip the kind step and open on the picker for changing links. */
+  mode?: 'add' | 'editCourse' | 'editLesson';
+  /** When `mode === 'editLesson'`, optionally start on lesson list for this course. */
+  editLessonPreset?: { courseId: string; lessonId: string };
+  /** When `mode === 'add'`, skip the kind picker and open the matching step. */
+  addPreset?: 'label' | 'course' | 'lesson';
+}) {
+  const [step, setStep] = useState<BranchModalStep>('kind');
+  const [query, setQuery] = useState('');
+  const [labelInput, setLabelInput] = useState('');
+  const [lessonCourse, setLessonCourse] = useState<Course | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setQuery('');
+    setLabelInput('');
+    if (mode === 'editCourse') {
+      setStep('course');
+      setLessonCourse(null);
+    } else if (mode === 'editLesson') {
+      const preset = editLessonPreset;
+      if (preset && catalogCourses.length > 0) {
+        const c = catalogCourses.find((x) => x.id === preset.courseId) ?? null;
+        if (c) {
+          setLessonCourse(c);
+          setStep('lessonPick');
+        } else {
+          setLessonCourse(null);
+          setStep('lessonCourse');
+        }
+      } else {
+        setLessonCourse(null);
+        setStep('lessonCourse');
+      }
+    } else {
+      if (addPreset === 'label') {
+        setStep('label');
+      } else if (addPreset === 'course') {
+        setStep('course');
+      } else if (addPreset === 'lesson') {
+        setStep('lessonCourse');
+      } else {
+        setStep('kind');
+      }
+      setLessonCourse(null);
+    }
+  }, [open, mode, editLessonPreset, catalogCourses, addPreset]);
+
+  useDialogKeyboard({ open, onClose });
+
+  const sortedCourses = useMemo(
+    () => [...catalogCourses].sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' })),
+    [catalogCourses]
+  );
+
+  const filteredCourses = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return sortedCourses;
+    return sortedCourses.filter(
+      (c) =>
+        c.title.toLowerCase().includes(q) ||
+        c.category.toLowerCase().includes(q) ||
+        c.id.toLowerCase().includes(q)
+    );
+  }, [sortedCourses, query]);
+
+  const lessonRows = useMemo(() => {
+    if (!lessonCourse) return [] as { moduleTitle: string; lesson: Lesson }[];
+    const rows: { moduleTitle: string; lesson: Lesson }[] = [];
+    for (const mod of lessonCourse.modules) {
+      for (const lesson of mod.lessons) {
+        rows.push({ moduleTitle: mod.title, lesson });
+      }
+    }
+    return rows;
+  }, [lessonCourse]);
+
+  const filteredLessons = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return lessonRows;
+    return lessonRows.filter(
+      (r) =>
+        r.lesson.title.toLowerCase().includes(q) ||
+        r.moduleTitle.toLowerCase().includes(q)
+    );
+  }, [lessonRows, query]);
+
+  const canLink = catalogCourses.length > 0;
+
+  if (!open) return null;
+
+  const commitLabel = () => {
+    const t = labelInput.trim();
+    if (!t) return;
+    onCommit({ id: newMindmapNodeId(), kind: 'label', label: t, children: [] });
+    onClose();
+  };
+
+  const commitCourse = (c: Course) => {
+    onCommit({ id: newMindmapNodeId(), kind: 'course', courseId: c.id, children: [] });
+    onClose();
+  };
+
+  const commitLesson = (course: Course, lesson: Lesson) => {
+    onCommit({
+      id: newMindmapNodeId(),
+      kind: 'lesson',
+      courseId: course.id,
+      lessonId: lesson.id,
+      children: [],
+    });
+    onClose();
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="path-branch-modal-title"
+        className="flex max-h-[min(90dvh,640px)] w-full max-w-lg flex-col rounded-t-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl sm:rounded-2xl"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-color)] px-4 py-3">
+          {(mode === 'add' && step !== 'kind') || mode === 'editCourse' || mode === 'editLesson' ? (
+            <button
+              type="button"
+              className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]"
+              aria-label="Back"
+              onClick={() => {
+                setQuery('');
+                if (mode === 'editCourse' && step === 'course') {
+                  onClose();
+                  return;
+                }
+                if (mode === 'editLesson' && step === 'lessonCourse') {
+                  onClose();
+                  return;
+                }
+                if (step === 'course') {
+                  if (mode === 'add') setStep('kind');
+                  else onClose();
+                  return;
+                }
+                if (step === 'lessonCourse') {
+                  if (mode === 'add') setStep('kind');
+                  else onClose();
+                  return;
+                }
+                if (step === 'label') setStep('kind');
+                else if (step === 'lessonPick') {
+                  setLessonCourse(null);
+                  setStep('lessonCourse');
+                }
+              }}
+            >
+              <ChevronLeft size={22} />
+            </button>
+          ) : (
+            <span className="w-10" aria-hidden />
+          )}
+          <h2
+            id="path-branch-modal-title"
+            className="min-w-0 flex-1 text-center text-base font-bold text-[var(--text-primary)] sm:text-lg"
+          >
+            {step === 'kind' && 'Add a branch'}
+            {step === 'label' && 'Label'}
+            {step === 'course' && (mode === 'editCourse' ? 'Change course' : 'Choose course')}
+            {step === 'lessonCourse' && (mode === 'editLesson' ? 'Change lesson — pick course' : 'Choose course (other)')}
+            {step === 'lessonPick' && lessonCourse && (mode === 'editLesson' ? `Change lesson — ${lessonCourse.title}` : `Lesson — ${lessonCourse.title}`)}
+          </h2>
+          <button
+            type="button"
+            className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg text-sm font-semibold text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+        </div>
+        {contextHint ? (
+          <p className="border-b border-[var(--border-color)] px-4 pb-3 text-center text-xs leading-snug text-[var(--text-muted)]">
+            {contextHint}
+          </p>
+        ) : null}
+
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
+          {step === 'kind' && (
+            <div className="flex flex-col gap-3">
+              <p className="text-xs leading-relaxed text-[var(--text-muted)]">
+                Choose what this branch represents. You can add more branches and nest them later.
+              </p>
+              <button
+                type="button"
+                className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
+                onClick={() => setStep('label')}
+              >
+                <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
+                  <Type size={20} className="shrink-0 text-orange-500" aria-hidden />
+                  Text label
+                  <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Fastest</span>
+                </span>
+                <span className="pl-8 text-xs text-[var(--text-muted)]">
+                  Section title or topic (e.g. &quot;Foundations&quot;) — no catalog link yet.
+                </span>
+              </button>
+              <button
+                type="button"
+                disabled={!canLink}
+                className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)] disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => {
+                  setStep('course');
+                  setQuery('');
+                }}
+              >
+                <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
+                  <GraduationCap size={20} className="shrink-0 text-blue-500" aria-hidden />
+                  Whole course
+                  <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">From catalog</span>
+                </span>
+                <span className="pl-8 text-xs text-[var(--text-muted)]">
+                  Links the full course; course and lesson order still follow your path.
+                </span>
+              </button>
+              <button
+                type="button"
+                disabled={!canLink}
+                className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)] disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => {
+                  setStep('lessonCourse');
+                  setQuery('');
+                }}
+              >
+                <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
+                  <ListVideo size={20} className="shrink-0 text-teal-500" aria-hidden />
+                  Single lesson
+                  <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Pick course, then lesson</span>
+                </span>
+                <span className="pl-8 text-xs text-[var(--text-muted)]">
+                  Jump to one lesson — useful for a single video or module step.
+                </span>
+              </button>
+              {!canLink && (
+                <p className="text-xs text-[var(--text-muted)]">
+                  Publish at least one course in the <strong className="text-[var(--text-secondary)]">Catalog</strong>{' '}
+                  tab to link course or lesson branches.
+                </p>
+              )}
+            </div>
+          )}
+
+          {step === 'label' && (
+            <div className="space-y-3">
+              <label className="block text-xs font-semibold text-[var(--text-secondary)]" htmlFor="path-branch-label-input">
+                Branch label
+              </label>
+              <input
+                id="path-branch-label-input"
+                value={labelInput}
+                onChange={(e) => setLabelInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && labelInput.trim()) {
+                    e.preventDefault();
+                    commitLabel();
+                  }
+                }}
+                placeholder="e.g. Foundations, Week 1, Core skills"
+                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm"
+                autoFocus
+              />
+              <p className="text-xs text-[var(--text-muted)]">Press Enter to add, or tap the button.</p>
+              <button
+                type="button"
+                disabled={!labelInput.trim()}
+                onClick={commitLabel}
+                className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-40"
+              >
+                Add branch
+              </button>
+            </div>
+          )}
+
+          {(step === 'course' || step === 'lessonCourse') && (
+            <div className="space-y-2">
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search by title, category, or id…"
+                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm"
+                autoFocus
+              />
+              {filteredCourses.length === 0 ? (
+                <p className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)]/50 px-3 py-6 text-center text-sm text-[var(--text-muted)]">
+                  {sortedCourses.length === 0
+                    ? 'No published courses in the catalog.'
+                    : 'No courses match your search. Try another term.'}
+                </p>
+              ) : (
+                <ul className="space-y-1">
+                  {filteredCourses.map((c) => (
+                    <li key={c.id}>
+                      <button
+                        type="button"
+                        className="flex w-full min-h-11 items-center gap-2 rounded-lg border border-transparent px-2 py-2 text-left text-sm hover:bg-[var(--hover-bg)]"
+                        onClick={() => {
+                          if (step === 'course') commitCourse(c);
+                          else {
+                            setLessonCourse(c);
+                            setQuery('');
+                            setStep('lessonPick');
+                          }
+                        }}
+                      >
+                        <span className="min-w-0 flex-1 truncate font-medium">{c.title}</span>
+                        <span className="shrink-0 font-mono text-[10px] text-[var(--text-muted)]">{c.id}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {step === 'lessonPick' && lessonCourse ? (
+            <div className="space-y-2">
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search lessons or modules…"
+                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm"
+                autoFocus
+              />
+              {filteredLessons.length === 0 ? (
+                <p className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)]/50 px-3 py-6 text-center text-sm text-[var(--text-muted)]">
+                  {lessonRows.length === 0
+                    ? 'This course has no lessons yet.'
+                    : 'No lessons match your search. Try another term.'}
+                </p>
+              ) : (
+                <ul className="max-h-[min(50dvh,320px)] space-y-1 overflow-y-auto overscroll-contain pr-1">
+                  {filteredLessons.map((r) => (
+                    <li key={r.lesson.id}>
+                      <button
+                        type="button"
+                        className="flex w-full min-h-11 flex-col items-start rounded-lg border border-transparent px-2 py-2 text-left text-sm hover:bg-[var(--hover-bg)]"
+                        onClick={() => commitLesson(lessonCourse, r.lesson)}
+                      >
+                        <span className="font-medium">{r.lesson.title || r.lesson.id}</span>
+                        <span className="text-[10px] text-[var(--text-muted)]">{r.moduleTitle}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PathBranchRootDropSlot({
+  variant,
+  dndDisabled,
+}: {
+  variant: 'head' | 'tail';
+  dndDisabled: boolean;
+}) {
+  const id = variant === 'head' ? PATH_BRANCH_ROOT_HEAD : PATH_BRANCH_ROOT_TAIL;
+  const { setNodeRef, isOver } = useDroppable({ id, disabled: dndDisabled });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`min-h-11 rounded-lg border border-dashed border-orange-500/40 bg-orange-500/5 px-3 py-2 text-center text-xs font-semibold leading-snug text-orange-700/90 dark:text-orange-300/90 ${
+        isOver ? 'ring-2 ring-orange-400 ring-offset-2 ring-offset-[var(--bg-primary)]' : ''
+      }`}
+      role="presentation"
+    >
+      {variant === 'head'
+        ? 'Drop here to add as top-level branch (above)'
+        : 'Drop here to add as top-level branch (below)'}
+    </div>
+  );
+}
+
+function PathBranchSortableRow({
+  b,
+  depth,
+  siblingIndex,
+  siblingsLen,
+  publishedList,
+  expandedBranchIds,
+  onToggleCollapse,
+  onAddUnder,
+  onRemove,
+  onMove,
+  onLabelChange,
+  onRequestEditCourse,
+  onRequestEditLesson,
+  dndDisabled,
+}: {
+  b: PathBranchNode;
+  depth: number;
+  siblingIndex: number;
+  siblingsLen: number;
+  publishedList: Course[];
+  /** Branch shows nested rows only when its id is in this set. */
+  expandedBranchIds: ReadonlySet<string>;
+  onToggleCollapse: (id: string) => void;
+  onAddUnder: (parentId: string) => void;
+  onRemove: (id: string) => void;
+  onMove: (id: string, delta: -1 | 1) => void;
+  onLabelChange: (id: string, label: string) => void;
+  onRequestEditCourse: (id: string) => void;
+  onRequestEditLesson: (id: string) => void;
+  dndDisabled: boolean;
+}) {
+  const hasChildren = b.children.length > 0;
+  const isCollapsed = hasChildren && !expandedBranchIds.has(b.id);
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: b.id, disabled: dndDisabled });
+  const { active } = useDndContext();
+  /** No sibling “make space” shift while dragging; DragOverlay still shows the drag preview. */
+  const freezeSortableLayout = active != null;
+
+  const { setNodeRef: setNestRef, isOver: nestOver } = useDroppable({
+    id: pathBranchNestDroppableId(b.id),
+    disabled: dndDisabled,
+  });
+
+  const style = {
+    transform: freezeSortableLayout ? undefined : CSS.Transform.toString(transform),
+    transition: freezeSortableLayout ? undefined : transition,
+    opacity: isDragging ? 0.4 : undefined,
+  };
+
+  const chevronSize = depth === 0 ? 16 : 14;
+  const cardBg =
+    depth === 0
+      ? 'bg-[var(--bg-primary)]/20'
+      : 'bg-[var(--bg-primary)]/30';
+
+  const kindBadgeClass =
+    b.kind === 'label'
+      ? 'bg-orange-500/15 text-orange-600 dark:text-orange-400'
+      : b.kind === 'course'
+        ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
+        : 'bg-teal-500/15 text-teal-600 dark:text-teal-400';
+
+  return (
+    <li ref={setNodeRef} style={style} className={`min-w-0 list-none overflow-hidden rounded-xl border border-[var(--border-color)] ${cardBg}`}>
+      <div className="flex flex-wrap items-stretch gap-2 px-3 py-3 sm:px-4">
+        <button
+          type="button"
+          ref={setActivatorNodeRef}
+          {...listeners}
+          {...attributes}
+          className="inline-flex min-h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center self-center rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-muted)] hover:bg-[var(--hover-bg)]"
+          aria-label="Drag from here to reorder among siblings"
+          title="Drag from grip to reorder; drop on the rest of the row to nest under"
+        >
+          <GripVertical size={18} aria-hidden />
+        </button>
+        <div
+          ref={setNestRef}
+          className={`min-h-11 min-w-0 flex-1 flex flex-wrap items-center gap-2 rounded-md px-0.5 py-0.5 ${
+            nestOver
+              ? 'bg-orange-500/10 ring-2 ring-orange-400 ring-offset-2 ring-offset-[var(--bg-secondary)]'
+              : ''
+          }`}
+          role="region"
+          aria-label="Drop here to nest under this branch"
+        >
+          {hasChildren ? (
+            <button
+              type="button"
+              onClick={() => onToggleCollapse(b.id)}
+              className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-1 py-1 text-left text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]/80 focus:outline-none focus:ring-2 focus:ring-orange-500/40"
+              aria-expanded={!isCollapsed}
+              aria-label={isCollapsed ? 'Expand nested branches' : 'Collapse nested branches'}
+              title={isCollapsed ? 'Expand nested branches' : 'Collapse nested branches'}
+            >
+              {isCollapsed ? (
+                <ChevronRight size={chevronSize} className="shrink-0" aria-hidden />
+              ) : (
+                <ChevronDown size={chevronSize} className="shrink-0" aria-hidden />
+              )}
+              <span
+                className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase ${kindBadgeClass}`}
+              >
+                {b.kind === 'label' ? 'Label' : b.kind === 'course' ? 'Course' : 'Other'}
+              </span>
+            </button>
+          ) : (
+            <span
+              className={`inline-flex min-h-11 shrink-0 items-center rounded-md px-2 py-0.5 text-[10px] font-bold uppercase ${kindBadgeClass}`}
+            >
+              {b.kind === 'label' ? 'Label' : b.kind === 'course' ? 'Course' : 'Other'}
+            </span>
+          )}
+          {b.kind === 'label' ? (
+            <input
+              type="text"
+              value={b.label}
+              onChange={(e) => onLabelChange(b.id, e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
+              aria-label="Branch label"
+              className="min-h-10 min-w-0 flex-1 rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+              placeholder="Label text"
+            />
+          ) : (
+            <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
+              <span className="min-w-0 flex-1 truncate text-sm font-bold text-[var(--text-primary)]">
+                {branchNodeDisplayLabel(b, publishedList)}
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  b.kind === 'course' ? onRequestEditCourse(b.id) : onRequestEditLesson(b.id)
+                }
+                className="inline-flex min-h-9 shrink-0 items-center justify-center gap-1 rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2.5 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]"
+              >
+                <Pencil size={14} className="shrink-0" aria-hidden />
+                {b.kind === 'course' ? 'Change course' : 'Change lesson'}
+              </button>
+            </div>
+          )}
+          <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1">
+            <button
+              type="button"
+              onClick={() => onAddUnder(b.id)}
+              className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-orange-500/30 bg-orange-500/5 px-2 py-1.5 text-xs font-semibold text-orange-600 dark:text-orange-400 hover:bg-orange-500/10"
+            >
+              <Plus size={14} aria-hidden />
+              Add under
+            </button>
+            <button
+              type="button"
+              disabled={siblingIndex === 0}
+              onClick={() => onMove(b.id, -1)}
+              className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg border border-[var(--border-color)] text-xs font-semibold disabled:opacity-30"
+              aria-label="Move up among siblings"
+            >
+              ↑
+            </button>
+            <button
+              type="button"
+              disabled={siblingIndex >= siblingsLen - 1}
+              onClick={() => onMove(b.id, 1)}
+              className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg border border-[var(--border-color)] text-xs font-semibold disabled:opacity-30"
+              aria-label="Move down among siblings"
+            >
+              ↓
+            </button>
+            <button
+              type="button"
+              onClick={() => onRemove(b.id)}
+              className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg text-red-400 hover:bg-red-500/10"
+              aria-label="Remove branch and nested items"
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
+        </div>
+      </div>
+      {hasChildren && !isCollapsed ? (
+        <div className="border-t border-[var(--border-color)] bg-[var(--bg-primary)]/10 px-3 pb-3 pt-3 sm:px-4">
+          <PathBranchTreeList
+            nodes={b.children}
+            depth={depth + 1}
+            publishedList={publishedList}
+            expandedBranchIds={expandedBranchIds}
+            onToggleCollapse={onToggleCollapse}
+            onAddUnder={onAddUnder}
+            onRemove={onRemove}
+            onMove={onMove}
+            onLabelChange={onLabelChange}
+            onRequestEditCourse={onRequestEditCourse}
+            onRequestEditLesson={onRequestEditLesson}
+            dndDisabled={dndDisabled}
+          />
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
+function PathBranchTreeList({
+  nodes,
+  depth,
+  publishedList,
+  expandedBranchIds,
+  onToggleCollapse,
+  onAddUnder,
+  onRemove,
+  onMove,
+  onLabelChange,
+  onRequestEditCourse,
+  onRequestEditLesson,
+  dndDisabled = false,
+}: {
+  nodes: PathBranchNode[];
+  depth: number;
+  publishedList: Course[];
+  expandedBranchIds: ReadonlySet<string>;
+  onToggleCollapse: (id: string) => void;
+  onAddUnder: (parentId: string) => void;
+  onRemove: (id: string) => void;
+  onMove: (id: string, delta: -1 | 1) => void;
+  onLabelChange: (id: string, label: string) => void;
+  onRequestEditCourse: (id: string) => void;
+  onRequestEditLesson: (id: string) => void;
+  dndDisabled?: boolean;
+}) {
+  if (nodes.length === 0) return null;
+  const itemIds = nodes.map((n) => n.id);
+  const list = (
+    <ul
+      className={
+        depth > 0
+          ? 'space-y-2 border-l-2 border-orange-500/30 pl-3 sm:pl-4'
+          : 'space-y-2'
+      }
+    >
+      <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
+        {nodes.map((b, i) => (
+          <Fragment key={b.id}>
+            <PathBranchSortableRow
+              b={b}
+              depth={depth}
+              siblingIndex={i}
+              siblingsLen={nodes.length}
+              publishedList={publishedList}
+              expandedBranchIds={expandedBranchIds}
+              onToggleCollapse={onToggleCollapse}
+              onAddUnder={onAddUnder}
+              onRemove={onRemove}
+              onMove={onMove}
+              onLabelChange={onLabelChange}
+              onRequestEditCourse={onRequestEditCourse}
+              onRequestEditLesson={onRequestEditLesson}
+              dndDisabled={dndDisabled}
+            />
+          </Fragment>
+        ))}
+      </SortableContext>
+    </ul>
+  );
+  if (depth !== 0) return list;
+  return (
+    <div className="space-y-2">
+      <PathBranchRootDropSlot variant="head" dndDisabled={dndDisabled} />
+      {list}
+      <PathBranchRootDropSlot variant="tail" dndDisabled={dndDisabled} />
+    </div>
+  );
 }
 
 function sortablePc(courseId: string): string {
@@ -125,9 +1174,11 @@ function PathCourseRow({
   children?: React.ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const { active } = useDndContext();
+  const freezeSortableLayout = active != null;
   const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
+    transform: freezeSortableLayout ? undefined : CSS.Transform.toString(transform),
+    transition: freezeSortableLayout ? undefined : transition,
     opacity: isDragging ? 0.85 : 1,
   };
   return (
@@ -186,9 +1237,11 @@ function ModuleRow({
   children?: React.ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const { active } = useDndContext();
+  const freezeSortableLayout = active != null;
   const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
+    transform: freezeSortableLayout ? undefined : CSS.Transform.toString(transform),
+    transition: freezeSortableLayout ? undefined : transition,
     opacity: isDragging ? 0.85 : 1,
   };
   return (
@@ -223,9 +1276,11 @@ function LessonRow({
   lessonId: string;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const { active } = useDndContext();
+  const freezeSortableLayout = active != null;
   const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
+    transform: freezeSortableLayout ? undefined : CSS.Transform.toString(transform),
+    transition: freezeSortableLayout ? undefined : transition,
     opacity: isDragging ? 0.85 : 1,
   };
   return (
@@ -278,6 +1333,20 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
   const [showPathCourseRequiredHint, setShowPathCourseRequiredHint] = useState(false);
   const [pathDraft, setPathDraft] = useState<LearningPath | null>(null);
   const [pathBaselineJson, setPathBaselineJson] = useState<string | null>(null);
+  /** Top-level mind map branches — editable for new and saved paths; synced to `pathMindmap` on save. */
+  const [pathBranchTree, setPathBranchTree] = useState<PathBranchNode[]>([]);
+  const [pathBranchTreeBaselineJson, setPathBranchTreeBaselineJson] = useState('[]');
+  const [pathMindmapLoading, setPathMindmapLoading] = useState(false);
+  /** Add-branch flow or change linked course/lesson on an existing node. */
+  type BranchModalState =
+    | { kind: 'closed' }
+    | { kind: 'add'; parentId: string | null; preset?: 'label' | 'course' | 'lesson' }
+    | { kind: 'editCourse'; nodeId: string }
+    | { kind: 'editLesson'; nodeId: string; courseId: string; lessonId: string };
+  const [branchModal, setBranchModal] = useState<BranchModalState>({ kind: 'closed' });
+  /** Branch rows with children are collapsed unless their id is in this set (independent expand per row). */
+  const [expandedBranchIds, setExpandedBranchIds] = useState<Set<string>>(() => new Set());
+  const [branchDragActiveId, setBranchDragActiveId] = useState<string | null>(null);
 
   const [expandedCourseId, setExpandedCourseId] = useState<string | null>(null);
   const [openModuleIdx, setOpenModuleIdx] = useState<Record<string, boolean>>({});
@@ -297,6 +1366,38 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
+
+  const toggleBranchCollapse = useCallback((id: string) => {
+    setExpandedBranchIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleBranchDragStart = useCallback((e: DragStartEvent) => {
+    setBranchDragActiveId(String(e.active.id));
+  }, []);
+
+  const handleBranchDragEnd = useCallback((event: DragEndEvent) => {
+    setBranchDragActiveId(null);
+    const { active, over } = event;
+    if (!over) return;
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    const nextRoots = applyBranchDragEnd(pathBranchTree, activeId, overId);
+    setPathBranchTree(nextRoots);
+  }, [pathBranchTree]);
+
+  const handleBranchDragCancel = useCallback(() => {
+    setBranchDragActiveId(null);
+  }, []);
+
+  const branchDragOverlayNode = useMemo(() => {
+    if (!branchDragActiveId) return null;
+    return findBranchNode(pathBranchTree, branchDragActiveId);
+  }, [branchDragActiveId, pathBranchTree]);
 
   const refreshPaths = useCallback(async () => {
     setPathsLoading(true);
@@ -321,6 +1422,44 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
   useEffect(() => {
     void refreshPaths();
   }, [refreshPaths]);
+
+  /** Load saved mind map tree when selecting a persisted path (keeps branches editable after first save). */
+  useEffect(() => {
+    if (!pathSelector || pathSelector === '__new__') {
+      if (pathSelector === '__new__') setPathMindmapLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setPathMindmapLoading(true);
+    void (async () => {
+      const mm = await fetchPathMindmapFromFirestore(pathSelector);
+      if (cancelled) return;
+      const roots = mm?.root.children.map(mindmapNodeToPathBranch) ?? [];
+      setPathBranchTree(roots);
+      setPathBranchTreeBaselineJson(JSON.stringify(roots));
+      setPathMindmapLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pathSelector]);
+
+  useEffect(() => {
+    setExpandedBranchIds(new Set());
+  }, [pathSelector]);
+
+  /** Remove expand state for branches that no longer exist or no longer have children. */
+  useEffect(() => {
+    const valid = collectBranchIdsWithChildren(pathBranchTree);
+    setExpandedBranchIds((prev) => {
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (valid.has(id)) next.add(id);
+      }
+      if (next.size === prev.size && [...prev].every((id) => next.has(id))) return prev;
+      return next;
+    });
+  }, [pathBranchTree]);
 
   useEffect(() => {
     if (pathSelector !== '__new__' || !pathDraft || pathTitleFocusKey === 0) return;
@@ -352,13 +1491,27 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     });
   }, [pathSelector, paths]);
 
-  const pathDirty = useMemo(
-    () =>
-      !!pathDraft &&
-      pathBaselineJson !== null &&
-      JSON.stringify(pathDraft) !== pathBaselineJson,
-    [pathDraft, pathBaselineJson]
+  const branchesDirty = useMemo(
+    () => JSON.stringify(pathBranchTree) !== pathBranchTreeBaselineJson,
+    [pathBranchTree, pathBranchTreeBaselineJson]
   );
+
+  /** True when title/description/merged course order differ from last baseline, or branch tree differs. */
+  const pathDirty = useMemo(() => {
+    if (!pathDraft) return false;
+    if (pathBaselineJson === null) {
+      return branchesDirty;
+    }
+    const baselineParsed = JSON.parse(pathBaselineJson) as LearningPath;
+    const treeBaseline = JSON.parse(pathBranchTreeBaselineJson) as PathBranchNode[];
+    const mergedNow = mergeCourseIdsFromBranches(pathDraft, pathBranchTree);
+    const mergedBaseline = mergeCourseIdsFromBranches(baselineParsed, treeBaseline);
+    const metaDirty =
+      pathDraft.title !== baselineParsed.title ||
+      (pathDraft.description ?? '') !== (baselineParsed.description ?? '') ||
+      JSON.stringify(mergedNow) !== JSON.stringify(mergedBaseline);
+    return metaDirty || branchesDirty;
+  }, [pathDraft, pathBaselineJson, pathBranchTree, pathBranchTreeBaselineJson, branchesDirty]);
 
   const courseDirty = useMemo(
     () =>
@@ -377,6 +1530,22 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     [paths]
   );
 
+  const branchModalContextHint = useMemo(() => {
+    if (branchModal.kind === 'editCourse' || branchModal.kind === 'editLesson') {
+      return 'Nested branches under this node stay attached when you change the link.';
+    }
+    if (branchModal.kind === 'add') {
+      if (branchModal.parentId == null) {
+        return 'Top level — connects directly under Learning Path in the mind map.';
+      }
+      const p = findBranchNode(pathBranchTree, branchModal.parentId);
+      return p
+        ? `Nested under: ${branchNodeDisplayLabel(p, publishedList)}`
+        : 'Nested branch';
+    }
+    return undefined;
+  }, [branchModal, pathBranchTree, publishedList]);
+
   const applyPickNewPath = useCallback(() => {
     setCourseEditDraft(null);
     setCourseEditBaseline(null);
@@ -385,6 +1554,9 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     const newId = firstAvailableStructuredLearningPathId(paths, reserveIds);
     const fresh: LearningPath = { id: newId, title: '', courseIds: [] };
     setShowPathCourseRequiredHint(false);
+    setPathBranchTree([]);
+    setPathBranchTreeBaselineJson('[]');
+    setBranchModal({ kind: 'closed' });
     setPathTitleFocusKey((k) => k + 1);
     setPathSelector('__new__');
     setPathDraft(fresh);
@@ -463,6 +1635,9 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
       setPathSelector('');
       setPathDraft(null);
       setPathBaselineJson(null);
+      setPathBranchTree([]);
+      setPathBranchTreeBaselineJson('[]');
+      setBranchModal({ kind: 'closed' });
       setCourseEditDraft(null);
       setCourseEditBaseline(null);
       setExpandedCourseId(null);
@@ -540,7 +1715,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     }
   }, [pathConfirmDialog, pathSelector, pathDraft]);
 
-  useBodyScrollLock(!!pathConfirmDialog);
+  useBodyScrollLock(!!pathConfirmDialog || branchModal.kind !== 'closed');
 
   useDialogKeyboard({
     open: !!pathConfirmDialog,
@@ -556,8 +1731,12 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
   useEffect(() => {
     if ((pathDraft?.courseIds.length ?? 0) > 0) {
       setShowPathCourseRequiredHint(false);
+      return;
     }
-  }, [pathDraft?.courseIds.length]);
+    if (pathBranchTree.length > 0) {
+      setShowPathCourseRequiredHint(false);
+    }
+  }, [pathDraft?.courseIds.length, pathBranchTree.length]);
 
   const toggleCourseExpand = (courseId: string) => {
     if (expandedCourseId === courseId) {
@@ -585,39 +1764,50 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
       showActionToast('Path title is required.', 'danger');
       return;
     }
-    if (pathDraft.courseIds.length === 0) {
-      if (publishedList.length === 0) {
-        setShowPathCourseRequiredHint(false);
-        showActionToast(
-          'Publish at least one course in the Catalog tab before saving a path.',
-          'danger'
-        );
-        return;
-      }
+
+    const mergedCourseIds = mergeCourseIdsFromBranches(pathDraft, pathBranchTree);
+    const hasContent = mergedCourseIds.length > 0 || pathBranchTree.length > 0;
+
+    if (!hasContent) {
       setShowPathCourseRequiredHint(true);
       requestAnimationFrame(() => {
-        const el = document.getElementById('admin-path-add-course') as HTMLSelectElement | null;
+        const el =
+          document.getElementById('admin-path-branches') ??
+          document.getElementById('admin-path-course-required-hint') ??
+          document.getElementById('admin-path-title');
         if (!el) return;
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        el.focus({ preventScroll: true });
+        if (el instanceof HTMLInputElement) el.focus({ preventScroll: true });
       });
       return;
     }
-    for (const cid of pathDraft.courseIds) {
+
+    for (const cid of mergedCourseIds) {
       if (!publishedList.some((c) => c.id === cid)) {
         setShowPathCourseRequiredHint(false);
         showActionToast(`Course "${cid}" is not in the published catalog. Remove it or publish the course first.`, 'danger');
         return;
       }
     }
+
+    const toSave = { ...pathDraft, courseIds: mergedCourseIds };
+
     setPathBusy(true);
-    const ok = await saveLearningPath(pathDraft);
+    const ok = await saveLearningPath(toSave);
     setPathBusy(false);
     if (ok) {
       setShowPathCourseRequiredHint(false);
-      showActionToast('Learning path saved.');
+      const nodes = branchTreeToMindmapForest(pathBranchTree, publishedList);
+      const doc = mindmapDocumentWithCenterChildren(nodes);
+      const mmOk = await savePathMindmapToFirestore(toSave.id, doc);
+      if (mmOk) {
+        setPathBranchTreeBaselineJson(JSON.stringify(pathBranchTree));
+        showActionToast('Learning path and mind map saved.');
+      } else {
+        showActionToast('Path saved, but mind map could not be saved (check console / rules).', 'danger');
+      }
       const list = await refreshPaths();
-      const still = list.find((x) => x.id === pathDraft.id);
+      const still = list.find((x) => x.id === toSave.id);
       if (still) {
         setPathDraft(deepClone(still));
         setPathBaselineJson(JSON.stringify(still));
@@ -659,19 +1849,6 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     } else {
       showActionToast('Save failed (check console / rules).', 'danger');
     }
-  };
-
-  const addCourseToPath = (courseId: string) => {
-    if (!pathDraft) return;
-    if (pathDraft.courseIds.includes(courseId)) {
-      showActionToast('That course is already in this path.', 'neutral');
-      return;
-    }
-    setShowPathCourseRequiredHint(false);
-    setPathDraft((p) => {
-      if (!p) return p;
-      return { ...p, courseIds: [...p.courseIds, courseId] };
-    });
   };
 
   const removeCourseFromPath = (courseId: string) => {
@@ -752,11 +1929,6 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
       });
     }
   };
-
-  const availableCoursesToAdd = useMemo(() => {
-    if (!pathDraft) return [];
-    return publishedList.filter((c) => !pathDraft.courseIds.includes(c.id));
-  }, [pathDraft, publishedList]);
 
   return (
     <div className="min-w-0 w-full space-y-4">
@@ -884,46 +2056,240 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
             </label>
           </div>
 
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-            <label className="block min-w-0 flex-1 space-y-1" htmlFor="admin-path-add-course">
-              <span className="text-xs font-semibold text-[var(--text-secondary)]">Add course to path</span>
-              <select
-                id="admin-path-add-course"
-                value=""
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (v) {
-                    addCourseToPath(v);
-                    e.target.value = '';
-                  }
-                }}
-                className={`w-full min-w-0 rounded-lg border bg-[var(--bg-primary)] px-3 py-2 text-sm ${
-                  showPathCourseRequiredHint ? 'border-red-500' : 'border-[var(--border-color)]'
-                }`}
-              >
-                <option value="">Choose a published course…</option>
-                {availableCoursesToAdd.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.title} ({c.id})
-                  </option>
-                ))}
-              </select>
-              <span
-                className={`min-h-[16px] text-[11px] ${
-                  showPathCourseRequiredHint ? 'text-red-400' : 'text-transparent'
-                }`}
-              >
-                At least one course is required.
-              </span>
-            </label>
-            {availableCoursesToAdd.length === 0 ? (
-              <p className="text-xs text-[var(--text-muted)]">All published courses are already in this path.</p>
-            ) : null}
+          <div
+            id="admin-path-branches"
+            className={`space-y-3 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/40 p-4 ${
+              pathMindmapLoading ? 'pointer-events-none opacity-60' : ''
+            }`}
+          >
+            <div className="space-y-2">
+              <h3 className="text-sm font-bold text-[var(--text-primary)]">Branches (mind map)</h3>
+              <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+                Add branches below, then drag to reorder or nest. Everything saves with{' '}
+                <strong className="text-[var(--text-secondary)]">Save path</strong>.
+              </p>
+              <details className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)]/30 px-3 py-2 text-xs text-[var(--text-muted)]">
+                <summary className="cursor-pointer select-none font-semibold text-[var(--text-secondary)]">
+                  How branching works
+                </summary>
+                <div className="mt-2 space-y-2 leading-relaxed">
+                  <p>
+                    Drag the <strong className="text-[var(--text-secondary)]">grip</strong> to reorder among siblings.
+                    Drop on the <strong className="text-[var(--text-secondary)]">main part of a row</strong> (not the
+                    grip) to nest under that branch. Use the dashed strips at the{' '}
+                    <strong className="text-[var(--text-secondary)]">top or bottom</strong> of the list for top-level
+                    position.
+                  </p>
+                  <p>
+                    Edit label text inline. Use <strong className="text-[var(--text-secondary)]">Change course</strong>{' '}
+                    or <strong className="text-[var(--text-secondary)]">Change lesson</strong> to relink linked
+                    branches. The <strong className="text-[var(--text-secondary)]">chevron</strong> hides or shows nested
+                    branches. <strong className="text-[var(--text-secondary)]">Add under</strong> adds a child branch.
+                  </p>
+                  <p>
+                    Course and lesson branches feed <strong className="text-[var(--text-secondary)]">Courses in path</strong>{' '}
+                    order automatically.
+                  </p>
+                </div>
+              </details>
+            </div>
+            {pathMindmapLoading && pathSelector !== '__new__' ? (
+              <div className="flex items-center gap-2 py-4 text-sm text-[var(--text-muted)]">
+                <Loader2 size={18} className="animate-spin shrink-0" aria-hidden />
+                Loading mind map…
+              </div>
+            ) : (
+              <>
+                {pathBranchTree.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-orange-500/35 bg-orange-500/[0.07] px-4 py-6 sm:px-6">
+                    <p className="text-center text-sm font-semibold text-[var(--text-primary)]">Add your first branch</p>
+                    <p className="mt-2 text-center text-xs leading-relaxed text-[var(--text-muted)]">
+                      Start with a text label, a full course, or one lesson—you can reorder and nest afterward.
+                    </p>
+                    <div className="mt-4 flex flex-col gap-2">
+                      <button
+                        type="button"
+                        disabled={!!pathMindmapLoading && pathSelector !== '__new__'}
+                        onClick={() => setBranchModal({ kind: 'add', parentId: null, preset: 'label' })}
+                        className="flex min-h-12 w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-left transition-colors hover:border-orange-500/40 hover:bg-[var(--hover-bg)] disabled:opacity-40"
+                      >
+                        <span className="flex w-full items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
+                          <Type size={18} className="shrink-0 text-orange-500" aria-hidden />
+                          Text label
+                        </span>
+                        <span className="pl-[1.625rem] text-xs text-[var(--text-muted)]">Section or topic heading</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={
+                          (pathMindmapLoading && pathSelector !== '__new__') || publishedList.length === 0
+                        }
+                        onClick={() => setBranchModal({ kind: 'add', parentId: null, preset: 'course' })}
+                        className="flex min-h-12 w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-left transition-colors hover:border-orange-500/40 hover:bg-[var(--hover-bg)] disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <span className="flex w-full items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
+                          <GraduationCap size={18} className="shrink-0 text-blue-500" aria-hidden />
+                          Whole course
+                        </span>
+                        <span className="pl-[1.625rem] text-xs text-[var(--text-muted)]">
+                          {publishedList.length === 0
+                            ? 'Publish courses in Catalog first'
+                            : 'Link a course from the catalog'}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={
+                          (pathMindmapLoading && pathSelector !== '__new__') || publishedList.length === 0
+                        }
+                        onClick={() => setBranchModal({ kind: 'add', parentId: null, preset: 'lesson' })}
+                        className="flex min-h-12 w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-left transition-colors hover:border-orange-500/40 hover:bg-[var(--hover-bg)] disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <span className="flex w-full items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
+                          <ListVideo size={18} className="shrink-0 text-teal-500" aria-hidden />
+                          Single lesson
+                        </span>
+                        <span className="pl-[1.625rem] text-xs text-[var(--text-muted)]">
+                          {publishedList.length === 0
+                            ? 'Publish courses in Catalog first'
+                            : 'Pick a course, then a lesson'}
+                        </span>
+                      </button>
+                    </div>
+                    <p className="mt-4 text-center text-[11px] text-[var(--text-muted)]">
+                      Or use <strong className="text-[var(--text-secondary)]">Add branch</strong> below to open all
+                      options—including nested add flows.
+                    </p>
+                  </div>
+                ) : (
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={pathBranchCollisionDetection}
+                    onDragStart={handleBranchDragStart}
+                    onDragEnd={handleBranchDragEnd}
+                    onDragCancel={handleBranchDragCancel}
+                  >
+                    <PathBranchTreeList
+                      nodes={pathBranchTree}
+                      depth={0}
+                      publishedList={publishedList}
+                      expandedBranchIds={expandedBranchIds}
+                      onToggleCollapse={toggleBranchCollapse}
+                      onAddUnder={(parentId) => setBranchModal({ kind: 'add', parentId })}
+                      onRemove={(id) => setPathBranchTree((roots) => removeNodeById(roots, id))}
+                      onMove={(id, delta) =>
+                        setPathBranchTree((roots) => moveNodeInTree(roots, id, delta))
+                      }
+                      onLabelChange={(id, label) =>
+                        setPathBranchTree((roots) =>
+                          mapBranchNodeById(roots, id, (n) =>
+                            n.kind === 'label' ? { ...n, label } : n
+                          )
+                        )
+                      }
+                      onRequestEditCourse={(id) => setBranchModal({ kind: 'editCourse', nodeId: id })}
+                      onRequestEditLesson={(id) => {
+                        const node = findBranchNode(pathBranchTree, id);
+                        if (node?.kind !== 'lesson') return;
+                        setBranchModal({
+                          kind: 'editLesson',
+                          nodeId: id,
+                          courseId: node.courseId,
+                          lessonId: node.lessonId,
+                        });
+                      }}
+                      dndDisabled={!!pathMindmapLoading}
+                    />
+                    <DragOverlay dropAnimation={null}>
+                      {branchDragOverlayNode ? (
+                        <div className="flex max-w-[min(100vw-2rem,20rem)] items-center gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 shadow-lg">
+                          <GripVertical size={18} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+                          <span className="min-w-0 truncate text-sm font-semibold text-[var(--text-primary)]">
+                            {branchNodeDisplayLabel(branchDragOverlayNode, publishedList)}
+                          </span>
+                        </div>
+                      ) : null}
+                    </DragOverlay>
+                  </DndContext>
+                )}
+                <button
+                  type="button"
+                  disabled={pathMindmapLoading && pathSelector !== '__new__'}
+                  onClick={() => setBranchModal({ kind: 'add', parentId: null })}
+                  className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-orange-500/40 bg-orange-500/10 px-4 text-sm font-bold text-orange-600 dark:text-orange-400 hover:bg-orange-500/15 disabled:opacity-40 sm:w-auto"
+                >
+                  <Plus size={18} aria-hidden />
+                  Add branch
+                </button>
+              </>
+            )}
           </div>
 
-          <div>
-            <h3 className="mb-2 text-sm font-bold text-[var(--text-primary)]">Courses in path (drag to reorder)</h3>
-            <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+          {pathDraft.courseIds.length === 0 && showPathCourseRequiredHint ? (
+            <p id="admin-path-course-required-hint" className="text-xs font-semibold text-red-400">
+              Add at least one branch, or link a course via Course / Other branches, before saving.
+            </p>
+          ) : null}
+
+          <AddPathBranchModal
+            open={branchModal.kind !== 'closed'}
+            onClose={() => setBranchModal({ kind: 'closed' })}
+            catalogCourses={publishedList}
+            contextHint={branchModalContextHint}
+            addPreset={branchModal.kind === 'add' ? branchModal.preset : undefined}
+            mode={
+              branchModal.kind === 'editCourse'
+                ? 'editCourse'
+                : branchModal.kind === 'editLesson'
+                  ? 'editLesson'
+                  : 'add'
+            }
+            editLessonPreset={
+              branchModal.kind === 'editLesson'
+                ? { courseId: branchModal.courseId, lessonId: branchModal.lessonId }
+                : undefined
+            }
+            onCommit={(branch) => {
+              if (branchModal.kind === 'editCourse' || branchModal.kind === 'editLesson') {
+                const targetId = branchModal.nodeId;
+                setPathBranchTree((roots) => {
+                  const existing = findBranchNode(roots, targetId);
+                  const ch = existing?.children ?? [];
+                  if (branch.kind === 'course') {
+                    return mapBranchNodeById(roots, targetId, () => ({
+                      id: targetId,
+                      kind: 'course',
+                      courseId: branch.courseId,
+                      children: ch,
+                    }));
+                  }
+                  if (branch.kind === 'lesson') {
+                    return mapBranchNodeById(roots, targetId, () => ({
+                      id: targetId,
+                      kind: 'lesson',
+                      courseId: branch.courseId,
+                      lessonId: branch.lessonId,
+                      children: ch,
+                    }));
+                  }
+                  return roots;
+                });
+                setBranchModal({ kind: 'closed' });
+                return;
+              }
+              if (branchModal.kind === 'add') {
+                setPathBranchTree((roots) => addChildAtParent(roots, branchModal.parentId, branch));
+                setBranchModal({ kind: 'closed' });
+              }
+            }}
+          />
+
+          {pathDraft.courseIds.length > 0 ? (
+            <div id="admin-path-courses-section">
+              <h3 className="mb-2 text-sm font-bold text-[var(--text-primary)]">
+                Courses in path <span className="font-normal text-[var(--text-muted)]">(drag to reorder)</span>
+              </h3>
+              <DndContext sensors={sensors} onDragEnd={onDragEnd}>
               <SortableContext
                 items={pathDraft.courseIds.map((id) => sortablePc(id))}
                 strategy={verticalListSortingStrategy}
@@ -1019,11 +2385,8 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                 </div>
               </SortableContext>
             </DndContext>
-
-            {pathDraft.courseIds.length === 0 ? (
-              <p className="mt-3 text-center text-xs text-[var(--text-muted)]">No courses yet. Add published courses above.</p>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
 

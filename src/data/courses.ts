@@ -120,8 +120,8 @@ export const STATIC_CATALOG_FALLBACK: Course[] = [
         id: 'wd-m1',
         title: 'HTML & CSS Basics',
         lessons: [
-          { id: 'wd-l1', title: 'HTML5 Crash Course', videoUrl: 'https://www.youtube.com/watch?v=UB1O30fR-EE' },
-          { id: 'wd-l2', title: 'CSS3 Crash Course', videoUrl: 'https://www.youtube.com/watch?v=yfoY53QXEnI' },
+              { id: 'wd-l1', title: 'HTML5 Crash Course', videoUrl: 'https://www.youtube.com/watch?v=UB1O30fR-EE' },
+              { id: 'wd-l2', title: 'CSS3 Crash Course', videoUrl: 'https://www.youtube.com/watch?v=yfoY53QXEnI' },
         ]
       }
     ]

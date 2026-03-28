@@ -4,6 +4,7 @@ import { CourseCard } from './components/CourseCard';
 import { CoursePlayer } from './components/CoursePlayer';
 import { CourseOverview } from './components/CourseOverview';
 import { CourseCatalogLoadingSkeleton } from './components/CourseCatalogLoadingSkeleton';
+import { LearnerPathMindmapPanel } from './components/LearnerPathMindmapPanel';
 import { ProfilePage } from './components/ProfilePage';
 import { Certificate } from './components/Certificate';
 import { useBodyScrollLock } from './hooks/useBodyScrollLock';
@@ -2033,16 +2034,15 @@ export default function App() {
   );
 
   const renderCatalog = () => {
-    const catalogFiltersActive = Boolean(
-      searchQuery || selectedCategory !== 'All' || selectedLearningPathId != null
-    );
+    /** Search / category only — path is chosen from nav, so no “clear filters” when path is the only scope. */
+    const showCatalogClearFilters = Boolean(searchQuery || selectedCategory !== 'All');
     const selectedPathTitle =
       selectedLearningPathId != null
         ? learningPaths.find((p) => p.id === selectedLearningPathId)?.title
         : undefined;
     const catalogHeading =
-      selectedPathTitle != null
-        ? `Path: ${selectedPathTitle}`
+      selectedLearningPathId != null
+        ? (selectedPathTitle?.trim() || selectedLearningPathId)
         : searchQuery
           ? `Search Results for "${searchQuery}"`
           : 'Course Library';
@@ -2055,17 +2055,17 @@ export default function App() {
             </h1>
             <button
               type="button"
-              tabIndex={catalogFiltersActive ? 0 : -1}
-              aria-hidden={!catalogFiltersActive}
+              tabIndex={showCatalogClearFilters ? 0 : -1}
+              aria-hidden={!showCatalogClearFilters}
               onClick={clearFilters}
-              className={`inline-flex min-h-10 shrink-0 touch-manipulation items-center gap-1 rounded-lg py-1 pl-1 text-sm font-semibold text-orange-500 transition-colors hover:text-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-500 sm:gap-1.5 sm:px-0 sm:py-0 ${!catalogFiltersActive ? 'invisible pointer-events-none' : ''}`}
+              className={`inline-flex min-h-10 shrink-0 touch-manipulation items-center gap-1 rounded-lg py-1 pl-1 text-sm font-semibold text-orange-500 transition-colors hover:text-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-500 sm:gap-1.5 sm:px-0 sm:py-0 ${!showCatalogClearFilters ? 'invisible pointer-events-none' : ''}`}
             >
               <X size={16} aria-hidden />
               <span className="sm:hidden">Clear filters</span>
               <span className="hidden sm:inline">Clear all filters</span>
             </button>
           </div>
-          {!searchQuery && (
+          {!searchQuery && selectedLearningPathId == null && (
             <div
               className="-mx-4 flex gap-2 overflow-x-auto px-4 py-1.5 [-ms-overflow-style:none] [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:py-0 sm:gap-3 md:gap-4 [&::-webkit-scrollbar]:hidden"
               aria-label="Course categories"
@@ -2131,24 +2131,60 @@ export default function App() {
           )}
         </div>
 
-        <div className="relative z-0 grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4">
-          {filteredCourses.map((course, index) => (
-            <CourseCard 
-              key={course.id}
-              ref={el => courseRefs.current[index] = el}
-              course={course} 
-              onClick={(c) => handleCourseClick(c, index)} 
-              tabIndex={focusedCourseIndex === index || (focusedCourseIndex === -1 && index === 0) ? 0 : -1}
-              onKeyDown={(e) => handleCourseKeyDown(e, index)}
-              isFocused={focusedCourseIndex === index}
+        {selectedLearningPathId != null ? (
+          <div className="mb-8 min-w-0 max-w-full sm:mb-10">
+            <LearnerPathMindmapPanel
+              pathId={selectedLearningPathId}
+              pathTitle={
+                learningPaths.find((p) => p.id === selectedLearningPathId)?.title?.trim() ||
+                selectedLearningPathId
+              }
+              catalogCourses={catalogCourses}
+              onOpenCourse={(courseId) => {
+                const c = catalogCourses.find((x) => x.id === courseId);
+                if (c) handleCourseClick(c);
+              }}
+              onOpenLesson={(courseId, lessonId) => {
+                const c = catalogCourses.find((x) => x.id === courseId);
+                if (!c) return;
+                const lesson = findLessonById(c, lessonId);
+                if (!lesson) return;
+                if (user?.uid) {
+                  void enrollUserInCourse(user.uid, c.id);
+                }
+                setSelectedCourse(c);
+                setInitialLesson(lesson);
+                setCurrentView('player');
+                scrollDocumentToTop();
+              }}
             />
-          ))}
-        </div>
-        {filteredCourses.length === 0 && (
-          <div className="px-2 py-12 text-center sm:py-20">
-            <p className="text-base text-[var(--text-muted)] sm:text-lg">No courses found matching your search.</p>
           </div>
-        )}
+        ) : null}
+
+        {selectedLearningPathId == null ? (
+          <>
+            <div className="relative z-0 grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4">
+              {filteredCourses.map((course, index) => (
+                <CourseCard
+                  key={course.id}
+                  ref={(el) => (courseRefs.current[index] = el)}
+                  course={course}
+                  onClick={(c) => handleCourseClick(c, index)}
+                  tabIndex={focusedCourseIndex === index || (focusedCourseIndex === -1 && index === 0) ? 0 : -1}
+                  onKeyDown={(e) => handleCourseKeyDown(e, index)}
+                  isFocused={focusedCourseIndex === index}
+                />
+              ))}
+            </div>
+            {filteredCourses.length === 0 && (
+              <div className="px-2 py-12 text-center sm:py-20">
+                <p className="text-base text-[var(--text-muted)] sm:text-lg">
+                  No courses found matching your search.
+                </p>
+              </div>
+            )}
+          </>
+        ) : null}
       </div>
     );
   };

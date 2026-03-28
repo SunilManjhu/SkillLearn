@@ -185,7 +185,7 @@ function remapCourseToStructuredIds(course: Course, newCourseId: string): Course
   };
 }
 
-/** Sub-tabs inside Course catalog: course entries vs learning paths. */
+/** Sub-tabs inside Course catalog: course entries, learning paths. */
 type ContentCatalogSubTab = 'catalog' | 'paths';
 
 /** Pending navigation while the course draft has unsaved edits. */
@@ -757,7 +757,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
   const closeSubTabSwitchConfirm = useCallback(() => setSubTabSwitchConfirmOpen(false), []);
 
-  const confirmSwitchToPathsTab = useCallback(() => {
+  const confirmDiscardCourseDraftAndSwitch = useCallback(() => {
     if (draft && baselineJson !== null) {
       try {
         const restored = JSON.parse(baselineJson) as Course;
@@ -773,16 +773,18 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
   const closePathSubTabSwitchConfirm = useCallback(() => setPathSubTabSwitchConfirmOpen(false), []);
 
-  const confirmSwitchToCatalogFromPathsTab = useCallback(() => {
+  const confirmDiscardPathBuilderAndSwitch = useCallback(() => {
     setPathBuilderResetKey((k) => k + 1);
+    pathBuilderDirtyRef.current = false;
+    onPathsDirtyChange?.(false);
     setPathSubTabSwitchConfirmOpen(false);
     setContentCatalogSubTab('catalog');
-  }, []);
+  }, [onPathsDirtyChange]);
 
   useDialogKeyboard({
     open: subTabSwitchConfirmOpen,
     onClose: closeSubTabSwitchConfirm,
-    onPrimaryAction: confirmSwitchToPathsTab,
+    onPrimaryAction: confirmDiscardCourseDraftAndSwitch,
   });
 
   useDialogKeyboard({
@@ -794,7 +796,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   useDialogKeyboard({
     open: pathSubTabSwitchConfirmOpen,
     onClose: closePathSubTabSwitchConfirm,
-    onPrimaryAction: confirmSwitchToCatalogFromPathsTab,
+    onPrimaryAction: confirmDiscardPathBuilderAndSwitch,
   });
 
   useDialogKeyboard({
@@ -909,7 +911,9 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   ? listLoading || pathsListLoading
                   : true
             }
-            tabIndex={contentCatalogSubTab === 'catalog' || contentCatalogSubTab === 'paths' ? undefined : -1}
+            tabIndex={
+              contentCatalogSubTab === 'catalog' || contentCatalogSubTab === 'paths' ? undefined : -1
+            }
             aria-hidden={contentCatalogSubTab !== 'catalog' && contentCatalogSubTab !== 'paths'}
             onClick={() => {
               if (contentCatalogSubTab === 'catalog') {
@@ -1575,7 +1579,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   <button
                     type="button"
                     autoFocus
-                    onClick={confirmSwitchToCatalogFromPathsTab}
+                    onClick={confirmDiscardPathBuilderAndSwitch}
                     className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-orange-600 sm:w-auto"
                   >
                     Discard and switch
@@ -1632,7 +1636,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   <button
                     type="button"
                     autoFocus
-                    onClick={confirmSwitchToPathsTab}
+                    onClick={confirmDiscardCourseDraftAndSwitch}
                     className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-orange-600 sm:w-auto"
                   >
                     Discard and switch
