@@ -89,10 +89,13 @@ import {
 } from './utils/catalogSkillExtras';
 import { allPresetCatalogSkills } from './utils/catalogSkillPresets';
 import {
-  CATALOG_CATEGORIES_ROW,
-  CATALOG_MAIN_PILLS,
-  CATALOG_STATIC_MORE,
+  CATALOG_CATEGORY_PRESETS_CHANGED,
+  catalogCategoriesRowFromState,
+  DEFAULT_CATALOG_CATEGORY_PRESETS,
+  normalizeCatalogCategoryPresets,
+  type CatalogCategoryPresetsState,
 } from './utils/catalogCategoryPresets';
+import { loadCatalogCategoryPresets } from './utils/catalogCategoryPresetsFirestore';
 import { courseMatchesLibraryFilters, type LibraryFilterState } from './utils/courseTaxonomy';
 
 type View = 'home' | 'catalog' | 'player' | 'overview' | 'about' | 'careers' | 'privacy' | 'help' | 'contact' | 'status' | 'enterprise' | 'signup' | 'profile' | 'certificate' | 'admin';
@@ -401,6 +404,9 @@ export default function App() {
     skillTags: [],
     level: null,
   });
+  const [categoryPresets, setCategoryPresets] = useState<CatalogCategoryPresetsState>(() =>
+    normalizeCatalogCategoryPresets(DEFAULT_CATALOG_CATEGORY_PRESETS)
+  );
   const [focusedCourseIndex, setFocusedCourseIndex] = useState(-1);
   const [focusedFooterIndex, setFocusedFooterIndex] = useState(-1);
   const [user, setUser] = useState<User | null>(null);
@@ -466,7 +472,7 @@ export default function App() {
     adminPortalUnsavedRef.current = dirty;
   }, []);
 
-  const catalogCategoryFilterTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const catalogCategoryFilterTriggerRef = useRef<HTMLInputElement | null>(null);
   /** Bumps when admin adds a custom category (localStorage + event). */
   const [categoryFilterRevision, setCategoryFilterRevision] = useState(0);
   const [skillFilterRevision, setSkillFilterRevision] = useState(0);
@@ -1334,8 +1340,8 @@ export default function App() {
         : ADMIN_DELETE_BLOCKED_MULTI_MSG;
 
   const moreCategories = useMemo(() => {
-    const mainSet = new Set<string>(CATALOG_CATEGORIES_ROW);
-    const pool = new Set<string>([...CATALOG_STATIC_MORE]);
+    const mainSet = new Set<string>(catalogCategoriesRowFromState(categoryPresets));
+    const pool = new Set<string>([...categoryPresets.moreTopics]);
     for (const c of readCatalogCategoryExtras()) pool.add(c);
     for (const co of catalogCourses) {
       for (const cat of co.categories ?? []) {
@@ -1346,12 +1352,12 @@ export default function App() {
     return [...pool]
       .filter((c) => !mainSet.has(c))
       .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-  }, [catalogCourses, categoryFilterRevision]);
+  }, [catalogCourses, categoryFilterRevision, categoryPresets]);
 
   /** Browse menu categories — same sources as Course Library (main pills + More), excluding “All”. */
   const catalogBrowseCategories = useMemo(
-    () => [...CATALOG_MAIN_PILLS, ...moreCategories],
-    [moreCategories]
+    () => [...categoryPresets.mainPills, ...moreCategories],
+    [categoryPresets.mainPills, moreCategories]
   );
 
   const moreSkills = useMemo(() => {
@@ -1395,6 +1401,16 @@ export default function App() {
     const onExtras = () => setCategoryFilterRevision((r) => r + 1);
     window.addEventListener(CATALOG_CATEGORY_EXTRAS_CHANGED, onExtras);
     return () => window.removeEventListener(CATALOG_CATEGORY_EXTRAS_CHANGED, onExtras);
+  }, []);
+
+  useEffect(() => {
+    void loadCatalogCategoryPresets().then(setCategoryPresets);
+  }, []);
+
+  useEffect(() => {
+    const onPresets = () => void loadCatalogCategoryPresets().then(setCategoryPresets);
+    window.addEventListener(CATALOG_CATEGORY_PRESETS_CHANGED, onPresets);
+    return () => window.removeEventListener(CATALOG_CATEGORY_PRESETS_CHANGED, onPresets);
   }, []);
 
   useEffect(() => {
@@ -2380,7 +2396,7 @@ export default function App() {
             currentView === 'catalog' && selectedLearningPathId == null ? (
               <CourseLibraryCategoryFilter
                 ref={catalogCategoryFilterTriggerRef}
-                mainTopics={CATALOG_MAIN_PILLS}
+                mainTopics={categoryPresets.mainPills}
                 moreTopics={moreCategories}
                 mainSkills={allPresetCatalogSkills()}
                 moreSkills={moreSkills}

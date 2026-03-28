@@ -1,4 +1,4 @@
-import { allPresetCatalogCategories } from './catalogCategoryPresets';
+import { allPresetCatalogCategoriesFromState, getCachedCatalogCategoryPresets } from './catalogCategoryPresets';
 
 const STORAGE_KEY = 'skilllearn.catalogCategoryExtras';
 
@@ -55,7 +55,9 @@ export function replaceCatalogCategoryExtra(oldName: string, newName: string): v
   const o = oldName.trim();
   const n = newName.trim();
   if (!o || !n) return;
-  const presetLower = new Set(allPresetCatalogCategories().map((x) => x.toLowerCase()));
+  const presetLower = new Set(
+    allPresetCatalogCategoriesFromState(getCachedCatalogCategoryPresets()).map((x) => x.toLowerCase())
+  );
   let next = readCatalogCategoryExtras().filter((c) => c.toLowerCase() !== o.toLowerCase());
   if (!presetLower.has(n.toLowerCase()) && !next.some((c) => c.toLowerCase() === n.toLowerCase())) {
     next.push(n);

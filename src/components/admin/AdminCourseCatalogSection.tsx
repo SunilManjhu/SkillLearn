@@ -7,6 +7,7 @@ import {
   Plus,
   Route,
   Save,
+  SlidersHorizontal,
   Tags,
   Trash2,
   RefreshCw,
@@ -19,6 +20,7 @@ import { useDialogKeyboard } from '../../hooks/useDialogKeyboard';
 import { useAdminActionToast } from './useAdminActionToast';
 import { PathBuilderSection, type PathBuilderSectionHandle } from './PathBuilderSection';
 import { AdminCatalogCategoriesPanel } from './AdminCatalogCategoriesPanel';
+import { AdminCatalogCategoryPresetsPanel } from './AdminCatalogCategoryPresetsPanel';
 import type { Course, Lesson, Module } from '../../data/courses';
 import { STRUCTURED_COURSE_ID_RE, isStructuredCourseId } from '../../utils/courseStructuredIds';
 import { validateCourseDraft } from '../../utils/courseDraftValidation';
@@ -39,9 +41,15 @@ import {
 } from '../../utils/catalogSkillExtras';
 import { allPresetCatalogSkills } from '../../utils/catalogSkillPresets';
 import {
-  allPresetCatalogCategories,
-  defaultNewCourseCategory,
+  allPresetCatalogCategoriesFromState,
+  CATALOG_CATEGORY_PRESETS_CHANGED,
+  DEFAULT_CATALOG_CATEGORY_PRESETS,
+  defaultNewCourseCategoryFromState,
+  getCachedCatalogCategoryPresets,
+  normalizeCatalogCategoryPresets,
+  type CatalogCategoryPresetsState,
 } from '../../utils/catalogCategoryPresets';
+import { loadCatalogCategoryPresets } from '../../utils/catalogCategoryPresetsFirestore';
 import { dedupeLabelsPreserveOrder, normalizeCourseTaxonomy } from '../../utils/courseTaxonomy';
 
 function deepClone<T>(x: T): T {
@@ -153,7 +161,7 @@ function emptyCourse(docId: string): Course {
     level: 'Beginner',
     duration: '1h',
     rating: 4.5,
-    categories: [defaultNewCourseCategory()],
+    categories: [defaultNewCourseCategoryFromState(getCachedCatalogCategoryPresets())],
     skills: [],
     modules: [
       {
@@ -196,7 +204,7 @@ function remapCourseToStructuredIds(course: Course, newCourseId: string): Course
 }
 
 /** Sub-tabs inside Course catalog: course entries, learning paths, category management. */
-type ContentCatalogSubTab = 'catalog' | 'paths' | 'categories';
+type ContentCatalogSubTab = 'catalog' | 'paths' | 'categories' | 'presets';
 
 /** Pending navigation while the course draft has unsaved edits. */
 type CourseLeaveDialog =
@@ -267,10 +275,13 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const [pathBuilderResetKey, setPathBuilderResetKey] = useState(0);
   const pathBuilderRef = useRef<PathBuilderSectionHandle | null>(null);
   const [pathsListLoading, setPathsListLoading] = useState(false);
+  const [categoryPresetsState, setCategoryPresetsState] = useState<CatalogCategoryPresetsState>(() =>
+    normalizeCatalogCategoryPresets(DEFAULT_CATALOG_CATEGORY_PRESETS)
+  );
 
   /** Full list for adding categories (presets, saved extras, labels from published courses). */
   const categorySelectOptions = useMemo(() => {
-    const s = new Set<string>(allPresetCatalogCategories());
+    const s = new Set<string>(allPresetCatalogCategoriesFromState(categoryPresetsState));
     for (const c of readCatalogCategoryExtras()) s.add(c);
     for (const co of publishedList) {
       for (const cat of co.categories ?? []) {
@@ -279,7 +290,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       }
     }
     return [...s].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-  }, [publishedList, categoryOptionsVersion]);
+  }, [publishedList, categoryOptionsVersion, categoryPresetsState]);
 
   /** Full list for adding skills (presets, saved extras, labels from published courses). */
   const skillSelectOptions = useMemo(() => {
@@ -355,6 +366,24 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     setCatalogRequested(true);
     void refreshList();
   }, [contentCatalogSubTab, refreshList]);
+
+  useEffect(() => {
+    if (contentCatalogSubTab !== 'presets') return;
+    catalogRequestedRef.current = true;
+    setCatalogRequested(true);
+    void loadCatalogCategoryPresets().then(setCategoryPresetsState);
+  }, [contentCatalogSubTab]);
+
+  useEffect(() => {
+    if (!catalogRequested) return;
+    void loadCatalogCategoryPresets().then(setCategoryPresetsState);
+  }, [catalogRequested]);
+
+  useEffect(() => {
+    const h = () => void loadCatalogCategoryPresets().then(setCategoryPresetsState);
+    window.addEventListener(CATALOG_CATEGORY_PRESETS_CHANGED, h);
+    return () => window.removeEventListener(CATALOG_CATEGORY_PRESETS_CHANGED, h);
+  }, []);
 
   const onCategoryRenamedGlobally = useCallback((fromLower: string, newExact: string) => {
     setDraft((d) => {
@@ -849,8 +878,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
   /** Ref updated by PathBuilder via onPathsDirtyChange — read before opening catalog tab confirm. */
   const pathBuilderDirtyRef = useRef(false);
-  const courseDiscardTargetRef = useRef<'paths' | 'categories' | 'catalog'>('paths');
-  const pathDiscardTargetRef = useRef<'catalog' | 'categories'>('catalog');
+  const courseDiscardTargetRef = useRef<'paths' | 'categories' | 'catalog' | 'presets'>('paths');
+  const pathDiscardTargetRef = useRef<'catalog' | 'categories' | 'presets'>('catalog');
   const setPathBuilderDirty = useCallback(
     (dirty: boolean) => {
       pathBuilderDirtyRef.current = dirty;
@@ -873,13 +902,13 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           setContentCatalogSubTab('catalog');
           return;
         }
-        if (next === 'categories') {
+        if (next === 'categories' || next === 'presets') {
           if (pathBuilderDirtyRef.current) {
-            pathDiscardTargetRef.current = 'categories';
+            pathDiscardTargetRef.current = next;
             setPathSubTabSwitchConfirmOpen(true);
             return;
           }
-          setContentCatalogSubTab('categories');
+          setContentCatalogSubTab(next);
           return;
         }
         return;
@@ -895,12 +924,12 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           setSubTabSwitchConfirmOpen(true);
           return;
         }
-        if (next === 'categories') {
+        if (next === 'categories' || next === 'presets') {
           if (!isDirty) {
-            setContentCatalogSubTab('categories');
+            setContentCatalogSubTab(next);
             return;
           }
-          courseDiscardTargetRef.current = 'categories';
+          courseDiscardTargetRef.current = next;
           setSubTabSwitchConfirmOpen(true);
           return;
         }
@@ -924,6 +953,36 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           }
           courseDiscardTargetRef.current = 'paths';
           setSubTabSwitchConfirmOpen(true);
+          return;
+        }
+        if (next === 'presets') {
+          setContentCatalogSubTab('presets');
+          return;
+        }
+        return;
+      }
+
+      if (contentCatalogSubTab === 'presets') {
+        if (next === 'catalog') {
+          if (!isDirty) {
+            setContentCatalogSubTab('catalog');
+            return;
+          }
+          courseDiscardTargetRef.current = 'catalog';
+          setSubTabSwitchConfirmOpen(true);
+          return;
+        }
+        if (next === 'paths') {
+          if (!isDirty) {
+            setContentCatalogSubTab('paths');
+            return;
+          }
+          courseDiscardTargetRef.current = 'paths';
+          setSubTabSwitchConfirmOpen(true);
+          return;
+        }
+        if (next === 'categories') {
+          setContentCatalogSubTab('categories');
           return;
         }
       }
@@ -1085,21 +1144,23 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 ? listLoading
                 : contentCatalogSubTab === 'paths'
                   ? listLoading || pathsListLoading
-                  : contentCatalogSubTab === 'categories'
+                  : contentCatalogSubTab === 'categories' || contentCatalogSubTab === 'presets'
                     ? listLoading
                     : true
             }
             tabIndex={
               contentCatalogSubTab === 'catalog' ||
               contentCatalogSubTab === 'paths' ||
-              contentCatalogSubTab === 'categories'
+              contentCatalogSubTab === 'categories' ||
+              contentCatalogSubTab === 'presets'
                 ? undefined
                 : -1
             }
             aria-hidden={
               contentCatalogSubTab !== 'catalog' &&
               contentCatalogSubTab !== 'paths' &&
-              contentCatalogSubTab !== 'categories'
+              contentCatalogSubTab !== 'categories' &&
+              contentCatalogSubTab !== 'presets'
             }
             onClick={() => {
               if (contentCatalogSubTab === 'catalog') {
@@ -1115,12 +1176,18 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               }
               if (contentCatalogSubTab === 'categories') {
                 void refreshList();
+                return;
+              }
+              if (contentCatalogSubTab === 'presets') {
+                void refreshList();
+                void loadCatalogCategoryPresets().then(setCategoryPresetsState);
               }
             }}
             className={`inline-flex min-h-10 items-center gap-2 rounded-lg border border-[var(--border-color)] px-3 py-2 text-xs font-semibold hover:bg-[var(--hover-bg)] disabled:opacity-50 ${
               contentCatalogSubTab !== 'catalog' &&
               contentCatalogSubTab !== 'paths' &&
-              contentCatalogSubTab !== 'categories'
+              contentCatalogSubTab !== 'categories' &&
+              contentCatalogSubTab !== 'presets'
                 ? 'invisible pointer-events-none'
                 : ''
             }`}
@@ -1130,7 +1197,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               className={
                 (contentCatalogSubTab === 'catalog' && listLoading) ||
                 (contentCatalogSubTab === 'paths' && (listLoading || pathsListLoading)) ||
-                (contentCatalogSubTab === 'categories' && listLoading)
+                ((contentCatalogSubTab === 'categories' || contentCatalogSubTab === 'presets') &&
+                  listLoading)
                   ? 'animate-spin'
                   : ''
               }
@@ -1170,6 +1238,16 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         >
           <Tags size={14} aria-hidden />
           Categories
+        </button>
+        <button
+          type="button"
+          onClick={() => requestContentCatalogSubTab('presets')}
+          className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold ${
+            contentCatalogSubTab === 'presets' ? 'bg-orange-500/20 text-orange-500' : 'text-[var(--text-secondary)]'
+          }`}
+        >
+          <SlidersHorizontal size={14} aria-hidden />
+          Topic presets
         </button>
       </div>
 
@@ -1851,7 +1929,13 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           onCatalogChanged={onCatalogChanged}
           showActionToast={showActionToast}
           onCategoryRenamedGlobally={onCategoryRenamedGlobally}
+          presetCategoriesList={allPresetCatalogCategoriesFromState(categoryPresetsState)}
+          defaultPresetCategory={defaultNewCourseCategoryFromState(categoryPresetsState)}
         />
+      )}
+
+      {contentCatalogSubTab === 'presets' && (
+        <AdminCatalogCategoryPresetsPanel showActionToast={showActionToast} onCatalogChanged={onCatalogChanged} />
       )}
 
       {contentCatalogSubTab === 'paths' && (

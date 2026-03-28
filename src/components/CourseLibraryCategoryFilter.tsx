@@ -63,18 +63,23 @@ function FilterTagButton({ label, selected, onToggle }: TagRowProps) {
 }
 
 /**
- * Search-style control opening a dropdown card: categories (multi), skills (multi), level (single).
+ * Single search field + chips open a dropdown: categories (multi), skills (multi), level (single).
+ * The same query filters visible tags in the panel (no second search inside the dropdown).
  */
-export const CourseLibraryCategoryFilter = forwardRef<HTMLButtonElement, CourseLibraryCategoryFilterProps>(
+export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLibraryCategoryFilterProps>(
   function CourseLibraryCategoryFilter(
     { mainTopics, moreTopics, mainSkills, moreSkills, filters, onFiltersChange },
     ref
   ) {
     const panelId = useId();
+    /** Stable id for tests / focus targets (navbar filter). */
+    const inputId = 'course-library-category-filter-trigger';
     const rootRef = useRef<HTMLDivElement>(null);
     const panelRef = useRef<HTMLDivElement>(null);
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState('');
+    /** True while focus is inside the bar or dropdown — hides placeholders (no stacked hints). */
+    const [filterFocusedWithin, setFilterFocusedWithin] = useState(false);
 
     const categoryPool = useMemo(() => [...mainTopics, ...moreTopics], [mainTopics, moreTopics]);
     const skillPool = useMemo(() => [...mainSkills, ...moreSkills], [mainSkills, moreSkills]);
@@ -123,10 +128,10 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLButtonElement, CourseL
             e.stopPropagation();
             onRemove();
           }}
-          className="inline-flex max-w-[min(100%,12rem)] shrink-0 items-center gap-1.5 rounded-full border border-[var(--border-color)] bg-[var(--hover-bg)] px-2 py-1 text-left text-xs font-medium text-[var(--text-primary)] outline-none transition-colors hover:bg-[var(--border-color)]/40 focus-visible:ring-2 focus-visible:ring-orange-500/60 focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--bg-secondary)]"
+          className="inline-flex max-w-[min(100%,18rem)] shrink-0 items-center gap-1.5 rounded-full border border-[var(--border-color)] bg-[var(--hover-bg)] px-2 py-1 text-left text-xs font-medium text-[var(--text-primary)] outline-none transition-colors hover:bg-[var(--border-color)]/40 focus-visible:ring-2 focus-visible:ring-orange-500/60 focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--bg-secondary)]"
         >
           {dot}
-          <span className="min-w-0 truncate">{label}</span>
+          <span className="min-w-0 flex-1 truncate">{label}</span>
           <span className="mx-0.5 h-3 w-px shrink-0 bg-[var(--border-color)]" aria-hidden />
           <X size={12} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
         </button>
@@ -158,10 +163,6 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLButtonElement, CourseL
       return () => window.removeEventListener('keydown', onKey, true);
     }, [open]);
 
-    useEffect(() => {
-      if (!open) setQuery('');
-    }, [open]);
-
     const toggleCategory = (label: string) => {
       onFiltersChange({
         ...filters,
@@ -191,14 +192,31 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLButtonElement, CourseL
         visibleLevels.length >
       0;
 
+    const inputPlaceholder =
+      filterFocusedWithin || query.trim() !== ''
+        ? ''
+        : activeCount > 0
+          ? 'Find tags to add…'
+          : 'Filter courses…';
+
     return (
-      <div ref={rootRef} className="relative min-w-0">
+      <div
+        ref={rootRef}
+        className="relative min-w-0"
+        onFocusCapture={() => setFilterFocusedWithin(true)}
+        onBlurCapture={(e) => {
+          const next = e.relatedTarget as Node | null;
+          if (!next || !rootRef.current?.contains(next)) {
+            setFilterFocusedWithin(false);
+          }
+        }}
+      >
         <div
           className="flex w-full min-w-0 items-stretch gap-0.5 rounded-full border border-[var(--border-color)] bg-[var(--bg-secondary)] py-1 pl-2 pr-0.5 shadow-sm transition-colors focus-within:border-orange-500/40 focus-within:ring-1 focus-within:ring-orange-500/25"
           role="group"
           aria-label="Course filters"
         >
-          <Search size={16} className="ml-1 hidden shrink-0 self-center text-[var(--text-muted)] sm:block" aria-hidden />
+          <Search size={16} className="ml-1 shrink-0 self-center text-[var(--text-muted)]" aria-hidden />
           <div className="flex min-h-10 min-w-0 flex-1 items-center gap-1.5 overflow-x-auto overscroll-x-contain py-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {filters.categoryTags.map((tag) =>
               renderActiveChip(
@@ -222,18 +240,29 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLButtonElement, CourseL
                   onFiltersChange({ ...filters, level: null })
                 )
               : null}
-            <button
+            <label htmlFor={inputId} className="sr-only">
+              {activeCount > 0
+                ? 'Find more topics, skills, or a level to add to your filters'
+                : 'Search topics, skills, and levels to filter the catalog'}
+            </label>
+            <input
               ref={ref}
-              type="button"
-              id="course-library-category-filter-trigger"
+              id={inputId}
+              type="search"
+              enterKeyHint="search"
+              autoComplete="off"
               aria-expanded={open}
               aria-controls={panelId}
               aria-haspopup="dialog"
-              onClick={() => setOpen((o) => !o)}
-              className="min-h-9 min-w-0 flex-1 shrink-0 rounded-lg px-2 py-1.5 text-left text-sm text-[var(--text-muted)] outline-none transition-colors hover:text-[var(--text-secondary)] focus-visible:ring-2 focus-visible:ring-orange-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)] sm:min-w-[7rem]"
-            >
-              {activeCount === 0 ? 'Filter courses…' : 'Add tag'}
-            </button>
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setOpen(true);
+              }}
+              onFocus={() => setOpen(true)}
+              placeholder={inputPlaceholder}
+              className="min-h-9 min-w-[6rem] flex-1 shrink-0 border-0 bg-transparent px-2 py-1.5 text-sm text-[var(--text-primary)] shadow-none outline-none ring-0 placeholder:text-[var(--text-muted)] focus:border-0 focus:ring-0 focus-visible:outline-none focus-visible:ring-0 sm:min-w-[8rem] [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none"
+            />
           </div>
           <div className="flex shrink-0 items-center self-stretch">
             <button
@@ -270,29 +299,7 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLButtonElement, CourseL
             aria-label="Course filters"
             className="filterWindow dropdown card absolute left-0 right-0 top-full z-50 mt-2 max-h-[min(75vh,32rem)] overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl sm:left-0 sm:right-auto sm:w-[min(100%,26rem)]"
           >
-            <div className="border-b border-[var(--border-color)] p-3">
-              <label htmlFor={`${panelId}-q`} className="sr-only">
-                Find a tag in the lists below
-              </label>
-              <div className="relative">
-                <Search
-                  size={16}
-                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
-                  aria-hidden
-                />
-                <input
-                  id={`${panelId}-q`}
-                  type="search"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Find a tag in the lists below…"
-                  autoFocus
-                  className="min-h-10 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] py-2 pl-9 pr-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-orange-500 focus:outline-none"
-                />
-              </div>
-            </div>
-
-            <div className="max-h-[min(58vh,24rem)] overflow-y-auto overscroll-contain px-3 py-3">
+            <div className="max-h-[min(65vh,28rem)] overflow-y-auto overscroll-contain px-3 py-3">
               {visibleMainCat.length > 0 ? (
                 <section className="mb-4">
                   <div className="title mb-2 text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">

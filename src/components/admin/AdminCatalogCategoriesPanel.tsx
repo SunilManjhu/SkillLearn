@@ -10,8 +10,10 @@ import {
   removeCatalogCategoryExtra,
   replaceCatalogCategoryExtra,
 } from '../../utils/catalogCategoryExtras';
-import { allPresetCatalogCategories, defaultNewCourseCategory } from '../../utils/catalogCategoryPresets';
 import { dedupeLabelsPreserveOrder } from '../../utils/courseTaxonomy';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
+import { useDialogKeyboard } from '../../hooks/useDialogKeyboard';
+import type { AdminActionToastVariant } from './useAdminActionToast';
 
 function replaceLabelInCategories(categories: string[], fromLower: string, newExact: string): string[] {
   const next = categories.map((cat) =>
@@ -19,9 +21,6 @@ function replaceLabelInCategories(categories: string[], fromLower: string, newEx
   );
   return dedupeLabelsPreserveOrder(next);
 }
-import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
-import { useDialogKeyboard } from '../../hooks/useDialogKeyboard';
-import type { AdminActionToastVariant } from './useAdminActionToast';
 
 export type AdminCatalogCategoriesPanelProps = {
   publishedList: Course[];
@@ -30,6 +29,10 @@ export type AdminCatalogCategoriesPanelProps = {
   showActionToast: (msg: string, variant?: AdminActionToastVariant) => void;
   /** Keeps an open course draft in sync when its category string was renamed everywhere. */
   onCategoryRenamedGlobally: (fromLower: string, newExact: string) => void;
+  /** Firestore-backed preset list (popular + more topics). */
+  presetCategoriesList: string[];
+  /** First popular topic — fallback when reassigning. */
+  defaultPresetCategory: string;
 };
 
 type CustomRow = {
@@ -45,6 +48,8 @@ export const AdminCatalogCategoriesPanel: React.FC<AdminCatalogCategoriesPanelPr
   onCatalogChanged,
   showActionToast,
   onCategoryRenamedGlobally,
+  presetCategoriesList,
+  defaultPresetCategory,
 }) => {
   const [extrasTick, setExtrasTick] = useState(0);
   const [renameModal, setRenameModal] = useState<CustomRow | null>(null);
@@ -60,10 +65,10 @@ export const AdminCatalogCategoriesPanel: React.FC<AdminCatalogCategoriesPanelPr
   }, []);
 
   const presetLower = useMemo(
-    () => new Set(allPresetCatalogCategories().map((x) => x.toLowerCase())),
-    []
+    () => new Set(presetCategoriesList.map((x) => x.toLowerCase())),
+    [presetCategoriesList]
   );
-  const presetList = useMemo(() => allPresetCatalogCategories(), []);
+  const presetList = presetCategoriesList;
 
   const customRows: CustomRow[] = useMemo(() => {
     const extras = readCatalogCategoryExtras();
@@ -95,7 +100,7 @@ export const AdminCatalogCategoriesPanel: React.FC<AdminCatalogCategoriesPanelPr
   }, [publishedList, presetLower, extrasTick]);
 
   const reassignOptions = useMemo(() => {
-    const s = new Set<string>(allPresetCatalogCategories());
+    const s = new Set<string>(presetCategoriesList);
     for (const c of readCatalogCategoryExtras()) {
       const t = c.trim();
       if (t) s.add(t);
@@ -107,7 +112,7 @@ export const AdminCatalogCategoriesPanel: React.FC<AdminCatalogCategoriesPanelPr
       }
     }
     return [...s].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-  }, [publishedList, extrasTick]);
+  }, [publishedList, extrasTick, presetCategoriesList]);
 
   const openRename = (row: CustomRow) => {
     setRenameValue(row.display);
@@ -243,15 +248,16 @@ export const AdminCatalogCategoriesPanel: React.FC<AdminCatalogCategoriesPanelPr
   useEffect(() => {
     if (!reassignModal) return;
     const pick =
-      reassignOptions.find((o) => o.toLowerCase() !== reassignModal.keyLower) ?? defaultNewCourseCategory();
+      reassignOptions.find((o) => o.toLowerCase() !== reassignModal.keyLower) ?? defaultPresetCategory;
     setReassignTarget(pick);
-  }, [reassignModal, reassignOptions]);
+  }, [reassignModal, reassignOptions, defaultPresetCategory]);
 
   return (
     <div className="min-w-0 space-y-6">
       <p className="text-xs leading-relaxed text-[var(--text-muted)]">
-        <strong className="text-[var(--text-secondary)]">Built-in</strong> categories are fixed labels shared with the
-        course library filters. <strong className="text-[var(--text-secondary)]">Custom</strong> names are anything else
+        <strong className="text-[var(--text-secondary)]">Preset</strong> categories are edited under the{' '}
+        <strong className="text-[var(--text-secondary)]">Topic presets</strong> tab and power the library filter.{' '}
+        <strong className="text-[var(--text-secondary)]">Custom</strong> names are anything else
         (saved when you publish a course or add one in Catalog). <strong className="text-[var(--text-secondary)]">
           Rename
         </strong>{' '}
@@ -264,10 +270,11 @@ export const AdminCatalogCategoriesPanel: React.FC<AdminCatalogCategoriesPanelPr
       <section className="space-y-2 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/40 p-4">
         <h3 className="flex items-center gap-2 text-sm font-bold text-[var(--text-primary)]">
           <Tags size={16} className="shrink-0 text-orange-500" aria-hidden />
-          Built-in categories
+          Preset categories
         </h3>
         <p className="text-xs text-[var(--text-muted)]">
-          To use a different label on a course, pick one of these or add a custom name in the Catalog editor.
+          Change these lists in <strong className="text-[var(--text-secondary)]">Topic presets</strong>. In the Catalog
+          editor, pick one of these or add a custom name.
         </p>
         <ul className="flex flex-wrap gap-2 pt-1">
           {presetList.map((p) => (
