@@ -474,8 +474,28 @@ service cloud.firestore {
     }
 
     // Ordered Gemini model ids + per-model on/off for in-app AI. Falls back to build env when doc missing.
-    function geminiEnabledFlagsAllBool(flags, i) {
-      return i >= flags.size() || (flags[i] is bool && geminiEnabledFlagsAllBool(flags, i + 1));
+    // No recursion (Firestore rules disallow it): each index j is bool or past end of list (flags.size() <= j).
+    function geminiEnabledFlagsAllBool(flags) {
+      return (flags.size() <= 0 || flags[0] is bool) &&
+        (flags.size() <= 1 || flags[1] is bool) &&
+        (flags.size() <= 2 || flags[2] is bool) &&
+        (flags.size() <= 3 || flags[3] is bool) &&
+        (flags.size() <= 4 || flags[4] is bool) &&
+        (flags.size() <= 5 || flags[5] is bool) &&
+        (flags.size() <= 6 || flags[6] is bool) &&
+        (flags.size() <= 7 || flags[7] is bool) &&
+        (flags.size() <= 8 || flags[8] is bool) &&
+        (flags.size() <= 9 || flags[9] is bool) &&
+        (flags.size() <= 10 || flags[10] is bool) &&
+        (flags.size() <= 11 || flags[11] is bool) &&
+        (flags.size() <= 12 || flags[12] is bool) &&
+        (flags.size() <= 13 || flags[13] is bool) &&
+        (flags.size() <= 14 || flags[14] is bool) &&
+        (flags.size() <= 15 || flags[15] is bool) &&
+        (flags.size() <= 16 || flags[16] is bool) &&
+        (flags.size() <= 17 || flags[17] is bool) &&
+        (flags.size() <= 18 || flags[18] is bool) &&
+        (flags.size() <= 19 || flags[19] is bool);
     }
 
     function isValidGeminiAiModelsWrite(data) {
@@ -483,7 +503,7 @@ service cloud.firestore {
         data.keys().hasOnly(['modelIds', 'updatedAt', 'enabledFlags']) &&
         data.modelIds is list && data.modelIds.size() >= 1 && data.modelIds.size() <= 20 &&
         data.enabledFlags is list && data.enabledFlags.size() == data.modelIds.size() &&
-        geminiEnabledFlagsAllBool(data.enabledFlags, 0) &&
+        geminiEnabledFlagsAllBool(data.enabledFlags) &&
         data.updatedAt is timestamp;
     }
 
