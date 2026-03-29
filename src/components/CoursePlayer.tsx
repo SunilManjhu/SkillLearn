@@ -59,7 +59,8 @@ import {
 } from '../utils/courseRating';
 import { useYoutubeResolvedSeconds } from '../hooks/useYoutubeResolvedSeconds';
 import { formatAuthError } from '../utils/authErrors';
-import { lessonWebHref } from '../utils/lessonContent';
+import { lessonBlocksVideoPlayback, lessonQuizDefinition, lessonWebHref } from '../utils/lessonContent';
+import { CourseQuizPanel } from './CourseQuizPanel';
 
 /**
  * Frost + resume blocker wait this long after a user pause so sub‑100ms glitches don’t flash the UI.
@@ -323,7 +324,11 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
 
   const webLessonHref = useMemo(() => lessonWebHref(currentLesson), [currentLesson]);
   const isWebLessonRow = webLessonHref != null;
-  const activeVideoUrl = isWebLessonRow
+  const isQuizKindLesson = currentLesson.contentKind === 'quiz';
+  const quizDefinition = useMemo(() => lessonQuizDefinition(currentLesson), [currentLesson]);
+  const isQuizLessonRow = isQuizKindLesson && quizDefinition != null;
+  const blocksVideoPlayback = isWebLessonRow || isQuizKindLesson;
+  const activeVideoUrl = blocksVideoPlayback
     ? ''
     : customVideoUrl || userSuggestion || currentLesson.videoUrl;
   const youtubeEmbedUrl = youtubeUrlToEmbedUrl(activeVideoUrl);
@@ -376,7 +381,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
       if (last && last.d > 0) mergeProgress(lesson.id, last.t, last.d);
     };
 
-    if (lessonWebHref(lesson)) {
+    if (lessonBlocksVideoPlayback(lesson)) {
       fallback();
       return;
     }
@@ -435,7 +440,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   }, [clearUnpauseFrostLinger]);
 
   const resumePlayback = useCallback(() => {
-    if (lessonWebHref(lessonRef.current)) return;
+    if (lessonBlocksVideoPlayback(lessonRef.current)) return;
     if (youtubeEmbedUrl) {
       try {
         (ytPlayerRef.current as { playVideo?: () => void } | null)?.playVideo?.();
@@ -449,7 +454,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   }, [youtubeEmbedUrl]);
 
   const togglePlaybackFromKeyboard = useCallback(() => {
-    if (lessonWebHref(lessonRef.current)) return;
+    if (lessonBlocksVideoPlayback(lessonRef.current)) return;
     if (youtubeEmbedUrl) {
       const p = ytPlayerRef.current as {
         getPlayerState?: () => number;
@@ -677,7 +682,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   const seekActiveVideoBySeconds = useCallback(
     (deltaSeconds: number) => {
       if (!Number.isFinite(deltaSeconds) || deltaSeconds === 0) return;
-      if (lessonWebHref(lessonRef.current)) return;
+      if (lessonBlocksVideoPlayback(lessonRef.current)) return;
       if (
         isCustomizeModalOpenRef.current ||
         isReportModalOpenRef.current ||
@@ -934,7 +939,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   }, [course.id, currentLesson.id, progressByLesson, progressUserId]);
 
   const showReplayCta =
-    !isWebLessonRow &&
+    !blocksVideoPlayback &&
     isLessonPlaybackComplete(persistedProgressForCurrentLesson) &&
     !replayUiSuppressed &&
     mediaPaused;
@@ -2218,11 +2223,11 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
           <video
             key={currentLesson.id}
             ref={videoRef}
-            src={youtubeEmbedUrl || isWebLessonRow ? undefined : activeVideoUrl}
+            src={youtubeEmbedUrl || blocksVideoPlayback ? undefined : activeVideoUrl}
             className={`absolute inset-0 h-full w-full object-contain ${
-              youtubeEmbedUrl || isWebLessonRow ? 'hidden' : 'z-0'
+              youtubeEmbedUrl || blocksVideoPlayback ? 'hidden' : 'z-0'
             }`}
-            controls={!youtubeEmbedUrl && !isWebLessonRow}
+            controls={!youtubeEmbedUrl && !blocksVideoPlayback}
             onLoadedMetadata={handleNativeLoadedMetadata}
             onTimeUpdate={() => {
               const v = videoRef.current;
@@ -2325,6 +2330,27 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
               ) : (
                 <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">Completed</p>
               )}
+            </div>
+          ) : null}
+
+          {isQuizLessonRow && quizDefinition ? (
+            <div className="absolute inset-0 z-[25] flex min-h-0 flex-col overflow-hidden bg-[var(--bg-secondary)]">
+              <CourseQuizPanel
+                courseId={course.id}
+                courseTitle={course.title}
+                lesson={currentLesson}
+                quiz={quizDefinition}
+                user={user ?? null}
+                onMarkComplete={handleWebLessonMarkDone}
+              />
+            </div>
+          ) : isQuizKindLesson ? (
+            <div className="absolute inset-0 z-[25] flex flex-col items-center justify-center gap-3 overflow-y-auto bg-[var(--bg-secondary)] p-5 text-center">
+              <p className="text-sm font-semibold text-[var(--text-primary)]">Quiz unavailable</p>
+              <p className="max-w-md text-sm text-[var(--text-secondary)]">
+                This lesson is set as a quiz but has no questions yet. The course author can add questions in the admin
+                catalog.
+              </p>
             </div>
           ) : null}
 
@@ -2689,6 +2715,10 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                     <span className="rounded-full border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">
                       External page
                     </span>
+                  ) : isQuizKindLesson ? (
+                    <span className="rounded-full border border-orange-500/30 bg-orange-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-orange-500">
+                      Quiz
+                    </span>
                   ) : (
                     <span
                       className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
@@ -2707,7 +2737,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
               </div>
               
               <div className="flex items-center gap-2">
-                {!isWebLessonRow ? (
+                {!blocksVideoPlayback ? (
                   <>
                     <button
                       onClick={() => setIsCustomizeModalOpen(true)}

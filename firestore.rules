@@ -199,6 +199,53 @@ service cloud.firestore {
              data.submittedAt is timestamp;
     }
 
+    function validQuizAttemptQuestionEntry(e) {
+      return e is map &&
+             e.keys().hasAll(['questionId', 'type', 'score']) &&
+             e.keys().hasOnly(['questionId', 'type', 'score', 'correct', 'chosenIndex', 'aiFeedback']) &&
+             e.questionId is string && e.questionId.size() > 0 && e.questionId.size() < 200 &&
+             e.type in ['mcq', 'freeform'] &&
+             e.score is number && e.score >= 0 && e.score <= 100 &&
+             (!('correct' in e) || e.correct is bool) &&
+             (!('chosenIndex' in e) || (e.chosenIndex is int && e.chosenIndex >= 0 && e.chosenIndex < 64)) &&
+             (!('aiFeedback' in e) || (e.aiFeedback is string && e.aiFeedback.size() < 8000));
+    }
+
+    function validQuizAttemptPerQuestionList(q) {
+      return q is list && q.size() > 0 && q.size() <= 20 &&
+             (q.size() < 1 || validQuizAttemptQuestionEntry(q[0])) &&
+             (q.size() < 2 || validQuizAttemptQuestionEntry(q[1])) &&
+             (q.size() < 3 || validQuizAttemptQuestionEntry(q[2])) &&
+             (q.size() < 4 || validQuizAttemptQuestionEntry(q[3])) &&
+             (q.size() < 5 || validQuizAttemptQuestionEntry(q[4])) &&
+             (q.size() < 6 || validQuizAttemptQuestionEntry(q[5])) &&
+             (q.size() < 7 || validQuizAttemptQuestionEntry(q[6])) &&
+             (q.size() < 8 || validQuizAttemptQuestionEntry(q[7])) &&
+             (q.size() < 9 || validQuizAttemptQuestionEntry(q[8])) &&
+             (q.size() < 10 || validQuizAttemptQuestionEntry(q[9])) &&
+             (q.size() < 11 || validQuizAttemptQuestionEntry(q[10])) &&
+             (q.size() < 12 || validQuizAttemptQuestionEntry(q[11])) &&
+             (q.size() < 13 || validQuizAttemptQuestionEntry(q[12])) &&
+             (q.size() < 14 || validQuizAttemptQuestionEntry(q[13])) &&
+             (q.size() < 15 || validQuizAttemptQuestionEntry(q[14])) &&
+             (q.size() < 16 || validQuizAttemptQuestionEntry(q[15])) &&
+             (q.size() < 17 || validQuizAttemptQuestionEntry(q[16])) &&
+             (q.size() < 18 || validQuizAttemptQuestionEntry(q[17])) &&
+             (q.size() < 19 || validQuizAttemptQuestionEntry(q[18])) &&
+             (q.size() < 20 || validQuizAttemptQuestionEntry(q[19]));
+    }
+
+    function isValidQuizAttempt(data) {
+      return hasRequiredFields(['userId', 'courseId', 'lessonId', 'submittedAt', 'overallScore', 'perQuestion']) &&
+             hasOnlyAllowedFields(['userId', 'courseId', 'lessonId', 'submittedAt', 'overallScore', 'perQuestion']) &&
+             data.userId == request.auth.uid &&
+             data.courseId is string && data.courseId.size() > 0 && data.courseId.size() < 200 &&
+             data.lessonId is string && data.lessonId.size() > 0 && data.lessonId.size() < 200 &&
+             data.submittedAt is timestamp &&
+             data.overallScore is number && data.overallScore >= 0 && data.overallScore <= 100 &&
+             validQuizAttemptPerQuestionList(data.perQuestion);
+    }
+
     function contactSenderEmailMatchesToken(data) {
       return (request.auth.token.email is string && request.auth.token.email.size() > 0)
         ? (data.senderEmail is string && data.senderEmail == request.auth.token.email)
@@ -279,6 +326,12 @@ service cloud.firestore {
       );
       allow create, update: if isAuthenticated() && isValidCourseRating(request.resource.data);
       allow delete: if isAuthenticated() && isOwner(resource.data.userId);
+    }
+
+    match /quizAttempts/{attemptId} {
+      allow read: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
+      allow create: if isAuthenticated() && isValidQuizAttempt(request.resource.data);
+      allow update, delete: if false;
     }
 
     match /users/{userId} {
@@ -417,6 +470,26 @@ service cloud.firestore {
     match /siteSettings/catalogCategoryPresets {
       allow read: if true;
       allow create, update: if isAdmin() && isValidCatalogCategoryPresetsWrite(request.resource.data);
+      allow delete: if false;
+    }
+
+    // Ordered Gemini model ids + per-model on/off for in-app AI. Falls back to build env when doc missing.
+    function geminiEnabledFlagsAllBool(flags, i) {
+      return i >= flags.size() || (flags[i] is bool && geminiEnabledFlagsAllBool(flags, i + 1));
+    }
+
+    function isValidGeminiAiModelsWrite(data) {
+      return data.keys().hasAll(['modelIds', 'updatedAt', 'enabledFlags']) &&
+        data.keys().hasOnly(['modelIds', 'updatedAt', 'enabledFlags']) &&
+        data.modelIds is list && data.modelIds.size() >= 1 && data.modelIds.size() <= 20 &&
+        data.enabledFlags is list && data.enabledFlags.size() == data.modelIds.size() &&
+        geminiEnabledFlagsAllBool(data.enabledFlags, 0) &&
+        data.updatedAt is timestamp;
+    }
+
+    match /siteSettings/geminiAiModels {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidGeminiAiModelsWrite(request.resource.data);
       allow delete: if false;
     }
 

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useDialogKeyboard } from '../hooks/useDialogKeyboard';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
+import { useLearnerGeminiEnabled } from '../hooks/useLearnerGeminiEnabled';
 import { reload, updateProfile } from 'firebase/auth';
 import { User, auth } from '../firebase';
 import { computeCourseEnrollmentCounts, computeLearningStats } from '../utils/learningStats';
@@ -8,7 +9,7 @@ import { loadCompletionTimestamps } from '../utils/courseCompletionLog';
 import { buildCertificateId } from '../utils/certificateFirestore';
 import type { Course } from '../data/courses';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, CheckCircle2, BellOff, Trash2, Info, Save, Loader2 } from 'lucide-react';
+import { X, CheckCircle2, BellOff, Trash2, Info, Save, Loader2, Sparkles } from 'lucide-react';
 
 const bioStorageKey = (uid: string) => `skilllearn-profile-bio:${uid}`;
 
@@ -59,6 +60,8 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const { enabled: aiModelsEnabled, setEnabled: setAiModelsEnabled } = useLearnerGeminiEnabled();
 
   const stats = useMemo(
     () => computeLearningStats(user?.uid, courses),
@@ -369,6 +372,46 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                 </button>
               </div>
             </div>
+          </div>
+        </section>
+
+        <section className="mt-5 border-t border-[var(--border-color)] pt-5" aria-labelledby="profile-models-heading">
+          <h2
+            id="profile-models-heading"
+            className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]"
+          >
+            Models
+          </h2>
+          <div className="mt-3 flex min-h-11 items-center justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-2">
+              <Sparkles size={16} className="mt-0.5 shrink-0 text-orange-500" aria-hidden />
+              <div className="min-w-0">
+                <p id="profile-models-switch-label" className="text-sm font-semibold text-[var(--text-primary)]">
+                  Use AI models
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-[var(--text-muted)]">
+                  When off, quiz AI grading, hints, and the learning assistant stay disabled on this device—even if a key
+                  is configured.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={aiModelsEnabled}
+              aria-labelledby="profile-models-switch-label"
+              onClick={() => setAiModelsEnabled(!aiModelsEnabled)}
+              className={`relative h-9 w-14 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500/60 ${
+                aiModelsEnabled ? 'bg-orange-500' : 'bg-[var(--border-color)]'
+              }`}
+            >
+              <span
+                className={`pointer-events-none absolute top-1 left-1 h-7 w-7 rounded-full bg-white shadow transition-transform ${
+                  aiModelsEnabled ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+              <span className="sr-only">{aiModelsEnabled ? 'AI models on' : 'AI models off'}</span>
+            </button>
           </div>
         </section>
 

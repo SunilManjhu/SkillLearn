@@ -4,7 +4,7 @@
  */
 import type { Course, Lesson } from '../data/courses';
 import { youtubeVideoIdFromUrl } from './youtube';
-import { isWebLesson } from './lessonContent';
+import { isQuizLesson, isWebLesson } from './lessonContent';
 
 /** `contentDetails.duration` ISO 8601 → seconds (e.g. PT15M33S, PT1H2M10S, P1DT2H3M4S). */
 export function parseYoutubeIso8601Duration(iso: string | undefined): number {
@@ -41,7 +41,7 @@ export function listYoutubeLessonsInCourse(course: Course): { lessonId: string; 
   const out: { lessonId: string; videoId: string }[] = [];
   for (const mod of course.modules) {
     for (const lesson of mod.lessons) {
-      if (isWebLesson(lesson)) continue;
+      if (isWebLesson(lesson) || isQuizLesson(lesson)) continue;
       const videoId = youtubeVideoIdFromUrl(lesson.videoUrl);
       if (videoId) out.push({ lessonId: lesson.id, videoId });
     }
@@ -88,6 +88,10 @@ export function lessonDurationLabel(
   if (lesson.contentKind === 'web') {
     if (lesson.duration?.trim()) return lesson.duration.trim();
     return 'Link';
+  }
+  if (lesson.contentKind === 'quiz') {
+    if (lesson.duration?.trim()) return lesson.duration.trim();
+    return 'Quiz';
   }
   const sec = youtubeResolvedSeconds[lesson.id];
   if (sec && sec > 0) return formatSecondsAsLessonClock(sec);

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Shield, Send, Database, BookOpen, Flag, Users, X } from 'lucide-react';
+import { Shield, Send, Database, BookOpen, Flag, Users, X, Sparkles } from 'lucide-react';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { useDialogKeyboard } from '../hooks/useDialogKeyboard';
 import type { Course } from '../data/courses';
@@ -10,6 +10,7 @@ import { createBroadcastAlert, type BroadcastAlertType } from '../utils/alertsFi
 import { seedPublishedCoursesFromStaticCatalog } from '../utils/publishedCoursesFirestore';
 import { AdminCourseCatalogSection } from './admin/AdminCourseCatalogSection';
 import { AdminModerationSection } from './admin/AdminModerationSection';
+import { AdminGeminiModelsSection } from './admin/AdminGeminiModelsSection';
 import { AdminUserRolesSection } from './admin/AdminUserRolesSection';
 import { useAdminActionToast } from './admin/useAdminActionToast';
 
@@ -61,6 +62,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   const [targetingOpen, setTargetingOpen] = useState(false);
   const [catalogDirty, setCatalogDirty] = useState(false);
   const [pathDirty, setPathDirty] = useState(false);
+  const [aiModelsDirty, setAiModelsDirty] = useState(false);
   const [navigationGuardOpen, setNavigationGuardOpen] = useState(false);
   const [pendingNavigation, setPendingNavigation] = useState<PendingAdminNavigation | null>(null);
   const courseRef = useRef<HTMLSelectElement | null>(null);
@@ -77,7 +79,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
     );
   }, [tab, title, message, moduleId, lessonId]);
 
-  const hasUnsavedWork = alertsDirty || catalogDirty || pathDirty;
+  const hasUnsavedWork = alertsDirty || catalogDirty || pathDirty || aiModelsDirty;
 
   useEffect(() => {
     onUnsavedWorkChange?.(hasUnsavedWork);
@@ -224,7 +226,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
             <div className="min-w-0">
               <h1 className="text-lg font-bold tracking-tight sm:text-xl">Admin portal</h1>
               <p className="mt-0.5 line-clamp-2 text-xs text-[var(--text-secondary)] sm:text-sm sm:line-clamp-none">
-                Alerts, catalog, moderation, and roles. Students do not see this page.
+                Alerts, AI models, content, moderation, and roles. Students do not see this page.
               </p>
             </div>
           </div>
@@ -241,6 +243,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
 
         <div className="-mx-1 flex gap-2 overflow-x-auto overflow-y-hidden overscroll-x-contain px-1 py-0.5 [scrollbar-width:none] sm:flex-wrap sm:overflow-visible [&::-webkit-scrollbar]:hidden">
           {tabBtn('alerts', 'Alerts', <Send size={16} />)}
+          {tabBtn('ai', 'AI', <Sparkles size={16} />)}
           {tabBtn('catalog', 'Content', <BookOpen size={16} />)}
           {tabBtn('moderation', 'Moderation', <Flag size={16} />)}
           {tabBtn('roles', 'Roles', <Users size={16} />)}
@@ -412,6 +415,12 @@ export const AdminPage: React.FC<AdminPageProps> = ({
           </button>
         </div>
         </div>
+        )}
+
+        {tab === 'ai' && (
+          <div className="space-y-6">
+            <AdminGeminiModelsSection onDirtyChange={setAiModelsDirty} />
+          </div>
         )}
 
         {tab === 'catalog' && (

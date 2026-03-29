@@ -11,7 +11,7 @@ export interface NavbarNotification {
   time: string;
   kind?: 'certificate' | 'broadcast' | 'generic';
   actionView?: 'home' | 'catalog' | 'contact' | 'profile' | 'admin';
-  adminTab?: 'alerts' | 'catalog' | 'moderation' | 'roles';
+  adminTab?: 'alerts' | 'ai' | 'catalog' | 'moderation' | 'roles';
   /** When opening Admin → Moderation, which inbox sub-tab to show. */
   adminModerationSubTab?: 'reports' | 'suggestions' | 'contact';
   actionLabel?: string;

@@ -31,6 +31,8 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import {
+  ArrowDown,
+  ArrowUp,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -75,6 +77,24 @@ import { useAdminActionToast } from './useAdminActionToast';
 
 function deepClone<T>(x: T): T {
   return JSON.parse(JSON.stringify(x)) as T;
+}
+
+/** Legacy: next l{n} unique across the whole course (non-structured ids). */
+function nextLessonIdLegacy(course: Course): string {
+  let maxN = 0;
+  let found = false;
+  for (const m of course.modules) {
+    for (const l of m.lessons) {
+      const lm = /^l(\d+)$/.exec(l.id);
+      if (lm) {
+        found = true;
+        maxN = Math.max(maxN, parseInt(lm[1], 10));
+      }
+    }
+  }
+  if (found) return `l${maxN + 1}`;
+  const total = course.modules.reduce((acc, mo) => acc + mo.lessons.length, 0);
+  return total === 0 ? 'l1' : `l${total + 1}`;
 }
 
 /** Tree node for path mind map — synced to `pathMindmap` on save (nested branches allowed). */
@@ -1358,6 +1378,40 @@ function parseMl(id: string): { courseId: string; mi: number; li: number } | nul
   return { courseId, mi, li };
 }
 
+/**
+ * Nested sortables (path courses → modules → lessons) share one DndContext. Without scoping,
+ * collisions often hit the parent course droppable (`pc:…`) so module/lesson drags never match `cm:`/`ml:` targets.
+ */
+const pathCoursesListCollisionDetection: CollisionDetection = (args) => {
+  const activeId = String(args.active.id);
+
+  if (activeId.startsWith('pc:')) {
+    const filtered = args.droppableContainers.filter((c) => String(c.id).startsWith('pc:'));
+    if (filtered.length === 0) return closestCorners(args);
+    return closestCorners({ ...args, droppableContainers: filtered });
+  }
+
+  if (activeId.startsWith('cm:')) {
+    const parsed = parseCm(activeId);
+    if (!parsed) return closestCorners(args);
+    const prefix = `cm:${parsed.courseId}:`;
+    const filtered = args.droppableContainers.filter((c) => String(c.id).startsWith(prefix));
+    if (filtered.length === 0) return closestCorners(args);
+    return closestCorners({ ...args, droppableContainers: filtered });
+  }
+
+  if (activeId.startsWith('ml:')) {
+    const parsed = parseMl(activeId);
+    if (!parsed) return closestCorners(args);
+    const prefix = `ml:${parsed.courseId}:${parsed.mi}:`;
+    const filtered = args.droppableContainers.filter((c) => String(c.id).startsWith(prefix));
+    if (filtered.length === 0) return closestCorners(args);
+    return closestCorners({ ...args, droppableContainers: filtered });
+  }
+
+  return closestCorners(args);
+};
+
 function SortableHandle(props: React.HTMLAttributes<HTMLButtonElement>) {
   return (
     <button
@@ -1440,17 +1494,27 @@ function PathCourseRow({
 
 function ModuleRow({
   id,
+  moduleId,
   moduleTitle,
   moduleIndexLabel,
   expanded,
   onToggle,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
   children,
 }: {
   id: string;
+  moduleId: string;
   moduleTitle: string;
   moduleIndexLabel: string;
   expanded: boolean;
   onToggle: () => void;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
   children?: React.ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
@@ -1472,11 +1536,51 @@ function ModuleRow({
         <button
           type="button"
           onClick={onToggle}
-          className="min-w-0 flex-1 text-left text-sm font-semibold text-[var(--text-primary)]"
+          className="min-w-0 flex-1 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 rounded-md"
+          aria-expanded={expanded}
+          aria-label={`${moduleIndexLabel}: ${moduleId.trim() || 'no id'} - ${moduleTitle.trim() || 'Untitled module'}. ${expanded ? 'Collapse' : 'Expand'} module`}
         >
-          {expanded ? <ChevronDown size={14} className="mr-1 inline" /> : <ChevronRight size={14} className="mr-1 inline" />}
-          {moduleIndexLabel}: <span className="font-normal">{moduleTitle || 'Untitled module'}</span>
+          <span className="flex min-w-0 items-start gap-1">
+            <span className="mt-0.5 shrink-0" aria-hidden>
+              {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block min-w-0 truncate text-sm font-bold text-[var(--text-primary)]">
+                <span className="font-mono text-orange-500/90">{moduleId.trim() || '—'}</span>
+                <span> - {moduleTitle.trim() || 'Untitled module'}</span>
+              </span>
+              <span className="mt-0.5 block truncate text-[11px] font-medium text-[var(--text-muted)]">
+                {moduleIndexLabel}
+              </span>
+            </span>
+          </span>
         </button>
+        <div className="flex shrink-0 flex-col gap-0.5 sm:flex-row sm:gap-1">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onMoveUp();
+            }}
+            disabled={!canMoveUp}
+            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-30"
+            aria-label="Move module up"
+          >
+            <ArrowUp size={18} aria-hidden />
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onMoveDown();
+            }}
+            disabled={!canMoveDown}
+            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-30"
+            aria-label="Move module down"
+          >
+            <ArrowDown size={18} aria-hidden />
+          </button>
+        </div>
       </div>
       {expanded ? <div className="border-t border-[var(--border-color)]/60 px-2 py-3">{children}</div> : null}
     </div>
@@ -1485,12 +1589,28 @@ function ModuleRow({
 
 function LessonRow({
   id,
+  lessonIndexLabel,
   title,
   lessonId,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
+  moveToModuleOptions,
+  canMoveLessonOutOfModule,
+  onMoveLessonToModule,
 }: {
   id: string;
+  lessonIndexLabel: string;
   title: string;
   lessonId: string;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  moveToModuleOptions?: { value: number; label: string }[];
+  canMoveLessonOutOfModule?: boolean;
+  onMoveLessonToModule?: (targetMi: number) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
   const { active } = useDndContext();
@@ -1500,17 +1620,83 @@ function LessonRow({
     transition: freezeSortableLayout ? undefined : transition,
     opacity: isDragging ? 0.85 : 1,
   };
+  const showModulePicker =
+    moveToModuleOptions && moveToModuleOptions.length > 0 && onMoveLessonToModule;
+
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-2 rounded-lg border border-[var(--border-color)]/60 bg-[var(--bg-primary)]/30 px-2 py-2"
+      className="flex flex-col gap-2 rounded-lg border border-[var(--border-color)]/60 bg-[var(--bg-primary)]/30 px-2 py-2"
     >
-      <SortableHandle {...attributes} {...listeners} />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm text-[var(--text-primary)]">{title || 'Untitled lesson'}</p>
-        <p className="truncate font-mono text-[10px] text-[var(--text-muted)]">{lessonId}</p>
+      <div className="flex min-w-0 items-center gap-2">
+        <SortableHandle {...attributes} {...listeners} />
+        <div className="min-w-0 flex-1">
+          <p className="min-w-0 truncate text-sm font-bold text-[var(--text-primary)]">
+            <span className="font-mono text-orange-500/90">{lessonId.trim() || '—'}</span>
+            <span> - {title.trim() || 'Untitled lesson'}</span>
+          </p>
+          <p className="mt-0.5 truncate text-[11px] font-medium text-[var(--text-muted)]">{lessonIndexLabel}</p>
+        </div>
+        <div className="flex shrink-0 flex-col gap-0.5 sm:flex-row sm:gap-1">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onMoveUp();
+            }}
+            disabled={!canMoveUp}
+            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-30"
+            aria-label="Move lesson up"
+          >
+            <ArrowUp size={18} aria-hidden />
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onMoveDown();
+            }}
+            disabled={!canMoveDown}
+            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-30"
+            aria-label="Move lesson down"
+          >
+            <ArrowDown size={18} aria-hidden />
+          </button>
+        </div>
       </div>
+      {showModulePicker ? (
+        <div className="min-w-0 space-y-1 pl-1">
+          <label className="block min-w-0">
+            <span className="sr-only">Move lesson to another module</span>
+            <select
+              value=""
+              disabled={canMoveLessonOutOfModule === false}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (!v) return;
+                const t = Number(v);
+                if (Number.isInteger(t)) onMoveLessonToModule(t);
+                e.target.value = '';
+              }}
+              className="box-border min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="Move lesson to another module"
+            >
+              <option value="">Move to module…</option>
+              {moveToModuleOptions.map((opt) => (
+                <option key={opt.value} value={String(opt.value)}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {canMoveLessonOutOfModule === false ? (
+            <p className="text-[11px] leading-snug text-[var(--text-muted)]">
+              Add another lesson here first—each module must keep at least one.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -2092,6 +2278,106 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     }
   };
 
+  const moveCourseModule = useCallback((cid: string, mi: number, delta: -1 | 1) => {
+    let swapped: { mi: number; ni: number } | null = null;
+    setCourseEditDraft((c) => {
+      if (!c || c.id !== cid) return c;
+      const ni = mi + delta;
+      if (ni < 0 || ni >= c.modules.length) return c;
+      swapped = { mi, ni };
+      const modules = arrayMove(c.modules, mi, ni);
+      let next: Course = { ...c, modules };
+      if (isStructuredCourseId(next.id)) {
+        next = remapStructuredCourseModuleLessonIdsByOrder(next);
+      }
+      return next;
+    });
+    if (!swapped) return;
+    const { mi: a, ni: b } = swapped;
+    const ka = `m-${cid}-${a}`;
+    const kb = `m-${cid}-${b}`;
+    setOpenModuleIdx((prev) => {
+      const oa = prev[ka];
+      const ob = prev[kb];
+      if (!oa && !ob) return prev;
+      const next = { ...prev };
+      delete next[ka];
+      delete next[kb];
+      if (oa) next[kb] = true;
+      if (ob) next[ka] = true;
+      return next;
+    });
+  }, []);
+
+  const moveCourseLesson = useCallback((cid: string, mi: number, li: number, delta: -1 | 1) => {
+    setCourseEditDraft((c) => {
+      if (!c || c.id !== cid) return c;
+      const mod = c.modules[mi];
+      if (!mod) return c;
+      const ni = li + delta;
+      if (ni < 0 || ni >= mod.lessons.length) return c;
+      const modules = c.modules.map((m, i) => {
+        if (i !== mi) return m;
+        return { ...m, lessons: arrayMove(m.lessons, li, ni) };
+      });
+      let next: Course = { ...c, modules };
+      if (isStructuredCourseId(next.id)) {
+        next = remapStructuredCourseModuleLessonIdsByOrder(next);
+      }
+      return next;
+    });
+  }, []);
+
+  const moveCourseLessonToModule = useCallback(
+    (cid: string, mi: number, li: number, targetMi: number) => {
+      if (targetMi === mi) return;
+      let movedOk = false;
+      setCourseEditDraft((c) => {
+        if (!c || c.id !== cid) return c;
+        if (targetMi < 0 || targetMi >= c.modules.length) return c;
+        const source = c.modules[mi];
+        if (!source || source.lessons.length <= 1 || !source.lessons[li]) return c;
+
+        const moved = { ...source.lessons[li]! };
+        const modulesWithout = c.modules.map((m, i) => {
+          if (i !== mi) return m;
+          return { ...m, lessons: m.lessons.filter((_, j) => j !== li) };
+        });
+
+        let lessonToInsert = moved;
+        if (!isStructuredCourseId(c.id)) {
+          const tempCourse: Course = { ...c, modules: modulesWithout };
+          lessonToInsert = { ...moved, id: nextLessonIdLegacy(tempCourse) };
+        }
+
+        const finalModules = modulesWithout.map((m, i) => {
+          if (i !== targetMi) return m;
+          return { ...m, lessons: [...m.lessons, lessonToInsert] };
+        });
+
+        let next: Course = { ...c, modules: finalModules };
+        if (isStructuredCourseId(next.id)) {
+          next = remapStructuredCourseModuleLessonIdsByOrder(next);
+        }
+        movedOk = true;
+        return next;
+      });
+      if (!movedOk) {
+        showActionToast(
+          'Could not move lesson. Add another lesson to this module first—each module must keep at least one.',
+          'danger'
+        );
+        return;
+      }
+      setOpenModuleIdx((prev) => ({
+        ...prev,
+        [`m-${cid}-${targetMi}`]: true,
+      }));
+      showActionToast('Lesson moved to the other module.');
+    },
+    [showActionToast]
+  );
+
   const onDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
@@ -2112,6 +2398,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     }
 
     if (aid.startsWith('cm:')) {
+      if (!oid.startsWith('cm:')) return;
       const a = parseCm(aid);
       const o = parseCm(oid);
       if (!a || !o || a.courseId !== o.courseId || !courseEditDraft || courseEditDraft.id !== a.courseId) return;
@@ -2132,6 +2419,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     }
 
     if (aid.startsWith('ml:')) {
+      if (!oid.startsWith('ml:')) return;
       const a = parseMl(aid);
       const o = parseMl(oid);
       if (!a || !o || a.courseId !== o.courseId || a.mi !== o.mi || !courseEditDraft || courseEditDraft.id !== a.courseId) {
@@ -2526,7 +2814,11 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
               <h3 className="mb-2 text-sm font-bold text-[var(--text-primary)]">
                 Courses in path <span className="font-normal text-[var(--text-muted)]">(drag to reorder)</span>
               </h3>
-              <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={pathCoursesListCollisionDetection}
+                onDragEnd={onDragEnd}
+              >
               <SortableContext
                 items={pathDraft.courseIds.map((id) => sortablePc(id))}
                 strategy={verticalListSortingStrategy}
@@ -2552,8 +2844,11 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                           <div className="space-y-3">
                             <div className="flex flex-wrap items-center justify-between gap-2">
                               <p className="text-xs text-[var(--text-muted)]">
-                                Reorder modules and lessons. Save applies the same catalog document. Structured courses
-                                (C1…) get ids remapped by position.
+                                Reorder modules and lessons with the grip, drag-and-drop, or arrows. Use{' '}
+                                <strong className="font-medium text-[var(--text-secondary)]">Move to module…</strong> on a
+                                lesson to move it to another section (add a second lesson first if it is the only one in
+                                its module). Save applies the same catalog document; structured courses (C1…) remap ids by
+                                position.
                               </p>
                               <button
                                 type="button"
@@ -2577,6 +2872,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                                     <Fragment key={`${cid}-m-${mi}`}>
                                     <ModuleRow
                                       id={sortableCm(cid, mi)}
+                                      moduleId={mod.id}
                                       moduleTitle={mod.title}
                                       moduleIndexLabel={`Module ${mi + 1}`}
                                       expanded={modOpen}
@@ -2586,6 +2882,10 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                                           [mid]: !modOpen,
                                         }))
                                       }
+                                      canMoveUp={mi > 0}
+                                      canMoveDown={mi < courseEditDraft.modules.length - 1}
+                                      onMoveUp={() => moveCourseModule(cid, mi, -1)}
+                                      onMoveDown={() => moveCourseModule(cid, mi, 1)}
                                     >
                                       {modOpen ? (
                                         <SortableContext
@@ -2597,8 +2897,28 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                                               <Fragment key={`${cid}-${mi}-l-${li}`}>
                                               <LessonRow
                                                 id={sortableMl(cid, mi, li)}
+                                                lessonIndexLabel={`Lesson ${li + 1}`}
                                                 title={les.title}
                                                 lessonId={les.id}
+                                                canMoveUp={li > 0}
+                                                canMoveDown={li < mod.lessons.length - 1}
+                                                onMoveUp={() => moveCourseLesson(cid, mi, li, -1)}
+                                                onMoveDown={() => moveCourseLesson(cid, mi, li, 1)}
+                                                moveToModuleOptions={
+                                                  courseEditDraft.modules.length > 1
+                                                    ? courseEditDraft.modules
+                                                        .map((tm, mj) => ({ mj, tm }))
+                                                        .filter(({ mj }) => mj !== mi)
+                                                        .map(({ mj, tm }) => ({
+                                                          value: mj,
+                                                          label: `Module ${mj + 1}: ${tm.id.trim() || '—'} - ${tm.title.trim() || 'Untitled module'}`,
+                                                        }))
+                                                    : undefined
+                                                }
+                                                canMoveLessonOutOfModule={mod.lessons.length > 1}
+                                                onMoveLessonToModule={(targetMi) =>
+                                                  moveCourseLessonToModule(cid, mi, li, targetMi)
+                                                }
                                               />
                                               </Fragment>
                                             ))}

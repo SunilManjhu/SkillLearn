@@ -1,6 +1,52 @@
-import type { Course } from '../data/courses';
+import {
+  type Course,
+  type Lesson,
+  MAX_QUIZ_CHOICES,
+  MAX_QUIZ_HINT_CONTEXT_LEN,
+  MAX_QUIZ_PROMPT_LEN,
+  MAX_QUIZ_QUESTIONS,
+  MAX_QUIZ_RUBRIC_LEN,
+} from '../data/courses';
 import { isCourseLevel } from './courseTaxonomy';
 import { lessonWebHref } from './lessonContent';
+import { coerceQuizIndex } from './quizCoercion';
+
+/** Per-lesson quiz checks; used by admin draft validation. */
+export function validateLessonQuiz(l: Lesson, mi: number, li: number): string | null {
+  const prefix = `Module ${mi + 1}, Lesson ${li + 1}`;
+  if (l.contentKind !== 'quiz') return null;
+  const qs = l.quiz?.questions;
+  if (!qs?.length) return `${prefix}: Add at least one quiz question.`;
+  if (qs.length > MAX_QUIZ_QUESTIONS) {
+    return `${prefix}: Quiz cannot have more than ${MAX_QUIZ_QUESTIONS} questions.`;
+  }
+  for (let qi = 0; qi < qs.length; qi += 1) {
+    const q = qs[qi];
+    const qp = `${prefix}, Question ${qi + 1}`;
+    if (!q.id.trim()) return `${qp}: Question ID is required.`;
+    if (!q.prompt.trim()) return `${qp}: Prompt is required.`;
+    if (q.prompt.length > MAX_QUIZ_PROMPT_LEN) return `${qp}: Prompt is too long.`;
+    if (q.type === 'mcq') {
+      if (q.choices.length < 2) return `${qp}: At least two choices are required.`;
+      if (q.choices.length > MAX_QUIZ_CHOICES) return `${qp}: Too many choices.`;
+      for (let ci = 0; ci < q.choices.length; ci += 1) {
+        if (!q.choices[ci]?.trim()) return `${qp}: Choice ${ci + 1} cannot be empty.`;
+      }
+      const cIdx = coerceQuizIndex(q.correctIndex);
+      if (cIdx === null || cIdx < 0 || cIdx >= q.choices.length) {
+        return `${qp}: Select a valid correct answer.`;
+      }
+    } else if (q.type === 'freeform') {
+      const rub = q.rubric?.trim() ?? '';
+      if (rub.length > MAX_QUIZ_RUBRIC_LEN) return `${qp}: Rubric is too long.`;
+      const hc = q.hintContext?.trim() ?? '';
+      if (hc.length > MAX_QUIZ_HINT_CONTEXT_LEN) return `${qp}: Hint context is too long.`;
+    } else {
+      return `${qp}: Invalid question type.`;
+    }
+  }
+  return null;
+}
 
 /** Same rules as admin catalog `validateDraft`. */
 export function validateCourseDraft(c: Course): string | null {
@@ -25,6 +71,9 @@ export function validateCourseDraft(c: Course): string | null {
         if (!lessonWebHref(l)) {
           return `Module ${mi + 1}, Lesson ${li + 1}: Page URL is required (https:// or a valid domain).`;
         }
+      } else if (l.contentKind === 'quiz') {
+        const qe = validateLessonQuiz(l, mi, li);
+        if (qe) return qe;
       } else if (!l.videoUrl.trim() || !l.videoUrl.startsWith('http')) {
         return `Module ${mi + 1}, Lesson ${li + 1}: Video URL is required and must start with http.`;
       }

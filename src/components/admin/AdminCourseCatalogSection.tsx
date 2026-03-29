@@ -11,9 +11,13 @@ import {
   Tags,
   Trash2,
   RefreshCw,
+  Sparkles,
   X,
+  ArrowDown,
+  ArrowUp,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
 } from 'lucide-react';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { useDialogKeyboard } from '../../hooks/useDialogKeyboard';
@@ -21,9 +25,19 @@ import { useAdminActionToast } from './useAdminActionToast';
 import { PathBuilderSection, type PathBuilderSectionHandle } from './PathBuilderSection';
 import { AdminCatalogCategoriesPanel } from './AdminCatalogCategoriesPanel';
 import { AdminCatalogCategoryPresetsPanel } from './AdminCatalogCategoryPresetsPanel';
-import type { Course, Lesson, Module } from '../../data/courses';
-import { STRUCTURED_COURSE_ID_RE, isStructuredCourseId } from '../../utils/courseStructuredIds';
-import { validateCourseDraft } from '../../utils/courseDraftValidation';
+import type { Course, Lesson, Module, QuizQuestion, QuizQuestionMcq } from '../../data/courses';
+import {
+  MAX_QUIZ_CHOICES,
+  MAX_QUIZ_QUESTIONS,
+  createDefaultFreeformQuestion,
+  createDefaultMcqQuestion,
+} from '../../data/courses';
+import {
+  STRUCTURED_COURSE_ID_RE,
+  isStructuredCourseId,
+  remapStructuredCourseModuleLessonIdsByOrder,
+} from '../../utils/courseStructuredIds';
+import { validateCourseDraft, validateLessonQuiz } from '../../utils/courseDraftValidation';
 import { lessonWebHref } from '../../utils/lessonContent';
 import {
   loadPublishedCoursesFromFirestore,
@@ -52,6 +66,8 @@ import {
 } from '../../utils/catalogCategoryPresets';
 import { loadCatalogCategoryPresets } from '../../utils/catalogCategoryPresetsFirestore';
 import { dedupeLabelsPreserveOrder, normalizeCourseTaxonomy } from '../../utils/courseTaxonomy';
+import { getGeminiApiKey } from '../../utils/geminiClient';
+import { resolveMcqCorrectIndex } from '../../utils/geminiQuiz';
 
 function deepClone<T>(x: T): T {
   return JSON.parse(JSON.stringify(x)) as T;
@@ -265,6 +281,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     draftId: undefined,
   });
   const { showActionToast, actionToast } = useAdminActionToast();
+  /** Per quiz question: AI “check MCQ key” in flight. */
+  const [mcqAiKeyBusy, setMcqAiKeyBusy] = useState<Record<string, boolean>>({});
   /** Re-read category / skill option lists when extras change in localStorage (same tab). */
   const [categoryOptionsVersion, setCategoryOptionsVersion] = useState(0);
   const [skillOptionsVersion, setSkillOptionsVersion] = useState(0);
@@ -512,6 +530,135 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     });
   };
 
+  const mapQuizQuestion = (mi: number, li: number, qi: number, updater: (q: QuizQuestion) => QuizQuestion) => {
+    setDraft((d) => {
+      if (!d) return null;
+      const modules = d.modules.map((m, i) => {
+        if (i !== mi) return m;
+        const lessons = m.lessons.map((lesson, j) => {
+          if (j !== li) return lesson;
+          const qs = [...(lesson.quiz?.questions ?? [])];
+          if (!qs[qi]) return lesson;
+          qs[qi] = updater(qs[qi]);
+          return { ...lesson, quiz: { questions: qs } };
+        });
+        return { ...m, lessons };
+      });
+      return { ...d, modules };
+    });
+  };
+
+  const suggestMcqCorrectWithAi = async (mi: number, li: number, qi: number, qq: QuizQuestionMcq) => {
+    const busyKey = `${mi}-${li}-${qi}`;
+    const apiKey = getGeminiApiKey();
+    if (!apiKey) {
+      showActionToast('Set GEMINI_API_KEY in .env to check MCQ keys with AI.', 'danger');
+      return;
+    }
+    const slots: { adminIndex: number; text: string }[] = [];
+    for (let i = 0; i < qq.choices.length; i += 1) {
+      const t = typeof qq.choices[i] === 'string' ? qq.choices[i].trim() : '';
+      if (t) slots.push({ adminIndex: i, text: t });
+    }
+    if (slots.length < 2) {
+      showActionToast('Add at least two non-empty choices before running AI check.', 'danger');
+      return;
+    }
+    if (!qq.prompt.trim()) {
+      showActionToast('Add a question prompt before running AI check.', 'danger');
+      return;
+    }
+    setMcqAiKeyBusy((p) => ({ ...p, [busyKey]: true }));
+    try {
+      const res = await resolveMcqCorrectIndex({
+        apiKey,
+        questionPrompt: qq.prompt.trim(),
+        choices: slots.map((s) => s.text),
+      });
+      if (!res.ok) {
+        showActionToast(res.error, 'danger');
+        return;
+      }
+      const chosen = slots[res.correctIndex];
+      if (!chosen) {
+        showActionToast('AI returned an invalid option index.', 'danger');
+        return;
+      }
+      if (chosen.adminIndex === qq.correctIndex) {
+        showActionToast('AI agrees with the marked correct answer.', 'success');
+        return;
+      }
+      mapQuizQuestion(mi, li, qi, (prev) =>
+        prev.type === 'mcq' ? { ...prev, correctIndex: chosen.adminIndex } : prev
+      );
+      const label = chosen.text.length > 48 ? `${chosen.text.slice(0, 48)}…` : chosen.text;
+      showActionToast(`Marked correct updated to: ${label}. Save the course to publish.`, 'success');
+    } finally {
+      setMcqAiKeyBusy((p) => {
+        const next = { ...p };
+        delete next[busyKey];
+        return next;
+      });
+    }
+  };
+
+  const addQuizQuestion = (mi: number, li: number, kind: 'mcq' | 'freeform') => {
+    setDraft((d) => {
+      if (!d) return null;
+      const modules = d.modules.map((m, i) => {
+        if (i !== mi) return m;
+        const lessons = m.lessons.map((lesson, j) => {
+          if (j !== li) return lesson;
+          const qs = [...(lesson.quiz?.questions ?? [])];
+          if (qs.length >= MAX_QUIZ_QUESTIONS) return lesson;
+          const next = kind === 'mcq' ? createDefaultMcqQuestion() : createDefaultFreeformQuestion();
+          return { ...lesson, quiz: { questions: [...qs, next] } };
+        });
+        return { ...m, lessons };
+      });
+      return { ...d, modules };
+    });
+  };
+
+  const removeQuizQuestion = (mi: number, li: number, qi: number) => {
+    setDraft((d) => {
+      if (!d) return null;
+      const modules = d.modules.map((m, i) => {
+        if (i !== mi) return m;
+        const lessons = m.lessons.map((lesson, j) => {
+          if (j !== li) return lesson;
+          const qs = [...(lesson.quiz?.questions ?? [])];
+          if (qs.length <= 1) return lesson;
+          qs.splice(qi, 1);
+          return { ...lesson, quiz: { questions: qs } };
+        });
+        return { ...m, lessons };
+      });
+      return { ...d, modules };
+    });
+  };
+
+  const moveQuizQuestion = (mi: number, li: number, qi: number, delta: number) => {
+    setDraft((d) => {
+      if (!d) return null;
+      const modules = d.modules.map((m, i) => {
+        if (i !== mi) return m;
+        const lessons = m.lessons.map((lesson, j) => {
+          if (j !== li) return lesson;
+          const qs = [...(lesson.quiz?.questions ?? [])];
+          const ni = qi + delta;
+          if (ni < 0 || ni >= qs.length) return lesson;
+          const t = qs[qi]!;
+          qs[qi] = qs[ni]!;
+          qs[ni] = t;
+          return { ...lesson, quiz: { questions: qs } };
+        });
+        return { ...m, lessons };
+      });
+      return { ...d, modules };
+    });
+  };
+
   const addModule = () => {
     setDraft((d) => {
       if (!d) return null;
@@ -589,6 +736,142 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       return { ...d, modules };
     });
     showActionToast('Lesson deleted.');
+  };
+
+  const remapOpenLessonsAfterModuleSwap = (
+    prev: Record<string, boolean>,
+    a: number,
+    b: number
+  ): Record<string, boolean> => {
+    const next: Record<string, boolean> = {};
+    for (const [k, v] of Object.entries(prev)) {
+      if (!v) continue;
+      const colon = k.indexOf(':');
+      if (colon < 0) continue;
+      const mi = Number(k.slice(0, colon));
+      const rest = k.slice(colon + 1);
+      if (!Number.isInteger(mi)) continue;
+      let nmi = mi;
+      if (mi === a) nmi = b;
+      else if (mi === b) nmi = a;
+      next[`${nmi}:${rest}`] = true;
+    }
+    return next;
+  };
+
+  const moveModule = (mi: number, delta: -1 | 1) => {
+    let swapped: { a: number; b: number } | null = null;
+    setDraft((d) => {
+      if (!d) return null;
+      const ni = mi + delta;
+      if (ni < 0 || ni >= d.modules.length) return d;
+      swapped = { a: mi, b: ni };
+      const modules = [...d.modules];
+      [modules[mi], modules[ni]] = [modules[ni]!, modules[mi]!];
+      let next: Course = { ...d, modules };
+      if (isStructuredCourseId(next.id)) {
+        next = remapStructuredCourseModuleLessonIdsByOrder(next);
+      }
+      return next;
+    });
+    if (!swapped) return;
+    const { a, b } = swapped;
+    setOpenModules((prev) => {
+      const oa = prev[a];
+      const ob = prev[b];
+      if (!oa && !ob) return prev;
+      const next: Record<number, boolean> = { ...prev };
+      delete next[a];
+      delete next[b];
+      if (oa) next[b] = true;
+      if (ob) next[a] = true;
+      return next;
+    });
+    setOpenLessons((prev) => remapOpenLessonsAfterModuleSwap(prev, a, b));
+  };
+
+  const moveLesson = (mi: number, li: number, delta: -1 | 1) => {
+    let swapped: { a: number; b: number } | null = null;
+    setDraft((d) => {
+      if (!d) return null;
+      const mod = d.modules[mi];
+      if (!mod) return d;
+      const ni = li + delta;
+      if (ni < 0 || ni >= mod.lessons.length) return d;
+      swapped = { a: li, b: ni };
+      const modules = d.modules.map((m, i) => {
+        if (i !== mi) return m;
+        const lessons = [...m.lessons];
+        [lessons[li], lessons[ni]] = [lessons[ni]!, lessons[li]!];
+        return { ...m, lessons };
+      });
+      let next: Course = { ...d, modules };
+      if (isStructuredCourseId(next.id)) {
+        next = remapStructuredCourseModuleLessonIdsByOrder(next);
+      }
+      return next;
+    });
+    if (!swapped) return;
+    const { a, b } = swapped;
+    const k1 = `${mi}:${a}`;
+    const k2 = `${mi}:${b}`;
+    setOpenLessons((prev) => {
+      const o1 = prev[k1];
+      const o2 = prev[k2];
+      if (!o1 && !o2) return prev;
+      const next = { ...prev };
+      delete next[k1];
+      delete next[k2];
+      if (o1) next[k2] = true;
+      if (o2) next[k1] = true;
+      return next;
+    });
+  };
+
+  const moveLessonToModule = (mi: number, li: number, targetMi: number) => {
+    if (targetMi === mi) return;
+    let opened: { targetMi: number; newLi: number } | null = null;
+    setDraft((d) => {
+      if (!d) return null;
+      if (targetMi < 0 || targetMi >= d.modules.length) return d;
+      const source = d.modules[mi];
+      if (!source || source.lessons.length <= 1 || !source.lessons[li]) return d;
+
+      const moved = { ...source.lessons[li]! };
+      const modulesWithout = d.modules.map((m, i) => {
+        if (i !== mi) return m;
+        return { ...m, lessons: m.lessons.filter((_, j) => j !== li) };
+      });
+
+      let lessonToInsert = moved;
+      if (!isStructuredCourseId(d.id)) {
+        const tempCourse: Course = { ...d, modules: modulesWithout };
+        lessonToInsert = { ...moved, id: nextLessonIdLegacy(tempCourse) };
+      }
+
+      const finalModules = modulesWithout.map((m, i) => {
+        if (i !== targetMi) return m;
+        return { ...m, lessons: [...m.lessons, lessonToInsert] };
+      });
+
+      let next: Course = { ...d, modules: finalModules };
+      if (isStructuredCourseId(next.id)) {
+        next = remapStructuredCourseModuleLessonIdsByOrder(next);
+      }
+      const newLi = next.modules[targetMi]!.lessons.length - 1;
+      opened = { targetMi, newLi };
+      return next;
+    });
+    if (!opened) {
+      showActionToast(
+        'Could not move lesson. Add another lesson to this module first—each module must keep at least one.',
+        'danger'
+      );
+      return;
+    }
+    setOpenModules({ [opened.targetMi]: true });
+    setOpenLessons({ [`${opened.targetMi}:${opened.newLi}`]: true });
+    showActionToast('Lesson moved to the other module.');
   };
 
   const toggleModuleOpen = (mi: number) => {
@@ -675,6 +958,15 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               lessonKeys: openKeys,
             };
           }
+        } else if (l.contentKind === 'quiz') {
+          if (validateLessonQuiz(l, mi, li)) {
+            return {
+              targetId: `admin-quiz-block-${mi}-${li}`,
+              scope: 'module',
+              moduleIndex: mi,
+              lessonKeys: openKeys,
+            };
+          }
         } else if (!l.videoUrl.trim() || !l.videoUrl.startsWith('http')) {
           return {
             targetId: `admin-lesson-url-${mi}-${li}`,
@@ -704,6 +996,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       lessonTitle: new Set<string>(),
       videoUrl: new Set<string>(),
       lessonWebUrl: new Set<string>(),
+      lessonQuiz: new Set<string>(),
     };
     if (!draft) return out;
     if (!draft.title.trim()) out.courseTitle = true;
@@ -722,6 +1015,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         if (!l.title.trim()) out.lessonTitle.add(key);
         if (l.contentKind === 'web') {
           if (!lessonWebHref(l)) out.lessonWebUrl.add(key);
+        } else if (l.contentKind === 'quiz') {
+          if (validateLessonQuiz(l, mi, li)) out.lessonQuiz.add(key);
         } else if (!l.videoUrl.trim() || !l.videoUrl.startsWith('http')) {
           out.videoUrl.add(key);
         }
@@ -1695,8 +1990,10 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               <div>
                 <h3 className="text-sm font-bold text-[var(--text-primary)]">Modules and lessons</h3>
                 <p className="text-xs text-[var(--text-muted)] mt-1 max-w-xl">
-                  Each module is a group of lessons. Stable ids are used for learner progress and deep links; titles are
-                  what learners see.
+                  Each module is a group of lessons. Use arrows to reorder within a module, or{' '}
+                  <strong className="font-medium text-[var(--text-secondary)]">Move to module…</strong> on a lesson to
+                  move it to another section (add a second lesson first if it is the only one in its module). For
+                  courses with ids like C1, module and lesson ids are renumbered when you move items.
                 </p>
               </div>
               <button
@@ -1714,33 +2011,57 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/30 p-4 space-y-4"
               >
                 <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--border-color)] pb-3">
-                  <div className="min-w-0">
-                    <button
-                      type="button"
-                      onClick={() => toggleModuleOpen(mi)}
-                      className="inline-flex items-center gap-1.5 text-left"
-                      aria-expanded={!!openModules[mi]}
-                    >
+                  <button
+                    type="button"
+                    onClick={() => toggleModuleOpen(mi)}
+                    className="flex min-h-11 min-w-0 flex-1 items-start gap-2 rounded-lg py-1 text-left hover:bg-[var(--hover-bg)]/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40"
+                    aria-expanded={!!openModules[mi]}
+                    aria-label={`Module ${mi + 1}: ${mod.id.trim() || 'no id'} - ${mod.title.trim() || 'Untitled module'}. ${openModules[mi] ? 'Collapse' : 'Expand'} module`}
+                  >
+                    <span className="mt-0.5 shrink-0" aria-hidden>
                       {openModules[mi] ? (
                         <ChevronDown size={14} className="text-[var(--text-secondary)]" />
                       ) : (
                         <ChevronRight size={14} className="text-[var(--text-secondary)]" />
                       )}
-                      <h4 className="text-sm font-bold text-[var(--text-primary)]">Module {mi + 1}</h4>
-                    </button>
-                    <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                      Stable id (e.g. C1M1) and display name for this section of the course.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => removeModule(mi)}
-                    disabled={draft.modules.length <= 1}
-                    className="p-2 text-red-400 hover:bg-red-500/10 rounded-lg disabled:opacity-30 shrink-0"
-                    aria-label="Remove module"
-                  >
-                    <Trash2 size={16} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block min-w-0 truncate text-sm font-bold text-[var(--text-primary)]">
+                        <span className="font-mono text-orange-500/90">{mod.id.trim() || '—'}</span>
+                        <span> - {mod.title.trim() || 'Untitled module'}</span>
+                      </span>
+                      <span className="mt-0.5 block text-xs text-[var(--text-muted)]">Module {mi + 1}</span>
+                    </span>
                   </button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => moveModule(mi, -1)}
+                      disabled={mi === 0}
+                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-30"
+                      aria-label="Move module up"
+                    >
+                      <ArrowUp size={18} aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveModule(mi, 1)}
+                      disabled={mi >= draft.modules.length - 1}
+                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-30"
+                      aria-label="Move module down"
+                    >
+                      <ArrowDown size={18} aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeModule(mi)}
+                      disabled={draft.modules.length <= 1}
+                      className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg p-2 text-red-400 hover:bg-red-500/10 disabled:opacity-30"
+                      aria-label="Remove module"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
                 </div>
 
                 {openModules[mi] && (
@@ -1804,19 +2125,84 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       key={`lesson-slot-${mi}-${li}`}
                       className="rounded-lg bg-[var(--bg-secondary)]/80 p-4 space-y-3 border border-[var(--border-color)]/60"
                     >
-                      <button
-                        type="button"
-                        onClick={() => toggleLessonOpen(mi, li)}
-                        className="inline-flex items-center gap-1.5 text-left"
-                        aria-expanded={!!openLessons[`${mi}:${li}`]}
-                      >
-                        {openLessons[`${mi}:${li}`] ? (
-                          <ChevronDown size={14} className="text-[var(--text-secondary)]" />
-                        ) : (
-                          <ChevronRight size={14} className="text-[var(--text-secondary)]" />
-                        )}
-                        <p className="text-xs font-bold text-[var(--text-primary)]">Lesson {li + 1}</p>
-                      </button>
+                      <div className="flex w-full min-w-0 items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleLessonOpen(mi, li)}
+                          className="flex min-h-11 min-w-0 flex-1 items-start gap-2 rounded-lg py-1 text-left -mx-1 px-1 hover:bg-[var(--bg-primary)]/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40"
+                          aria-expanded={!!openLessons[`${mi}:${li}`]}
+                          aria-label={`Lesson ${li + 1}: ${lesson.id.trim() || 'no id'} - ${lesson.title.trim() || 'Untitled lesson'}. ${openLessons[`${mi}:${li}`] ? 'Collapse' : 'Expand'} lesson`}
+                        >
+                          <span className="mt-0.5 shrink-0" aria-hidden>
+                            {openLessons[`${mi}:${li}`] ? (
+                              <ChevronDown size={14} className="text-[var(--text-secondary)]" />
+                            ) : (
+                              <ChevronRight size={14} className="text-[var(--text-secondary)]" />
+                            )}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block min-w-0 truncate text-sm font-bold text-[var(--text-primary)]">
+                              <span className="font-mono text-orange-500/90">{lesson.id.trim() || '—'}</span>
+                              <span> - {lesson.title.trim() || 'Untitled lesson'}</span>
+                            </span>
+                            <span className="mt-0.5 block text-xs text-[var(--text-muted)]">Lesson {li + 1}</span>
+                          </span>
+                        </button>
+                        <div className="flex shrink-0 flex-col gap-0.5 sm:flex-row sm:gap-1">
+                          <button
+                            type="button"
+                            onClick={() => moveLesson(mi, li, -1)}
+                            disabled={li === 0}
+                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]/40 disabled:opacity-30"
+                            aria-label="Move lesson up"
+                          >
+                            <ArrowUp size={18} aria-hidden />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveLesson(mi, li, 1)}
+                            disabled={li >= mod.lessons.length - 1}
+                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]/40 disabled:opacity-30"
+                            aria-label="Move lesson down"
+                          >
+                            <ArrowDown size={18} aria-hidden />
+                          </button>
+                        </div>
+                      </div>
+                      {draft.modules.length > 1 && (
+                        <div className="space-y-1 pt-1">
+                          <label className="block min-w-0">
+                            <span className="sr-only">Move lesson to another module</span>
+                            <select
+                              value=""
+                              disabled={mod.lessons.length <= 1}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                if (!v) return;
+                                const t = Number(v);
+                                if (Number.isInteger(t)) moveLessonToModule(mi, li, t);
+                                e.target.value = '';
+                              }}
+                              className="box-border min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
+                              aria-label="Move lesson to another module"
+                            >
+                              <option value="">Move to module…</option>
+                              {draft.modules.map((tm, mj) =>
+                                mj === mi ? null : (
+                                  <option key={mj} value={String(mj)}>
+                                    Module {mj + 1}: {tm.id.trim() || '—'} - {tm.title.trim() || 'Untitled module'}
+                                  </option>
+                                )
+                              )}
+                            </select>
+                          </label>
+                          {mod.lessons.length <= 1 ? (
+                            <p className="text-[11px] leading-snug text-[var(--text-muted)]">
+                              Add another lesson here first—each module must keep at least one.
+                            </p>
+                          ) : null}
+                        </div>
+                      )}
                       {openLessons[`${mi}:${li}`] && (
                         <>
                       <div className="flex flex-row flex-wrap items-end gap-x-3 gap-y-2">
@@ -1875,11 +2261,12 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             <input
                               type="radio"
                               name={`admin-lesson-kind-${mi}-${li}`}
-                              checked={lesson.contentKind !== 'web'}
+                              checked={lesson.contentKind !== 'web' && lesson.contentKind !== 'quiz'}
                               onChange={() =>
                                 updateLesson(mi, li, {
                                   contentKind: undefined,
                                   webUrl: undefined,
+                                  quiz: undefined,
                                   videoUrl: lesson.videoUrl?.trim()
                                     ? lesson.videoUrl
                                     : 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
@@ -1899,16 +2286,39 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                                   contentKind: 'web',
                                   webUrl: lesson.webUrl ?? '',
                                   videoUrl: '',
+                                  quiz: undefined,
                                 })
                               }
                               className="h-4 w-4 shrink-0 border-[var(--border-color)] text-orange-500"
                             />
                             External page
                           </label>
+                          <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-[var(--text-primary)]">
+                            <input
+                              type="radio"
+                              name={`admin-lesson-kind-${mi}-${li}`}
+                              checked={lesson.contentKind === 'quiz'}
+                              onChange={() =>
+                                updateLesson(mi, li, {
+                                  contentKind: 'quiz',
+                                  webUrl: undefined,
+                                  videoUrl: '',
+                                  quiz: {
+                                    questions:
+                                      lesson.quiz?.questions?.length && lesson.contentKind === 'quiz'
+                                        ? lesson.quiz.questions
+                                        : [createDefaultMcqQuestion()],
+                                  },
+                                })
+                              }
+                              className="h-4 w-4 shrink-0 border-[var(--border-color)] text-orange-500"
+                            />
+                            Quiz
+                          </label>
                         </div>
                         <p className="text-[11px] leading-snug text-[var(--text-muted)]">
-                          External page opens in a new tab for learners (blog, docs, article). Video uses the embedded
-                          player.
+                          Video uses the embedded player. External page opens in a new tab. Quiz: multiple-choice and
+                          open-ended questions with AI grading in the player.
                         </p>
                       </div>
                       {lesson.contentKind === 'web' ? (
@@ -1937,6 +2347,259 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             Enter a valid https URL or domain.
                           </span>
                         </label>
+                      ) : lesson.contentKind === 'quiz' ? (
+                        <div
+                          id={`admin-quiz-block-${mi}-${li}`}
+                          className={`space-y-4 rounded-lg border p-3 ${
+                            showValidationHints && fieldErrors.lessonQuiz.has(`${mi}:${li}`)
+                              ? 'border-red-500'
+                              : 'border-[var(--border-color)]'
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-xs font-semibold text-[var(--text-secondary)]">Quiz questions</span>
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => addQuizQuestion(mi, li, 'mcq')}
+                                disabled={(lesson.quiz?.questions.length ?? 0) >= MAX_QUIZ_QUESTIONS}
+                                className="text-xs font-bold text-orange-500 hover:text-orange-400 disabled:opacity-40"
+                              >
+                                + Multiple choice
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => addQuizQuestion(mi, li, 'freeform')}
+                                disabled={(lesson.quiz?.questions.length ?? 0) >= MAX_QUIZ_QUESTIONS}
+                                className="text-xs font-bold text-orange-500 hover:text-orange-400 disabled:opacity-40"
+                              >
+                                + Open-ended
+                              </button>
+                            </div>
+                          </div>
+                          {(lesson.quiz?.questions ?? []).map((qq, qi) => (
+                            <div
+                              key={qq.id}
+                              className="space-y-3 rounded-lg border border-[var(--border-color)]/80 bg-[var(--bg-primary)] p-3"
+                            >
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="text-xs font-bold text-[var(--text-muted)]">Question {qi + 1}</span>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    aria-label="Move question up"
+                                    onClick={() => moveQuizQuestion(mi, li, qi, -1)}
+                                    disabled={qi === 0}
+                                    className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--hover-bg)] disabled:opacity-30"
+                                  >
+                                    <ChevronUp className="h-4 w-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    aria-label="Move question down"
+                                    onClick={() => moveQuizQuestion(mi, li, qi, 1)}
+                                    disabled={qi >= (lesson.quiz?.questions.length ?? 0) - 1}
+                                    className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--hover-bg)] disabled:opacity-30"
+                                  >
+                                    <ChevronDown className="h-4 w-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeQuizQuestion(mi, li, qi)}
+                                    disabled={(lesson.quiz?.questions.length ?? 0) <= 1}
+                                    className="ml-1 text-xs font-semibold text-red-400 hover:underline disabled:opacity-30"
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                              </div>
+                              <label className="block space-y-1">
+                                <span className="text-xs font-semibold text-[var(--text-secondary)]">Question ID</span>
+                                <input
+                                  value={qq.id}
+                                  onChange={(e) =>
+                                    mapQuizQuestion(mi, li, qi, (prev) => ({ ...prev, id: e.target.value }))
+                                  }
+                                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2 py-1.5 font-mono text-xs"
+                                />
+                              </label>
+                              <div className="flex flex-wrap gap-3 text-xs">
+                                <label className="inline-flex cursor-pointer items-center gap-2">
+                                  <input
+                                    type="radio"
+                                    name={`qq-type-${mi}-${li}-${qi}`}
+                                    checked={qq.type === 'mcq'}
+                                    onChange={() =>
+                                      mapQuizQuestion(mi, li, qi, (prev) => ({
+                                        ...createDefaultMcqQuestion(),
+                                        id: prev.id,
+                                        prompt: prev.prompt,
+                                      }))
+                                    }
+                                    className="h-3.5 w-3.5 text-orange-500"
+                                  />
+                                  Multiple choice
+                                </label>
+                                <label className="inline-flex cursor-pointer items-center gap-2">
+                                  <input
+                                    type="radio"
+                                    name={`qq-type-${mi}-${li}-${qi}`}
+                                    checked={qq.type === 'freeform'}
+                                    onChange={() =>
+                                      mapQuizQuestion(mi, li, qi, (prev) => ({
+                                        ...createDefaultFreeformQuestion(),
+                                        id: prev.id,
+                                        prompt: prev.prompt,
+                                      }))
+                                    }
+                                    className="h-3.5 w-3.5 text-orange-500"
+                                  />
+                                  Open-ended
+                                </label>
+                              </div>
+                              <label className="block space-y-1">
+                                <span className="text-xs font-semibold text-[var(--text-secondary)]">Prompt</span>
+                                <textarea
+                                  id={`admin-quiz-prompt-${mi}-${li}-${qi}`}
+                                  value={qq.prompt}
+                                  onChange={(e) =>
+                                    mapQuizQuestion(mi, li, qi, (prev) => ({ ...prev, prompt: e.target.value }))
+                                  }
+                                  rows={2}
+                                  className="w-full resize-y rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2 py-1.5 text-sm"
+                                />
+                              </label>
+                              {qq.type === 'mcq' ? (
+                                <div className="space-y-2">
+                                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                                    <span className="text-xs font-semibold text-[var(--text-secondary)]">Choices</span>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <button
+                                        type="button"
+                                        disabled={!!mcqAiKeyBusy[`${mi}-${li}-${qi}`]}
+                                        onClick={() => void suggestMcqCorrectWithAi(mi, li, qi, qq)}
+                                        className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-orange-500/40 bg-orange-500/10 px-2.5 py-1.5 text-xs font-bold text-orange-600 transition-colors hover:bg-orange-500/15 disabled:opacity-50 dark:text-orange-300"
+                                      >
+                                        {mcqAiKeyBusy[`${mi}-${li}-${qi}`] ? (
+                                          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden />
+                                        ) : (
+                                          <Sparkles className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                                        )}
+                                        Check key with AI
+                                      </button>
+                                      <span className="max-w-[min(100%,20rem)] text-[11px] leading-snug text-[var(--text-muted)]">
+                                        Fixes wrong marked answers (same model as learner grading). Empty choice rows are
+                                        skipped, matching the published quiz.
+                                      </span>
+                                    </div>
+                                  </div>
+                                  {qq.choices.map((ch, ci) => (
+                                    <div key={ci} className="flex flex-wrap items-center gap-2">
+                                      <input
+                                        type="radio"
+                                        name={`qq-correct-${mi}-${li}-${qi}`}
+                                        checked={qq.correctIndex === ci}
+                                        onChange={() =>
+                                          mapQuizQuestion(mi, li, qi, (prev) =>
+                                            prev.type === 'mcq' ? { ...prev, correctIndex: ci } : prev
+                                          )
+                                        }
+                                        className="h-4 w-4 shrink-0 text-orange-500"
+                                        title="Correct answer"
+                                      />
+                                      <input
+                                        value={ch}
+                                        onChange={(e) =>
+                                          mapQuizQuestion(mi, li, qi, (prev) => {
+                                            if (prev.type !== 'mcq') return prev;
+                                            const next = [...prev.choices];
+                                            next[ci] = e.target.value;
+                                            let correctIndex = prev.correctIndex;
+                                            if (correctIndex >= next.length) correctIndex = next.length - 1;
+                                            return { ...prev, choices: next, correctIndex };
+                                          })
+                                        }
+                                        className="min-w-0 flex-1 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2 py-1 text-sm"
+                                        placeholder={`Choice ${ci + 1}`}
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          mapQuizQuestion(mi, li, qi, (prev) => {
+                                            if (prev.type !== 'mcq') return prev;
+                                            if (prev.choices.length <= 2) return prev;
+                                            const next = prev.choices.filter((_, i) => i !== ci);
+                                            let correctIndex = prev.correctIndex;
+                                            if (ci === correctIndex) correctIndex = 0;
+                                            else if (ci < correctIndex) correctIndex -= 1;
+                                            if (correctIndex >= next.length) correctIndex = next.length - 1;
+                                            return { ...prev, choices: next, correctIndex };
+                                          })
+                                        }
+                                        disabled={qq.choices.length <= 2}
+                                        className="text-xs text-red-400 hover:underline disabled:opacity-30"
+                                      >
+                                        Remove
+                                      </button>
+                                    </div>
+                                  ))}
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      mapQuizQuestion(mi, li, qi, (prev) => {
+                                        if (prev.type !== 'mcq') return prev;
+                                        if (prev.choices.length >= MAX_QUIZ_CHOICES) return prev;
+                                        return { ...prev, choices: [...prev.choices, ''] };
+                                      })
+                                    }
+                                    disabled={qq.choices.length >= MAX_QUIZ_CHOICES}
+                                    className="text-xs font-bold text-orange-500 hover:text-orange-400 disabled:opacity-40"
+                                  >
+                                    + Add choice
+                                  </button>
+                                </div>
+                              ) : (
+                                <>
+                                  <label className="block space-y-1">
+                                    <span className="text-xs font-semibold text-[var(--text-secondary)]">
+                                      Grading rubric (for AI; not shown in hint tutor)
+                                    </span>
+                                    <textarea
+                                      value={qq.rubric ?? ''}
+                                      onChange={(e) =>
+                                        mapQuizQuestion(mi, li, qi, (prev) =>
+                                          prev.type === 'freeform'
+                                            ? { ...prev, rubric: e.target.value }
+                                            : prev
+                                        )
+                                      }
+                                      rows={3}
+                                      className="w-full resize-y rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2 py-1.5 text-sm"
+                                      placeholder="What a strong answer should include…"
+                                    />
+                                  </label>
+                                  <label className="block space-y-1">
+                                    <span className="text-xs font-semibold text-[var(--text-secondary)]">
+                                      Hint context (optional, for hint tutor only)
+                                    </span>
+                                    <textarea
+                                      value={qq.hintContext ?? ''}
+                                      onChange={(e) =>
+                                        mapQuizQuestion(mi, li, qi, (prev) =>
+                                          prev.type === 'freeform'
+                                            ? { ...prev, hintContext: e.target.value }
+                                            : prev
+                                        )
+                                      }
+                                      rows={2}
+                                      className="w-full resize-y rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2 py-1.5 text-sm"
+                                    />
+                                  </label>
+                                </>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       ) : (
                         <label className="block space-y-1">
                           <span className="text-xs font-semibold text-[var(--text-secondary)]">Video URL</span>

@@ -30,7 +30,7 @@ export interface CertificateHistorySnapshot {
 }
 
 /** Admin portal sub-routes (Content tab uses internal id `catalog`; Roles tab uses `roles`). */
-export type AdminHistoryTab = 'alerts' | 'catalog' | 'moderation' | 'roles';
+export type AdminHistoryTab = 'alerts' | 'ai' | 'catalog' | 'moderation' | 'roles';
 
 export interface AppHistoryPayload {
   v: 1;
@@ -88,6 +88,7 @@ export function payloadToHash(payload: AppHistoryPayload): string {
   if (view === 'admin') {
     const tab = adminTab ?? 'alerts';
     if (tab === 'alerts') return '#/admin';
+    if (tab === 'ai') return '#/admin/ai';
     if (tab === 'catalog') return '#/admin/content';
     if (tab === 'moderation') return '#/admin/moderation';
     return '#/admin/roles';
@@ -152,6 +153,7 @@ export function parseHashToPayload(hash: string): AppHistoryPayload | null {
     else if (sub === 'moderation') adminTab = 'moderation';
     else if (sub === 'roles' || sub === 'users') adminTab = 'roles';
     else if (sub === 'alerts') adminTab = 'alerts';
+    else if (sub === 'ai' || sub === 'models' || sub === 'gemini') adminTab = 'ai';
     return { v: 1, view: 'admin', adminTab };
   }
 

@@ -7,7 +7,9 @@ import {
   writeBatch,
   serverTimestamp,
 } from 'firebase/firestore';
-import type { Course, Lesson, Module } from '../data/courses';
+import type { Course, Lesson, Module, QuizDefinition, QuizQuestion } from '../data/courses';
+import { MAX_QUIZ_CHOICES, MAX_QUIZ_QUESTIONS } from '../data/courses';
+import { coerceQuizIndex } from './quizCoercion';
 import { STATIC_CATALOG_FALLBACK } from '../data/courses';
 import { dedupeLabelsPreserveOrder, isCourseLevel, normalizeCourseTaxonomy } from './courseTaxonomy';
 import { db, handleFirestoreError, OperationType } from '../firebase';
@@ -58,6 +60,57 @@ export function peekResolvedCatalogCourses(): Course[] | null {
   return readCatalogFromSession();
 }
 
+function parseQuizQuestion(raw: unknown): QuizQuestion | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const q = raw as Record<string, unknown>;
+  if (typeof q.id !== 'string' || !q.id.trim()) return null;
+  if (typeof q.prompt !== 'string' || !q.prompt.trim()) return null;
+  if (q.type === 'mcq') {
+    if (!Array.isArray(q.choices)) return null;
+    /** Keep indices aligned with author `correctIndex` after dropping empty slots. */
+    const choices: string[] = [];
+    const sourceIndices: number[] = [];
+    for (let i = 0; i < q.choices.length; i += 1) {
+      const c = q.choices[i];
+      if (typeof c === 'string' && c.trim()) {
+        sourceIndices.push(i);
+        choices.push(c.trim());
+      }
+    }
+    if (choices.length < 2 || choices.length > MAX_QUIZ_CHOICES) return null;
+    const rawMarked = coerceQuizIndex(q.correctIndex);
+    if (rawMarked === null) return null;
+    const correctIndex = sourceIndices.indexOf(rawMarked);
+    if (correctIndex < 0) return null;
+    return { id: q.id.trim(), type: 'mcq', prompt: q.prompt.trim(), choices, correctIndex };
+  }
+  if (q.type === 'freeform') {
+    const rubric = typeof q.rubric === 'string' ? q.rubric : undefined;
+    const hintContext = typeof q.hintContext === 'string' ? q.hintContext : undefined;
+    return {
+      id: q.id.trim(),
+      type: 'freeform',
+      prompt: q.prompt.trim(),
+      ...(rubric !== undefined ? { rubric } : {}),
+      ...(hintContext !== undefined ? { hintContext } : {}),
+    };
+  }
+  return null;
+}
+
+function parseQuizDefinition(raw: unknown): QuizDefinition | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  if (!Array.isArray(o.questions)) return null;
+  const questions: QuizQuestion[] = [];
+  for (const item of o.questions) {
+    if (questions.length >= MAX_QUIZ_QUESTIONS) break;
+    const pq = parseQuizQuestion(item);
+    if (pq) questions.push(pq);
+  }
+  return { questions };
+}
+
 function parseLesson(raw: unknown): Lesson | null {
   if (!raw || typeof raw !== 'object') return null;
   const o = raw as Record<string, unknown>;
@@ -70,8 +123,15 @@ function parseLesson(raw: unknown): Lesson | null {
   };
   if (typeof o.duration === 'string') lesson.duration = o.duration;
   if (typeof o.about === 'string') lesson.about = o.about;
-  if (o.contentKind === 'web') lesson.contentKind = 'web';
-  if (typeof o.webUrl === 'string') lesson.webUrl = o.webUrl;
+  if (o.contentKind === 'quiz') {
+    lesson.contentKind = 'quiz';
+    lesson.videoUrl = videoUrl;
+    const quiz = parseQuizDefinition(o.quiz);
+    if (quiz && quiz.questions.length > 0) lesson.quiz = quiz;
+  } else {
+    if (o.contentKind === 'web') lesson.contentKind = 'web';
+    if (typeof o.webUrl === 'string') lesson.webUrl = o.webUrl;
+  }
   return lesson;
 }
 
@@ -169,10 +229,36 @@ export async function resolveCatalogCourses(): Promise<Course[]> {
   return result;
 }
 
+/** Firestore rejects `undefined` anywhere in the payload (e.g. `{ ...lesson, webUrl: undefined }` from admin patches). */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === null || proto === Object.prototype;
+}
+
+function stripUndefinedDeep(value: unknown): unknown {
+  if (value === undefined) return undefined;
+  if (value === null || typeof value !== 'object') return value;
+  if (!isPlainObject(value) && !Array.isArray(value)) return value;
+  if (Array.isArray(value)) {
+    return value.map(stripUndefinedDeep).filter((item) => item !== undefined);
+  }
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value)) {
+    if (v === undefined) continue;
+    const cleaned = stripUndefinedDeep(v);
+    if (cleaned !== undefined) {
+      out[k] = cleaned;
+    }
+  }
+  return out;
+}
+
 export function courseToFirestorePayload(course: Course): Record<string, unknown> {
   const { id: _id, ...rest } = course;
+  const cleaned = stripUndefinedDeep(rest) as Record<string, unknown>;
   return {
-    ...rest,
+    ...cleaned,
     updatedAt: serverTimestamp(),
   };
 }
