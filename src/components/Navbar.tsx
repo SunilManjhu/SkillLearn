@@ -90,9 +90,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   isAdmin = false,
   immersiveHidden = false,
 }) => {
-  const [openDropdown, setOpenDropdown] = useState<'browse' | 'paths' | 'skills' | 'profile' | 'notifications' | null>(null);
+  const [openDropdown, setOpenDropdown] = useState<'paths' | 'skills' | 'profile' | 'notifications' | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [mobileNavExpand, setMobileNavExpand] = useState<'browse' | 'paths' | 'skills' | null>(null);
+  const [mobileNavExpand, setMobileNavExpand] = useState<'paths' | 'skills' | null>(null);
   const [focusedItemIndex, setFocusedItemIndex] = useState(-1);
   const [focusedNavIndex, setFocusedNavIndex] = useState(0);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -106,7 +106,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   useBodyScrollLock(mobileMenuOpen);
 
-  const browseItems = catalogBrowseCategories;
   const skillItems = catalogBrowseSkills;
 
   const tagIsActive = (active: readonly string[], item: string) => {
@@ -115,14 +114,12 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   const getItems = () => {
-    if (openDropdown === 'browse') return browseItems;
     if (openDropdown === 'paths') return learningPaths.map((p) => p.id);
     if (openDropdown === 'skills') return skillItems;
     return [];
   };
 
   const handleItemSelect = (item: string) => {
-    if (openDropdown === 'browse') onCategorySelect(item);
     if (openDropdown === 'paths') onPathSelect(item);
     if (openDropdown === 'skills') onSkillSelect(item);
     setOpenDropdown(null);
@@ -232,7 +229,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     setNotifications([]);
   };
 
-  const handleTopLevelKeyDown = (e: React.KeyboardEvent, index: number, type?: 'browse' | 'paths' | 'skills' | 'profile' | 'notifications') => {
+  const handleTopLevelKeyDown = (e: React.KeyboardEvent, index: number, type?: 'paths' | 'skills' | 'profile' | 'notifications') => {
     // If dropdown is open, handle vertical navigation
     if (openDropdown === type && type) {
       const items = getItems();
@@ -301,43 +298,22 @@ export const Navbar: React.FC<NavbarProps> = ({
         </button>
         
         <div className="hidden md:flex items-center gap-6 text-sm font-medium text-[var(--text-secondary)]" ref={dropdownRef}>
-          {/* Browse Dropdown */}
-          <div className="relative">
-            <button 
-              type="button"
-              ref={el => navItemsRef.current[1] = el}
-              onKeyDown={(e) => handleTopLevelKeyDown(e, 1, 'browse')}
-              onClick={() => {
-                setOpenDropdown(openDropdown === 'browse' ? null : 'browse');
-                setFocusedItemIndex(-1);
-              }}
-              tabIndex={focusedNavIndex === 1 ? 0 : -1}
-              className={`hover:text-[var(--text-primary)] transition-colors flex items-center gap-1 h-16 focus:outline-none focus:text-[var(--text-primary)] ${activeView === 'catalog' ? 'text-orange-500 border-b-2 border-orange-500' : 'text-[var(--text-secondary)]'}`}
-            >
-              Browse <ChevronDown size={14} className={`${openDropdown === 'browse' ? 'rotate-180' : ''} transition-transform`} />
-            </button>
-            {openDropdown === 'browse' && (
-              <div 
-                className="absolute top-full left-0 w-56 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-b-lg shadow-xl py-2 z-50"
-              >
-                {browseItems.map((item, index) => {
-                  const selected = tagIsActive(catalogActiveCategoryTags, item);
-                  return (
-                    <button
-                      key={item}
-                      type="button"
-                      aria-pressed={selected}
-                      onClick={() => handleItemSelect(item)}
-                      onMouseEnter={() => setFocusedItemIndex(index)}
-                      className={`w-full min-h-10 text-left px-4 py-2 transition-colors focus:outline-none ${selected ? 'bg-orange-500/15 font-medium text-orange-500' : ''} ${focusedItemIndex === index ? 'bg-[var(--hover-bg)] text-orange-500' : 'hover:bg-[var(--hover-bg)] hover:text-orange-500'}`}
-                    >
-                      {item}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          <button
+            type="button"
+            ref={(el) => {
+              navItemsRef.current[1] = el;
+            }}
+            onKeyDown={(e) => handleTopLevelKeyDown(e, 1)}
+            onClick={() => {
+              setOpenDropdown(null);
+              setFocusedItemIndex(-1);
+              onNavigate('catalog');
+            }}
+            tabIndex={focusedNavIndex === 1 ? 0 : -1}
+            className={`h-16 transition-colors hover:text-[var(--text-primary)] focus:text-[var(--text-primary)] focus:outline-none ${activeView === 'catalog' ? 'border-b-2 border-orange-500 text-orange-500' : 'text-[var(--text-secondary)]'}`}
+          >
+            Browse Catalog
+          </button>
 
           {/* Paths Dropdown */}
           <div className="relative">
@@ -703,39 +679,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                   setMobileMenuOpen(false);
                 }}
               >
-                Browse catalog
+                Browse Catalog
               </button>
-              <div className="border-t border-[var(--border-color)]">
-                <button
-                  type="button"
-                  className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-[var(--hover-bg)]"
-                  onClick={() => setMobileNavExpand((e) => (e === 'browse' ? null : 'browse'))}
-                  aria-expanded={mobileNavExpand === 'browse'}
-                >
-                  <span>Categories</span>
-                  <ChevronDown size={16} className={`shrink-0 transition-transform ${mobileNavExpand === 'browse' ? 'rotate-180' : ''}`} />
-                </button>
-                {mobileNavExpand === 'browse' && (
-                  <div className="border-t border-[var(--border-color)] bg-[var(--bg-primary)]/30 pb-2">
-                    {browseItems.map((item) => {
-                      const selected = tagIsActive(catalogActiveCategoryTags, item);
-                      return (
-                        <button
-                          key={item}
-                          type="button"
-                          aria-pressed={selected}
-                          className={`w-full min-h-11 px-6 py-2.5 text-left text-sm transition-colors ${selected ? 'bg-orange-500/15 font-medium text-orange-500' : 'hover:bg-[var(--hover-bg)] hover:text-orange-500'}`}
-                          onClick={() => {
-                            onCategorySelect(item);
-                          }}
-                        >
-                          {item}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
               <div className="border-t border-[var(--border-color)]">
                 <button
                   type="button"
