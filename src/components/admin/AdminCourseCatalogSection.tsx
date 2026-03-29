@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   BookOpen,
@@ -68,6 +69,12 @@ import { loadCatalogCategoryPresets } from '../../utils/catalogCategoryPresetsFi
 import { dedupeLabelsPreserveOrder, normalizeCourseTaxonomy } from '../../utils/courseTaxonomy';
 import { getGeminiApiKey } from '../../utils/geminiClient';
 import { resolveMcqCorrectIndex } from '../../utils/geminiQuiz';
+import {
+  applyReorderViewportScrollAndFocus,
+  escapeSelectorAttrValue,
+  queryElementInScopeOrDocument,
+  REORDER_DATA_ATTR_SELECTORS,
+} from '../../utils/reorderScrollViewport';
 
 function deepClone<T>(x: T): T {
   return JSON.parse(JSON.stringify(x)) as T;
@@ -220,6 +227,91 @@ function remapCourseToStructuredIds(course: Course, newCourseId: string): Course
   };
 }
 
+/** Ephemeral UI key for stable lesson row identity while reordering (not persisted). */
+type LessonWithAdminKey = Lesson & { __adminRowKey?: string };
+
+function stripAdminLessonRowKeys(course: Course): Course {
+  return {
+    ...course,
+    modules: course.modules.map((m) => ({
+      ...m,
+      lessons: m.lessons.map((les) => {
+        const { __adminRowKey: _, ...rest } = les as LessonWithAdminKey;
+        return rest as Lesson;
+      }),
+    })),
+  };
+}
+
+function ensureCourseLessonRowKeys(course: Course): Course {
+  return {
+    ...course,
+    modules: course.modules.map((m) => ({
+      ...m,
+      lessons: m.lessons.map((les) => {
+        const x = les as LessonWithAdminKey;
+        if (x.__adminRowKey) return x;
+        return { ...les, __adminRowKey: crypto.randomUUID() };
+      }),
+    })),
+  };
+}
+
+function draftJsonForBaseline(course: Course): string {
+  return JSON.stringify(stripAdminLessonRowKeys(course));
+}
+
+function lessonRowDomKey(lesson: Lesson, mi: number, li: number): string {
+  return (lesson as LessonWithAdminKey).__adminRowKey ?? `lesson-${mi}-${li}`;
+}
+
+function findLessonIndexByDomKey(mod: Module, mi: number, rowKey: string): number {
+  return mod.lessons.findIndex((l, li) => lessonRowDomKey(l, mi, li) === rowKey);
+}
+
+/** Pure, single evaluation — avoids React Strict Mode double-invoking functional setDraft (two swaps in dev). */
+function computeLessonSwapDraft(
+  d: Course,
+  mi: number,
+  lessonRowKey: string,
+  delta: -1 | 1
+): { next: Course; pair: { li: number; ni: number } } | null {
+  const m = d.modules[mi];
+  if (!m) return null;
+  const li = findLessonIndexByDomKey(m, mi, lessonRowKey);
+  if (li < 0) return null;
+  const ni = li + delta;
+  if (ni < 0 || ni >= m.lessons.length) return null;
+  const modules = d.modules.map((mm, i) => {
+    if (i !== mi) return mm;
+    const lessons = [...mm.lessons];
+    [lessons[li], lessons[ni]] = [lessons[ni]!, lessons[li]!];
+    return { ...mm, lessons };
+  });
+  let next: Course = { ...d, modules };
+  if (isStructuredCourseId(next.id)) {
+    next = remapStructuredCourseModuleLessonIdsByOrder(next);
+  }
+  return { next, pair: { li, ni } };
+}
+
+/** Pure module swap — same rationale as {@link computeLessonSwapDraft}. */
+function computeModuleSwapDraft(
+  d: Course,
+  mi: number,
+  delta: -1 | 1
+): { next: Course; pair: { a: number; b: number } } | null {
+  const ni = mi + delta;
+  if (ni < 0 || ni >= d.modules.length) return null;
+  const modules = [...d.modules];
+  [modules[mi], modules[ni]] = [modules[ni]!, modules[mi]!];
+  let next: Course = { ...d, modules };
+  if (isStructuredCourseId(next.id)) {
+    next = remapStructuredCourseModuleLessonIdsByOrder(next);
+  }
+  return { next, pair: { a: mi, b: ni } };
+}
+
 /** Sub-tabs inside Course catalog: course entries, learning paths, category management. */
 type ContentCatalogSubTab = 'catalog' | 'paths' | 'categories' | 'presets';
 
@@ -254,6 +346,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   /** '' = none selected; avoids loading Firestore until the user opens the Course dropdown. */
   const [selector, setSelector] = useState<string>('');
   const [draft, setDraft] = useState<Course | null>(null);
+  const draftRef = useRef<Course | null>(null);
+  draftRef.current = draft;
   const [busy, setBusy] = useState(false);
   const [listLoading, setListLoading] = useState(false);
   /** True after first focus on Course select or explicit Reload list — then options include New Course + published. */
@@ -273,6 +367,22 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const pendingOpenNewLessonKeyRef = useRef<string | null>(null);
   /** On failed save, scroll/focus the first invalid required field once it is rendered. */
   const pendingScrollTargetIdRef = useRef<string | null>(null);
+  /** After lesson reorder: restore viewport Y of the control + focus (mouse stays on same arrow). */
+  const pendingLessonReorderFocusRef = useRef<{
+    lessonKey: string;
+    control: 'up' | 'down';
+    beforeTop: number;
+  } | null>(null);
+  /** Bumps after lesson reorder so layout/focus runs once, not on every draft edit. */
+  const [lessonReorderLayoutTick, setLessonReorderLayoutTick] = useState(0);
+  /** After module reorder: restore viewport Y of the control + focus. */
+  const pendingModuleReorderFocusRef = useRef<{
+    targetMiAfter: number;
+    control: 'up' | 'down';
+    beforeTop: number;
+  } | null>(null);
+  const [moduleReorderLayoutTick, setModuleReorderLayoutTick] = useState(0);
+  const courseCatalogEditorRef = useRef<HTMLDivElement | null>(null);
   /** After choosing New Course (or equivalent), focus Course title once details are expanded. */
   const pendingFocusCourseTitleRef = useRef(false);
   /** Avoid collapsing the editor when selector moves from __new__ to draft.id after first save (draft id unchanged). */
@@ -438,7 +548,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   /** First time draft appears (e.g. initial load) without baseline yet. */
   useEffect(() => {
     if (!draft || baselineJson !== null) return;
-    setBaselineJson(JSON.stringify(draft));
+    setBaselineJson(draftJsonForBaseline(draft));
   }, [draft, baselineJson]);
 
   const applyPickCourse = useCallback(
@@ -448,15 +558,17 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       if (id === '__new__') {
         pendingFocusCourseTitleRef.current = true;
         const fresh = emptyCourse(firstAvailableStructuredCourseId(publishedList));
-        setDraft(fresh);
-        setBaselineJson(JSON.stringify(fresh));
+        const keyed = ensureCourseLessonRowKeys(fresh);
+        setDraft(keyed);
+        setBaselineJson(draftJsonForBaseline(keyed));
         return;
       }
       const c = publishedList.find((x) => x.id === id);
       if (c) {
         const clone = normalizeCourseTaxonomy(deepClone(c));
-        setDraft(clone);
-        setBaselineJson(JSON.stringify(clone));
+        const keyed = ensureCourseLessonRowKeys(clone);
+        setDraft(keyed);
+        setBaselineJson(draftJsonForBaseline(keyed));
       } else {
         setDraft(null);
         setBaselineJson(null);
@@ -680,7 +792,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 id: lid,
                 title: '',
                 videoUrl: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
-              },
+                __adminRowKey: crypto.randomUUID(),
+              } as LessonWithAdminKey,
             ],
           },
         ],
@@ -714,7 +827,12 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           ...m,
           lessons: [
             ...m.lessons,
-            { id: lid, title: '', videoUrl: 'https://www.youtube.com/watch?v=jNQXAC9IVRw' },
+            {
+              id: lid,
+              title: '',
+              videoUrl: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
+              __adminRowKey: crypto.randomUUID(),
+            } as LessonWithAdminKey,
           ],
         };
       });
@@ -759,23 +877,29 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     return next;
   };
 
-  const moveModule = (mi: number, delta: -1 | 1) => {
-    let swapped: { a: number; b: number } | null = null;
-    setDraft((d) => {
-      if (!d) return null;
+  const moveModule = (
+    mi: number,
+    delta: -1 | 1,
+    scrollAnchor?: HTMLElement | null
+  ) => {
+    const d0 = draftRef.current;
+    if (!d0) return;
+    const computed = computeModuleSwapDraft(d0, mi, delta);
+    if (!computed) return;
+
+    if (scrollAnchor) {
+      const ctrl = scrollAnchor.getAttribute('data-module-reorder');
       const ni = mi + delta;
-      if (ni < 0 || ni >= d.modules.length) return d;
-      swapped = { a: mi, b: ni };
-      const modules = [...d.modules];
-      [modules[mi], modules[ni]] = [modules[ni]!, modules[mi]!];
-      let next: Course = { ...d, modules };
-      if (isStructuredCourseId(next.id)) {
-        next = remapStructuredCourseModuleLessonIdsByOrder(next);
-      }
-      return next;
-    });
-    if (!swapped) return;
-    const { a, b } = swapped;
+      pendingModuleReorderFocusRef.current = {
+        targetMiAfter: ni,
+        control: ctrl === 'down' ? 'down' : 'up',
+        beforeTop: scrollAnchor.getBoundingClientRect().top,
+      };
+    }
+
+    const { a, b } = computed.pair;
+    flushSync(() => setDraft(computed.next));
+
     setOpenModules((prev) => {
       const oa = prev[a];
       const ob = prev[b];
@@ -788,45 +912,71 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       return next;
     });
     setOpenLessons((prev) => remapOpenLessonsAfterModuleSwap(prev, a, b));
+
+    setModuleReorderLayoutTick((t) => t + 1);
   };
 
-  const moveLesson = (mi: number, li: number, delta: -1 | 1) => {
-    let swapped: { a: number; b: number } | null = null;
-    setDraft((d) => {
-      if (!d) return null;
-      const mod = d.modules[mi];
-      if (!mod) return d;
-      const ni = li + delta;
-      if (ni < 0 || ni >= mod.lessons.length) return d;
-      swapped = { a: li, b: ni };
-      const modules = d.modules.map((m, i) => {
-        if (i !== mi) return m;
-        const lessons = [...m.lessons];
-        [lessons[li], lessons[ni]] = [lessons[ni]!, lessons[li]!];
-        return { ...m, lessons };
+  const moveLesson = (
+    mi: number,
+    lessonRowKey: string,
+    delta: -1 | 1,
+    scrollAnchor?: HTMLElement | null
+  ) => {
+    if (!lessonRowKey.trim()) return;
+
+    if (scrollAnchor) {
+      const ctrl = scrollAnchor.getAttribute('data-lesson-reorder');
+      pendingLessonReorderFocusRef.current = {
+        lessonKey: lessonRowKey,
+        control: ctrl === 'down' ? 'down' : 'up',
+        beforeTop: scrollAnchor.getBoundingClientRect().top,
+      };
+    }
+
+    const d0 = draftRef.current;
+    if (!d0) return;
+    const computed = computeLessonSwapDraft(d0, mi, lessonRowKey, delta);
+    if (!computed) return;
+
+    flushSync(() => setDraft(computed.next));
+
+    const pair = computed.pair;
+    if (pair) {
+      const k1 = `${mi}:${pair.li}`;
+      const k2 = `${mi}:${pair.ni}`;
+      setOpenLessons((prev) => {
+        const o1 = prev[k1];
+        const o2 = prev[k2];
+        if (!o1 && !o2) return prev;
+        const next = { ...prev };
+        delete next[k1];
+        delete next[k2];
+        if (o1) next[k2] = true;
+        if (o2) next[k1] = true;
+        return next;
       });
-      let next: Course = { ...d, modules };
-      if (isStructuredCourseId(next.id)) {
-        next = remapStructuredCourseModuleLessonIdsByOrder(next);
-      }
-      return next;
-    });
-    if (!swapped) return;
-    const { a, b } = swapped;
-    const k1 = `${mi}:${a}`;
-    const k2 = `${mi}:${b}`;
-    setOpenLessons((prev) => {
-      const o1 = prev[k1];
-      const o2 = prev[k2];
-      if (!o1 && !o2) return prev;
-      const next = { ...prev };
-      delete next[k1];
-      delete next[k2];
-      if (o1) next[k2] = true;
-      if (o2) next[k1] = true;
-      return next;
-    });
+    }
+
+    setLessonReorderLayoutTick((t) => t + 1);
   };
+
+  useLayoutEffect(() => {
+    const job = pendingLessonReorderFocusRef.current;
+    if (!job) return;
+    pendingLessonReorderFocusRef.current = null;
+    const sel = `[data-admin-lesson-row="${escapeSelectorAttrValue(job.lessonKey)}"]`;
+    const row = queryElementInScopeOrDocument(courseCatalogEditorRef.current, sel);
+    applyReorderViewportScrollAndFocus(row, job, REORDER_DATA_ATTR_SELECTORS.lesson);
+  }, [lessonReorderLayoutTick]);
+
+  useLayoutEffect(() => {
+    const job = pendingModuleReorderFocusRef.current;
+    if (!job) return;
+    pendingModuleReorderFocusRef.current = null;
+    const sel = `[data-admin-module-index="${job.targetMiAfter}"]`;
+    const row = queryElementInScopeOrDocument(courseCatalogEditorRef.current, sel);
+    applyReorderViewportScrollAndFocus(row, job, REORDER_DATA_ATTR_SELECTORS.module);
+  }, [moduleReorderLayoutTick]);
 
   const moveLessonToModule = (mi: number, li: number, targetMi: number) => {
     if (targetMi === mi) return;
@@ -1028,7 +1178,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const isDirty =
     !!draft &&
     baselineJson !== null &&
-    JSON.stringify(draft) !== baselineJson;
+    draftJsonForBaseline(draft) !== baselineJson;
 
   useEffect(() => {
     onDraftDirtyChange?.(isDirty);
@@ -1047,11 +1197,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
   const handleSave = async () => {
     if (!draft) return;
-    if (baselineJson !== null && JSON.stringify(draft) === baselineJson) {
+    if (baselineJson !== null && draftJsonForBaseline(draft) === baselineJson) {
       showActionToast('No changes to save.', 'neutral');
       return;
     }
-    const normalized = normalizeCourseTaxonomy(draft);
+    const normalized = normalizeCourseTaxonomy(stripAdminLessonRowKeys(draft));
     const err = validateCourseDraft(normalized);
     if (err) {
       setShowValidationHints(true);
@@ -1078,7 +1228,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     setBusy(false);
     if (ok) {
       setShowValidationHints(false);
-      setDraft(normalized);
+      setDraft(ensureCourseLessonRowKeys(normalized));
       for (const cat of normalized.categories) {
         if (cat.trim()) addCatalogCategoryExtra(cat.trim());
       }
@@ -1114,8 +1264,9 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     copy.title = t.endsWith(' (copy)') ? t : `${t} (copy)`;
     pendingFocusCourseTitleRef.current = true;
     setSelector('__new__');
-    setDraft(copy);
-    setBaselineJson(JSON.stringify(copy));
+    const keyed = ensureCourseLessonRowKeys(copy);
+    setDraft(keyed);
+    setBaselineJson(draftJsonForBaseline(keyed));
     showActionToast(
       'Copy loaded as a new draft — IDs use C{n}M{m}L{l}. Adjust title if needed, then Save.'
     );
@@ -1138,7 +1289,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     if (draft && baselineJson !== null) {
       try {
         const restored = JSON.parse(baselineJson) as Course;
-        setDraft(deepClone(restored));
+        setDraft(ensureCourseLessonRowKeys(deepClone(restored)));
       } catch {
         showActionToast('Could not restore draft.', 'danger');
         return;
@@ -1306,7 +1457,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     if (draft && baselineJson !== null) {
       try {
         const restored = JSON.parse(baselineJson) as Course;
-        setDraft(deepClone(restored));
+        setDraft(ensureCourseLessonRowKeys(deepClone(restored)));
       } catch {
         showActionToast('Could not restore draft.', 'danger');
         return;
@@ -1588,7 +1739,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         <code className="text-orange-500/90">C1M1L1</code>.
       </p>
 
-      <div className="space-y-4">
+      <div ref={courseCatalogEditorRef} className="space-y-4">
         <div className="space-y-3">
         <div className="flex flex-col gap-3 md:grid md:grid-cols-3 md:items-start md:gap-x-3 md:gap-y-3">
           <div className="flex min-w-0 flex-col gap-1">
@@ -1990,7 +2141,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               <div>
                 <h3 className="text-sm font-bold text-[var(--text-primary)]">Modules and lessons</h3>
                 <p className="text-xs text-[var(--text-muted)] mt-1 max-w-xl">
-                  Each module is a group of lessons. Use arrows to reorder within a module, or{' '}
+                  Each module is a group of lessons. Use ↑/↓ on module or lesson rows to reorder (repeat clicks stay
+                  under the cursor; with a reorder button focused, Arrow keys move the row). Or use{' '}
                   <strong className="font-medium text-[var(--text-secondary)]">Move to module…</strong> on a lesson to
                   move it to another section (add a second lesson first if it is the only one in its module). For
                   courses with ids like C1, module and lesson ids are renumbered when you move items.
@@ -2008,6 +2160,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             {draft.modules.map((mod, mi) => (
               <div
                 key={`module-slot-${mi}`}
+                data-admin-module-index={mi}
                 className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/30 p-4 space-y-4"
               >
                 <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--border-color)] pb-3">
@@ -2036,7 +2189,20 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   <div className="flex shrink-0 items-center gap-1">
                     <button
                       type="button"
-                      onClick={() => moveModule(mi, -1)}
+                      data-module-reorder="up"
+                      onClick={(e) => moveModule(mi, -1, e.currentTarget)}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+                        if (e.altKey || e.ctrlKey || e.metaKey) return;
+                        const n = draftRef.current?.modules.length ?? 0;
+                        e.preventDefault();
+                        if (e.key === 'ArrowUp' && mi > 0) {
+                          moveModule(mi, -1, e.currentTarget);
+                        }
+                        if (e.key === 'ArrowDown' && mi < n - 1) {
+                          moveModule(mi, 1, e.currentTarget);
+                        }
+                      }}
                       disabled={mi === 0}
                       className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-30"
                       aria-label="Move module up"
@@ -2045,7 +2211,20 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     </button>
                     <button
                       type="button"
-                      onClick={() => moveModule(mi, 1)}
+                      data-module-reorder="down"
+                      onClick={(e) => moveModule(mi, 1, e.currentTarget)}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+                        if (e.altKey || e.ctrlKey || e.metaKey) return;
+                        const n = draftRef.current?.modules.length ?? 0;
+                        e.preventDefault();
+                        if (e.key === 'ArrowUp' && mi > 0) {
+                          moveModule(mi, -1, e.currentTarget);
+                        }
+                        if (e.key === 'ArrowDown' && mi < n - 1) {
+                          moveModule(mi, 1, e.currentTarget);
+                        }
+                      }}
                       disabled={mi >= draft.modules.length - 1}
                       className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-30"
                       aria-label="Move module down"
@@ -2120,9 +2299,14 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   <p className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide">
                     Lessons in this module
                   </p>
-                  {mod.lessons.map((lesson, li) => (
+                  {mod.lessons.map((lesson, li) => {
+                    const lessonRowKey = lessonRowDomKey(lesson, mi, li);
+                    return (
                     <div
-                      key={`lesson-slot-${mi}-${li}`}
+                      key={lessonRowKey}
+                      data-admin-lesson-row={lessonRowKey}
+                      data-lesson-mi={mi}
+                      data-lesson-li={li}
                       className="rounded-lg bg-[var(--bg-secondary)]/80 p-4 space-y-3 border border-[var(--border-color)]/60"
                     >
                       <div className="flex w-full min-w-0 items-center gap-2">
@@ -2151,7 +2335,35 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         <div className="flex shrink-0 flex-col gap-0.5 sm:flex-row sm:gap-1">
                           <button
                             type="button"
-                            onClick={() => moveLesson(mi, li, -1)}
+                            data-lesson-reorder="up"
+                            onClick={(e) => {
+                              const row = e.currentTarget.closest<HTMLElement>('[data-admin-lesson-row]');
+                              if (!row) return;
+                              const key = row.getAttribute('data-admin-lesson-row');
+                              const mIdx = Number(row.dataset.lessonMi);
+                              if (!key || !Number.isInteger(mIdx)) return;
+                              moveLesson(mIdx, key, -1, e.currentTarget);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+                              if (e.altKey || e.ctrlKey || e.metaKey) return;
+                              const row = e.currentTarget.closest<HTMLElement>('[data-admin-lesson-row]');
+                              if (!row) return;
+                              const key = row.getAttribute('data-admin-lesson-row');
+                              const mIdx = Number(row.dataset.lessonMi);
+                              if (!key || !Number.isInteger(mIdx)) return;
+                              const modNow = draftRef.current?.modules[mIdx];
+                              if (!modNow) return;
+                              const curLi = findLessonIndexByDomKey(modNow, mIdx, key);
+                              if (curLi < 0) return;
+                              e.preventDefault();
+                              if (e.key === 'ArrowUp' && curLi > 0) {
+                                moveLesson(mIdx, key, -1, e.currentTarget);
+                              }
+                              if (e.key === 'ArrowDown' && curLi < modNow.lessons.length - 1) {
+                                moveLesson(mIdx, key, 1, e.currentTarget);
+                              }
+                            }}
                             disabled={li === 0}
                             className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]/40 disabled:opacity-30"
                             aria-label="Move lesson up"
@@ -2160,7 +2372,35 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           </button>
                           <button
                             type="button"
-                            onClick={() => moveLesson(mi, li, 1)}
+                            data-lesson-reorder="down"
+                            onClick={(e) => {
+                              const row = e.currentTarget.closest<HTMLElement>('[data-admin-lesson-row]');
+                              if (!row) return;
+                              const key = row.getAttribute('data-admin-lesson-row');
+                              const mIdx = Number(row.dataset.lessonMi);
+                              if (!key || !Number.isInteger(mIdx)) return;
+                              moveLesson(mIdx, key, 1, e.currentTarget);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+                              if (e.altKey || e.ctrlKey || e.metaKey) return;
+                              const row = e.currentTarget.closest<HTMLElement>('[data-admin-lesson-row]');
+                              if (!row) return;
+                              const key = row.getAttribute('data-admin-lesson-row');
+                              const mIdx = Number(row.dataset.lessonMi);
+                              if (!key || !Number.isInteger(mIdx)) return;
+                              const modNow = draftRef.current?.modules[mIdx];
+                              if (!modNow) return;
+                              const curLi = findLessonIndexByDomKey(modNow, mIdx, key);
+                              if (curLi < 0) return;
+                              e.preventDefault();
+                              if (e.key === 'ArrowUp' && curLi > 0) {
+                                moveLesson(mIdx, key, -1, e.currentTarget);
+                              }
+                              if (e.key === 'ArrowDown' && curLi < modNow.lessons.length - 1) {
+                                moveLesson(mIdx, key, 1, e.currentTarget);
+                              }
+                            }}
                             disabled={li >= mod.lessons.length - 1}
                             className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]/40 disabled:opacity-30"
                             aria-label="Move lesson down"
@@ -2657,7 +2897,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         </>
                       )}
                     </div>
-                  ))}
+                  );
+                  })}
                   <button
                     type="button"
                     onClick={() => addLesson(mi)}

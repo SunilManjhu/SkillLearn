@@ -4,9 +4,12 @@ import React, {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
+import { flushSync } from 'react-dom';
 import {
   closestCorners,
   DndContext,
@@ -74,9 +77,57 @@ import { savePublishedCourse } from '../../utils/publishedCoursesFirestore';
 import { fetchPathMindmapFromFirestore, savePathMindmapToFirestore } from '../../utils/pathMindmapFirestore';
 import { normalizeExternalHref } from '../../utils/externalUrl';
 import { useAdminActionToast } from './useAdminActionToast';
+import {
+  applyReorderViewportScrollAndFocus,
+  escapeSelectorAttrValue,
+  queryElementInScopeOrDocument,
+  REORDER_DATA_ATTR_SELECTORS,
+} from '../../utils/reorderScrollViewport';
 
 function deepClone<T>(x: T): T {
   return JSON.parse(JSON.stringify(x)) as T;
+}
+
+/** Pure — avoids Strict Mode double-invoking functional setCourseEditDraft on module swap. */
+function computePathCourseModuleSwapDraft(
+  c: Course,
+  cid: string,
+  mi: number,
+  delta: -1 | 1
+): { next: Course; pair: { a: number; b: number } } | null {
+  if (c.id !== cid) return null;
+  const ni = mi + delta;
+  if (ni < 0 || ni >= c.modules.length) return null;
+  const modules = arrayMove(c.modules, mi, ni);
+  let next: Course = { ...c, modules };
+  if (isStructuredCourseId(next.id)) {
+    next = remapStructuredCourseModuleLessonIdsByOrder(next);
+  }
+  return { next, pair: { a: mi, b: ni } };
+}
+
+/** Pure — same rationale for in-module lesson reorder in path course editor. */
+function computePathCourseLessonSwapDraft(
+  c: Course,
+  cid: string,
+  mi: number,
+  li: number,
+  delta: -1 | 1
+): { next: Course; pair: { li: number; ni: number } } | null {
+  if (c.id !== cid) return null;
+  const mod = c.modules[mi];
+  if (!mod) return null;
+  const ni = li + delta;
+  if (ni < 0 || ni >= mod.lessons.length) return null;
+  const modules = c.modules.map((m, i) => {
+    if (i !== mi) return m;
+    return { ...m, lessons: arrayMove(m.lessons, li, ni) };
+  });
+  let next: Course = { ...c, modules };
+  if (isStructuredCourseId(next.id)) {
+    next = remapStructuredCourseModuleLessonIdsByOrder(next);
+  }
+  return { next, pair: { li, ni } };
 }
 
 /** Legacy: next l{n} unique across the whole course (non-structured ids). */
@@ -1020,7 +1071,7 @@ function PathBranchSortableRow({
   onToggleCollapse: (id: string) => void;
   onAddUnder: (parentId: string) => void;
   onRemove: (id: string) => void;
-  onMove: (id: string, delta: -1 | 1) => void;
+  onMove: (id: string, delta: -1 | 1, scrollAnchor?: HTMLElement | null) => void;
   onLabelChange: (id: string, label: string) => void;
   onLinkBranchChange: (id: string, patch: { label?: string; href?: string }) => void;
   onRequestEditCourse: (id: string) => void;
@@ -1071,7 +1122,12 @@ function PathBranchSortableRow({
           : 'bg-teal-500/15 text-teal-600 dark:text-teal-400';
 
   return (
-    <li ref={setNodeRef} style={style} className={`min-w-0 list-none overflow-hidden rounded-xl border border-[var(--border-color)] ${cardBg}`}>
+    <li
+      ref={setNodeRef}
+      style={style}
+      data-path-branch-node-id={b.id}
+      className={`min-w-0 list-none overflow-hidden rounded-xl border border-[var(--border-color)] ${cardBg}`}
+    >
       <div
         className="flex flex-wrap items-stretch gap-2 px-3 py-3 sm:px-4"
         onFocusCapture={(e) => {
@@ -1214,8 +1270,21 @@ function PathBranchSortableRow({
             </button>
             <button
               type="button"
+              data-branch-reorder="up"
               disabled={siblingIndex === 0}
-              onClick={() => onMove(b.id, -1)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onMove(b.id, -1, e.currentTarget);
+              }}
+              onKeyDown={(e) => {
+                if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+                if (e.altKey || e.ctrlKey || e.metaKey) return;
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.key === 'ArrowUp' && siblingIndex > 0) onMove(b.id, -1, e.currentTarget);
+                if (e.key === 'ArrowDown' && siblingIndex < siblingsLen - 1)
+                  onMove(b.id, 1, e.currentTarget);
+              }}
               className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg border border-[var(--border-color)] text-xs font-semibold disabled:opacity-30"
               aria-label="Move up among siblings"
             >
@@ -1223,8 +1292,21 @@ function PathBranchSortableRow({
             </button>
             <button
               type="button"
+              data-branch-reorder="down"
               disabled={siblingIndex >= siblingsLen - 1}
-              onClick={() => onMove(b.id, 1)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onMove(b.id, 1, e.currentTarget);
+              }}
+              onKeyDown={(e) => {
+                if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+                if (e.altKey || e.ctrlKey || e.metaKey) return;
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.key === 'ArrowUp' && siblingIndex > 0) onMove(b.id, -1, e.currentTarget);
+                if (e.key === 'ArrowDown' && siblingIndex < siblingsLen - 1)
+                  onMove(b.id, 1, e.currentTarget);
+              }}
               className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg border border-[var(--border-color)] text-xs font-semibold disabled:opacity-30"
               aria-label="Move down among siblings"
             >
@@ -1288,7 +1370,7 @@ function PathBranchTreeList({
   onToggleCollapse: (id: string) => void;
   onAddUnder: (parentId: string) => void;
   onRemove: (id: string) => void;
-  onMove: (id: string, delta: -1 | 1) => void;
+  onMove: (id: string, delta: -1 | 1, scrollAnchor?: HTMLElement | null) => void;
   onLabelChange: (id: string, label: string) => void;
   onLinkBranchChange: (id: string, patch: { label?: string; href?: string }) => void;
   onRequestEditCourse: (id: string) => void;
@@ -1494,6 +1576,8 @@ function PathCourseRow({
 
 function ModuleRow({
   id,
+  pathCourseId,
+  pathModuleIndex,
   moduleId,
   moduleTitle,
   moduleIndexLabel,
@@ -1506,6 +1590,8 @@ function ModuleRow({
   children,
 }: {
   id: string;
+  pathCourseId: string;
+  pathModuleIndex: number;
   moduleId: string;
   moduleTitle: string;
   moduleIndexLabel: string;
@@ -1513,8 +1599,8 @@ function ModuleRow({
   onToggle: () => void;
   canMoveUp: boolean;
   canMoveDown: boolean;
-  onMoveUp: () => void;
-  onMoveDown: () => void;
+  onMoveUp: (scrollAnchor?: HTMLElement | null) => void;
+  onMoveDown: (scrollAnchor?: HTMLElement | null) => void;
   children?: React.ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
@@ -1530,6 +1616,8 @@ function ModuleRow({
       ref={setNodeRef}
       style={style}
       className="rounded-lg border border-[var(--border-color)]/80 bg-[var(--bg-secondary)]/50"
+      data-path-course-id={pathCourseId}
+      data-path-module-index={pathModuleIndex}
     >
       <div className="flex flex-wrap items-center gap-2 p-2">
         <SortableHandle {...attributes} {...listeners} />
@@ -1558,9 +1646,18 @@ function ModuleRow({
         <div className="flex shrink-0 flex-col gap-0.5 sm:flex-row sm:gap-1">
           <button
             type="button"
+            data-module-reorder="up"
             onClick={(e) => {
               e.stopPropagation();
-              onMoveUp();
+              onMoveUp(e.currentTarget);
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+              if (e.altKey || e.ctrlKey || e.metaKey) return;
+              e.preventDefault();
+              e.stopPropagation();
+              if (e.key === 'ArrowUp' && canMoveUp) onMoveUp(e.currentTarget);
+              if (e.key === 'ArrowDown' && canMoveDown) onMoveDown(e.currentTarget);
             }}
             disabled={!canMoveUp}
             className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-30"
@@ -1570,9 +1667,18 @@ function ModuleRow({
           </button>
           <button
             type="button"
+            data-module-reorder="down"
             onClick={(e) => {
               e.stopPropagation();
-              onMoveDown();
+              onMoveDown(e.currentTarget);
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+              if (e.altKey || e.ctrlKey || e.metaKey) return;
+              e.preventDefault();
+              e.stopPropagation();
+              if (e.key === 'ArrowUp' && canMoveUp) onMoveUp(e.currentTarget);
+              if (e.key === 'ArrowDown' && canMoveDown) onMoveDown(e.currentTarget);
             }}
             disabled={!canMoveDown}
             className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-30"
@@ -1589,6 +1695,9 @@ function ModuleRow({
 
 function LessonRow({
   id,
+  pathCourseId,
+  pathModuleIndex,
+  pathLessonIndex,
   lessonIndexLabel,
   title,
   lessonId,
@@ -1601,13 +1710,16 @@ function LessonRow({
   onMoveLessonToModule,
 }: {
   id: string;
+  pathCourseId: string;
+  pathModuleIndex: number;
+  pathLessonIndex: number;
   lessonIndexLabel: string;
   title: string;
   lessonId: string;
   canMoveUp: boolean;
   canMoveDown: boolean;
-  onMoveUp: () => void;
-  onMoveDown: () => void;
+  onMoveUp: (scrollAnchor?: HTMLElement | null) => void;
+  onMoveDown: (scrollAnchor?: HTMLElement | null) => void;
   moveToModuleOptions?: { value: number; label: string }[];
   canMoveLessonOutOfModule?: boolean;
   onMoveLessonToModule?: (targetMi: number) => void;
@@ -1628,6 +1740,9 @@ function LessonRow({
       ref={setNodeRef}
       style={style}
       className="flex flex-col gap-2 rounded-lg border border-[var(--border-color)]/60 bg-[var(--bg-primary)]/30 px-2 py-2"
+      data-path-course-id={pathCourseId}
+      data-path-module-index={pathModuleIndex}
+      data-path-lesson-index={pathLessonIndex}
     >
       <div className="flex min-w-0 items-center gap-2">
         <SortableHandle {...attributes} {...listeners} />
@@ -1641,9 +1756,18 @@ function LessonRow({
         <div className="flex shrink-0 flex-col gap-0.5 sm:flex-row sm:gap-1">
           <button
             type="button"
+            data-lesson-reorder="up"
             onClick={(e) => {
               e.stopPropagation();
-              onMoveUp();
+              onMoveUp(e.currentTarget);
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+              if (e.altKey || e.ctrlKey || e.metaKey) return;
+              e.preventDefault();
+              e.stopPropagation();
+              if (e.key === 'ArrowUp' && canMoveUp) onMoveUp(e.currentTarget);
+              if (e.key === 'ArrowDown' && canMoveDown) onMoveDown(e.currentTarget);
             }}
             disabled={!canMoveUp}
             className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-30"
@@ -1653,9 +1777,18 @@ function LessonRow({
           </button>
           <button
             type="button"
+            data-lesson-reorder="down"
             onClick={(e) => {
               e.stopPropagation();
-              onMoveDown();
+              onMoveDown(e.currentTarget);
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+              if (e.altKey || e.ctrlKey || e.metaKey) return;
+              e.preventDefault();
+              e.stopPropagation();
+              if (e.key === 'ArrowUp' && canMoveUp) onMoveUp(e.currentTarget);
+              if (e.key === 'ArrowDown' && canMoveDown) onMoveDown(e.currentTarget);
             }}
             disabled={!canMoveDown}
             className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-30"
@@ -1738,6 +1871,15 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
   const [pathBaselineJson, setPathBaselineJson] = useState<string | null>(null);
   /** Top-level mind map branches — editable for new and saved paths; synced to `pathMindmap` on save. */
   const [pathBranchTree, setPathBranchTree] = useState<PathBranchNode[]>([]);
+  const pathBranchTreeRef = useRef<PathBranchNode[]>([]);
+  pathBranchTreeRef.current = pathBranchTree;
+  const pathBranchMindMapRootRef = useRef<HTMLDivElement | null>(null);
+  const pendingPathBranchReorderFocusRef = useRef<{
+    nodeId: string;
+    control: 'up' | 'down';
+    beforeTop: number;
+  } | null>(null);
+  const [pathBranchReorderLayoutTick, setPathBranchReorderLayoutTick] = useState(0);
   const [pathBranchTreeBaselineJson, setPathBranchTreeBaselineJson] = useState('[]');
   const [pathMindmapLoading, setPathMindmapLoading] = useState(false);
   /** Add-branch flow or change linked course/lesson on an existing node. */
@@ -1755,6 +1897,23 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
   const [openModuleIdx, setOpenModuleIdx] = useState<Record<string, boolean>>({});
   const [courseEditDraft, setCourseEditDraft] = useState<Course | null>(null);
   const [courseEditBaseline, setCourseEditBaseline] = useState<string | null>(null);
+  const courseEditDraftRef = useRef<Course | null>(null);
+  courseEditDraftRef.current = courseEditDraft;
+  const pathCourseStructureEditorRef = useRef<HTMLDivElement | null>(null);
+  const pendingPathModuleReorderFocusRef = useRef<{
+    courseId: string;
+    targetMiAfter: number;
+    control: 'up' | 'down';
+    beforeTop: number;
+  } | null>(null);
+  const pendingPathLessonReorderFocusRef = useRef<{
+    courseId: string;
+    moduleIndex: number;
+    targetLessonIndexAfter: number;
+    control: 'up' | 'down';
+    beforeTop: number;
+  } | null>(null);
+  const [pathCourseReorderLayoutTick, setPathCourseReorderLayoutTick] = useState(0);
 
   type PathConfirmKind =
     | { kind: 'pickNewPath' }
@@ -1808,6 +1967,34 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
   const handleBranchDragCancel = useCallback(() => {
     setBranchDragActiveId(null);
   }, []);
+
+  /** Branch ↑/↓: one pure move + flushSync (avoids Strict Mode double functional setState). */
+  const moveBranchAmongSiblings = useCallback(
+    (id: string, delta: -1 | 1, scrollAnchor?: HTMLElement | null) => {
+      const roots = pathBranchTreeRef.current;
+      const next = moveNodeInTree(roots, id, delta);
+      if (scrollAnchor) {
+        const ctrl = scrollAnchor.getAttribute('data-branch-reorder');
+        pendingPathBranchReorderFocusRef.current = {
+          nodeId: id,
+          control: ctrl === 'down' ? 'down' : 'up',
+          beforeTop: scrollAnchor.getBoundingClientRect().top,
+        };
+      }
+      flushSync(() => setPathBranchTree(next));
+      setPathBranchReorderLayoutTick((t) => t + 1);
+    },
+    []
+  );
+
+  useLayoutEffect(() => {
+    const job = pendingPathBranchReorderFocusRef.current;
+    if (!job) return;
+    pendingPathBranchReorderFocusRef.current = null;
+    const sel = `[data-path-branch-node-id="${escapeSelectorAttrValue(job.nodeId)}"]`;
+    const row = queryElementInScopeOrDocument(pathBranchMindMapRootRef.current, sel);
+    applyReorderViewportScrollAndFocus(row, job, REORDER_DATA_ATTR_SELECTORS.branch);
+  }, [pathBranchReorderLayoutTick]);
 
   const branchDragOverlayNode = useMemo(() => {
     if (!branchDragActiveId) return null;
@@ -2278,55 +2465,88 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     }
   };
 
-  const moveCourseModule = useCallback((cid: string, mi: number, delta: -1 | 1) => {
-    let swapped: { mi: number; ni: number } | null = null;
-    setCourseEditDraft((c) => {
-      if (!c || c.id !== cid) return c;
-      const ni = mi + delta;
-      if (ni < 0 || ni >= c.modules.length) return c;
-      swapped = { mi, ni };
-      const modules = arrayMove(c.modules, mi, ni);
-      let next: Course = { ...c, modules };
-      if (isStructuredCourseId(next.id)) {
-        next = remapStructuredCourseModuleLessonIdsByOrder(next);
-      }
-      return next;
-    });
-    if (!swapped) return;
-    const { mi: a, ni: b } = swapped;
-    const ka = `m-${cid}-${a}`;
-    const kb = `m-${cid}-${b}`;
-    setOpenModuleIdx((prev) => {
-      const oa = prev[ka];
-      const ob = prev[kb];
-      if (!oa && !ob) return prev;
-      const next = { ...prev };
-      delete next[ka];
-      delete next[kb];
-      if (oa) next[kb] = true;
-      if (ob) next[ka] = true;
-      return next;
-    });
-  }, []);
+  const moveCourseModule = useCallback(
+    (cid: string, mi: number, delta: -1 | 1, scrollAnchor?: HTMLElement | null) => {
+      const c0 = courseEditDraftRef.current;
+      if (!c0) return;
+      const computed = computePathCourseModuleSwapDraft(c0, cid, mi, delta);
+      if (!computed) return;
 
-  const moveCourseLesson = useCallback((cid: string, mi: number, li: number, delta: -1 | 1) => {
-    setCourseEditDraft((c) => {
-      if (!c || c.id !== cid) return c;
-      const mod = c.modules[mi];
-      if (!mod) return c;
-      const ni = li + delta;
-      if (ni < 0 || ni >= mod.lessons.length) return c;
-      const modules = c.modules.map((m, i) => {
-        if (i !== mi) return m;
-        return { ...m, lessons: arrayMove(m.lessons, li, ni) };
-      });
-      let next: Course = { ...c, modules };
-      if (isStructuredCourseId(next.id)) {
-        next = remapStructuredCourseModuleLessonIdsByOrder(next);
+      if (scrollAnchor) {
+        const ctrl = scrollAnchor.getAttribute('data-module-reorder');
+        pendingPathModuleReorderFocusRef.current = {
+          courseId: cid,
+          targetMiAfter: mi + delta,
+          control: ctrl === 'down' ? 'down' : 'up',
+          beforeTop: scrollAnchor.getBoundingClientRect().top,
+        };
       }
-      return next;
-    });
-  }, []);
+
+      const { a, b } = computed.pair;
+      flushSync(() => setCourseEditDraft(computed.next));
+
+      const ka = `m-${cid}-${a}`;
+      const kb = `m-${cid}-${b}`;
+      setOpenModuleIdx((prev) => {
+        const oa = prev[ka];
+        const ob = prev[kb];
+        if (!oa && !ob) return prev;
+        const next = { ...prev };
+        delete next[ka];
+        delete next[kb];
+        if (oa) next[kb] = true;
+        if (ob) next[ka] = true;
+        return next;
+      });
+
+      setPathCourseReorderLayoutTick((t) => t + 1);
+    },
+    []
+  );
+
+  const moveCourseLesson = useCallback(
+    (cid: string, mi: number, li: number, delta: -1 | 1, scrollAnchor?: HTMLElement | null) => {
+      const c0 = courseEditDraftRef.current;
+      if (!c0) return;
+      const computed = computePathCourseLessonSwapDraft(c0, cid, mi, li, delta);
+      if (!computed) return;
+
+      if (scrollAnchor) {
+        const ctrl = scrollAnchor.getAttribute('data-lesson-reorder');
+        pendingPathLessonReorderFocusRef.current = {
+          courseId: cid,
+          moduleIndex: mi,
+          targetLessonIndexAfter: li + delta,
+          control: ctrl === 'down' ? 'down' : 'up',
+          beforeTop: scrollAnchor.getBoundingClientRect().top,
+        };
+      }
+
+      flushSync(() => setCourseEditDraft(computed.next));
+      setPathCourseReorderLayoutTick((t) => t + 1);
+    },
+    []
+  );
+
+  useLayoutEffect(() => {
+    const modJob = pendingPathModuleReorderFocusRef.current;
+    if (modJob) {
+      pendingPathModuleReorderFocusRef.current = null;
+      const escC = escapeSelectorAttrValue(modJob.courseId);
+      const sel = `[data-path-course-id="${escC}"][data-path-module-index="${modJob.targetMiAfter}"]`;
+      const row = queryElementInScopeOrDocument(pathCourseStructureEditorRef.current, sel);
+      applyReorderViewportScrollAndFocus(row, modJob, REORDER_DATA_ATTR_SELECTORS.module);
+      return;
+    }
+
+    const lesJob = pendingPathLessonReorderFocusRef.current;
+    if (!lesJob) return;
+    pendingPathLessonReorderFocusRef.current = null;
+    const escC = escapeSelectorAttrValue(lesJob.courseId);
+    const sel = `[data-path-course-id="${escC}"][data-path-module-index="${lesJob.moduleIndex}"][data-path-lesson-index="${lesJob.targetLessonIndexAfter}"]`;
+    const row = queryElementInScopeOrDocument(pathCourseStructureEditorRef.current, sel);
+    applyReorderViewportScrollAndFocus(row, lesJob, REORDER_DATA_ATTR_SELECTORS.lesson);
+  }, [pathCourseReorderLayoutTick]);
 
   const moveCourseLessonToModule = useCallback(
     (cid: string, mi: number, li: number, targetMi: number) => {
@@ -2685,6 +2905,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                     onDragEnd={handleBranchDragEnd}
                     onDragCancel={handleBranchDragCancel}
                   >
+                    <div ref={pathBranchMindMapRootRef} className="min-w-0">
                     <PathBranchTreeList
                       nodes={pathBranchTree}
                       depth={0}
@@ -2694,9 +2915,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                       onBranchRowFocus={focusBranchRow}
                       onAddUnder={(parentId) => setBranchModal({ kind: 'add', parentId })}
                       onRemove={(id) => setPathBranchTree((roots) => removeNodeById(roots, id))}
-                      onMove={(id, delta) =>
-                        setPathBranchTree((roots) => moveNodeInTree(roots, id, delta))
-                      }
+                      onMove={moveBranchAmongSiblings}
                       onLabelChange={(id, label) =>
                         setPathBranchTree((roots) =>
                           mapBranchNodeById(roots, id, (n) =>
@@ -2724,6 +2943,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                       }}
                       dndDisabled={!!pathMindmapLoading}
                     />
+                    </div>
                     <DragOverlay dropAnimation={null}>
                       {branchDragOverlayNode ? (
                         <div className="flex max-w-[min(100vw-2rem,20rem)] items-center gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 shadow-lg">
@@ -2841,7 +3061,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                         onRemove={() => removeCourseFromPath(cid)}
                       >
                         {expanded && courseEditDraft && courseEditDraft.id === cid ? (
-                          <div className="space-y-3">
+                          <div ref={pathCourseStructureEditorRef} className="space-y-3">
                             <div className="flex flex-wrap items-center justify-between gap-2">
                               <p className="text-xs text-[var(--text-muted)]">
                                 Reorder modules and lessons with the grip, drag-and-drop, or arrows. Use{' '}
@@ -2872,6 +3092,8 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                                     <Fragment key={`${cid}-m-${mi}`}>
                                     <ModuleRow
                                       id={sortableCm(cid, mi)}
+                                      pathCourseId={cid}
+                                      pathModuleIndex={mi}
                                       moduleId={mod.id}
                                       moduleTitle={mod.title}
                                       moduleIndexLabel={`Module ${mi + 1}`}
@@ -2884,8 +3106,8 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                                       }
                                       canMoveUp={mi > 0}
                                       canMoveDown={mi < courseEditDraft.modules.length - 1}
-                                      onMoveUp={() => moveCourseModule(cid, mi, -1)}
-                                      onMoveDown={() => moveCourseModule(cid, mi, 1)}
+                                      onMoveUp={(el) => moveCourseModule(cid, mi, -1, el)}
+                                      onMoveDown={(el) => moveCourseModule(cid, mi, 1, el)}
                                     >
                                       {modOpen ? (
                                         <SortableContext
@@ -2897,13 +3119,16 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                                               <Fragment key={`${cid}-${mi}-l-${li}`}>
                                               <LessonRow
                                                 id={sortableMl(cid, mi, li)}
+                                                pathCourseId={cid}
+                                                pathModuleIndex={mi}
+                                                pathLessonIndex={li}
                                                 lessonIndexLabel={`Lesson ${li + 1}`}
                                                 title={les.title}
                                                 lessonId={les.id}
                                                 canMoveUp={li > 0}
                                                 canMoveDown={li < mod.lessons.length - 1}
-                                                onMoveUp={() => moveCourseLesson(cid, mi, li, -1)}
-                                                onMoveDown={() => moveCourseLesson(cid, mi, li, 1)}
+                                                onMoveUp={(el) => moveCourseLesson(cid, mi, li, -1, el)}
+                                                onMoveDown={(el) => moveCourseLesson(cid, mi, li, 1, el)}
                                                 moveToModuleOptions={
                                                   courseEditDraft.modules.length > 1
                                                     ? courseEditDraft.modules

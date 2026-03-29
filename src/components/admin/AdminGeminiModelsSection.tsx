@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, BrainCircuit, Loader2, RotateCcw, Save, Trash2 } from 'lucide-react';
 import { getGeminiModelChain } from '../../utils/geminiModelEnv';
 import {
@@ -15,14 +15,27 @@ interface AdminGeminiModelsSectionProps {
   onDirtyChange?: (dirty: boolean) => void;
 }
 
+/** Stable React key + focus target after reorder; stripped before save (normalize uses id/enabled only). */
+type LocalModelRow = GeminiModelAdminRow & { _key: string };
+
+function withKeys(rows: GeminiModelAdminRow[]): LocalModelRow[] {
+  return rows.map((r) => ({ ...r, _key: crypto.randomUUID() }));
+}
+
+interface FocusReorderControl {
+  rowKey: string;
+  which: 'up' | 'down';
+}
+
 export const AdminGeminiModelsSection: React.FC<AdminGeminiModelsSectionProps> = ({ onDirtyChange }) => {
-  const [rows, setRows] = useState<GeminiModelAdminRow[]>([]);
+  const [rows, setRows] = useState<LocalModelRow[]>([]);
   const [baselineJson, setBaselineJson] = useState<string>('');
   const [fromFirestore, setFromFirestore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [addSearch, setAddSearch] = useState('');
   const { showActionToast, actionToast } = useAdminActionToast();
+  const focusAfterReorderRef = useRef<FocusReorderControl | null>(null);
 
   const envDefaultChain = useMemo(() => getGeminiModelChain(), []);
 
@@ -30,7 +43,7 @@ export const AdminGeminiModelsSection: React.FC<AdminGeminiModelsSectionProps> =
     setLoading(true);
     const { fromFirestore: fs, rows: loaded } = await loadGeminiAiModelsForAdmin();
     setFromFirestore(fs);
-    setRows(loaded);
+    setRows(withKeys(loaded));
     const normalized = normalizeGeminiModelRows(loaded);
     setBaselineJson(JSON.stringify(normalized));
     setLoading(false);
@@ -84,7 +97,7 @@ export const AdminGeminiModelsSection: React.FC<AdminGeminiModelsSectionProps> =
       showActionToast('Already in list.', 'danger');
       return;
     }
-    setRows((prev) => [...prev, { id: normalized, enabled: true }]);
+    setRows((prev) => [...prev, { id: normalized, enabled: true, _key: crypto.randomUUID() }]);
     setAddSearch('');
   }, [addSearch, rows, showActionToast]);
 
@@ -92,8 +105,11 @@ export const AdminGeminiModelsSection: React.FC<AdminGeminiModelsSectionProps> =
     setRows((prev) => (prev.length <= 1 ? prev : prev.filter((_, j) => j !== i)));
   };
 
-  const moveRow = (i: number, delta: -1 | 1) => {
+  const moveRow = (i: number, delta: -1 | 1, refocus: 'up' | 'down') => {
     const j = i + delta;
+    if (j < 0 || j >= rows.length) return;
+    const rowKey = rows[i]!._key;
+    focusAfterReorderRef.current = { rowKey, which: refocus };
     setRows((prev) => {
       if (j < 0 || j >= prev.length) return prev;
       const next = [...prev];
@@ -102,8 +118,34 @@ export const AdminGeminiModelsSection: React.FC<AdminGeminiModelsSectionProps> =
     });
   };
 
+  useLayoutEffect(() => {
+    const job = focusAfterReorderRef.current;
+    if (!job) return;
+    focusAfterReorderRef.current = null;
+    const esc =
+      typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+        ? CSS.escape(job.rowKey)
+        : job.rowKey.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const root = document.querySelector<HTMLElement>(`[data-model-row-key="${esc}"]`);
+    if (!root) return;
+    const upBtn = root.querySelector<HTMLButtonElement>('button[data-gemini-reorder="up"]');
+    const downBtn = root.querySelector<HTMLButtonElement>('button[data-gemini-reorder="down"]');
+    const primary = job.which === 'up' ? upBtn : downBtn;
+    const secondary = job.which === 'up' ? downBtn : upBtn;
+    const btn =
+      primary && !primary.disabled
+        ? primary
+        : secondary && !secondary.disabled
+          ? secondary
+          : null;
+    if (btn) {
+      btn.focus({ preventScroll: true });
+      btn.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+  }, [rows]);
+
   const applyEnvDefaults = () => {
-    setRows(envDefaultChain.map((id) => ({ id, enabled: true })));
+    setRows(withKeys(envDefaultChain.map((id) => ({ id, enabled: true }))));
   };
 
   const handleSave = async () => {
@@ -113,7 +155,7 @@ export const AdminGeminiModelsSection: React.FC<AdminGeminiModelsSectionProps> =
       return;
     }
     setSaving(true);
-    const ok = await saveGeminiAiModels(rows);
+    const ok = await saveGeminiAiModels(rows.map(({ id, enabled }) => ({ id, enabled })));
     setSaving(false);
     if (ok) {
       showActionToast('Saved.');
@@ -192,7 +234,7 @@ export const AdminGeminiModelsSection: React.FC<AdminGeminiModelsSectionProps> =
             </button>
           </div>
           <p id="admin-models-add-hint" className="mt-1 text-[10px] text-[var(--text-muted)]">
-            Enter to add · typing filters rows
+            Enter to add · typing filters rows · with ↑/↓ focused, Arrow keys reorder (page does not scroll)
           </p>
         </div>
 
@@ -209,7 +251,8 @@ export const AdminGeminiModelsSection: React.FC<AdminGeminiModelsSectionProps> =
           <ul className="divide-y divide-[var(--border-color)] p-0">
             {filteredRows.map(({ row, index: i }) => (
               <li
-                key={`model-row-${i}`}
+                key={row._key}
+                data-model-row-key={row._key}
                 className="flex flex-col gap-2 px-2.5 py-2.5 sm:flex-row sm:items-center sm:gap-2 sm:py-2"
               >
                 <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -226,19 +269,35 @@ export const AdminGeminiModelsSection: React.FC<AdminGeminiModelsSectionProps> =
                   <div className="flex items-center gap-0.5">
                     <button
                       type="button"
-                      onClick={() => moveRow(i, -1)}
+                      data-gemini-reorder="up"
+                      onClick={() => moveRow(i, -1, 'up')}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+                        if (e.altKey || e.ctrlKey || e.metaKey) return;
+                        e.preventDefault();
+                        if (e.key === 'ArrowUp' && i > 0) moveRow(i, -1, 'up');
+                        if (e.key === 'ArrowDown' && i < rows.length - 1) moveRow(i, 1, 'down');
+                      }}
                       disabled={i === 0}
                       className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-25"
-                      aria-label="Up"
+                      aria-label="Move up"
                     >
                       <ArrowUp size={16} aria-hidden />
                     </button>
                     <button
                       type="button"
-                      onClick={() => moveRow(i, 1)}
+                      data-gemini-reorder="down"
+                      onClick={() => moveRow(i, 1, 'down')}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+                        if (e.altKey || e.ctrlKey || e.metaKey) return;
+                        e.preventDefault();
+                        if (e.key === 'ArrowUp' && i > 0) moveRow(i, -1, 'up');
+                        if (e.key === 'ArrowDown' && i < rows.length - 1) moveRow(i, 1, 'down');
+                      }}
                       disabled={i >= rows.length - 1}
                       className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-25"
-                      aria-label="Down"
+                      aria-label="Move down"
                     >
                       <ArrowDown size={16} aria-hidden />
                     </button>
