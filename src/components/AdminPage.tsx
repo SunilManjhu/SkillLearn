@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Shield, Send, BookOpen, Flag, Users, X, Sparkles } from 'lucide-react';
+import { Shield, Send, BookOpen, Flag, Users, X, Sparkles, Megaphone } from 'lucide-react';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { useDialogKeyboard } from '../hooks/useDialogKeyboard';
 import type { Course } from '../data/courses';
@@ -11,6 +11,7 @@ import { AdminModerationSection } from './admin/AdminModerationSection';
 import { AdminGeminiModelsSection } from './admin/AdminGeminiModelsSection';
 import { AdminAiSiteControlsSection } from './admin/AdminAiSiteControlsSection';
 import { AdminUserRolesSection } from './admin/AdminUserRolesSection';
+import { AdminHeroPhoneAdsSection } from './admin/AdminHeroPhoneAdsSection';
 import { useAdminActionToast } from './admin/useAdminActionToast';
 
 interface AdminPageProps {
@@ -23,6 +24,8 @@ interface AdminPageProps {
   onTabChange: (tab: AdminHistoryTab) => void;
   onDismiss: () => void;
   onCatalogChanged: () => void | Promise<void>;
+  /** Same asset URL as the home hero phone mockup (for live preview in Marketing tab). */
+  heroPhoneMockupSrc: string;
   /** Notifies parent when Alerts/Content drafts have unsaved work (for leaving admin via shell navigation). */
   onUnsavedWorkChange?: (dirty: boolean) => void;
 }
@@ -47,6 +50,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   onTabChange,
   onDismiss,
   onCatalogChanged,
+  heroPhoneMockupSrc,
   onUnsavedWorkChange,
 }) => {
   const [type, setType] = useState<BroadcastAlertType>('course_update');
@@ -62,6 +66,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   const [catalogDirty, setCatalogDirty] = useState(false);
   const [pathDirty, setPathDirty] = useState(false);
   const [aiModelsDirty, setAiModelsDirty] = useState(false);
+  const [phoneAdsDirty, setPhoneAdsDirty] = useState(false);
   const [navigationGuardOpen, setNavigationGuardOpen] = useState(false);
   const [pendingNavigation, setPendingNavigation] = useState<PendingAdminNavigation | null>(null);
   const courseRef = useRef<HTMLSelectElement | null>(null);
@@ -78,7 +83,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
     );
   }, [tab, title, message, moduleId, lessonId]);
 
-  const hasUnsavedWork = alertsDirty || catalogDirty || pathDirty || aiModelsDirty;
+  const hasUnsavedWork = alertsDirty || catalogDirty || pathDirty || aiModelsDirty || phoneAdsDirty;
 
   useEffect(() => {
     onUnsavedWorkChange?.(hasUnsavedWork);
@@ -213,7 +218,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
             <div className="min-w-0">
               <h1 className="text-lg font-bold tracking-tight sm:text-xl">Admin portal</h1>
               <p className="mt-0.5 line-clamp-2 text-xs text-[var(--text-secondary)] sm:text-sm sm:line-clamp-none">
-                Alerts, AI, catalog, moderation, roles. Not visible to learners.
+                Alerts, AI, catalog, marketing, moderation, roles. Not visible to learners.
               </p>
             </div>
           </div>
@@ -232,6 +237,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
           {tabBtn('alerts', 'Alerts', <Send size={16} />)}
           {tabBtn('ai', 'AI', <Sparkles size={16} />)}
           {tabBtn('catalog', 'Content', <BookOpen size={16} />)}
+          {tabBtn('marketing', 'Marketing', <Megaphone size={16} />)}
           {tabBtn('moderation', 'Moderation', <Flag size={16} />)}
           {tabBtn('roles', 'Roles', <Users size={16} />)}
         </div>
@@ -398,6 +404,10 @@ export const AdminPage: React.FC<AdminPageProps> = ({
             onDraftDirtyChange={setCatalogDirty}
             onPathsDirtyChange={setPathDirty}
           />
+        )}
+
+        {tab === 'marketing' && (
+          <AdminHeroPhoneAdsSection phoneMockupSrc={heroPhoneMockupSrc} onDirtyChange={setPhoneAdsDirty} />
         )}
 
         {tab === 'moderation' && (

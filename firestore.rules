@@ -532,6 +532,106 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    function validHeroPhoneTextBlock(b) {
+      return b is map && b.kind == 'text' &&
+        b.keys().hasAll(['kind', 'content']) &&
+        b.keys().hasOnly(['kind', 'content', 'style']) &&
+        b.content is string && b.content.size() > 0 && b.content.size() < 2000 &&
+        (!('style' in b) || b.style in ['headline', 'body', 'caption']);
+    }
+
+    function validHeroPhoneImageBlock(b) {
+      return b is map && b.kind == 'image' &&
+        b.keys().hasAll(['kind', 'url', 'fit']) &&
+        b.keys().hasOnly(['kind', 'url', 'fit', 'maxHeightPct', 'overlayHeadline', 'overlayBody']) &&
+        b.url is string && isValidUrl(b.url) && b.url.size() < 2000 &&
+        b.fit in ['cover', 'contain', 'fill'] &&
+        (!('maxHeightPct' in b) || (b.maxHeightPct is int && b.maxHeightPct >= 20 && b.maxHeightPct <= 100)) &&
+        (!('overlayHeadline' in b) || (b.overlayHeadline is string && b.overlayHeadline.size() > 0 && b.overlayHeadline.size() < 200)) &&
+        (!('overlayBody' in b) || (b.overlayBody is string && b.overlayBody.size() < 600));
+    }
+
+    function validHeroPhoneBlock(b) {
+      return validHeroPhoneTextBlock(b) || validHeroPhoneImageBlock(b);
+    }
+
+    function validHeroPhoneBlocksList(q) {
+      return q is list && q.size() >= 1 && q.size() <= 10 &&
+        (q.size() < 1 || validHeroPhoneBlock(q[0])) &&
+        (q.size() < 2 || validHeroPhoneBlock(q[1])) &&
+        (q.size() < 3 || validHeroPhoneBlock(q[2])) &&
+        (q.size() < 4 || validHeroPhoneBlock(q[3])) &&
+        (q.size() < 5 || validHeroPhoneBlock(q[4])) &&
+        (q.size() < 6 || validHeroPhoneBlock(q[5])) &&
+        (q.size() < 7 || validHeroPhoneBlock(q[6])) &&
+        (q.size() < 8 || validHeroPhoneBlock(q[7])) &&
+        (q.size() < 9 || validHeroPhoneBlock(q[8])) &&
+        (q.size() < 10 || validHeroPhoneBlock(q[9]));
+    }
+
+    function heroPhoneSlideLinksValid(s) {
+      return (!('label' in s) || (s.label is string && s.label.size() < 80)) &&
+        (!('linkUrl' in s) || (s.linkUrl is string && isValidUrl(s.linkUrl) && s.linkUrl.size() < 2000)) &&
+        (!('linkLabel' in s) || ('linkUrl' in s)) &&
+        (!('linkLabel' in s) || (s.linkLabel is string && s.linkLabel.size() > 0 && s.linkLabel.size() < 48));
+    }
+
+    function isValidHeroPhoneAdSlideLegacy(s) {
+      return s is map &&
+        s.keys().hasAll(['id', 'headline', 'body', 'gradientPreset']) &&
+        s.keys().hasOnly([
+          'id', 'headline', 'body', 'label', 'gradientPreset',
+          'imageUrl', 'linkUrl', 'linkLabel'
+        ]) &&
+        !('blocks' in s) &&
+        s.id is string && s.id.size() > 0 && s.id.size() < 120 &&
+        s.headline is string && s.headline.size() > 0 && s.headline.size() < 200 &&
+        s.body is string && s.body.size() > 0 && s.body.size() < 1200 &&
+        s.gradientPreset in ['sky_indigo', 'violet_fuchsia', 'emerald_teal', 'rose_orange', 'amber_stone', 'cyan_blue'] &&
+        (!('imageUrl' in s) || (s.imageUrl is string && isValidUrl(s.imageUrl) && s.imageUrl.size() < 2000)) &&
+        heroPhoneSlideLinksValid(s);
+    }
+
+    function isValidHeroPhoneAdSlideBlocks(s) {
+      return s is map &&
+        s.keys().hasAll(['id', 'gradientPreset', 'blocks']) &&
+        s.keys().hasOnly(['id', 'gradientPreset', 'blocks', 'label', 'linkUrl', 'linkLabel']) &&
+        s.id is string && s.id.size() > 0 && s.id.size() < 120 &&
+        s.gradientPreset in ['sky_indigo', 'violet_fuchsia', 'emerald_teal', 'rose_orange', 'amber_stone', 'cyan_blue'] &&
+        validHeroPhoneBlocksList(s.blocks) &&
+        heroPhoneSlideLinksValid(s);
+    }
+
+    function isValidHeroPhoneAdSlide(s) {
+      return isValidHeroPhoneAdSlideLegacy(s) || isValidHeroPhoneAdSlideBlocks(s);
+    }
+
+    function validHeroPhoneAdsSlidesList(q) {
+      return q is list && q.size() >= 1 && q.size() <= 8 &&
+        (q.size() < 1 || isValidHeroPhoneAdSlide(q[0])) &&
+        (q.size() < 2 || isValidHeroPhoneAdSlide(q[1])) &&
+        (q.size() < 3 || isValidHeroPhoneAdSlide(q[2])) &&
+        (q.size() < 4 || isValidHeroPhoneAdSlide(q[3])) &&
+        (q.size() < 5 || isValidHeroPhoneAdSlide(q[4])) &&
+        (q.size() < 6 || isValidHeroPhoneAdSlide(q[5])) &&
+        (q.size() < 7 || isValidHeroPhoneAdSlide(q[6])) &&
+        (q.size() < 8 || isValidHeroPhoneAdSlide(q[7]));
+    }
+
+    function isValidHeroPhoneAdsWrite(data) {
+      return data.keys().hasAll(['enabled', 'slides', 'updatedAt']) &&
+        data.keys().hasOnly(['enabled', 'slides', 'updatedAt']) &&
+        data.enabled is bool &&
+        validHeroPhoneAdsSlidesList(data.slides) &&
+        (data.updatedAt == request.time || data.updatedAt is timestamp);
+    }
+
+    match /siteSettings/heroPhoneAds {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidHeroPhoneAdsWrite(request.resource.data);
+      allow delete: if false;
+    }
+
     match /publishedCourses/{courseId} {
       allow read: if true;
       allow create, update: if isAdmin() && isValidPublishedCourseWrite(request.resource.data);

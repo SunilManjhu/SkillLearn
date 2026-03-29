@@ -2465,7 +2465,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             )}
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-2.5 sm:space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
                 <h3 className="text-xs font-semibold text-[var(--text-secondary)]">Modules and lessons</h3>
@@ -2535,13 +2535,13 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               <div
                 key={`module-slot-${mi}`}
                 data-admin-module-index={mi}
-                className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/30 p-4 space-y-4"
+                className="space-y-2.5 border-b border-[var(--border-color)]/40 pb-4 last:border-b-0 last:pb-0 sm:space-y-4 sm:pb-5"
               >
-                <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--border-color)] pb-3">
+                <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--border-color)]/40 pb-2 sm:pb-3">
                   <button
                     type="button"
                     onClick={() => toggleModuleOpen(mi)}
-                    className="flex min-h-11 min-w-0 flex-1 items-start gap-2 rounded-lg py-1 text-left hover:bg-[var(--hover-bg)]/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40"
+                    className="flex min-h-11 min-w-0 flex-1 items-start gap-1.5 rounded-lg py-0.5 text-left hover:bg-[var(--hover-bg)]/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 sm:gap-2 sm:py-1"
                     aria-expanded={!!openModules[mi]}
                     aria-label={`Module ${mi + 1}: ${mod.id.trim() || 'no id'} - ${mod.title.trim() || 'Untitled module'}. ${openModules[mi] ? 'Collapse' : 'Expand'} module`}
                   >
@@ -2557,7 +2557,9 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         <span className="font-mono text-orange-500/90">{mod.id.trim() || '—'}</span>
                         <span> - {mod.title.trim() || 'Untitled module'}</span>
                       </span>
-                      <span className="mt-0.5 block text-xs text-[var(--text-muted)]">Module {mi + 1}</span>
+                      <span className="mt-0.5 block text-[11px] font-medium text-[var(--text-muted)] sm:text-xs sm:font-normal">
+                        Module {mi + 1}
+                      </span>
                     </span>
                   </button>
                   <div className="flex shrink-0 items-center gap-1">
@@ -2619,7 +2621,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
                 {openModules[mi] && (
                 <>
-                <div className="flex flex-row flex-wrap items-end gap-x-3 gap-y-2">
+                <div className="mt-1 space-y-2.5 border-l border-[var(--border-color)]/50 pl-3 sm:mt-2 sm:space-y-4 sm:pl-4">
+                <div className="flex flex-row flex-wrap items-end gap-x-2 gap-y-2 sm:gap-x-3">
                   <label className="flex min-w-0 flex-[1_1_11rem] max-w-full flex-col gap-1 sm:max-w-[16rem]">
                     <span className="whitespace-nowrap text-xs font-semibold text-[var(--text-secondary)]">
                       Module ID
@@ -2628,7 +2631,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       id={`admin-module-id-${mi}`}
                       value={mod.id}
                       onChange={(e) => updateModule(mi, { id: e.target.value })}
-                      className={`box-border w-full min-w-0 rounded-lg border bg-[var(--bg-primary)] px-3 py-2 font-mono text-sm ${
+                      className={`box-border w-full min-w-0 rounded-lg border bg-[var(--bg-primary)] px-2.5 py-1.5 font-mono text-sm sm:px-3 sm:py-2 ${
                         showValidationHints && fieldErrors.moduleId.has(mi)
                           ? 'border-red-500'
                           : 'border-[var(--border-color)]'
@@ -2650,7 +2653,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       id={`admin-module-title-${mi}`}
                       value={mod.title}
                       onChange={(e) => updateModule(mi, { title: e.target.value })}
-                      className={`w-full text-sm bg-[var(--bg-primary)] border rounded-lg px-3 py-2 ${
+                      className={`w-full text-sm bg-[var(--bg-primary)] border rounded-lg px-2.5 py-1.5 sm:px-3 sm:py-2 ${
                         showValidationHints && fieldErrors.moduleTitle.has(mi)
                           ? 'border-red-500'
                           : 'border-[var(--border-color)]'
@@ -2669,10 +2672,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   </label>
                 </div>
 
-                <div className="space-y-3">
-                  <p className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide">
+                <div className="space-y-2 border-l border-[var(--border-color)]/40 pl-2 sm:space-y-3 sm:pl-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-secondary)] sm:text-xs">
                     Lessons in this module
                   </p>
+                  <div className="divide-y divide-[var(--border-color)]/40">
                   {mod.lessons.map((lesson, li) => {
                     const lessonRowKey = lessonRowDomKey(lesson, mi, li);
                     return (
@@ -2681,13 +2685,13 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       data-admin-lesson-row={lessonRowKey}
                       data-lesson-mi={mi}
                       data-lesson-li={li}
-                      className="rounded-lg bg-[var(--bg-secondary)]/80 p-4 space-y-3 border border-[var(--border-color)]/60"
+                      className="space-y-2 py-3 first:pt-0 sm:space-y-3 sm:py-4 sm:first:pt-1"
                     >
-                      <div className="flex w-full min-w-0 items-center gap-2">
+                      <div className="flex w-full min-w-0 items-center gap-1.5 sm:gap-2">
                         <button
                           type="button"
                           onClick={() => toggleLessonOpen(mi, li)}
-                          className="flex min-h-11 min-w-0 flex-1 items-start gap-2 rounded-lg py-1 text-left -mx-1 px-1 hover:bg-[var(--bg-primary)]/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40"
+                          className="flex min-h-11 min-w-0 flex-1 items-start gap-1.5 rounded-lg py-0.5 text-left -mx-0.5 px-0.5 hover:bg-[var(--bg-primary)]/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 sm:gap-2 sm:py-1 sm:-mx-1 sm:px-1"
                           aria-expanded={!!openLessons[`${mi}:${li}`]}
                           aria-label={`Lesson ${li + 1}: ${lesson.id.trim() || 'no id'} - ${lesson.title.trim() || 'Untitled lesson'}. ${openLessons[`${mi}:${li}`] ? 'Collapse' : 'Expand'} lesson`}
                         >
@@ -2703,7 +2707,9 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                               <span className="font-mono text-orange-500/90">{lesson.id.trim() || '—'}</span>
                               <span> - {lesson.title.trim() || 'Untitled lesson'}</span>
                             </span>
-                            <span className="mt-0.5 block text-xs text-[var(--text-muted)]">Lesson {li + 1}</span>
+                            <span className="mt-0.5 block text-[11px] font-medium text-[var(--text-muted)] sm:text-xs sm:font-normal">
+                              Lesson {li + 1}
+                            </span>
                           </span>
                         </button>
                         <div className="flex shrink-0 flex-col gap-0.5 sm:flex-row sm:gap-1">
@@ -2784,7 +2790,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         </div>
                       </div>
                       {draft.modules.length > 1 && (
-                        <div className="space-y-1 pt-1">
+                        <div className="space-y-1 pt-0.5 sm:pt-1">
                           <label className="block min-w-0">
                             <span className="sr-only">Move lesson to another module</span>
                             <select
@@ -2797,7 +2803,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                                 if (Number.isInteger(t)) moveLessonToModule(mi, li, t);
                                 e.target.value = '';
                               }}
-                              className="box-border min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
+                              className="box-border min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2.5 py-1.5 text-sm text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40 sm:px-3 sm:py-2"
                               aria-label="Move lesson to another module"
                             >
                               <option value="">Move to module…</option>
@@ -2819,7 +2825,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       )}
                       {openLessons[`${mi}:${li}`] && (
                         <>
-                      <div className="flex flex-row flex-wrap items-end gap-x-3 gap-y-2">
+                      <div className="flex flex-row flex-wrap items-end gap-x-2 gap-y-2 sm:gap-x-3">
                         <label className="flex min-w-0 flex-[1_1_11rem] max-w-full flex-col gap-1 sm:max-w-[16rem]">
                           <span className="whitespace-nowrap text-xs font-semibold text-[var(--text-secondary)]">
                             Lesson ID
@@ -2828,7 +2834,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             id={`admin-lesson-id-${mi}-${li}`}
                             value={lesson.id}
                             onChange={(e) => updateLesson(mi, li, { id: e.target.value })}
-                            className={`box-border w-full min-w-0 rounded-lg border bg-[var(--bg-primary)] px-3 py-2 font-mono text-sm ${
+                            className={`box-border w-full min-w-0 rounded-lg border bg-[var(--bg-primary)] px-2.5 py-1.5 font-mono text-sm sm:px-3 sm:py-2 ${
                               showValidationHints && fieldErrors.lessonId.has(`${mi}:${li}`)
                                 ? 'border-red-500'
                                 : 'border-[var(--border-color)]'
@@ -2850,7 +2856,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             id={`admin-lesson-title-${mi}-${li}`}
                             value={lesson.title}
                             onChange={(e) => updateLesson(mi, li, { title: e.target.value })}
-                            className={`w-full text-sm bg-[var(--bg-primary)] border rounded-lg px-3 py-2 ${
+                            className={`w-full text-sm bg-[var(--bg-primary)] border rounded-lg px-2.5 py-1.5 sm:px-3 sm:py-2 ${
                               showValidationHints && fieldErrors.lessonTitle.has(`${mi}:${li}`)
                                 ? 'border-red-500'
                                 : 'border-[var(--border-color)]'
@@ -2868,10 +2874,14 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           </span>
                         </label>
                       </div>
-                      <div className="space-y-2 border-t border-[var(--border-color)]/60 pt-3">
+                      <div className="space-y-1.5 border-t border-[var(--border-color)]/60 pt-2 sm:space-y-2 sm:pt-3">
                         <span className="text-xs font-semibold text-[var(--text-secondary)]">Lesson content</span>
-                        <div className="flex flex-wrap gap-4" role="radiogroup" aria-label="Lesson content type">
-                          <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-[var(--text-primary)]">
+                        <div
+                          className="flex flex-wrap gap-x-3 gap-y-2 sm:gap-4"
+                          role="radiogroup"
+                          aria-label="Lesson content type"
+                        >
+                          <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-[var(--text-primary)] sm:gap-2 sm:text-sm">
                             <input
                               type="radio"
                               name={`admin-lesson-kind-${mi}-${li}`}
@@ -2890,7 +2900,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             />
                             Video
                           </label>
-                          <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-[var(--text-primary)]">
+                          <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-[var(--text-primary)] sm:gap-2 sm:text-sm">
                             <input
                               type="radio"
                               name={`admin-lesson-kind-${mi}-${li}`}
@@ -2907,7 +2917,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             />
                             External page
                           </label>
-                          <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-[var(--text-primary)]">
+                          <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-[var(--text-primary)] sm:gap-2 sm:text-sm">
                             <input
                               type="radio"
                               name={`admin-lesson-kind-${mi}-${li}`}
@@ -2944,7 +2954,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             inputMode="url"
                             value={lesson.webUrl ?? ''}
                             onChange={(e) => updateLesson(mi, li, { webUrl: e.target.value })}
-                            className={`w-full text-sm font-mono bg-[var(--bg-primary)] border rounded-lg px-3 py-2 ${
+                            className={`w-full text-sm font-mono bg-[var(--bg-primary)] border rounded-lg px-2.5 py-1.5 sm:px-3 sm:py-2 ${
                               showValidationHints && fieldErrors.lessonWebUrl.has(`${mi}:${li}`)
                                 ? 'border-red-500'
                                 : 'border-[var(--border-color)]'
@@ -2964,7 +2974,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       ) : lesson.contentKind === 'quiz' ? (
                         <div
                           id={`admin-quiz-block-${mi}-${li}`}
-                          className={`space-y-4 rounded-lg border p-3 ${
+                          className={`space-y-2 rounded-lg border p-2 sm:space-y-4 sm:p-3 ${
                             showValidationHints && fieldErrors.lessonQuiz.has(`${mi}:${li}`)
                               ? 'border-red-500'
                               : 'border-[var(--border-color)]'
@@ -2994,7 +3004,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           {(lesson.quiz?.questions ?? []).map((qq, qi) => (
                             <div
                               key={qq.id}
-                              className="space-y-3 rounded-lg border border-[var(--border-color)]/80 bg-[var(--bg-primary)] p-3"
+                              className="space-y-2 rounded-lg border border-[var(--border-color)]/80 bg-[var(--bg-primary)] p-2 sm:space-y-3 sm:p-3"
                             >
                               <div className="flex flex-wrap items-center justify-between gap-2">
                                 <span className="text-xs font-bold text-[var(--text-muted)]">Question {qi + 1}</span>
@@ -3221,7 +3231,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             id={`admin-lesson-url-${mi}-${li}`}
                             value={lesson.videoUrl}
                             onChange={(e) => updateLesson(mi, li, { videoUrl: e.target.value })}
-                            className={`w-full text-sm font-mono bg-[var(--bg-primary)] border rounded-lg px-3 py-2 ${
+                            className={`w-full text-sm font-mono bg-[var(--bg-primary)] border rounded-lg px-2.5 py-1.5 sm:px-3 sm:py-2 ${
                               showValidationHints && fieldErrors.videoUrl.has(`${mi}:${li}`)
                                 ? 'border-red-500'
                                 : 'border-[var(--border-color)]'
@@ -3244,7 +3254,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         <input
                           value={lesson.duration ?? ''}
                           onChange={(e) => updateLesson(mi, li, { duration: e.target.value || undefined })}
-                          className="w-full text-sm bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2"
+                          className="w-full text-sm bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-2.5 py-1.5 sm:px-3 sm:py-2"
                           placeholder="Shown next to the lesson title when set"
                         />
                       </label>
@@ -3254,7 +3264,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           value={lesson.about ?? ''}
                           onChange={(e) => updateLesson(mi, li, { about: e.target.value || undefined })}
                           rows={2}
-                          className="w-full text-sm bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 resize-y"
+                          className="w-full text-sm bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-2.5 py-1.5 resize-y sm:px-3 sm:py-2"
                           placeholder="Short description under the player"
                         />
                       </label>
@@ -3273,13 +3283,15 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     </div>
                   );
                   })}
+                  </div>
                   <button
                     type="button"
                     onClick={() => addLesson(mi)}
-                    className="text-xs font-bold text-orange-500 hover:text-orange-400"
+                    className="min-h-11 touch-manipulation rounded-lg px-1 pt-1 text-left text-xs font-bold text-orange-500 hover:bg-orange-500/5 hover:text-orange-400 sm:min-h-0 sm:px-0 sm:pt-0 sm:hover:bg-transparent"
                   >
                     + Add lesson
                   </button>
+                </div>
                 </div>
                 </>
                 )}

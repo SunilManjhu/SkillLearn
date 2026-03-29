@@ -1,0 +1,196 @@
+/** Ordered content inside one swipe card. */
+export type HeroAdBlockStored =
+  | { kind: 'text'; content: string; style?: 'headline' | 'body' | 'caption' }
+  | {
+      kind: 'image';
+      url: string;
+      fit: 'cover' | 'contain' | 'fill';
+      maxHeightPct?: number;
+      overlayHeadline?: string;
+      overlayBody?: string;
+    };
+
+export type PhoneMockupAdBlock =
+  | { kind: 'text'; content: string; style: 'headline' | 'body' | 'caption' }
+  | {
+      kind: 'image';
+      url: string;
+      fit: 'cover' | 'contain' | 'fill';
+      maxHeightPct: number;
+      overlayHeadline?: string;
+      overlayBody?: string;
+    };
+
+/** Runtime slide for the phone rail. */
+export interface PhoneMockupAdSlide {
+  id: string;
+  label?: string;
+  gradient: string;
+  linkUrl?: string;
+  linkLabel?: string;
+  blocks: PhoneMockupAdBlock[];
+}
+
+/** Stored in Firestore (block-based or legacy migrated on read). */
+export interface HeroPhoneAdSlideStored {
+  id: string;
+  gradientPreset: HeroPhoneAdGradientPreset;
+  label?: string;
+  linkUrl?: string;
+  linkLabel?: string;
+  blocks: HeroAdBlockStored[];
+}
+
+/** Stored in Firestore; mapped to Tailwind classes in the client (allowlisted). */
+export const HERO_PHONE_AD_GRADIENT_PRESETS = {
+  sky_indigo: 'from-sky-600 to-indigo-700',
+  violet_fuchsia: 'from-violet-600 to-fuchsia-600',
+  emerald_teal: 'from-emerald-600 to-teal-700',
+  rose_orange: 'from-rose-600 to-orange-600',
+  amber_stone: 'from-amber-500 to-stone-700',
+  cyan_blue: 'from-cyan-600 to-blue-700',
+} as const;
+
+export type HeroPhoneAdGradientPreset = keyof typeof HERO_PHONE_AD_GRADIENT_PRESETS;
+
+export const HERO_PHONE_AD_GRADIENT_PRESET_OPTIONS: { value: HeroPhoneAdGradientPreset; label: string }[] = [
+  { value: 'sky_indigo', label: 'Sky → indigo' },
+  { value: 'violet_fuchsia', label: 'Violet → fuchsia' },
+  { value: 'emerald_teal', label: 'Emerald → teal' },
+  { value: 'rose_orange', label: 'Rose → orange' },
+  { value: 'amber_stone', label: 'Amber → stone' },
+  { value: 'cyan_blue', label: 'Cyan → blue' },
+];
+
+export const HERO_AD_IMAGE_FIT_OPTIONS: { value: 'cover' | 'contain' | 'fill'; label: string }[] = [
+  { value: 'contain', label: 'Show whole image (contain)' },
+  { value: 'cover', label: 'Fill frame (crop)' },
+  { value: 'fill', label: 'Stretch to fill' },
+];
+
+export function isHeroPhoneAdGradientPreset(s: string): s is HeroPhoneAdGradientPreset {
+  return s in HERO_PHONE_AD_GRADIENT_PRESETS;
+}
+
+export function isHeroAdImageFit(s: string): s is 'cover' | 'contain' | 'fill' {
+  return s === 'cover' || s === 'contain' || s === 'fill';
+}
+
+const MAX_OPTIONAL_URL_LEN = 2000;
+const MAX_LINK_LABEL_LEN = 47;
+
+/** Client-side guard; must stay aligned with Firestore rules (`isValidUrl`). */
+export function isAllowedHeroAdHttpUrl(s: string): boolean {
+  const t = s.trim();
+  if (t.length === 0 || t.length > MAX_OPTIONAL_URL_LEN) return false;
+  try {
+    const u = new URL(t);
+    return u.protocol === 'https:' || u.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+function normalizeBlock(b: HeroAdBlockStored): PhoneMockupAdBlock | null {
+  if (b.kind === 'text') {
+    const content = b.content?.trim() ?? '';
+    if (!content) return null;
+    const style = b.style ?? 'body';
+    if (style !== 'headline' && style !== 'body' && style !== 'caption') return null;
+    return { kind: 'text', content, style };
+  }
+  if (b.kind === 'image') {
+    const url = b.url?.trim() ?? '';
+    if (!url || !isAllowedHeroAdHttpUrl(url)) return null;
+    const fit = isHeroAdImageFit(b.fit) ? b.fit : 'contain';
+    let maxHeightPct = typeof b.maxHeightPct === 'number' ? Math.round(b.maxHeightPct) : 75;
+    if (maxHeightPct < 20) maxHeightPct = 20;
+    if (maxHeightPct > 100) maxHeightPct = 100;
+    const oh = b.overlayHeadline?.trim();
+    const ob = b.overlayBody?.trim();
+    return {
+      kind: 'image',
+      url,
+      fit,
+      maxHeightPct,
+      ...(oh ? { overlayHeadline: oh.slice(0, 200) } : {}),
+      ...(ob ? { overlayBody: ob.slice(0, 600) } : {}),
+    };
+  }
+  return null;
+}
+
+export function normalizeBlocks(blocks: HeroAdBlockStored[]): PhoneMockupAdBlock[] {
+  const out: PhoneMockupAdBlock[] = [];
+  for (const b of blocks) {
+    const n = normalizeBlock(b);
+    if (n) out.push(n);
+  }
+  return out;
+}
+
+/** Default Firestore-shaped slides (admin editor seed + fallback content). */
+export const INITIAL_STORED_HERO_PHONE_ADS: HeroPhoneAdSlideStored[] = [
+  {
+    id: 'ad-1',
+    label: 'Sponsored',
+    gradientPreset: 'sky_indigo',
+    blocks: [
+      { kind: 'text', style: 'headline', content: 'Cloud cert bootcamp' },
+      { kind: 'text', style: 'body', content: 'Live cohorts + labs. Enroll this week for 30% off.' },
+    ],
+  },
+  {
+    id: 'ad-2',
+    label: 'Partner',
+    gradientPreset: 'violet_fuchsia',
+    blocks: [
+      { kind: 'text', style: 'headline', content: 'AI pair-programming' },
+      { kind: 'text', style: 'body', content: 'Ship faster with guided reviews and instant refactors.' },
+    ],
+  },
+  {
+    id: 'ad-3',
+    label: 'Sponsored',
+    gradientPreset: 'emerald_teal',
+    blocks: [
+      { kind: 'text', style: 'headline', content: 'Interview-ready system design' },
+      { kind: 'text', style: 'body', content: 'Mock panels, rubrics, and feedback from staff engineers.' },
+    ],
+  },
+];
+
+export function storedSlideToRailSlide(s: HeroPhoneAdSlideStored): PhoneMockupAdSlide {
+  const gradient = HERO_PHONE_AD_GRADIENT_PRESETS[s.gradientPreset] ?? HERO_PHONE_AD_GRADIENT_PRESETS.sky_indigo;
+  const linkUrl = s.linkUrl?.trim();
+  const linkLabel = s.linkLabel?.trim();
+  const blocks = normalizeBlocks(s.blocks);
+  const safeBlocks =
+    blocks.length > 0
+      ? blocks
+      : [{ kind: 'text' as const, content: 'Add content', style: 'body' as const }];
+  return {
+    id: s.id,
+    ...(s.label != null && s.label.trim() !== '' ? { label: s.label.trim() } : {}),
+    gradient,
+    ...(linkUrl && isAllowedHeroAdHttpUrl(linkUrl)
+      ? {
+          linkUrl,
+          ...(linkLabel && linkLabel.length > 0 && linkLabel.length <= MAX_LINK_LABEL_LEN ? { linkLabel } : {}),
+        }
+      : {}),
+    blocks: safeBlocks,
+  };
+}
+
+export function slideAriaLabel(s: PhoneMockupAdSlide): string {
+  const h = s.blocks.find((b) => b.kind === 'text' && b.style === 'headline');
+  if (h && h.kind === 'text') return `${s.label ? `${s.label}: ` : ''}${h.content}`;
+  const t = s.blocks.find((b) => b.kind === 'text');
+  if (t && t.kind === 'text') return `${s.label ? `${s.label}: ` : ''}${t.content.slice(0, 80)}`;
+  return s.label ?? 'Advertisement';
+}
+
+/** Shown when Firestore doc is missing, invalid, disabled, or empty. */
+export const DEFAULT_HERO_PHONE_AD_SLIDES: PhoneMockupAdSlide[] =
+  INITIAL_STORED_HERO_PHONE_ADS.map(storedSlideToRailSlide);

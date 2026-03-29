@@ -102,6 +102,13 @@ import {
   toggleFilterTag,
   type LibraryFilterState,
 } from './utils/courseTaxonomy';
+import { PhoneMockupAdRail } from './components/PhoneMockupAdRail';
+import { DEFAULT_HERO_PHONE_AD_SLIDES, type PhoneMockupAdSlide } from './utils/heroPhoneAdsShared';
+import { subscribeHeroPhoneAdsForPublic } from './utils/heroPhoneAdsFirestore';
+
+/** Bump when replacing `src/images/Mobile.png` so cached clients load the new file. */
+const HERO_MOBILE_PNG_REV = 2;
+const mobileHeroSrc = `${new URL('./images/Mobile.png', import.meta.url).href}?v=${HERO_MOBILE_PNG_REV}`;
 
 type View = 'home' | 'catalog' | 'player' | 'overview' | 'about' | 'careers' | 'privacy' | 'help' | 'contact' | 'status' | 'enterprise' | 'signup' | 'profile' | 'certificate' | 'admin';
 
@@ -412,6 +419,8 @@ export default function App() {
   const [categoryPresets, setCategoryPresets] = useState<CatalogCategoryPresetsState>(() =>
     normalizeCatalogCategoryPresets(DEFAULT_CATALOG_CATEGORY_PRESETS)
   );
+  const [heroPhoneAdSlides, setHeroPhoneAdSlides] =
+    useState<PhoneMockupAdSlide[]>(DEFAULT_HERO_PHONE_AD_SLIDES);
   const [focusedCourseIndex, setFocusedCourseIndex] = useState(-1);
   const [focusedFooterIndex, setFocusedFooterIndex] = useState(-1);
   const [user, setUser] = useState<User | null>(null);
@@ -1415,6 +1424,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const unsub = subscribeHeroPhoneAdsForPublic(setHeroPhoneAdSlides);
+    return unsub;
+  }, []);
+
+  useEffect(() => {
     const onPresets = () => void loadCatalogCategoryPresets().then(setCategoryPresets);
     window.addEventListener(CATALOG_CATEGORY_PRESETS_CHANGED, onPresets);
     return () => window.removeEventListener(CATALOG_CATEGORY_PRESETS_CHANGED, onPresets);
@@ -1954,69 +1968,73 @@ export default function App() {
   const renderHome = () => (
     <div className="pt-16">
       {/* Hero Section */}
-      <section className="relative h-[600px] flex items-center px-6 sm:px-12 overflow-hidden">
-        <div className="absolute inset-0 z-0">
-          <img 
-            src="https://picsum.photos/seed/tech/1920/1080?blur=4" 
-            className="w-full h-full object-cover opacity-30"
-            alt="Hero Background"
-            referrerPolicy="no-referrer"
-          />
-          <div className="absolute inset-0 bg-gradient-to-r from-[var(--bg-primary)] via-[var(--bg-primary)]/80 to-transparent" />
-        </div>
-
-        <div className="relative z-10 max-w-2xl">
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-orange-500/20 text-orange-500 text-xs font-bold uppercase tracking-widest mb-6"
-          >
-            <TrendingUp size={14} />
-            Trending in Software Development
-          </motion.div>
-          <motion.h1 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="text-5xl sm:text-7xl font-bold text-[var(--text-primary)] leading-tight mb-6"
-          >
-            Build your <span className="text-orange-500">future</span> with SkillStream.
-          </motion.h1>
-          <motion.p 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="text-xl text-[var(--text-secondary)] mb-8"
-          >
-            The technology learning platform to build tomorrow's skills today. 
-            Get access to 7,000+ courses from industry experts.
-          </motion.p>
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-            className="flex flex-wrap gap-4 items-stretch"
-          >
-            {isAuthReady && !user && (
-            <button 
-              type="button"
-              onClick={() => void handleLogin().catch(() => {})}
-              className="min-h-24 bg-orange-500 hover:bg-orange-600 text-white px-8 rounded-md transition-colors flex flex-col items-center justify-center gap-1"
+      <section className="relative overflow-hidden border-b border-[var(--border-color)] bg-[var(--bg-primary)] px-6 py-12 sm:px-12 md:py-16 lg:min-h-[560px] lg:py-20">
+        <div className="mx-auto flex max-w-7xl flex-col items-center gap-10 lg:flex-row lg:items-center lg:justify-between lg:gap-16">
+          <div className="relative z-10 w-full min-w-0 max-w-2xl">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-6 inline-flex items-center gap-2 rounded-full bg-orange-500/20 px-3 py-1 text-xs font-bold uppercase tracking-widest text-orange-500"
             >
-              <span className="font-bold flex items-center gap-2">
-                Learn for free
-                <ChevronRight size={20} />
-              </span>
-              <span className="text-sm font-medium text-white/90">Sign in with Google</span>
-            </button>
-            )}
-            <button 
-              type="button"
-              onClick={() => handleNavigate('contact')}
-              className="min-h-24 inline-flex items-center justify-center bg-[var(--hover-bg)] hover:bg-[var(--hover-bg)]/80 text-[var(--text-primary)] px-8 rounded-md font-bold transition-colors"
+              <TrendingUp size={14} />
+              Trending in Software Development
+            </motion.div>
+            <motion.h1
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className="mb-6 text-4xl font-bold leading-tight text-[var(--text-primary)] sm:text-5xl lg:text-6xl xl:text-7xl"
             >
-              Contact Us
-            </button>
+              Build your <span className="text-orange-500">future</span> with SkillStream.
+            </motion.h1>
+            <motion.p
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="mb-8 text-lg text-[var(--text-secondary)] sm:text-xl"
+            >
+              The technology learning platform to build tomorrow&apos;s skills today. Get access to 7,000+ courses from
+              industry experts.
+            </motion.p>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+              className="flex flex-wrap items-stretch gap-4"
+            >
+              {isAuthReady && !user && (
+                <button
+                  type="button"
+                  onClick={() => void handleLogin().catch(() => {})}
+                  className="flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-md bg-orange-500 px-6 py-4 text-white transition-colors hover:bg-orange-600 sm:flex-initial sm:px-8"
+                >
+                  <span className="flex items-center gap-2 font-bold">
+                    Learn for free
+                    <ChevronRight size={20} />
+                  </span>
+                  <span className="text-sm font-medium text-white/90">Sign in with Google</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => handleNavigate('contact')}
+                className="inline-flex min-h-11 min-w-0 flex-1 items-center justify-center rounded-md bg-[var(--hover-bg)] px-6 py-4 font-bold text-[var(--text-primary)] transition-colors hover:bg-[var(--hover-bg)]/80 sm:flex-initial sm:px-8"
+              >
+                Contact Us
+              </button>
+            </motion.div>
+          </div>
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15, duration: 0.45 }}
+            className="relative z-10 flex w-full shrink-0 justify-center lg:w-auto lg:justify-end"
+          >
+            <PhoneMockupAdRail
+              imageSrc={mobileHeroSrc}
+              imageAlt="SkillStream mobile experience"
+              slides={heroPhoneAdSlides}
+            />
           </motion.div>
         </div>
       </section>
@@ -2552,6 +2570,7 @@ export default function App() {
               onTabChange={setAdminTab}
               onDismiss={() => handleNavigate('catalog', false)}
               onCatalogChanged={refreshCatalogCourses}
+              heroPhoneMockupSrc={mobileHeroSrc}
               onUnsavedWorkChange={handleAdminUnsavedWorkChange}
             />
           )}
