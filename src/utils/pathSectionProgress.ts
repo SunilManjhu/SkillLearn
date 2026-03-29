@@ -28,6 +28,17 @@ export function countCatalogCoursesInSubtree(
   return n;
 }
 
+/** `kind: 'link'` nodes with a non-empty `externalUrl` under this subtree (for learner-facing outline). */
+export function countExternalLinksInSubtree(root: MindmapTreeNode): number {
+  let n = 0;
+  const walk = (node: MindmapTreeNode) => {
+    if (node.kind === 'link' && node.externalUrl?.trim()) n++;
+    for (const ch of node.children) walk(ch);
+  };
+  walk(root);
+  return n;
+}
+
 export type PathSectionProgress = {
   totalCourses: number;
   completedCourses: number;

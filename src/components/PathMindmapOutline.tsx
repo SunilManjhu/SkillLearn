@@ -15,7 +15,11 @@ import type { Course } from '../data/courses';
 import type { MindmapTreeNode } from '../data/pathMindmap';
 import { getCourseLessonProgressSummary, type CourseLessonProgressSummary } from '../utils/courseProgress';
 import { getPathOutlineRowStatus, type PathOutlineRowStatus } from '../utils/pathOutlineRowStatus';
-import { computePathSectionProgress, countCatalogCoursesInSubtree } from '../utils/pathSectionProgress';
+import {
+  computePathSectionProgress,
+  countCatalogCoursesInSubtree,
+  countExternalLinksInSubtree,
+} from '../utils/pathSectionProgress';
 import { normalizeExternalHref } from '../utils/externalUrl';
 
 /** Matches Tailwind `md` (768px): flat path outline on small viewports. */
@@ -207,6 +211,13 @@ function PathOutlineProgressRingMobile({
   );
 }
 
+/**
+ * Desktop (`md+`): fixed two-column rail so “Section Progress” and “Course progress” start on the same
+ * vertical line and stay aligned with the Open course / Continue button column (`7.25rem`).
+ */
+const PATH_OUTLINE_DESKTOP_PROGRESS_RAIL =
+  'contents md:grid md:shrink-0 md:grid-cols-[11rem_7.25rem] md:gap-2 md:items-center';
+
 /** Same layout as course rows: fixed `sm:w-[11rem]` column for label + bar (md+). */
 function PathOutlineProgressColumn({
   label,
@@ -255,7 +266,7 @@ function OutlineCourseProgressBlock({
 }) {
   if (summary.totalLessons === 0) return null;
   return (
-    <div className="hidden w-full min-w-0 shrink-0 sm:w-[11rem] md:block sm:flex-none">
+    <div className="hidden min-w-0 w-full md:block">
       <PathOutlineProgressColumn
         label="Course progress"
         monoStats={`${summary.percent}% · ${summary.completedLessons}/${summary.totalLessons}`}
@@ -616,6 +627,11 @@ function OutlineNode({
     return countCatalogCoursesInSubtree(node, catalogCourses);
   }, [depth, node, catalogCourses]);
 
+  const externalLinkCountInSection = useMemo(() => {
+    if (depth !== 0) return 0;
+    return countExternalLinksInSubtree(node);
+  }, [depth, node]);
+
   const rowStatus = useMemo(() => {
     if (depth === 0) return null;
     return getPathOutlineRowStatus(node, catalogCourses, progressUserId);
@@ -638,6 +654,10 @@ function OutlineNode({
     /** Has subtree rows but nothing maps to the published catalog (shows “0 courses” otherwise). */
     const isZeroCatalogCourses = !isEmptySection && catalogCourseCount === 0;
     const showNoCoursesInSectionUx = isEmptySection || isZeroCatalogCourses;
+    /** Catalog courses or external web links — without either, the section has nothing useful to expand into. */
+    const sectionHasUsefulContent =
+      catalogCourseCount > 0 || externalLinkCountInSection > 0;
+    const canExpandSection = hasExpandableContent && sectionHasUsefulContent;
     const courseCountLabel =
       showNoCoursesInSectionUx
         ? null
@@ -657,23 +677,23 @@ function OutlineNode({
 
     return (
       <section className="mt-1.5 scroll-mt-2 border-t border-[var(--border-color)] pt-1.5 first:mt-0 first:border-t-0 first:pt-0 max-md:mt-3 max-md:border-0 max-md:pt-0 first:max-md:mt-0">
-        <h3 className="min-w-0 max-w-full pl-0 leading-snug text-[var(--text-primary)] md:pl-6">
+        <h3 className="min-w-0 max-w-full pl-0 leading-snug text-[var(--text-primary)] md:pl-6 md:pr-5">
           <div
             className={`flex min-w-0 max-w-full items-start gap-1 sm:items-center sm:gap-1.5${
-              hasExpandableContent
+              canExpandSection
                 ? outlineCompactMobile
                   ? ' py-0.5 pr-0'
                   : ' cursor-pointer rounded-lg py-1 pl-0.5 pr-1 transition-colors hover:bg-[var(--hover-bg)]/80 sm:pl-1 sm:pr-1.5'
                 : ' py-1'
             }`}
             onClick={
-              hasExpandableContent && !outlineCompactMobile
-                ? (e) => handleSectionHeaderClick(e, hasExpandableContent, node.id, toggleSection)
+              canExpandSection && !outlineCompactMobile
+                ? (e) => handleSectionHeaderClick(e, canExpandSection, node.id, toggleSection)
                 : undefined
             }
           >
             <div className="hidden md:contents">
-              {hasExpandableContent ? (
+              {canExpandSection ? (
                 <button
                   type="button"
                   data-outline-section-chevron=""
@@ -694,7 +714,11 @@ function OutlineNode({
                   type="button"
                   disabled
                   className="flex min-h-10 min-w-10 shrink-0 cursor-not-allowed items-center justify-center rounded-md text-[var(--text-muted)] opacity-45 sm:min-h-11 sm:min-w-11"
-                  aria-label="Nothing to expand. This section has no courses or topics in the list below."
+                  aria-label={
+                    hasExpandableContent
+                      ? 'Nothing to expand. This section has no linked catalog courses or web links yet.'
+                      : 'Nothing to expand. This section has no courses or topics in the list below.'
+                  }
                 >
                   <ChevronDown
                     size={20}
@@ -704,7 +728,11 @@ function OutlineNode({
                 </button>
               )}
             </div>
-            <div className="flex w-8 shrink-0 items-center justify-start text-lg font-bold leading-snug tabular-nums text-orange-500 max-md:min-h-10 max-md:w-9 md:justify-end sm:w-9 sm:text-xl">
+            <div
+              className={`flex w-8 shrink-0 items-center justify-start text-lg font-bold leading-snug tabular-nums max-md:min-h-10 max-md:w-9 md:justify-end sm:w-9 sm:text-xl ${
+                sectionHasUsefulContent ? 'text-orange-500' : 'text-orange-500/45'
+              }`}
+            >
               {sectionIndex + 1}.
             </div>
             <div className="flex min-w-0 max-w-full flex-1 flex-col gap-1 md:flex-row md:items-center md:gap-2.5">
@@ -712,7 +740,9 @@ function OutlineNode({
                 <div className="flex min-w-0 w-full max-w-full flex-row items-center gap-2 md:min-w-0 md:flex-1 md:order-1">
                   <span
                     id={`path-section-title-${node.id}`}
-                    className="flex min-w-0 flex-1 items-center text-lg font-bold leading-snug [overflow-wrap:anywhere] sm:text-xl"
+                    className={`min-w-0 flex-1 text-lg font-bold leading-snug break-words sm:text-xl ${
+                      sectionHasUsefulContent ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'
+                    }`}
                     aria-describedby={
                       showNoCoursesInSectionUx
                         ? node.locked
@@ -731,53 +761,52 @@ function OutlineNode({
                     />
                   ) : null}
                 </div>
-                <div className="flex min-w-0 w-full flex-1 justify-stretch sm:justify-end md:order-3 md:w-auto md:max-w-[18rem] md:flex-none md:justify-end">
-                  <div className="flex w-full min-w-0 max-w-full flex-col items-stretch justify-center sm:max-w-[18rem] sm:items-start">
-                    {showNoCoursesInSectionUx ? (
-                      node.locked ? (
-                        <span className="flex w-full min-w-0 max-w-full flex-wrap items-center gap-x-2 gap-y-1 text-xs font-medium normal-case text-[var(--text-muted)] sm:text-sm">
-                          <Lock
-                            size={15}
-                            className="shrink-0 text-[var(--text-muted)]"
-                            strokeWidth={2.25}
-                            aria-hidden
-                          />
-                          <span className="min-w-0 flex-1 [overflow-wrap:anywhere] md:order-2 md:text-right">
-                            Content locked
+                <div
+                  className={`flex min-w-0 w-full flex-1 flex-col justify-stretch sm:justify-end md:order-2 md:w-auto md:shrink-0 md:flex-none md:items-center ${
+                    showSectionProgress ? 'md:grid md:grid-cols-[11rem_7.25rem] md:gap-2' : ''
+                  }`}
+                >
+                  {showSectionProgress ? (
+                    <div className="hidden min-w-0 md:block">{sectionProgressColumn}</div>
+                  ) : null}
+                  <div className="flex min-w-0 w-full flex-1 justify-stretch sm:justify-end md:w-auto md:min-w-0 md:justify-end">
+                    <div className="flex w-full min-w-0 max-w-full flex-col items-stretch justify-center sm:max-w-[18rem] sm:items-start md:max-w-none md:items-end">
+                      {showNoCoursesInSectionUx ? (
+                        node.locked ? (
+                          <span className="flex w-full min-w-0 max-w-full flex-wrap items-center gap-x-2 gap-y-1 text-xs font-medium normal-case text-[var(--text-muted)] sm:text-sm">
+                            <Lock
+                              size={15}
+                              className="shrink-0 text-[var(--text-muted)]"
+                              strokeWidth={2.25}
+                              aria-hidden
+                            />
+                            <span className="min-w-0 flex-1 [overflow-wrap:anywhere] md:order-2 md:text-right">
+                              Content locked
+                            </span>
                           </span>
-                        </span>
+                        ) : (
+                          <span className="flex w-full min-w-0 max-w-full flex-wrap items-center gap-x-2 gap-y-1 text-xs font-medium normal-case text-[var(--text-muted)] sm:gap-x-1.5 sm:text-sm md:justify-end">
+                            <button
+                              type="button"
+                              title="No courses are linked to this section yet. Check back later—more content may be added."
+                              className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[var(--hover-bg)]/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 touch-manipulation max-md:order-2 sm:min-h-8 sm:min-w-8 sm:hover:bg-transparent md:order-1"
+                              aria-label="Details: No courses are linked to this section yet. Check back later—more content may be added."
+                            >
+                              <Info size={15} strokeWidth={2.25} aria-hidden />
+                            </button>
+                            <span className="min-w-0 flex-1 [overflow-wrap:anywhere] max-md:order-1 md:order-2 md:max-w-[min(18rem,100%)] md:flex-initial md:text-right">
+                              No courses added yet
+                            </span>
+                          </span>
+                        )
                       ) : (
-                        <span className="flex w-full min-w-0 max-w-full flex-wrap items-center gap-x-2 gap-y-1 text-xs font-medium normal-case text-[var(--text-muted)] sm:gap-x-1.5 sm:text-sm md:justify-end">
-                          <button
-                            type="button"
-                            title="No courses are linked to this section yet. Check back later—more content may be added."
-                            className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[var(--hover-bg)]/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 touch-manipulation max-md:order-2 sm:min-h-8 sm:min-w-8 sm:hover:bg-transparent md:order-1"
-                            aria-label="Details: No courses are linked to this section yet. Check back later—more content may be added."
-                          >
-                            <Info size={15} strokeWidth={2.25} aria-hidden />
-                          </button>
-                          <span className="min-w-0 flex-1 [overflow-wrap:anywhere] max-md:order-1 md:order-2 md:max-w-[min(18rem,100%)] md:flex-initial md:text-right">
-                            No courses added yet
-                          </span>
+                        <span className="text-xs font-medium normal-case text-[var(--text-muted)] sm:text-sm md:block md:w-full md:text-right">
+                          {courseCountLabel}
                         </span>
-                      )
-                    ) : (
-                      <span className="text-xs font-medium normal-case text-[var(--text-muted)] sm:text-sm md:block md:w-full md:text-right">
-                        {courseCountLabel}
-                      </span>
-                    )}
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div
-                className={
-                  showSectionProgress
-                    ? 'hidden w-full min-w-0 shrink-0 sm:w-[11rem] sm:flex-none md:order-2 md:block'
-                    : 'hidden min-h-0 w-full shrink-0 sm:block sm:w-[11rem] sm:flex-none md:order-2'
-                }
-                aria-hidden={!showSectionProgress}
-              >
-                {sectionProgressColumn}
               </div>
             </div>
           </div>
@@ -801,7 +830,7 @@ function OutlineNode({
               onOpenLesson={onOpenLesson}
               className="mt-1 pl-0 sm:mt-1 md:pl-[6.375rem]"
             />
-            {hasExpandableContent ? (
+            {hasExpandableContent && sectionHasUsefulContent ? (
               <ul
                 id={panelId}
                 role="list"
@@ -901,23 +930,27 @@ function OutlineNode({
                 />
               ) : null}
             </div>
-            {courseLessonProgressSummary ? (
-              <OutlineCourseProgressBlock rowLabel={label} summary={courseLessonProgressSummary} />
-            ) : null}
-            <ActionChips
-              node={node}
-              catalogCourses={catalogCourses}
-              onOpenCourse={onOpenCourse}
-              onOpenLesson={onOpenLesson}
-              compact
-              iconOnlyMobile={outlineCompactMobile}
-              className={
-                outlineCompactMobile
-                  ? 'shrink-0 md:w-auto sm:ml-2'
-                  : 'w-full shrink-0 max-md:max-w-full md:w-auto sm:ml-2'
-              }
-              courseLessonProgressSummary={courseLessonProgressSummary}
-            />
+            <div
+              className={courseLessonProgressSummary ? PATH_OUTLINE_DESKTOP_PROGRESS_RAIL : 'contents'}
+            >
+              {courseLessonProgressSummary ? (
+                <OutlineCourseProgressBlock rowLabel={label} summary={courseLessonProgressSummary} />
+              ) : null}
+              <ActionChips
+                node={node}
+                catalogCourses={catalogCourses}
+                onOpenCourse={onOpenCourse}
+                onOpenLesson={onOpenLesson}
+                compact
+                iconOnlyMobile={outlineCompactMobile}
+                className={
+                  outlineCompactMobile
+                    ? 'shrink-0 md:w-auto sm:ml-2'
+                    : `w-full shrink-0 max-md:max-w-full md:w-auto sm:ml-2${courseLessonProgressSummary ? ' md:ml-0' : ''}`
+                }
+                courseLessonProgressSummary={courseLessonProgressSummary}
+              />
+            </div>
           </div>
         </div>
         {hasNested ? (
@@ -1024,23 +1057,27 @@ function OutlineNode({
               />
             ) : null}
           </div>
-          {courseLessonProgressSummary ? (
-            <OutlineCourseProgressBlock rowLabel={label} summary={courseLessonProgressSummary} />
-          ) : null}
-          <ActionChips
-            node={node}
-            catalogCourses={catalogCourses}
-            onOpenCourse={onOpenCourse}
-            onOpenLesson={onOpenLesson}
-            compact
-            iconOnlyMobile={outlineCompactMobile}
-            className={
-              outlineCompactMobile
-                ? 'shrink-0 md:w-auto sm:ml-2'
-                : 'w-full shrink-0 max-md:max-w-full md:w-auto sm:ml-2'
-            }
-            courseLessonProgressSummary={courseLessonProgressSummary}
-          />
+          <div
+            className={courseLessonProgressSummary ? PATH_OUTLINE_DESKTOP_PROGRESS_RAIL : 'contents'}
+          >
+            {courseLessonProgressSummary ? (
+              <OutlineCourseProgressBlock rowLabel={label} summary={courseLessonProgressSummary} />
+            ) : null}
+            <ActionChips
+              node={node}
+              catalogCourses={catalogCourses}
+              onOpenCourse={onOpenCourse}
+              onOpenLesson={onOpenLesson}
+              compact
+              iconOnlyMobile={outlineCompactMobile}
+              className={
+                outlineCompactMobile
+                  ? 'shrink-0 md:w-auto sm:ml-2'
+                  : `w-full shrink-0 max-md:max-w-full md:w-auto sm:ml-2${courseLessonProgressSummary ? ' md:ml-0' : ''}`
+              }
+              courseLessonProgressSummary={courseLessonProgressSummary}
+            />
+          </div>
         </div>
       </div>
       {hasNested ? (
