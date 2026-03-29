@@ -24,6 +24,7 @@ import { AdminCatalogCategoryPresetsPanel } from './AdminCatalogCategoryPresetsP
 import type { Course, Lesson, Module } from '../../data/courses';
 import { STRUCTURED_COURSE_ID_RE, isStructuredCourseId } from '../../utils/courseStructuredIds';
 import { validateCourseDraft } from '../../utils/courseDraftValidation';
+import { lessonWebHref } from '../../utils/lessonContent';
 import {
   loadPublishedCoursesFromFirestore,
   savePublishedCourse,
@@ -665,7 +666,16 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             lessonKeys: openKeys,
           };
         }
-        if (!l.videoUrl.trim() || !l.videoUrl.startsWith('http')) {
+        if (l.contentKind === 'web') {
+          if (!lessonWebHref(l)) {
+            return {
+              targetId: `admin-lesson-web-url-${mi}-${li}`,
+              scope: 'module',
+              moduleIndex: mi,
+              lessonKeys: openKeys,
+            };
+          }
+        } else if (!l.videoUrl.trim() || !l.videoUrl.startsWith('http')) {
           return {
             targetId: `admin-lesson-url-${mi}-${li}`,
             scope: 'module',
@@ -693,6 +703,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       lessonId: new Set<string>(),
       lessonTitle: new Set<string>(),
       videoUrl: new Set<string>(),
+      lessonWebUrl: new Set<string>(),
     };
     if (!draft) return out;
     if (!draft.title.trim()) out.courseTitle = true;
@@ -709,7 +720,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         const key = `${mi}:${li}`;
         if (!l.id.trim()) out.lessonId.add(key);
         if (!l.title.trim()) out.lessonTitle.add(key);
-        if (!l.videoUrl.trim() || !l.videoUrl.startsWith('http')) out.videoUrl.add(key);
+        if (l.contentKind === 'web') {
+          if (!lessonWebHref(l)) out.lessonWebUrl.add(key);
+        } else if (!l.videoUrl.trim() || !l.videoUrl.startsWith('http')) {
+          out.videoUrl.add(key);
+        }
       }
     }
     return out;
@@ -1853,29 +1868,100 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           </span>
                         </label>
                       </div>
-                      <label className="block space-y-1">
-                        <span className="text-xs font-semibold text-[var(--text-secondary)]">Video URL</span>
-                        <input
-                          id={`admin-lesson-url-${mi}-${li}`}
-                          value={lesson.videoUrl}
-                          onChange={(e) => updateLesson(mi, li, { videoUrl: e.target.value })}
-                          className={`w-full text-sm font-mono bg-[var(--bg-primary)] border rounded-lg px-3 py-2 ${
-                            showValidationHints && fieldErrors.videoUrl.has(`${mi}:${li}`)
-                              ? 'border-red-500'
-                              : 'border-[var(--border-color)]'
-                          }`}
-                          placeholder="https://www.youtube.com/watch?v=…"
-                        />
-                        <span
-                          className={`min-h-[16px] text-[11px] ${
-                            showValidationHints && fieldErrors.videoUrl.has(`${mi}:${li}`)
-                              ? 'text-red-400'
-                              : 'text-transparent'
-                          }`}
-                        >
-                          Video URL is required and must start with http.
-                        </span>
-                      </label>
+                      <div className="space-y-2 border-t border-[var(--border-color)]/60 pt-3">
+                        <span className="text-xs font-semibold text-[var(--text-secondary)]">Lesson content</span>
+                        <div className="flex flex-wrap gap-4" role="radiogroup" aria-label="Lesson content type">
+                          <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-[var(--text-primary)]">
+                            <input
+                              type="radio"
+                              name={`admin-lesson-kind-${mi}-${li}`}
+                              checked={lesson.contentKind !== 'web'}
+                              onChange={() =>
+                                updateLesson(mi, li, {
+                                  contentKind: undefined,
+                                  webUrl: undefined,
+                                  videoUrl: lesson.videoUrl?.trim()
+                                    ? lesson.videoUrl
+                                    : 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
+                                })
+                              }
+                              className="h-4 w-4 shrink-0 border-[var(--border-color)] text-orange-500"
+                            />
+                            Video
+                          </label>
+                          <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-[var(--text-primary)]">
+                            <input
+                              type="radio"
+                              name={`admin-lesson-kind-${mi}-${li}`}
+                              checked={lesson.contentKind === 'web'}
+                              onChange={() =>
+                                updateLesson(mi, li, {
+                                  contentKind: 'web',
+                                  webUrl: lesson.webUrl ?? '',
+                                  videoUrl: '',
+                                })
+                              }
+                              className="h-4 w-4 shrink-0 border-[var(--border-color)] text-orange-500"
+                            />
+                            External page
+                          </label>
+                        </div>
+                        <p className="text-[11px] leading-snug text-[var(--text-muted)]">
+                          External page opens in a new tab for learners (blog, docs, article). Video uses the embedded
+                          player.
+                        </p>
+                      </div>
+                      {lesson.contentKind === 'web' ? (
+                        <label className="block space-y-1">
+                          <span className="text-xs font-semibold text-[var(--text-secondary)]">Page URL</span>
+                          <input
+                            id={`admin-lesson-web-url-${mi}-${li}`}
+                            type="url"
+                            inputMode="url"
+                            value={lesson.webUrl ?? ''}
+                            onChange={(e) => updateLesson(mi, li, { webUrl: e.target.value })}
+                            className={`w-full text-sm font-mono bg-[var(--bg-primary)] border rounded-lg px-3 py-2 ${
+                              showValidationHints && fieldErrors.lessonWebUrl.has(`${mi}:${li}`)
+                                ? 'border-red-500'
+                                : 'border-[var(--border-color)]'
+                            }`}
+                            placeholder="https://example.com/article or example.com/path"
+                          />
+                          <span
+                            className={`min-h-[16px] text-[11px] ${
+                              showValidationHints && fieldErrors.lessonWebUrl.has(`${mi}:${li}`)
+                                ? 'text-red-400'
+                                : 'text-transparent'
+                            }`}
+                          >
+                            Enter a valid https URL or domain.
+                          </span>
+                        </label>
+                      ) : (
+                        <label className="block space-y-1">
+                          <span className="text-xs font-semibold text-[var(--text-secondary)]">Video URL</span>
+                          <input
+                            id={`admin-lesson-url-${mi}-${li}`}
+                            value={lesson.videoUrl}
+                            onChange={(e) => updateLesson(mi, li, { videoUrl: e.target.value })}
+                            className={`w-full text-sm font-mono bg-[var(--bg-primary)] border rounded-lg px-3 py-2 ${
+                              showValidationHints && fieldErrors.videoUrl.has(`${mi}:${li}`)
+                                ? 'border-red-500'
+                                : 'border-[var(--border-color)]'
+                            }`}
+                            placeholder="https://www.youtube.com/watch?v=…"
+                          />
+                          <span
+                            className={`min-h-[16px] text-[11px] ${
+                              showValidationHints && fieldErrors.videoUrl.has(`${mi}:${li}`)
+                                ? 'text-red-400'
+                                : 'text-transparent'
+                            }`}
+                          >
+                            Video URL is required and must start with http.
+                          </span>
+                        </label>
+                      )}
                       <label className="block space-y-1">
                         <span className="text-xs font-semibold text-[var(--text-secondary)]">Duration label (optional)</span>
                         <input

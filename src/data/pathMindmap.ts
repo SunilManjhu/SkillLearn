@@ -2,7 +2,7 @@
 
 export const PATH_MINDMAP_CENTER_LABEL = 'Learning Path' as const;
 
-export type MindmapNodeKind = 'label' | 'course' | 'lesson';
+export type MindmapNodeKind = 'label' | 'course' | 'lesson' | 'link';
 
 export type MindmapTreeNode = {
   id: string;
@@ -13,6 +13,8 @@ export type MindmapTreeNode = {
   lessonId?: string;
   /** When true, learners see an explicit “locked” message (e.g. empty section not yet available). */
   locked?: boolean;
+  /** `kind: 'link'` — opens in a new tab in the path outline (blog, article, etc.). */
+  externalUrl?: string;
 };
 
 export type MindmapDocument = {
@@ -62,6 +64,8 @@ export function normalizeMindmapNode(raw: unknown): MindmapTreeNode | null {
     o.lessonId.length > 0
   ) {
     node = { ...base, kind: 'lesson', courseId: o.courseId, lessonId: o.lessonId };
+  } else if (o.kind === 'link' && typeof o.externalUrl === 'string' && o.externalUrl.trim().length > 0) {
+    node = { ...base, kind: 'link', externalUrl: o.externalUrl.trim() };
   } else {
     node = base;
   }

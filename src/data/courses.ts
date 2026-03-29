@@ -1,11 +1,19 @@
+/** `video` (default): embedded player from `videoUrl`. `web`: open `webUrl` in a new tab (blog, article, etc.). */
+export type LessonContentKind = 'video' | 'web';
+
 export interface Lesson {
   id: string;
   title: string;
   /** Omit for YouTube lessons when using Data API / player-resolved length. */
   duration?: string;
+  /** Used when `contentKind` is `video` or omitted (default). */
   videoUrl: string;
   /** Shown under the player; updates per lesson. Omit for a short auto-generated blurb. */
   about?: string;
+  /** Omit or `video` = default embedded lesson. `web` requires `webUrl`. */
+  contentKind?: LessonContentKind;
+  /** Required when `contentKind === 'web'`. */
+  webUrl?: string;
 }
 
 export interface Module {

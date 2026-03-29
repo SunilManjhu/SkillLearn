@@ -36,7 +36,7 @@ import {
   ChevronRight,
   GraduationCap,
   GripVertical,
-  ListVideo,
+  Link2,
   Loader2,
   Pencil,
   Plus,
@@ -70,6 +70,7 @@ import {
 } from '../../utils/learningPathsFirestore';
 import { savePublishedCourse } from '../../utils/publishedCoursesFirestore';
 import { fetchPathMindmapFromFirestore, savePathMindmapToFirestore } from '../../utils/pathMindmapFirestore';
+import { normalizeExternalHref } from '../../utils/externalUrl';
 import { useAdminActionToast } from './useAdminActionToast';
 
 function deepClone<T>(x: T): T {
@@ -80,11 +81,13 @@ function deepClone<T>(x: T): T {
 type PathBranchNode =
   | { id: string; kind: 'label'; label: string; children: PathBranchNode[]; locked?: boolean }
   | { id: string; kind: 'course'; courseId: string; children: PathBranchNode[] }
-  | { id: string; kind: 'lesson'; courseId: string; lessonId: string; children: PathBranchNode[] };
+  | { id: string; kind: 'lesson'; courseId: string; lessonId: string; children: PathBranchNode[] }
+  | { id: string; kind: 'link'; label: string; href: string; children: PathBranchNode[] };
 
 function updateNodeChildren(n: PathBranchNode, children: PathBranchNode[]): PathBranchNode {
   if (n.kind === 'label') return { ...n, children };
   if (n.kind === 'course') return { ...n, children };
+  if (n.kind === 'link') return { ...n, children };
   return { ...n, children };
 }
 
@@ -326,6 +329,16 @@ function branchNodeToMindmap(n: PathBranchNode, publishedList: Course[]): Mindma
       ...(n.locked ? { locked: true } : {}),
     };
   }
+  if (n.kind === 'link') {
+    const href = normalizeExternalHref(n.href) ?? n.href.trim();
+    return {
+      id: n.id,
+      label: n.label.trim() || 'Link',
+      children,
+      kind: 'link',
+      externalUrl: href,
+    };
+  }
   if (n.kind === 'course') {
     const c = publishedList.find((x) => x.id === n.courseId);
     return {
@@ -363,6 +376,7 @@ function branchTreeToMindmapForest(roots: PathBranchNode[], publishedList: Cours
 
 function branchNodeDisplayLabel(n: PathBranchNode, publishedList: Course[]): string {
   if (n.kind === 'label') return n.label || 'Untitled';
+  if (n.kind === 'link') return n.label.trim() || n.href || 'Link';
   if (n.kind === 'course') return publishedList.find((c) => c.id === n.courseId)?.title ?? n.courseId;
   const c = publishedList.find((x) => x.id === n.courseId);
   let t = n.lessonId;
@@ -462,6 +476,15 @@ function mindmapNodeToPathBranch(n: MindmapTreeNode): PathBranchNode {
   if (n.kind === 'lesson' && n.courseId && n.lessonId) {
     return { id: n.id, kind: 'lesson', courseId: n.courseId, lessonId: n.lessonId, children };
   }
+  if (n.kind === 'link' && n.externalUrl) {
+    return {
+      id: n.id,
+      kind: 'link',
+      label: n.label,
+      href: n.externalUrl,
+      children,
+    };
+  }
   return {
     id: n.id,
     kind: 'label',
@@ -471,7 +494,7 @@ function mindmapNodeToPathBranch(n: MindmapTreeNode): PathBranchNode {
   };
 }
 
-type BranchModalStep = 'kind' | 'label' | 'course' | 'lessonCourse' | 'lessonPick';
+type BranchModalStep = 'kind' | 'label' | 'course' | 'linkForm' | 'lessonCourse' | 'lessonPick';
 
 function AddPathBranchModal({
   open,
@@ -494,17 +517,21 @@ function AddPathBranchModal({
   /** When `mode === 'editLesson'`, optionally start on lesson list for this course. */
   editLessonPreset?: { courseId: string; lessonId: string };
   /** When `mode === 'add'`, skip the kind picker and open the matching step. */
-  addPreset?: 'label' | 'course' | 'lesson';
+  addPreset?: 'label' | 'course' | 'link';
 }) {
   const [step, setStep] = useState<BranchModalStep>('kind');
   const [query, setQuery] = useState('');
   const [labelInput, setLabelInput] = useState('');
+  const [linkLabelInput, setLinkLabelInput] = useState('');
+  const [linkHrefInput, setLinkHrefInput] = useState('');
   const [lessonCourse, setLessonCourse] = useState<Course | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setQuery('');
     setLabelInput('');
+    setLinkLabelInput('');
+    setLinkHrefInput('');
     if (mode === 'editCourse') {
       setStep('course');
       setLessonCourse(null);
@@ -528,8 +555,8 @@ function AddPathBranchModal({
         setStep('label');
       } else if (addPreset === 'course') {
         setStep('course');
-      } else if (addPreset === 'lesson') {
-        setStep('lessonCourse');
+      } else if (addPreset === 'link') {
+        setStep('linkForm');
       } else {
         setStep('kind');
       }
@@ -603,6 +630,23 @@ function AddPathBranchModal({
     onClose();
   };
 
+  const commitWebLink = () => {
+    const t = linkLabelInput.trim();
+    const hrefNorm = normalizeExternalHref(linkHrefInput);
+    if (!t || !hrefNorm) return;
+    onCommit({
+      id: newMindmapNodeId(),
+      kind: 'link',
+      label: t,
+      href: hrefNorm,
+      children: [],
+    });
+    onClose();
+  };
+
+  const linkFormValid =
+    linkLabelInput.trim().length > 0 && normalizeExternalHref(linkHrefInput) !== null;
+
   return (
     <div
       className="fixed inset-0 z-[200] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
@@ -645,6 +689,7 @@ function AddPathBranchModal({
                   return;
                 }
                 if (step === 'label') setStep('kind');
+                else if (step === 'linkForm') setStep('kind');
                 else if (step === 'lessonPick') {
                   setLessonCourse(null);
                   setStep('lessonCourse');
@@ -662,6 +707,7 @@ function AddPathBranchModal({
           >
             {step === 'kind' && 'Add a branch'}
             {step === 'label' && 'Label'}
+            {step === 'linkForm' && 'Web link'}
             {step === 'course' && (mode === 'editCourse' ? 'Change course' : 'Choose course')}
             {step === 'lessonCourse' && (mode === 'editLesson' ? 'Change lesson — pick course' : 'Choose course (other)')}
             {step === 'lessonPick' && lessonCourse && (mode === 'editLesson' ? `Change lesson — ${lessonCourse.title}` : `Lesson — ${lessonCourse.title}`)}
@@ -720,26 +766,25 @@ function AddPathBranchModal({
               </button>
               <button
                 type="button"
-                disabled={!canLink}
-                className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
                 onClick={() => {
-                  setStep('lessonCourse');
+                  setStep('linkForm');
                   setQuery('');
                 }}
               >
                 <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
-                  <ListVideo size={20} className="shrink-0 text-teal-500" aria-hidden />
-                  Single lesson
-                  <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Pick course, then lesson</span>
+                  <Link2 size={20} className="shrink-0 text-violet-500" aria-hidden />
+                  Web link
+                  <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Opens in new tab</span>
                 </span>
                 <span className="pl-8 text-xs text-[var(--text-muted)]">
-                  Jump to one lesson — useful for a single video or module step.
+                  Blog post, article, or any page — not limited to video. Learners tap the title to open it.
                 </span>
               </button>
               {!canLink && (
                 <p className="text-xs text-[var(--text-muted)]">
                   Publish at least one course in the <strong className="text-[var(--text-secondary)]">Catalog</strong>{' '}
-                  tab to link course or lesson branches.
+                  tab to add <strong className="text-[var(--text-secondary)]">Whole course</strong> branches.
                 </p>
               )}
             </div>
@@ -772,6 +817,51 @@ function AddPathBranchModal({
                 className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-40"
               >
                 Add branch
+              </button>
+            </div>
+          )}
+
+          {step === 'linkForm' && (
+            <div className="space-y-3">
+              <label className="block text-xs font-semibold text-[var(--text-secondary)]" htmlFor="path-branch-link-label">
+                Link title
+              </label>
+              <input
+                id="path-branch-link-label"
+                value={linkLabelInput}
+                onChange={(e) => setLinkLabelInput(e.target.value)}
+                placeholder="e.g. Read this blog post"
+                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm"
+                autoFocus
+              />
+              <label className="block text-xs font-semibold text-[var(--text-secondary)]" htmlFor="path-branch-link-url">
+                URL
+              </label>
+              <input
+                id="path-branch-link-url"
+                type="url"
+                inputMode="url"
+                value={linkHrefInput}
+                onChange={(e) => setLinkHrefInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && linkFormValid) {
+                    e.preventDefault();
+                    commitWebLink();
+                  }
+                }}
+                placeholder="https://example.com/article or example.com/path"
+                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 font-mono text-sm"
+              />
+              <p className="text-xs text-[var(--text-muted)]">
+                Opens in a new browser tab for learners. Use a full URL or a domain (https:// is added when omitted).
+              </p>
+              <button
+                type="button"
+                disabled={!linkFormValid}
+                onClick={commitWebLink}
+                className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-40"
+              >
+                Add link
               </button>
             </div>
           )}
@@ -894,6 +984,7 @@ function PathBranchSortableRow({
   onRemove,
   onMove,
   onLabelChange,
+  onLinkBranchChange,
   onRequestEditCourse,
   onRequestEditLesson,
   onBranchRowFocus,
@@ -911,6 +1002,7 @@ function PathBranchSortableRow({
   onRemove: (id: string) => void;
   onMove: (id: string, delta: -1 | 1) => void;
   onLabelChange: (id: string, label: string) => void;
+  onLinkBranchChange: (id: string, patch: { label?: string; href?: string }) => void;
   onRequestEditCourse: (id: string) => void;
   onRequestEditLesson: (id: string) => void;
   onBranchRowFocus: (id: string) => void;
@@ -954,7 +1046,9 @@ function PathBranchSortableRow({
       ? 'bg-orange-500/15 text-orange-600 dark:text-orange-400'
       : b.kind === 'course'
         ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
-        : 'bg-teal-500/15 text-teal-600 dark:text-teal-400';
+        : b.kind === 'link'
+          ? 'bg-violet-500/15 text-violet-600 dark:text-violet-400'
+          : 'bg-teal-500/15 text-teal-600 dark:text-teal-400';
 
   return (
     <li ref={setNodeRef} style={style} className={`min-w-0 list-none overflow-hidden rounded-xl border border-[var(--border-color)] ${cardBg}`}>
@@ -1005,14 +1099,26 @@ function PathBranchSortableRow({
               <span
                 className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase ${kindBadgeClass}`}
               >
-                {b.kind === 'label' ? 'Label' : b.kind === 'course' ? 'Course' : 'Other'}
+                {b.kind === 'label'
+                  ? 'Label'
+                  : b.kind === 'course'
+                    ? 'Course'
+                    : b.kind === 'link'
+                      ? 'Link'
+                      : 'Lesson'}
               </span>
             </button>
           ) : (
             <span
               className={`inline-flex min-h-11 shrink-0 items-center rounded-md px-2 py-0.5 text-[10px] font-bold uppercase ${kindBadgeClass}`}
             >
-              {b.kind === 'label' ? 'Label' : b.kind === 'course' ? 'Course' : 'Other'}
+              {b.kind === 'label'
+                ? 'Label'
+                : b.kind === 'course'
+                  ? 'Course'
+                  : b.kind === 'link'
+                    ? 'Link'
+                    : 'Lesson'}
             </span>
           )}
           {b.kind === 'label' ? (
@@ -1026,6 +1132,40 @@ function PathBranchSortableRow({
               className="min-h-10 min-w-0 flex-1 rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
               placeholder="Label text"
             />
+          ) : b.kind === 'link' ? (
+            <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end sm:gap-x-3 sm:gap-y-2">
+              <label className="flex min-w-0 flex-[2_1_10rem] max-w-full flex-col gap-1">
+                <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">
+                  Title
+                </span>
+                <input
+                  type="text"
+                  value={b.label}
+                  onChange={(e) => onLinkBranchChange(b.id, { label: e.target.value })}
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  aria-label="Web link title"
+                  className="min-h-10 min-w-0 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                  placeholder="Shown in the path outline"
+                />
+              </label>
+              <label className="flex min-w-0 flex-[3_1_14rem] max-w-full flex-col gap-1">
+                <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">
+                  URL
+                </span>
+                <input
+                  type="url"
+                  inputMode="url"
+                  value={b.href}
+                  onChange={(e) => onLinkBranchChange(b.id, { href: e.target.value })}
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  aria-label="Web link URL"
+                  className="min-h-10 min-w-0 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 font-mono text-sm text-[var(--text-primary)]"
+                  placeholder="https://…"
+                />
+              </label>
+            </div>
           ) : (
             <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
               <span className="min-w-0 flex-1 truncate text-sm font-bold text-[var(--text-primary)]">
@@ -1093,6 +1233,7 @@ function PathBranchSortableRow({
             onRemove={onRemove}
             onMove={onMove}
             onLabelChange={onLabelChange}
+            onLinkBranchChange={onLinkBranchChange}
             onRequestEditCourse={onRequestEditCourse}
             onRequestEditLesson={onRequestEditLesson}
             onBranchRowFocus={onBranchRowFocus}
@@ -1114,6 +1255,7 @@ function PathBranchTreeList({
   onRemove,
   onMove,
   onLabelChange,
+  onLinkBranchChange,
   onRequestEditCourse,
   onRequestEditLesson,
   onBranchRowFocus,
@@ -1128,6 +1270,7 @@ function PathBranchTreeList({
   onRemove: (id: string) => void;
   onMove: (id: string, delta: -1 | 1) => void;
   onLabelChange: (id: string, label: string) => void;
+  onLinkBranchChange: (id: string, patch: { label?: string; href?: string }) => void;
   onRequestEditCourse: (id: string) => void;
   onRequestEditLesson: (id: string) => void;
   onBranchRowFocus: (id: string) => void;
@@ -1158,6 +1301,7 @@ function PathBranchTreeList({
               onRemove={onRemove}
               onMove={onMove}
               onLabelChange={onLabelChange}
+              onLinkBranchChange={onLinkBranchChange}
               onRequestEditCourse={onRequestEditCourse}
               onRequestEditLesson={onRequestEditLesson}
               onBranchRowFocus={onBranchRowFocus}
@@ -1413,7 +1557,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
   /** Add-branch flow or change linked course/lesson on an existing node. */
   type BranchModalState =
     | { kind: 'closed' }
-    | { kind: 'add'; parentId: string | null; preset?: 'label' | 'course' | 'lesson' }
+    | { kind: 'add'; parentId: string | null; preset?: 'label' | 'course' | 'link' }
     | { kind: 'editCourse'; nodeId: string }
     | { kind: 'editLesson'; nodeId: string; courseId: string; lessonId: string };
   const [branchModal, setBranchModal] = useState<BranchModalState>({ kind: 'closed' });
@@ -2174,7 +2318,8 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                     branches. <strong className="text-[var(--text-secondary)]">Add under</strong> adds a child branch.
                   </p>
                   <p>
-                    Course and lesson branches feed <strong className="text-[var(--text-secondary)]">Courses in path</strong>{' '}
+                    Course branches (and legacy lesson branches) feed{' '}
+                    <strong className="text-[var(--text-secondary)]">Courses in path</strong>{' '}
                     order automatically.
                   </p>
                 </div>
@@ -2191,7 +2336,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                   <div className="rounded-xl border border-dashed border-orange-500/35 bg-orange-500/[0.07] px-4 py-6 sm:px-6">
                     <p className="text-center text-sm font-semibold text-[var(--text-primary)]">Add your first branch</p>
                     <p className="mt-2 text-center text-xs leading-relaxed text-[var(--text-muted)]">
-                      Start with a text label, a full course, or one lesson—you can reorder and nest afterward.
+                      Start with a text label, a full course, or a web link—you can reorder and nest afterward.
                     </p>
                     <div className="mt-4 flex flex-col gap-2">
                       <button
@@ -2226,20 +2371,16 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                       </button>
                       <button
                         type="button"
-                        disabled={
-                          (pathMindmapLoading && pathSelector !== '__new__') || publishedList.length === 0
-                        }
-                        onClick={() => setBranchModal({ kind: 'add', parentId: null, preset: 'lesson' })}
-                        className="flex min-h-12 w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-left transition-colors hover:border-orange-500/40 hover:bg-[var(--hover-bg)] disabled:cursor-not-allowed disabled:opacity-40"
+                        disabled={!!pathMindmapLoading && pathSelector !== '__new__'}
+                        onClick={() => setBranchModal({ kind: 'add', parentId: null, preset: 'link' })}
+                        className="flex min-h-12 w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-left transition-colors hover:border-orange-500/40 hover:bg-[var(--hover-bg)] disabled:opacity-40"
                       >
                         <span className="flex w-full items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
-                          <ListVideo size={18} className="shrink-0 text-teal-500" aria-hidden />
-                          Single lesson
+                          <Link2 size={18} className="shrink-0 text-violet-500" aria-hidden />
+                          Web link
                         </span>
                         <span className="pl-[1.625rem] text-xs text-[var(--text-muted)]">
-                          {publishedList.length === 0
-                            ? 'Publish courses in Catalog first'
-                            : 'Pick a course, then a lesson'}
+                          Blog, article, or any page — opens in a new tab
                         </span>
                       </button>
                     </div>
@@ -2272,6 +2413,13 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                         setPathBranchTree((roots) =>
                           mapBranchNodeById(roots, id, (n) =>
                             n.kind === 'label' ? { ...n, label } : n
+                          )
+                        )
+                      }
+                      onLinkBranchChange={(id, patch) =>
+                        setPathBranchTree((roots) =>
+                          mapBranchNodeById(roots, id, (n) =>
+                            n.kind === 'link' ? { ...n, ...patch } : n
                           )
                         )
                       }
@@ -2315,7 +2463,8 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
 
           {pathDraft.courseIds.length === 0 && showPathCourseRequiredHint ? (
             <p id="admin-path-course-required-hint" className="text-xs font-semibold text-red-400">
-              Add at least one branch, or link a course via Course / Other branches, before saving.
+              Add at least one branch, or link a course via Course / Lesson branches, before saving. Web links alone
+              do not add catalog courses.
             </p>
           ) : null}
 

@@ -1,5 +1,6 @@
 import type { Course } from '../data/courses';
 import { isCourseLevel } from './courseTaxonomy';
+import { lessonWebHref } from './lessonContent';
 
 /** Same rules as admin catalog `validateDraft`. */
 export function validateCourseDraft(c: Course): string | null {
@@ -20,7 +21,11 @@ export function validateCourseDraft(c: Course): string | null {
       const l = m.lessons[li];
       if (!l.id.trim()) return `Module ${mi + 1}, Lesson ${li + 1}: Lesson ID is required.`;
       if (!l.title.trim()) return `Module ${mi + 1}, Lesson ${li + 1}: Lesson title is required.`;
-      if (!l.videoUrl.trim() || !l.videoUrl.startsWith('http')) {
+      if (l.contentKind === 'web') {
+        if (!lessonWebHref(l)) {
+          return `Module ${mi + 1}, Lesson ${li + 1}: Page URL is required (https:// or a valid domain).`;
+        }
+      } else if (!l.videoUrl.trim() || !l.videoUrl.startsWith('http')) {
         return `Module ${mi + 1}, Lesson ${li + 1}: Video URL is required and must start with http.`;
       }
     }

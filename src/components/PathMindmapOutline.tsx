@@ -5,6 +5,7 @@ import {
   Circle,
   FastForward,
   Info,
+  Link2,
   ListVideo,
   Lock,
   Play,
@@ -15,6 +16,7 @@ import type { MindmapTreeNode } from '../data/pathMindmap';
 import { getCourseLessonProgressSummary, type CourseLessonProgressSummary } from '../utils/courseProgress';
 import { getPathOutlineRowStatus, type PathOutlineRowStatus } from '../utils/pathOutlineRowStatus';
 import { computePathSectionProgress, countCatalogCoursesInSubtree } from '../utils/pathSectionProgress';
+import { normalizeExternalHref } from '../utils/externalUrl';
 
 /** Matches Tailwind `md` (768px): flat path outline on small viewports. */
 function useOutlineCompactMobile(): boolean {
@@ -91,9 +93,10 @@ function buildNestedBranchSiblingMap(sectionRoots: MindmapTreeNode[]): Map<strin
   return map;
 }
 
-function nodeKind(n: MindmapTreeNode): 'label' | 'course' | 'lesson' {
+function nodeKind(n: MindmapTreeNode): 'label' | 'course' | 'lesson' | 'link' {
   if (n.kind === 'course' && n.courseId) return 'course';
   if (n.kind === 'lesson' && n.courseId && n.lessonId) return 'lesson';
+  if (n.kind === 'link' && n.externalUrl) return 'link';
   return 'label';
 }
 
@@ -108,6 +111,15 @@ function resolveActions(
   lessonId?: string;
 } {
   const k = nodeKind(node);
+  if (k === 'link') {
+    return {
+      canOpenCourse: false,
+      canOpenLesson: false,
+      missingCatalog: false,
+      courseId: undefined,
+      lessonId: undefined,
+    };
+  }
   const courseMeta =
     k === 'course' || k === 'lesson' ? catalogCourses.find((c) => c.id === node.courseId) : undefined;
   const canOpenCourse = k === 'course' && !!node.courseId && !!courseMeta;
@@ -398,17 +410,27 @@ function PathRowStatusLead({
   compactIcon = false,
   /** Same row as title (`items-center`); no `self-stretch` (mobile path outline). */
   inlineWithTitle = false,
+  /** External web link row (blog, article) — not catalog progress. */
+  externalLink = false,
 }: {
   depth: number;
   status: PathOutlineRowStatus | null;
   /** Tighter icons for deep nesting (mobile-first). */
   compactIcon?: boolean;
   inlineWithTitle?: boolean;
+  externalLink?: boolean;
 }) {
   const box = inlineWithTitle
     ? 'flex w-7 shrink-0 items-center justify-center sm:w-8'
     : 'flex w-7 shrink-0 items-center justify-center self-stretch sm:w-8';
   const ic = compactIcon ? 17 : 20;
+  if (externalLink) {
+    return (
+      <div className={box} role="img" aria-label="External web link">
+        <Link2 className="text-violet-500" size={ic} strokeWidth={2.25} aria-hidden />
+      </div>
+    );
+  }
   if (status === 'completed') {
     return (
       <div className={box} role="img" aria-label="Completed">
@@ -455,18 +477,22 @@ function OutlineBranchStatusLeadSlot({
   depth,
   status,
   compactIcon = false,
+  externalLink = false,
 }: {
   hasNested: boolean;
   isLabel: boolean;
   depth: number;
   status: PathOutlineRowStatus | null;
   compactIcon?: boolean;
+  externalLink?: boolean;
 }) {
   const box = 'flex w-7 shrink-0 items-center justify-center self-stretch sm:w-8';
   if (hasNested || isLabel) {
     return <div className={box} aria-hidden />;
   }
-  return <PathRowStatusLead depth={depth} status={status} compactIcon={compactIcon} />;
+  return (
+    <PathRowStatusLead depth={depth} status={status} compactIcon={compactIcon} externalLink={externalLink} />
+  );
 }
 
 /** Vertical rail + rounded corner group; horizontal elbows on each `OutlineNestedBranchItem`. */
@@ -575,7 +601,10 @@ function OutlineNode({
   outlineCompactMobile: boolean;
 }) {
   const label = node.label.trim() || node.id;
-  const isLabelRow = nodeKind(node) === 'label';
+  const nk = nodeKind(node);
+  const isLabelRow = nk === 'label';
+  const safeLinkHref =
+    nk === 'link' && node.externalUrl ? normalizeExternalHref(node.externalUrl) : null;
 
   const sectionProgress = useMemo(() => {
     if (depth !== 0) return null;
@@ -593,11 +622,11 @@ function OutlineNode({
   }, [depth, node, catalogCourses, progressUserId, progressSnapshotVersion]);
 
   const courseLessonProgressSummary = useMemo(() => {
-    if (nodeKind(node) !== 'course' || !node.courseId) return null;
+    if (nk !== 'course' || !node.courseId) return null;
     const c = catalogCourses.find((x) => x.id === node.courseId);
     if (!c) return null;
     return getCourseLessonProgressSummary(c, progressUserId);
-  }, [node, catalogCourses, progressUserId, progressSnapshotVersion]);
+  }, [nk, node, catalogCourses, progressUserId, progressSnapshotVersion]);
 
   if (depth === 0) {
     const showSectionProgress = sectionProgress != null && sectionProgress.totalCourses > 0;
@@ -836,16 +865,34 @@ function OutlineNode({
               isLabel={isLabelRow}
               depth={1}
               status={rowStatus}
+              externalLink={!hasNested && nk === 'link'}
             />
           ) : null}
           <div className="flex min-w-0 max-w-full flex-1 flex-row flex-wrap items-center gap-x-2 gap-y-1 max-md:pl-2 md:flex-nowrap md:items-center md:justify-between md:gap-2">
             <div className="flex min-w-0 flex-1 flex-row items-center gap-2 md:min-w-0 md:flex-1">
               {outlineCompactMobile && !hasNested && !isLabelRow ? (
-                <PathRowStatusLead depth={1} status={rowStatus} inlineWithTitle />
+                <PathRowStatusLead
+                  depth={1}
+                  status={rowStatus}
+                  inlineWithTitle
+                  externalLink={nk === 'link'}
+                />
               ) : null}
-              <span className="min-w-0 flex-1 text-base font-semibold leading-snug text-[var(--text-primary)] [overflow-wrap:anywhere]">
-                {label}
-              </span>
+              {safeLinkHref ? (
+                <a
+                  href={safeLinkHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="min-w-0 flex-1 text-base font-semibold leading-snug text-violet-600 underline-offset-2 hover:underline dark:text-violet-400 [overflow-wrap:anywhere]"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {label}
+                </a>
+              ) : (
+                <span className="min-w-0 flex-1 text-base font-semibold leading-snug text-[var(--text-primary)] [overflow-wrap:anywhere]">
+                  {label}
+                </span>
+              )}
               {courseLessonProgressSummary && courseLessonProgressSummary.totalLessons > 0 ? (
                 <PathOutlineProgressRingMobile
                   className="shrink-0 md:hidden"
@@ -942,6 +989,7 @@ function OutlineNode({
             depth={depth}
             status={rowStatus}
             compactIcon={depth >= 4}
+            externalLink={!hasNested && nk === 'link'}
           />
         ) : null}
         <div className="flex min-w-0 max-w-full flex-1 flex-row flex-wrap items-center gap-x-2 gap-y-1 max-md:pl-2 md:flex-nowrap md:items-center md:justify-between md:gap-2">
@@ -952,9 +1000,22 @@ function OutlineNode({
                 status={rowStatus}
                 compactIcon={depth >= 4}
                 inlineWithTitle
+                externalLink={nk === 'link'}
               />
             ) : null}
-            <span className={`min-w-0 flex-1 ${nestedLabelClass}`}>{label}</span>
+            {safeLinkHref ? (
+              <a
+                href={safeLinkHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`min-w-0 flex-1 text-violet-600 underline-offset-2 hover:underline dark:text-violet-400 [overflow-wrap:anywhere] ${nestedLabelClass}`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {label}
+              </a>
+            ) : (
+              <span className={`min-w-0 flex-1 ${nestedLabelClass}`}>{label}</span>
+            )}
             {courseLessonProgressSummary && courseLessonProgressSummary.totalLessons > 0 ? (
               <PathOutlineProgressRingMobile
                 className="shrink-0 md:hidden"

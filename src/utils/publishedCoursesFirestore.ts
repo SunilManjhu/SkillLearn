@@ -61,14 +61,17 @@ export function peekResolvedCatalogCourses(): Course[] | null {
 function parseLesson(raw: unknown): Lesson | null {
   if (!raw || typeof raw !== 'object') return null;
   const o = raw as Record<string, unknown>;
-  if (typeof o.id !== 'string' || typeof o.title !== 'string' || typeof o.videoUrl !== 'string') return null;
+  if (typeof o.id !== 'string' || typeof o.title !== 'string') return null;
+  const videoUrl = typeof o.videoUrl === 'string' ? o.videoUrl : '';
   const lesson: Lesson = {
     id: o.id,
     title: o.title,
-    videoUrl: o.videoUrl,
+    videoUrl,
   };
   if (typeof o.duration === 'string') lesson.duration = o.duration;
   if (typeof o.about === 'string') lesson.about = o.about;
+  if (o.contentKind === 'web') lesson.contentKind = 'web';
+  if (typeof o.webUrl === 'string') lesson.webUrl = o.webUrl;
   return lesson;
 }
 
