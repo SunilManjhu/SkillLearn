@@ -12,6 +12,7 @@ import { useBodyScrollLock } from './hooks/useBodyScrollLock';
 import { useDialogKeyboard } from './hooks/useDialogKeyboard';
 import { ContactForm } from './components/ContactForm';
 import { DemoLearningAgent } from './components/DemoLearningAgent';
+import { useLearningAssistantFabVisible } from './hooks/useLearningAssistantFabVisible';
 import { STATIC_CATALOG_FALLBACK, Course, Lesson } from './data/courses';
 import type { LearningPath } from './data/learningPaths';
 import { AdminPage } from './components/AdminPage';
@@ -475,6 +476,8 @@ export default function App() {
   const handleAdminUnsavedWorkChange = useCallback((dirty: boolean) => {
     adminPortalUnsavedRef.current = dirty;
   }, []);
+
+  const showLearningAssistantFab = useLearningAssistantFabVisible();
 
   const catalogCategoryFilterTriggerRef = useRef<HTMLInputElement | null>(null);
   /** Bumps when admin adds a custom category (localStorage + event). */
@@ -2638,7 +2641,7 @@ export default function App() {
         </AnimatePresence>
       </main>
 
-      {!(playerImmersiveNav && currentView === 'player') && (
+      {!(playerImmersiveNav && currentView === 'player') && showLearningAssistantFab && (
         <DemoLearningAgent
           courses={catalogCourses}
           onOpenCourse={(course) => {

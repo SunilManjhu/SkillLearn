@@ -11,6 +11,7 @@ import { seedPublishedCoursesFromStaticCatalog } from '../utils/publishedCourses
 import { AdminCourseCatalogSection } from './admin/AdminCourseCatalogSection';
 import { AdminModerationSection } from './admin/AdminModerationSection';
 import { AdminGeminiModelsSection } from './admin/AdminGeminiModelsSection';
+import { AdminLearningAssistantSection } from './admin/AdminLearningAssistantSection';
 import { AdminUserRolesSection } from './admin/AdminUserRolesSection';
 import { useAdminActionToast } from './admin/useAdminActionToast';
 
@@ -419,6 +420,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
 
         {tab === 'ai' && (
           <div className="space-y-6">
+            <AdminLearningAssistantSection />
             <AdminGeminiModelsSection onDirtyChange={setAiModelsDirty} />
           </div>
         )}
