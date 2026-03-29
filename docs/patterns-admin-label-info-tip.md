@@ -2,13 +2,39 @@
 
 Use this when a **form field label** (or section title styled like a field label) needs a short **help panel** next to it—without hover-only tooltips or a full separate help page.
 
-**Canonical implementation:** [`AdminCourseCatalogSection.tsx`](../src/components/admin/AdminCourseCatalogSection.tsx) — **Course** row and **Modules and lessons** row (catalog sub-tab).
+---
+
+## Adherence (do not skip)
+
+Treat the bullets below as **requirements** for any new label + info tip in admin UI. The reference implementation already follows them.
+
+| Area | Rule |
+|------|------|
+| **Copy** | **Concise bullet list only** (`<ul>` / `<li>`). One idea per bullet. No long paragraphs inside the panel. Prefer `space-y-1.5` / `sm:space-y-1` between items. |
+| **Label + control** | **`text-xs font-semibold leading-none`**, label row **`min-h-6`** + **`items-center`**, info **`size-6`**, icon **14px**, **`rounded-md`**, **`gap-x-1.5`**. Do **not** use **`min-h-11`** on the info button. |
+| **Grid neighbors** | If the label row sits in a **multi-column row**, **every** column’s label band uses **`min-h-6`** + **`items-center`** so controls align (not only the column with the tip). |
+| **Interaction** | **Click/tap** to open/close only—**no hover-only** disclosure. **Escape** and **capture-phase `pointerdown`** outside the wrapper close the panel. **No `window.scrollBy`** when opening. |
+| **Narrow (&lt;640px)** | Fixed panel: **`top`** from **`readFixedTipTopBelowAnchor`**, **`left-3` / `right-3`**. **Never** set **`bottom`** on the panel (it **stretch-fills** the viewport and empty space dominates for short tips). **Shrink-wrap** height with **`height: auto`**; cap with **`max-height`** via **`narrowAdminTipPanelStyle`** (**`top`** + **`--admin-tip-top`**) and the **`max-h-[calc(100dvh-var(--admin-tip-top)-…)]`** class. **`overflow-y-auto`** when content exceeds the cap. Re-sync **`top`** on **`scroll`** (capture) + **`resize`**. |
+| **Wide (≥640px)** | **`absolute`**, **`top-full`**, **`mt-2`**, bounded width, **`text-xs`** body. |
+| **A11y** | **`aria-expanded`**, **`aria-controls`**, **`aria-label`** (open vs close), panel **`id`** + **`role="region"`**. |
+| **Lifecycle** | Close when **context goes away** (sub-tab, no draft, collapsing section, etc.). Reset fixed-top state when closing or leaving narrow mode. |
+
+**Helpers / symbols** (see [`AdminCourseCatalogSection.tsx`](../src/components/admin/AdminCourseCatalogSection.tsx)): **`TIPS_NARROW_MAX_PX`**, **`useTipsNarrowViewport`**, **`readFixedTipTopBelowAnchor`**, **`narrowAdminTipPanelStyle`**.
+
+---
+
+**Canonical implementation:** [`AdminCourseCatalogSection.tsx`](../src/components/admin/AdminCourseCatalogSection.tsx):
+
+- **Course** row and **Modules and lessons** (catalog sub-tab).
+- **Categories** (Course details): **label + info** tip with short bullets (required count; when custom names hit library filters). Closing **Course details** closes the tip; same narrow/wide panel behavior as the other tips.
 
 ---
 
 ## Visual layout (match other field labels)
 
 Keep the label visually consistent with **Document ID**, **Level**, and other `text-xs` labels in the same form.
+
+**Tip body:** keep copy **short**—**bullet list** only (`<ul>` / `<li>`), one idea per line; avoid long paragraphs inside the panel.
 
 **Label row**
 
@@ -68,10 +94,16 @@ Breakpoint matches Tailwind **`sm`** (640px): **narrow** = `max-width: 639px` (c
 
 **Narrow (&lt;640px)**
 
-- Panel: **`position: fixed`**, horizontal inset **`left-3 right-3`**, `z-[120]`, `max-h` with overflow, safe-area padding on bottom.
-- **`top`:** set from the **info button** element:  
-  `getBoundingClientRect().bottom + gapPx` (e.g. 8px)—see `readFixedTipTopBelowAnchor` in the same file. Recompute on **`scroll`** (capture) and **`resize`** while open so the panel stays under the anchor after layout changes.
+- Panel: **`position: fixed`**, **`left-3 right-3`**, measured **`top`** only—**do not** set **`bottom`** on the panel, or it **stretches** to the viewport and leaves a huge empty area for short tips.
+- **Height:** default **`height: auto`** so the box **shrink-wraps** content. Cap with **`max-height: calc(100dvh - var(--admin-tip-top) - env(safe-area-inset-bottom, 0px) - 0.75rem)`** by setting **`--admin-tip-top`** inline to the same px as **`top`** (see **`narrowAdminTipPanelStyle`** in [`AdminCourseCatalogSection.tsx`](../src/components/admin/AdminCourseCatalogSection.tsx)). Use **`overflow-y-auto`**, **`overflow-x-hidden`**, **`-webkit-overflow-scrolling: touch`** so long content scrolls inside the cap.
+- **`top`:** from **`readFixedTipTopBelowAnchor`**. Recompute on **`scroll`** (capture) and **`resize`** while open.
 - If `top` is not yet valid (e.g. −1), keep the panel **hidden** until layout has run (`useLayoutEffect` after open).
+
+**Anti-patterns (narrow)**
+
+- **`bottom: …`** (or Tailwind **`bottom-*`**) on the **same** fixed tip panel as **`top`** → full-viewport-height sheet; **rejected** for this pattern.
+- **`max-h` tied only to `vh` without `--admin-tip-top`** → panel can still extend below the fold or cap wrong; use the **same anchor px** in **`top`** and in the **`max-height`** calc via **`--admin-tip-top`**.
+- **Long prose** or **single multi-sentence `<p>`** as the tip body → **rejected**; split into **short bullets** (see **Adherence** table).
 
 ---
 
@@ -96,13 +128,15 @@ Reset **fixed `top`** state when the panel closes or when switching from narrow 
 
 ## Checklist for a new label + tip
 
-1. Same **label typography** as sibling fields: `text-xs font-semibold leading-none text-[var(--text-secondary)]`.
-2. Label row **`min-h-6`** + **`items-center`**; **`size-6`** info button + **14px** icon, **`rounded-md`**, **`gap-x-1.5`** between label and control.
-3. **If in a grid or shared row with plain labels:** give **every** column the same **`min-h-6`** label wrapper (see **Alignment next to plain labels** above)—not only the column with the tip.
-4. **Click/tap** toggle; **Escape** + **capture `pointerdown` outside** to close.
-5. **Wide:** absolute below anchor; **narrow:** fixed with **`left-3` / `right-3`** and measured **`top`** under the button; sync on scroll/resize.
-6. **`aria-*`** wired as above.
-7. Close on **context loss** (tab change, unmount, data cleared).
+1. **Copy:** short **`<ul>` / `<li>`** only; one idea per bullet; no paragraph blocks (see **Adherence**).
+2. Same **label typography** as sibling fields: `text-xs font-semibold leading-none text-[var(--text-secondary)]`.
+3. Label row **`min-h-6`** + **`items-center`**; **`size-6`** info button + **14px** icon, **`rounded-md`**, **`gap-x-1.5`** between label and control (no **`min-h-11`** on the info control).
+4. **If in a grid or shared row with plain labels:** give **every** column the same **`min-h-6`** label wrapper (see **Alignment next to plain labels** above)—not only the column with the tip.
+5. **Click/tap** toggle; **Escape** + **capture `pointerdown` outside** to close; **no** **`window.scrollBy`** on open.
+6. **Wide:** `absolute` below anchor, bounded width, **`text-xs`** body.
+7. **Narrow:** `fixed`, **`left-3` / `right-3`**, **`narrowAdminTipPanelStyle(top)`** (or equivalent **`top` + `--admin-tip-top`**), **`max-h-[calc(100dvh-var(--admin-tip-top)-…)]`**, **no `bottom`** on the panel, **`overflow-y-auto`**; sync **`top`** on **scroll** (capture) + **resize**; hide until **`top`** valid.
+8. **`aria-*`** wired as in **Accessibility**.
+9. Close on **context loss**; reset fixed-top state when closing or leaving narrow mode.
 
 ---
 

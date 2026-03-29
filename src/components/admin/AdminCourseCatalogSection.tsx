@@ -360,6 +360,14 @@ function readFixedTipTopBelowAnchor(anchorEl: HTMLElement, gapPx = 8): number {
   return anchorEl.getBoundingClientRect().bottom + gapPx;
 }
 
+/** Narrow-only: `top` + CSS var for `max-h` so the panel shrink-wraps content up to remaining viewport. */
+function narrowAdminTipPanelStyle(topPx: number): React.CSSProperties {
+  return {
+    top: topPx,
+    ['--admin-tip-top' as string]: `${topPx}px`,
+  };
+}
+
 export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps> = ({
   onCatalogChanged,
   onDraftDirtyChange,
@@ -436,11 +444,15 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const catalogTipBtnRef = useRef<HTMLButtonElement | null>(null);
   const modulesTipsWrapRef = useRef<HTMLSpanElement | null>(null);
   const modulesTipBtnRef = useRef<HTMLButtonElement | null>(null);
+  const categoriesTipsWrapRef = useRef<HTMLSpanElement | null>(null);
+  const categoriesTipBtnRef = useRef<HTMLButtonElement | null>(null);
   const [catalogTipsOpen, setCatalogTipsOpen] = useState(false);
   const [modulesTipsOpen, setModulesTipsOpen] = useState(false);
+  const [categoriesTipsOpen, setCategoriesTipsOpen] = useState(false);
   /** Narrow-only: fixed `top` for the catalog tips panel (anchor = info button). */
   const [catalogTipFixedTop, setCatalogTipFixedTop] = useState(-1);
   const [modulesTipFixedTop, setModulesTipFixedTop] = useState(-1);
+  const [categoriesTipFixedTop, setCategoriesTipFixedTop] = useState(-1);
 
   const syncCatalogTipTop = useCallback(() => {
     if (!tipsNarrowViewport || !catalogTipsOpen || !catalogTipBtnRef.current) return;
@@ -451,6 +463,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     if (!tipsNarrowViewport || !modulesTipsOpen || !modulesTipBtnRef.current) return;
     setModulesTipFixedTop(readFixedTipTopBelowAnchor(modulesTipBtnRef.current));
   }, [tipsNarrowViewport, modulesTipsOpen]);
+
+  const syncCategoriesTipTop = useCallback(() => {
+    if (!tipsNarrowViewport || !categoriesTipsOpen || !categoriesTipBtnRef.current) return;
+    setCategoriesTipFixedTop(readFixedTipTopBelowAnchor(categoriesTipBtnRef.current));
+  }, [tipsNarrowViewport, categoriesTipsOpen]);
 
   useLayoutEffect(() => {
     if (!catalogTipsOpen) {
@@ -476,10 +493,23 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     setModulesTipFixedTop(readFixedTipTopBelowAnchor(modulesTipBtnRef.current));
   }, [modulesTipsOpen, tipsNarrowViewport]);
 
+  useLayoutEffect(() => {
+    if (!categoriesTipsOpen) {
+      setCategoriesTipFixedTop(-1);
+      return;
+    }
+    if (!tipsNarrowViewport || !categoriesTipBtnRef.current) {
+      setCategoriesTipFixedTop(-1);
+      return;
+    }
+    setCategoriesTipFixedTop(readFixedTipTopBelowAnchor(categoriesTipBtnRef.current));
+  }, [categoriesTipsOpen, tipsNarrowViewport]);
+
   useEffect(() => {
     if (!tipsNarrowViewport) {
       setCatalogTipFixedTop(-1);
       setModulesTipFixedTop(-1);
+      setCategoriesTipFixedTop(-1);
     }
   }, [tipsNarrowViewport]);
 
@@ -488,8 +518,15 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   }, [contentCatalogSubTab]);
 
   useEffect(() => {
-    if (!draft) setModulesTipsOpen(false);
+    if (!draft) {
+      setModulesTipsOpen(false);
+      setCategoriesTipsOpen(false);
+    }
   }, [draft]);
+
+  useEffect(() => {
+    if (!courseDetailsOpen) setCategoriesTipsOpen(false);
+  }, [courseDetailsOpen]);
 
   useEffect(() => {
     if (!catalogTipsOpen) return;
@@ -516,6 +553,18 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   }, [modulesTipsOpen]);
 
   useEffect(() => {
+    if (!categoriesTipsOpen) return;
+    const onDoc = (e: PointerEvent) => {
+      const t = e.target;
+      if (!(t instanceof Node)) return;
+      if (categoriesTipsWrapRef.current?.contains(t)) return;
+      setCategoriesTipsOpen(false);
+    };
+    document.addEventListener('pointerdown', onDoc, true);
+    return () => document.removeEventListener('pointerdown', onDoc, true);
+  }, [categoriesTipsOpen]);
+
+  useEffect(() => {
     if (!catalogTipsOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setCatalogTipsOpen(false);
@@ -532,6 +581,15 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [modulesTipsOpen]);
+
+  useEffect(() => {
+    if (!categoriesTipsOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setCategoriesTipsOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [categoriesTipsOpen]);
 
   useEffect(() => {
     if (!tipsNarrowViewport || !catalogTipsOpen || catalogTipFixedTop < 0) return;
@@ -554,6 +612,17 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       window.removeEventListener('resize', onMove);
     };
   }, [tipsNarrowViewport, modulesTipsOpen, modulesTipFixedTop, syncModulesTipTop]);
+
+  useEffect(() => {
+    if (!tipsNarrowViewport || !categoriesTipsOpen || categoriesTipFixedTop < 0) return;
+    const onMove = () => syncCategoriesTipTop();
+    window.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
+    return () => {
+      window.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
+    };
+  }, [tipsNarrowViewport, categoriesTipsOpen, categoriesTipFixedTop, syncCategoriesTipTop]);
 
   /** Full list for adding categories (presets, saved extras, labels from published courses). */
   const categorySelectOptions = useMemo(() => {
@@ -1918,25 +1987,29 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       ? 'hidden'
                       : tipsNarrowViewport
                         ? catalogTipFixedTop >= 0
-                          ? 'fixed z-[120] left-3 right-3 max-h-[min(58vh,28rem)] w-auto max-w-none translate-x-0 overflow-y-auto overscroll-y-contain touch-pan-y rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-3.5 text-left text-sm leading-relaxed text-[var(--text-primary)] shadow-xl pointer-events-auto pb-[max(0.75rem,env(safe-area-inset-bottom))] outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40'
+                          ? 'fixed z-[120] left-3 right-3 w-auto max-w-none translate-x-0 overflow-y-auto overflow-x-hidden overscroll-y-contain [-webkit-overflow-scrolling:touch] touch-pan-y max-h-[calc(100dvh-var(--admin-tip-top)-env(safe-area-inset-bottom,0px)-0.75rem)] rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-3.5 text-left text-sm leading-relaxed text-[var(--text-primary)] shadow-xl pointer-events-auto outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40'
                           : 'hidden'
                         : 'absolute left-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] max-w-sm rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-3 text-left text-xs leading-snug text-[var(--text-primary)] shadow-lg pointer-events-auto'
                   }
-                  style={catalogTipsOpen && tipsNarrowViewport && catalogTipFixedTop >= 0 ? { top: catalogTipFixedTop } : undefined}
+                  style={
+                    catalogTipsOpen && tipsNarrowViewport && catalogTipFixedTop >= 0
+                      ? narrowAdminTipPanelStyle(catalogTipFixedTop)
+                      : undefined
+                  }
                 >
-                  <ul className="list-disc space-y-2 pl-4 text-[var(--text-muted)] marker:text-orange-500/70 sm:space-y-1.5">
-                    <li>Saves go to the live learner catalog (Firestore).</li>
+                  <ul className="list-disc space-y-1.5 pl-4 text-[var(--text-muted)] marker:text-orange-500/70 sm:space-y-1">
+                    <li>Saves go to the live catalog (Firestore).</li>
                     <li>
-                      Open this <strong className="font-semibold text-[var(--text-secondary)]">Course</strong> control once
-                      to load published titles.
+                      Open <strong className="font-semibold text-[var(--text-secondary)]">Course</strong> once to load
+                      titles.
                     </li>
                     <li>
-                      <strong className="font-semibold text-[var(--text-secondary)]">New Course</strong> → next free id (
-                      <code className="text-orange-500/90">C1</code>, <code className="text-orange-500/90">C2</code>…);
-                      existing courses A–Z.
+                      <strong className="font-semibold text-[var(--text-secondary)]">New Course</strong>: next id{' '}
+                      <code className="text-orange-500/90">C1</code>, <code className="text-orange-500/90">C2</code>…;
+                      list A–Z.
                     </li>
                     <li>
-                      Modules <code className="text-orange-500/90">C1M1</code>; lessons{' '}
+                      Ids: modules <code className="text-orange-500/90">C1M1</code>, lessons{' '}
                       <code className="text-orange-500/90">C1M1L1</code>.
                     </li>
                   </ul>
@@ -2119,9 +2192,68 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             </label>
             <div
               id="admin-course-categories"
+              aria-labelledby="admin-course-categories-label"
               className={`space-y-2 sm:col-span-2 ${showValidationHints && fieldErrors.courseCategories ? 'rounded-lg ring-2 ring-red-500/60 p-2 -m-2' : ''}`}
             >
-              <span className="text-xs font-semibold text-[var(--text-secondary)]">Categories</span>
+              <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+                <span
+                  id="admin-course-categories-label"
+                  className="text-xs font-semibold leading-none text-[var(--text-secondary)]"
+                >
+                  Categories
+                </span>
+                <span ref={categoriesTipsWrapRef} className="relative inline-flex shrink-0 items-center gap-1">
+                  <button
+                    ref={categoriesTipBtnRef}
+                    type="button"
+                    onClick={() => setCategoriesTipsOpen((o) => !o)}
+                    aria-expanded={categoriesTipsOpen}
+                    aria-controls="admin-course-categories-tips"
+                    aria-label={
+                      categoriesTipsOpen ? 'Close categories field tips' : 'Open categories field tips'
+                    }
+                    className={`inline-flex size-6 shrink-0 touch-manipulation items-center justify-center rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 active:opacity-90 ${
+                      categoriesTipsOpen ? 'border-orange-500/50 text-orange-500' : ''
+                    }`}
+                  >
+                    <Info size={14} className="text-orange-500/90" aria-hidden />
+                  </button>
+                  <div
+                    id="admin-course-categories-tips"
+                    role="region"
+                    aria-label="Categories field tips"
+                    tabIndex={
+                      categoriesTipsOpen && tipsNarrowViewport && categoriesTipFixedTop >= 0
+                        ? -1
+                        : undefined
+                    }
+                    onPointerDown={
+                      categoriesTipsOpen && tipsNarrowViewport && categoriesTipFixedTop >= 0
+                        ? (e) => (e.currentTarget as HTMLElement).focus({ preventScroll: true })
+                        : undefined
+                    }
+                    className={
+                      !categoriesTipsOpen
+                        ? 'hidden'
+                        : tipsNarrowViewport
+                          ? categoriesTipFixedTop >= 0
+                            ? 'fixed z-[120] left-3 right-3 w-auto max-w-none translate-x-0 overflow-y-auto overflow-x-hidden overscroll-y-contain [-webkit-overflow-scrolling:touch] touch-pan-y max-h-[calc(100dvh-var(--admin-tip-top)-env(safe-area-inset-bottom,0px)-0.75rem)] rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-3.5 text-left text-sm leading-relaxed text-[var(--text-primary)] shadow-xl pointer-events-auto outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40'
+                            : 'hidden'
+                          : 'absolute left-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] max-w-sm rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-3 text-left text-xs leading-snug text-[var(--text-primary)] shadow-lg pointer-events-auto'
+                    }
+                    style={
+                      categoriesTipsOpen && tipsNarrowViewport && categoriesTipFixedTop >= 0
+                        ? narrowAdminTipPanelStyle(categoriesTipFixedTop)
+                        : undefined
+                    }
+                  >
+                    <ul className="list-disc space-y-1.5 pl-4 text-[var(--text-muted)] marker:text-orange-500/70 sm:space-y-1">
+                      <li>At least one category required.</li>
+                      <li>Custom categories appear in library filters after save or when you leave these fields.</li>
+                    </ul>
+                  </div>
+                </span>
+              </div>
               <div className="flex min-h-10 flex-wrap gap-2">
                 {draft.categories.length === 0 ? (
                   <span className="text-xs text-[var(--text-muted)]">Add at least one category.</span>
@@ -2191,9 +2323,6 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   </button>
                 </div>
               </div>
-              <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
-                At least one category is required. Custom names are added to library filters when you save or leave the fields above.
-              </p>
             </div>
             <div className="space-y-2 sm:col-span-2">
               <span className="text-xs font-semibold text-[var(--text-secondary)]">Skills</span>
@@ -2369,26 +2498,25 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         ? 'hidden'
                         : tipsNarrowViewport
                           ? modulesTipFixedTop >= 0
-                            ? 'fixed z-[120] left-3 right-3 max-h-[min(58vh,28rem)] w-auto max-w-none translate-x-0 overflow-y-auto overscroll-y-contain touch-pan-y rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-3.5 text-left text-sm leading-relaxed text-[var(--text-primary)] shadow-xl pointer-events-auto pb-[max(0.75rem,env(safe-area-inset-bottom))] outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40'
+                            ? 'fixed z-[120] left-3 right-3 w-auto max-w-none translate-x-0 overflow-y-auto overflow-x-hidden overscroll-y-contain [-webkit-overflow-scrolling:touch] touch-pan-y max-h-[calc(100dvh-var(--admin-tip-top)-env(safe-area-inset-bottom,0px)-0.75rem)] rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-3.5 text-left text-sm leading-relaxed text-[var(--text-primary)] shadow-xl pointer-events-auto outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40'
                             : 'hidden'
                           : 'absolute left-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] max-w-sm rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-3 text-left text-xs leading-snug text-[var(--text-primary)] shadow-lg pointer-events-auto'
                     }
-                    style={modulesTipsOpen && tipsNarrowViewport && modulesTipFixedTop >= 0 ? { top: modulesTipFixedTop } : undefined}
+                    style={
+                      modulesTipsOpen && tipsNarrowViewport && modulesTipFixedTop >= 0
+                        ? narrowAdminTipPanelStyle(modulesTipFixedTop)
+                        : undefined
+                    }
                   >
-                    <ul className="list-disc space-y-2 pl-4 text-[var(--text-muted)] marker:text-orange-500/70 sm:space-y-1.5">
-                      <li>Each module is a group of lessons.</li>
+                    <ul className="list-disc space-y-1.5 pl-4 text-[var(--text-muted)] marker:text-orange-500/70 sm:space-y-1">
+                      <li>Modules group lessons.</li>
+                      <li>Reorder: row ↑/↓, or Arrow keys when a reorder control is focused.</li>
                       <li>
-                        Reorder with ↑/↓ on module or lesson rows (repeat clicks stay under the cursor). With a reorder
-                        button focused, Arrow keys move the row.
+                        <strong className="font-semibold text-[var(--text-secondary)]">Move to module…</strong>: if it’s
+                        the only lesson in that module, add another lesson there first.
                       </li>
                       <li>
-                        <strong className="font-semibold text-[var(--text-secondary)]">Move to module…</strong> moves a
-                        lesson to another section—add a second lesson in its current module first if it is the only one
-                        there.
-                      </li>
-                      <li>
-                        For structured ids (e.g. <code className="text-orange-500/90">C1</code>…), module and lesson ids
-                        renumber when you move items.
+                        Structured ids (<code className="text-orange-500/90">C1</code>…): ids renumber when you reorder.
                       </li>
                     </ul>
                   </div>
@@ -2541,7 +2669,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   </label>
                 </div>
 
-                <div className="space-y-3 pl-2 sm:pl-3 border-l-2 border-orange-500/30">
+                <div className="space-y-3">
                   <p className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide">
                     Lessons in this module
                   </p>
