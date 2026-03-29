@@ -59,7 +59,7 @@ import {
 } from '../utils/courseRating';
 import { useYoutubeResolvedSeconds } from '../hooks/useYoutubeResolvedSeconds';
 import { formatAuthError } from '../utils/authErrors';
-import { lessonBlocksVideoPlayback, lessonQuizDefinition, lessonWebHref } from '../utils/lessonContent';
+import { isVideoLesson, lessonBlocksVideoPlayback, lessonQuizDefinition, lessonWebHref } from '../utils/lessonContent';
 import { CourseQuizPanel } from './CourseQuizPanel';
 
 /**
@@ -1328,9 +1328,16 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     if (!hasNext && !autoAdvanceRef.current) {
       scheduleFinalizeFromStorageRef.current();
     }
-    if (autoAdvanceRef.current && hasNext) {
+    // Auto-next only after video ends; web/quiz stay on the lesson until the learner picks the next one.
+    if (autoAdvanceRef.current && hasNext && isVideoLesson(lessonRef.current)) {
       goToNextLessonRef.current();
     }
+  }, []);
+
+  /** Quiz: learner chose “Next lesson” after failed attempts — mark complete and go to next (any lesson type). */
+  const handleQuizGoToNextLesson = useCallback(() => {
+    mergeProgressRef.current(lessonRef.current.id, 1, 1);
+    goToNextLessonRef.current();
   }, []);
 
   const startUnpauseFrostLingerRef = useRef(startUnpauseFrostLinger);
@@ -1434,6 +1441,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
 
   const handleNativeEnded = () => {
     if (!autoAdvanceRef.current) return;
+    if (!isVideoLesson(lessonRef.current)) return;
     goToNextLesson();
   };
 
@@ -1694,6 +1702,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                 setReplayUiSuppressed(false);
               }
               if (!autoAdvanceRef.current) return;
+              if (!isVideoLesson(lessonRef.current)) return;
               goToNextLessonRef.current();
             }
           },
@@ -2342,6 +2351,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                 quiz={quizDefinition}
                 user={user ?? null}
                 onMarkComplete={handleWebLessonMarkDone}
+                onGoToNextLesson={handleQuizGoToNextLesson}
               />
             </div>
           ) : isQuizKindLesson ? (
@@ -2457,7 +2467,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
               }`}
             >
               <label className="flex shrink-0 cursor-pointer select-none items-center gap-1.5 rounded-full bg-black/50 px-3 py-1.5 text-white backdrop-blur-sm transition-[padding,gap] duration-300 ease-out max-lg:gap-1 max-lg:px-2 max-lg:py-1 max-lg:shadow-none lg:gap-2 lg:px-3 lg:py-1.5">
-                <span className="text-xs max-lg:text-[10px] max-lg:leading-none lg:leading-normal">Auto-next</span>
+                <span className="text-xs max-lg:text-[10px] max-lg:leading-none lg:leading-normal">Auto-next (videos)</span>
                 <input
                   type="checkbox"
                   className="peer sr-only"

@@ -25,3 +25,8 @@ export function lessonQuizDefinition(l: Lesson): QuizDefinition | null {
 export function lessonBlocksVideoPlayback(l: Lesson): boolean {
   return isWebLesson(l) || l.contentKind === 'quiz';
 }
+
+/** Default / explicit `video` — the only kinds that use end-of-playback auto-next to the following lesson. */
+export function isVideoLesson(l: Lesson): boolean {
+  return !l.contentKind || l.contentKind === 'video';
+}

@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ChevronRight, Loader2 } from 'lucide-react';
 import { useLearnerGeminiEnabled } from '../hooks/useLearnerGeminiEnabled';
 import { useLearnerAiModelsSiteEnabled } from '../hooks/useLearnerAiModelsSiteEnabled';
 import type { Lesson, QuizDefinition, QuizQuestion } from '../data/courses';
@@ -22,6 +22,8 @@ export interface CourseQuizPanelProps {
   quiz: QuizDefinition;
   user: User | null;
   onMarkComplete: () => void;
+  /** Marks quiz complete and opens the next lesson (or course end flow). */
+  onGoToNextLesson: () => void;
 }
 
 type AnswerState = Record<string, { mcqIndex?: number; text?: string }>;
@@ -67,6 +69,32 @@ function emptyAnswers(questions: QuizQuestion[]): AnswerState {
   return o;
 }
 
+const QUIZ_PANEL_STORAGE_V = 1;
+
+type PersistedQuizPanel = {
+  v: typeof QUIZ_PANEL_STORAGE_V;
+  questionIds: string[];
+  nonPassingSubmitCount: number;
+  submitted: boolean;
+  allPassed: boolean;
+  overallScore: number | null;
+  results: QuestionResult[] | null;
+  passedResults: Record<string, QuestionResult>;
+  answers: AnswerState;
+  hintUsedById: Record<string, boolean>;
+  hintTextById: Record<string, string>;
+  answerRevealById: Record<string, string>;
+  /** After two failed full submits, learner tapped “Next lesson”; UI then offers “Start over” instead. */
+  usedNextLessonBypass?: boolean;
+};
+
+type ReviewSnapshot = {
+  overallScore: number;
+  allPassed: boolean;
+  results: QuestionResult[];
+  nonPassingSubmitCount: number;
+};
+
 export function CourseQuizPanel({
   courseId,
   courseTitle: _courseTitle,
@@ -74,6 +102,7 @@ export function CourseQuizPanel({
   quiz,
   user,
   onMarkComplete,
+  onGoToNextLesson,
 }: CourseQuizPanelProps) {
   void _courseTitle;
   const questions = quiz.questions;
@@ -93,8 +122,23 @@ export function CourseQuizPanel({
   const [hintErrById, setHintErrById] = useState<Record<string, string>>({});
   const [hintLoadingById, setHintLoadingById] = useState<Record<string, boolean>>({});
 
+  /** Submissions that did not clear every question; at 2+ we offer only “Next lesson”. */
+  const [nonPassingSubmitCount, setNonPassingSubmitCount] = useState(0);
+
+  /** Hydrated from localStorage after leaving and returning to this quiz. */
+  const [restoredFromStorage, setRestoredFromStorage] = useState(false);
+
+  /** After “Next lesson” from the 2-fail path; primary action becomes “Start over” (scores reset). */
+  const [usedNextLessonBypass, setUsedNextLessonBypass] = useState(false);
+
+  /** Last graded attempt kept visible after “Take quiz again” (new blank attempt below). */
+  const [reviewSnapshot, setReviewSnapshot] = useState<ReviewSnapshot | null>(null);
+
   /** Shown after student used hint and submitted again still wrong. */
   const [answerRevealById, setAnswerRevealById] = useState<Record<string, string>>({});
+
+  const storageKey = useMemo(() => `skilllearn:quizPanel:${courseId}:${lesson.id}`, [courseId, lesson.id]);
+  const questionIdsSig = useMemo(() => questions.map((q) => q.id).join('\0'), [questions]);
 
   const envGeminiKey = getGeminiApiKey();
   const { enabled: userLearnerGeminiOn } = useLearnerGeminiEnabled();
@@ -113,21 +157,70 @@ export function CourseQuizPanel({
   );
 
   useEffect(() => {
-    setAnswers(emptyAnswers(questions));
-    setPassedResults({});
-    setSubmitted(false);
-    setSubmitting(false);
-    setResults(null);
-    setOverallScore(null);
-    setAllPassed(false);
     setError(null);
     setAttemptSaved(null);
-    setHintUsedById({});
-    setHintTextById({});
-    setHintErrById({});
-    setHintLoadingById({});
-    setAnswerRevealById({});
-  }, [lesson.id, questions]);
+    setSubmitting(false);
+    setReviewSnapshot(null);
+
+    const resetFresh = () => {
+      setAnswers(emptyAnswers(questions));
+      setPassedResults({});
+      setSubmitted(false);
+      setResults(null);
+      setOverallScore(null);
+      setAllPassed(false);
+      setHintUsedById({});
+      setHintTextById({});
+      setHintErrById({});
+      setHintLoadingById({});
+      setAnswerRevealById({});
+      setNonPassingSubmitCount(0);
+      setRestoredFromStorage(false);
+      setUsedNextLessonBypass(false);
+    };
+
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (raw) {
+        const p = JSON.parse(raw) as PersistedQuizPanel;
+        if (
+          p?.v === QUIZ_PANEL_STORAGE_V &&
+          Array.isArray(p.questionIds) &&
+          Array.isArray(p.results) &&
+          p.submitted
+        ) {
+          const sig = p.questionIds.join('\0');
+          if (sig === questionIdsSig) {
+            setAnswers({ ...emptyAnswers(questions), ...(p.answers ?? {}) });
+            setPassedResults(typeof p.passedResults === 'object' && p.passedResults ? p.passedResults : {});
+            setSubmitted(true);
+            setResults(p.results);
+            setOverallScore(typeof p.overallScore === 'number' ? p.overallScore : null);
+            setAllPassed(!!p.allPassed);
+            setNonPassingSubmitCount(
+              typeof p.nonPassingSubmitCount === 'number' ? p.nonPassingSubmitCount : 0
+            );
+            setHintUsedById(typeof p.hintUsedById === 'object' && p.hintUsedById ? p.hintUsedById : {});
+            setHintTextById(typeof p.hintTextById === 'object' && p.hintTextById ? p.hintTextById : {});
+            setAnswerRevealById(
+              typeof p.answerRevealById === 'object' && p.answerRevealById ? p.answerRevealById : {}
+            );
+            setUsedNextLessonBypass(!!p.usedNextLessonBypass);
+            setRestoredFromStorage(true);
+            return;
+          }
+        }
+        localStorage.removeItem(storageKey);
+      }
+    } catch {
+      try {
+        localStorage.removeItem(storageKey);
+      } catch {
+        /* ignore */
+      }
+    }
+    resetFresh();
+  }, [lesson.id, storageKey, questionIdsSig, questions]);
 
   const setMcq = useCallback((qid: string, idx: number) => {
     setAnswers((prev) => ({ ...prev, [qid]: { ...prev[qid], mcqIndex: idx } }));
@@ -157,6 +250,7 @@ export function CourseQuizPanel({
       setError(v);
       return;
     }
+    setReviewSnapshot(null);
     if (hasFreeform) {
       if (!envGeminiKey) {
         setError('Open-ended questions need AI grading. Set GEMINI_API_KEY in your environment.');
@@ -303,12 +397,17 @@ export function CourseQuizPanel({
       setAllPassed(passed);
       setSubmitted(true);
       if (passed) {
+        setNonPassingSubmitCount(0);
         setAnswerRevealById({});
         setHintTextById({});
         setHintUsedById({});
         setHintErrById({});
       } else if (Object.keys(revealUpdates).length > 0) {
         setAnswerRevealById((prev) => ({ ...prev, ...revealUpdates }));
+      }
+
+      if (!passed) {
+        setNonPassingSubmitCount((c) => c + 1);
       }
 
       if (user?.uid) {
@@ -418,6 +517,14 @@ export function CourseQuizPanel({
   );
 
   const handleRetake = useCallback(() => {
+    try {
+      localStorage.removeItem(storageKey);
+    } catch {
+      /* ignore */
+    }
+    setReviewSnapshot(null);
+    setRestoredFromStorage(false);
+    setUsedNextLessonBypass(false);
     setAnswers(emptyAnswers(questions));
     setPassedResults({});
     setSubmitted(false);
@@ -431,7 +538,121 @@ export function CourseQuizPanel({
     setHintErrById({});
     setHintLoadingById({});
     setAnswerRevealById({});
-  }, [questions]);
+    setNonPassingSubmitCount(0);
+  }, [questions, storageKey]);
+
+  const handleTakeQuizAgain = useCallback(() => {
+    if (overallScore !== null && results && results.length > 0) {
+      setReviewSnapshot({
+        overallScore,
+        allPassed,
+        results: results.map((r) => ({ ...r })),
+        nonPassingSubmitCount,
+      });
+    } else {
+      setReviewSnapshot(null);
+    }
+    try {
+      localStorage.removeItem(storageKey);
+    } catch {
+      /* ignore */
+    }
+    setRestoredFromStorage(false);
+    setUsedNextLessonBypass(false);
+    setAnswers(emptyAnswers(questions));
+    setPassedResults({});
+    setSubmitted(false);
+    setResults(null);
+    setOverallScore(null);
+    setAllPassed(false);
+    setError(null);
+    setAttemptSaved(null);
+    setHintUsedById({});
+    setHintTextById({});
+    setHintErrById({});
+    setHintLoadingById({});
+    setAnswerRevealById({});
+    setNonPassingSubmitCount(0);
+  }, [questions, storageKey, overallScore, allPassed, results, nonPassingSubmitCount]);
+
+  const handleNextLessonAfterFailures = useCallback(() => {
+    if (submitted && results && results.length > 0) {
+      setUsedNextLessonBypass(true);
+      const payload: PersistedQuizPanel = {
+        v: QUIZ_PANEL_STORAGE_V,
+        questionIds: questions.map((q) => q.id),
+        nonPassingSubmitCount,
+        submitted,
+        allPassed,
+        overallScore,
+        results,
+        passedResults,
+        answers,
+        hintUsedById,
+        hintTextById,
+        answerRevealById,
+        usedNextLessonBypass: true,
+      };
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(payload));
+      } catch {
+        /* ignore quota */
+      }
+    }
+    onGoToNextLesson();
+  }, [
+    answers,
+    allPassed,
+    answerRevealById,
+    hintTextById,
+    hintUsedById,
+    nonPassingSubmitCount,
+    onGoToNextLesson,
+    overallScore,
+    passedResults,
+    questions,
+    results,
+    storageKey,
+    submitted,
+  ]);
+
+  useEffect(() => {
+    if (!submitted || !results || results.length === 0) return;
+    const payload: PersistedQuizPanel = {
+      v: QUIZ_PANEL_STORAGE_V,
+      questionIds: questions.map((q) => q.id),
+      nonPassingSubmitCount,
+      submitted,
+      allPassed,
+      overallScore,
+      results,
+      passedResults,
+      answers,
+      hintUsedById,
+      hintTextById,
+      answerRevealById,
+      usedNextLessonBypass: usedNextLessonBypass || undefined,
+    };
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(payload));
+    } catch {
+      /* ignore quota */
+    }
+  }, [
+    storageKey,
+    submitted,
+    allPassed,
+    overallScore,
+    results,
+    passedResults,
+    answers,
+    hintUsedById,
+    hintTextById,
+    answerRevealById,
+    nonPassingSubmitCount,
+    questions,
+    usedNextLessonBypass,
+  ]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto bg-[var(--bg-secondary)] p-4 text-left text-[var(--text-primary)] sm:p-6">
@@ -473,16 +694,81 @@ export function CourseQuizPanel({
         ) : null}
       </div>
 
-      {submitted && !allPassed ? (
+      {restoredFromStorage && submitted ? (
+        <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-xs leading-relaxed text-[var(--text-secondary)]">
+          You&apos;re viewing a saved attempt on this device. Use <strong>Take quiz again</strong> below to retry;
+          your scores stay visible for review until then.
+        </div>
+      ) : null}
+
+      {submitted && !allPassed && (nonPassingSubmitCount >= 2 || !restoredFromStorage) ? (
         <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
-          For any incorrect question, use <strong>Hint</strong> once for AI guidance. If you still miss after submitting
-          again, the <strong>correct answer</strong> is shown. Open-ended needs {FREEFORM_PASS_THRESHOLD}%+ to pass.
+          {nonPassingSubmitCount >= 2 ? (
+            <p>
+              You can move on with <strong>Next lesson</strong> below. This lesson will be marked complete.
+            </p>
+          ) : (
+            <p>
+              For any incorrect question, use <strong>Hint</strong> once for AI guidance. If you still miss after
+              submitting again, the <strong>correct answer</strong> is shown. Open-ended needs {FREEFORM_PASS_THRESHOLD}
+              %+ to pass.
+            </p>
+          )}
         </div>
       ) : null}
 
       {submitted && allPassed ? (
         <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-800 dark:text-emerald-200">
           You passed every question. This lesson is marked complete.
+        </div>
+      ) : null}
+
+      {reviewSnapshot ? (
+        <div
+          className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-4"
+          aria-label="Previous quiz attempt for review"
+        >
+          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Previous attempt</p>
+          <p className="mt-2 text-sm font-bold text-[var(--text-primary)]">
+            Score: <span className="text-orange-500">{reviewSnapshot.overallScore}%</span>
+            {reviewSnapshot.allPassed ? (
+              <span className="ml-2 text-xs font-normal text-emerald-600 dark:text-emerald-400">Passed all</span>
+            ) : (
+              <span className="ml-2 text-xs font-normal text-[var(--text-muted)]">
+                {reviewSnapshot.nonPassingSubmitCount >= 2 ? 'You could move on after this run.' : 'For reference only'}
+              </span>
+            )}
+          </p>
+          <ul className="mt-3 flex flex-col gap-2 border-t border-[var(--border-color)]/60 pt-3">
+            {questions.map((q, idx) => {
+              const r = reviewSnapshot.results.find((x) => x.questionId === q.id);
+              if (!r) return null;
+              const ok = isPassedResult(q, r);
+              return (
+                <li key={`prev-${q.id}`} className="text-sm">
+                  <span className="font-medium text-[var(--text-primary)]">
+                    {idx + 1}.{' '}
+                    <span className="font-normal text-[var(--text-secondary)]">{q.prompt}</span>
+                  </span>
+                  <span className="mt-0.5 block text-xs text-[var(--text-muted)]">
+                    {r.type === 'mcq' ? (
+                      ok ? (
+                        <span className="text-emerald-600 dark:text-emerald-400">Correct</span>
+                      ) : (
+                        <span className="text-red-500">Incorrect</span>
+                      )
+                    ) : (
+                      <>
+                        <span className={ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'}>
+                          {r.score}% {ok ? '(passed)' : `(need ${FREEFORM_PASS_THRESHOLD}%+)`}
+                        </span>
+                      </>
+                    )}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       ) : null}
 
@@ -698,24 +984,56 @@ export function CourseQuizPanel({
       ) : null}
 
       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-        {!allPassed ? (
+        {!allPassed && nonPassingSubmitCount >= 2 ? (
+          usedNextLessonBypass ? (
+            <button
+              type="button"
+              onClick={handleRetake}
+              className="inline-flex min-h-11 min-w-[44px] w-full items-center justify-center rounded-xl border border-[var(--border-color)] px-4 py-3 text-sm font-bold text-[var(--text-primary)] hover:bg-[var(--hover-bg)] sm:w-auto sm:px-8"
+            >
+              Start over
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleNextLessonAfterFailures}
+              className="inline-flex min-h-11 min-w-[44px] w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-3 text-sm font-bold text-white hover:bg-orange-600 sm:w-auto sm:px-8"
+            >
+              Next lesson
+              <ChevronRight className="h-5 w-5 shrink-0" aria-hidden />
+            </button>
+          )
+        ) : restoredFromStorage && submitted ? (
           <button
             type="button"
-            onClick={() => void handleSubmit()}
-            disabled={submitting}
-            className="inline-flex min-h-11 min-w-[44px] flex-1 items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-3 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-50 sm:flex-none sm:px-8"
+            onClick={handleTakeQuizAgain}
+            className="inline-flex min-h-11 min-w-[44px] w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-3 text-sm font-bold text-white hover:bg-orange-600 sm:w-auto sm:px-8"
           >
-            {submitting ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden /> : null}
-            {submitting ? 'Grading…' : submitted ? 'Submit again' : 'Submit quiz'}
+            Take quiz again
+            <ChevronRight className="h-5 w-5 shrink-0" aria-hidden />
           </button>
-        ) : null}
-        <button
-          type="button"
-          onClick={handleRetake}
-          className="inline-flex min-h-11 min-w-[44px] items-center justify-center rounded-xl border border-[var(--border-color)] px-4 py-3 text-sm font-bold text-[var(--text-primary)] hover:bg-[var(--hover-bg)]"
-        >
-          Start over
-        </button>
+        ) : (
+          <>
+            {!allPassed ? (
+              <button
+                type="button"
+                onClick={() => void handleSubmit()}
+                disabled={submitting}
+                className="inline-flex min-h-11 min-w-[44px] flex-1 items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-3 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-50 sm:flex-none sm:px-8"
+              >
+                {submitting ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden /> : null}
+                {submitting ? 'Grading…' : submitted ? 'Submit again' : 'Submit quiz'}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={handleRetake}
+              className="inline-flex min-h-11 min-w-[44px] items-center justify-center rounded-xl border border-[var(--border-color)] px-4 py-3 text-sm font-bold text-[var(--text-primary)] hover:bg-[var(--hover-bg)]"
+            >
+              Start over
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
