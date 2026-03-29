@@ -4,6 +4,7 @@ import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { useLearnerGeminiEnabled } from '../hooks/useLearnerGeminiEnabled';
 import { useLearnerAssistantVisible } from '../hooks/useLearnerAssistantVisible';
 import { useLearningAssistantSiteEnabled } from '../hooks/useLearningAssistantSiteEnabled';
+import { useLearnerAiModelsSiteEnabled } from '../hooks/useLearnerAiModelsSiteEnabled';
 import { reload, updateProfile } from 'firebase/auth';
 import { User, auth } from '../firebase';
 import { computeCourseEnrollmentCounts, computeLearningStats } from '../utils/learningStats';
@@ -66,7 +67,11 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   const { enabled: aiModelsEnabled, setEnabled: setAiModelsEnabled } = useLearnerGeminiEnabled();
   const { visible: assistantVisible, setVisible: setAssistantVisible } = useLearnerAssistantVisible();
   const { siteAssistantEnabled, siteAssistantLoading } = useLearningAssistantSiteEnabled();
-  const assistantToggleDisabled = siteAssistantLoading;
+  const { siteLearnerAiModelsEnabled, siteLearnerAiModelsLoading } = useLearnerAiModelsSiteEnabled();
+  const assistantSwitchDisabled = siteAssistantLoading || !siteAssistantEnabled;
+  const assistantEffectiveOn = siteAssistantEnabled && assistantVisible;
+  const aiModelsSwitchDisabled = siteLearnerAiModelsLoading || !siteLearnerAiModelsEnabled;
+  const aiModelsEffectiveOn = siteLearnerAiModelsEnabled && aiModelsEnabled;
 
   const stats = useMemo(
     () => computeLearningStats(user?.uid, courses),
@@ -401,7 +406,8 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                   </p>
                   {!siteAssistantLoading && !siteAssistantEnabled && (
                     <p className="mt-1.5 text-xs font-medium text-amber-600 dark:text-amber-400">
-                      Hidden for everyone right now (admin setting). When it is on again, your toggle above applies.
+                      An administrator has turned off the learning assistant for everyone. This switch stays off and
+                      cannot be changed until they turn it back on.
                     </p>
                   )}
                 </div>
@@ -409,21 +415,24 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               <button
                 type="button"
                 role="switch"
-                aria-checked={assistantVisible}
+                aria-checked={assistantEffectiveOn}
                 aria-labelledby="profile-assistant-switch-label"
-                disabled={assistantToggleDisabled}
-                onClick={() => !assistantToggleDisabled && setAssistantVisible(!assistantVisible)}
-                className={`relative h-9 w-14 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500/60 disabled:cursor-not-allowed disabled:opacity-40 ${
-                  assistantVisible ? 'bg-orange-500' : 'bg-[var(--border-color)]'
+                disabled={assistantSwitchDisabled}
+                onClick={() => {
+                  if (assistantSwitchDisabled || !siteAssistantEnabled) return;
+                  setAssistantVisible(!assistantVisible);
+                }}
+                className={`relative h-9 w-14 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500/60 disabled:cursor-not-allowed disabled:opacity-50 ${
+                  assistantEffectiveOn ? 'bg-orange-500' : 'bg-[var(--border-color)]'
                 }`}
               >
                 <span
                   className={`pointer-events-none absolute top-1 left-1 h-7 w-7 rounded-full bg-white shadow transition-transform ${
-                    assistantVisible ? 'translate-x-5' : 'translate-x-0'
+                    assistantEffectiveOn ? 'translate-x-5' : 'translate-x-0'
                   }`}
                 />
                 <span className="sr-only">
-                  {assistantVisible ? 'Learning assistant shown' : 'Learning assistant hidden'}
+                  {assistantEffectiveOn ? 'Learning assistant shown' : 'Learning assistant hidden'}
                 </span>
               </button>
             </div>
@@ -436,27 +445,37 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                     Use AI models
                   </p>
                   <p className="mt-1 text-xs leading-relaxed text-[var(--text-muted)]">
-                    When off, quiz AI grading and hints stay disabled on this device—even if a key is configured. The
-                    learning assistant still follows the toggle above and site settings.
+                    When off, quiz AI grading and hints stay disabled on this device when the site allows it. The
+                    learning assistant visibility is controlled by the toggle above.
                   </p>
+                  {!siteLearnerAiModelsLoading && !siteLearnerAiModelsEnabled && (
+                    <p className="mt-1.5 text-xs font-medium text-amber-600 dark:text-amber-400">
+                      An administrator has turned off learner AI for everyone. This switch stays off and cannot be
+                      changed until they turn it back on.
+                    </p>
+                  )}
                 </div>
               </div>
               <button
                 type="button"
                 role="switch"
-                aria-checked={aiModelsEnabled}
+                aria-checked={aiModelsEffectiveOn}
                 aria-labelledby="profile-models-switch-label"
-                onClick={() => setAiModelsEnabled(!aiModelsEnabled)}
-                className={`relative h-9 w-14 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500/60 ${
-                  aiModelsEnabled ? 'bg-orange-500' : 'bg-[var(--border-color)]'
+                disabled={aiModelsSwitchDisabled}
+                onClick={() => {
+                  if (aiModelsSwitchDisabled || !siteLearnerAiModelsEnabled) return;
+                  setAiModelsEnabled(!aiModelsEnabled);
+                }}
+                className={`relative h-9 w-14 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500/60 disabled:cursor-not-allowed disabled:opacity-50 ${
+                  aiModelsEffectiveOn ? 'bg-orange-500' : 'bg-[var(--border-color)]'
                 }`}
               >
                 <span
                   className={`pointer-events-none absolute top-1 left-1 h-7 w-7 rounded-full bg-white shadow transition-transform ${
-                    aiModelsEnabled ? 'translate-x-5' : 'translate-x-0'
+                    aiModelsEffectiveOn ? 'translate-x-5' : 'translate-x-0'
                   }`}
                 />
-                <span className="sr-only">{aiModelsEnabled ? 'AI models on' : 'AI models off'}</span>
+                <span className="sr-only">{aiModelsEffectiveOn ? 'AI models on' : 'AI models off'}</span>
               </button>
             </div>
           </div>

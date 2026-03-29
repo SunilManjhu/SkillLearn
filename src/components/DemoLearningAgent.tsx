@@ -6,6 +6,7 @@ import { STATIC_CATALOG_FALLBACK, type Course } from '../data/courses';
 import { parseAssistantReplyJson } from '../utils/parseAssistantReply';
 import { formatGenaiError } from '../utils/formatGenaiError';
 import { useLearnerGeminiEnabled } from '../hooks/useLearnerGeminiEnabled';
+import { useLearnerAiModelsSiteEnabled } from '../hooks/useLearnerAiModelsSiteEnabled';
 import { generateContentWithModelChain, getGeminiApiKey } from '../utils/geminiClient';
 
 function newId(): string {
@@ -74,7 +75,9 @@ export function DemoLearningAgent({ onOpenCourse, courses = STATIC_CATALOG_FALLB
   );
 
   const envGeminiKey = getGeminiApiKey();
-  const { enabled: learnerGeminiOn } = useLearnerGeminiEnabled();
+  const { enabled: userLearnerGeminiOn } = useLearnerGeminiEnabled();
+  const { siteLearnerAiModelsEnabled } = useLearnerAiModelsSiteEnabled();
+  const learnerGeminiOn = siteLearnerAiModelsEnabled && userLearnerGeminiOn;
   const apiKey = learnerGeminiOn ? envGeminiKey : undefined;
   const hasChatContent = messages.length > 0 || loading;
 
@@ -242,8 +245,15 @@ export function DemoLearningAgent({ onOpenCourse, courses = STATIC_CATALOG_FALLB
 
           {envGeminiKey && !learnerGeminiOn && (
             <p className="shrink-0 border-b border-[var(--border-color)] px-4 py-3 text-xs leading-relaxed text-[var(--text-primary)]">
-              AI models are turned off. Open <strong>Profile</strong> → <strong>Models</strong> and enable{' '}
-              <strong>Use AI models</strong> to use the assistant.
+              {siteLearnerAiModelsEnabled ? (
+                <>
+                  AI models are turned off on this device. Open <strong>Profile</strong> → <strong>Models</strong> and
+                  enable <strong>Use AI models</strong> to use the assistant.
+                </>
+              ) : (
+                <>An administrator has turned off learner AI for everyone. The assistant cannot run until they turn it
+                back on.</>
+              )}
             </p>
           )}
 

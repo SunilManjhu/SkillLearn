@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useLearnerGeminiEnabled } from '../hooks/useLearnerGeminiEnabled';
+import { useLearnerAiModelsSiteEnabled } from '../hooks/useLearnerAiModelsSiteEnabled';
 import type { Lesson, QuizDefinition, QuizQuestion } from '../data/courses';
 import type { User } from '../firebase';
 import { getGeminiApiKey } from '../utils/geminiClient';
@@ -96,7 +97,9 @@ export function CourseQuizPanel({
   const [answerRevealById, setAnswerRevealById] = useState<Record<string, string>>({});
 
   const envGeminiKey = getGeminiApiKey();
-  const { enabled: learnerGeminiOn } = useLearnerGeminiEnabled();
+  const { enabled: userLearnerGeminiOn } = useLearnerGeminiEnabled();
+  const { siteLearnerAiModelsEnabled } = useLearnerAiModelsSiteEnabled();
+  const learnerGeminiOn = siteLearnerAiModelsEnabled && userLearnerGeminiOn;
   const apiKey = learnerGeminiOn ? envGeminiKey : undefined;
   const hasFreeform = questions.some((q) => q.type === 'freeform');
   const hasMcq = questions.some((q) => q.type === 'mcq');
@@ -434,16 +437,31 @@ export function CourseQuizPanel({
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto bg-[var(--bg-secondary)] p-4 text-left text-[var(--text-primary)] sm:p-6">
       {hasFreeform && envGeminiKey && !learnerGeminiOn ? (
         <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
-          AI grading is off. Open <strong>Profile</strong> → <strong>Models</strong> and turn on{' '}
-          <strong>Use AI models</strong> to submit open-ended answers.
+          {siteLearnerAiModelsEnabled ? (
+            <>
+              AI grading is off on this device. Open <strong>Profile</strong> → <strong>Models</strong> and turn on{' '}
+              <strong>Use AI models</strong> to submit open-ended answers.
+            </>
+          ) : (
+            <>An administrator has turned off learner AI for everyone, so open-ended grading is unavailable.</>
+          )}
         </div>
       ) : null}
 
       {!learnerGeminiOn && hasMcq ? (
         <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-xs leading-relaxed text-[var(--text-secondary)]">
-          With <strong>Use AI models</strong> off, multiple-choice is graded only against the{' '}
-          <strong>answer key stored in the course</strong>. If that key is wrong, turn AI back on for automatic
-          fact-checking, or ask the author to fix it in Admin (quiz editor → <strong>Check key with AI</strong>).
+          {siteLearnerAiModelsEnabled ? (
+            <>
+              With <strong>Use AI models</strong> off on this device, multiple-choice is graded only against the{' '}
+              <strong>answer key stored in the course</strong>. If that key is wrong, turn AI back on for automatic
+              fact-checking, or ask the author to fix it in Admin (quiz editor → <strong>Check key with AI</strong>).
+            </>
+          ) : (
+            <>
+              An administrator has turned off learner AI. Multiple-choice uses only the{' '}
+              <strong>stored answer key</strong>; AI hints and key checking are unavailable until they turn it back on.
+            </>
+          )}
         </div>
       ) : null}
 

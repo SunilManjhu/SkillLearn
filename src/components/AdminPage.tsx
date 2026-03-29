@@ -11,7 +11,7 @@ import { seedPublishedCoursesFromStaticCatalog } from '../utils/publishedCourses
 import { AdminCourseCatalogSection } from './admin/AdminCourseCatalogSection';
 import { AdminModerationSection } from './admin/AdminModerationSection';
 import { AdminGeminiModelsSection } from './admin/AdminGeminiModelsSection';
-import { AdminLearningAssistantSection } from './admin/AdminLearningAssistantSection';
+import { AdminAiSiteControlsSection } from './admin/AdminAiSiteControlsSection';
 import { AdminUserRolesSection } from './admin/AdminUserRolesSection';
 import { useAdminActionToast } from './admin/useAdminActionToast';
 
@@ -227,7 +227,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
             <div className="min-w-0">
               <h1 className="text-lg font-bold tracking-tight sm:text-xl">Admin portal</h1>
               <p className="mt-0.5 line-clamp-2 text-xs text-[var(--text-secondary)] sm:text-sm sm:line-clamp-none">
-                Alerts, AI models, content, moderation, and roles. Students do not see this page.
+                Alerts, AI, catalog, moderation, roles. Not visible to learners.
               </p>
             </div>
           </div>
@@ -419,8 +419,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({
         )}
 
         {tab === 'ai' && (
-          <div className="space-y-6">
-            <AdminLearningAssistantSection />
+          <div className="space-y-4">
+            <AdminAiSiteControlsSection />
             <AdminGeminiModelsSection onDirtyChange={setAiModelsDirty} />
           </div>
         )}
