@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import {
   BookOpen,
   Copy,
+  Info,
   Loader2,
   Plus,
   Route,
@@ -337,6 +338,28 @@ interface RequiredFieldTarget {
   lessonKeys?: string[];
 }
 
+/** Matches Tailwind `sm` breakpoint (640px); tips use fixed + measured top below this width. */
+const TIPS_NARROW_MAX_PX = 639;
+
+function useTipsNarrowViewport(): boolean {
+  const [narrow, setNarrow] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth <= TIPS_NARROW_MAX_PX : false
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${TIPS_NARROW_MAX_PX}px)`);
+    const fn = () => setNarrow(mq.matches);
+    fn();
+    mq.addEventListener('change', fn);
+    return () => mq.removeEventListener('change', fn);
+  }, []);
+  return narrow;
+}
+
+/** Fixed-position `top` (viewport px): strictly below the anchor — never overlaps the tab/button. User scrolls manually if the panel extends off-screen. */
+function readFixedTipTopBelowAnchor(anchorEl: HTMLElement, gapPx = 8): number {
+  return anchorEl.getBoundingClientRect().bottom + gapPx;
+}
+
 export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps> = ({
   onCatalogChanged,
   onDraftDirtyChange,
@@ -407,6 +430,130 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const [categoryPresetsState, setCategoryPresetsState] = useState<CatalogCategoryPresetsState>(() =>
     normalizeCatalogCategoryPresets(DEFAULT_CATALOG_CATEGORY_PRESETS)
   );
+
+  const tipsNarrowViewport = useTipsNarrowViewport();
+  const catalogTipsWrapRef = useRef<HTMLSpanElement | null>(null);
+  const catalogTipBtnRef = useRef<HTMLButtonElement | null>(null);
+  const modulesTipsWrapRef = useRef<HTMLSpanElement | null>(null);
+  const modulesTipBtnRef = useRef<HTMLButtonElement | null>(null);
+  const [catalogTipsOpen, setCatalogTipsOpen] = useState(false);
+  const [modulesTipsOpen, setModulesTipsOpen] = useState(false);
+  /** Narrow-only: fixed `top` for the catalog tips panel (anchor = info button). */
+  const [catalogTipFixedTop, setCatalogTipFixedTop] = useState(-1);
+  const [modulesTipFixedTop, setModulesTipFixedTop] = useState(-1);
+
+  const syncCatalogTipTop = useCallback(() => {
+    if (!tipsNarrowViewport || !catalogTipsOpen || !catalogTipBtnRef.current) return;
+    setCatalogTipFixedTop(readFixedTipTopBelowAnchor(catalogTipBtnRef.current));
+  }, [tipsNarrowViewport, catalogTipsOpen]);
+
+  const syncModulesTipTop = useCallback(() => {
+    if (!tipsNarrowViewport || !modulesTipsOpen || !modulesTipBtnRef.current) return;
+    setModulesTipFixedTop(readFixedTipTopBelowAnchor(modulesTipBtnRef.current));
+  }, [tipsNarrowViewport, modulesTipsOpen]);
+
+  useLayoutEffect(() => {
+    if (!catalogTipsOpen) {
+      setCatalogTipFixedTop(-1);
+      return;
+    }
+    if (!tipsNarrowViewport || !catalogTipBtnRef.current) {
+      setCatalogTipFixedTop(-1);
+      return;
+    }
+    setCatalogTipFixedTop(readFixedTipTopBelowAnchor(catalogTipBtnRef.current));
+  }, [catalogTipsOpen, tipsNarrowViewport]);
+
+  useLayoutEffect(() => {
+    if (!modulesTipsOpen) {
+      setModulesTipFixedTop(-1);
+      return;
+    }
+    if (!tipsNarrowViewport || !modulesTipBtnRef.current) {
+      setModulesTipFixedTop(-1);
+      return;
+    }
+    setModulesTipFixedTop(readFixedTipTopBelowAnchor(modulesTipBtnRef.current));
+  }, [modulesTipsOpen, tipsNarrowViewport]);
+
+  useEffect(() => {
+    if (!tipsNarrowViewport) {
+      setCatalogTipFixedTop(-1);
+      setModulesTipFixedTop(-1);
+    }
+  }, [tipsNarrowViewport]);
+
+  useEffect(() => {
+    if (contentCatalogSubTab !== 'catalog') setCatalogTipsOpen(false);
+  }, [contentCatalogSubTab]);
+
+  useEffect(() => {
+    if (!draft) setModulesTipsOpen(false);
+  }, [draft]);
+
+  useEffect(() => {
+    if (!catalogTipsOpen) return;
+    const onDoc = (e: PointerEvent) => {
+      const t = e.target;
+      if (!(t instanceof Node)) return;
+      if (catalogTipsWrapRef.current?.contains(t)) return;
+      setCatalogTipsOpen(false);
+    };
+    document.addEventListener('pointerdown', onDoc, true);
+    return () => document.removeEventListener('pointerdown', onDoc, true);
+  }, [catalogTipsOpen]);
+
+  useEffect(() => {
+    if (!modulesTipsOpen) return;
+    const onDoc = (e: PointerEvent) => {
+      const t = e.target;
+      if (!(t instanceof Node)) return;
+      if (modulesTipsWrapRef.current?.contains(t)) return;
+      setModulesTipsOpen(false);
+    };
+    document.addEventListener('pointerdown', onDoc, true);
+    return () => document.removeEventListener('pointerdown', onDoc, true);
+  }, [modulesTipsOpen]);
+
+  useEffect(() => {
+    if (!catalogTipsOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setCatalogTipsOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [catalogTipsOpen]);
+
+  useEffect(() => {
+    if (!modulesTipsOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setModulesTipsOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [modulesTipsOpen]);
+
+  useEffect(() => {
+    if (!tipsNarrowViewport || !catalogTipsOpen || catalogTipFixedTop < 0) return;
+    const onMove = () => syncCatalogTipTop();
+    window.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
+    return () => {
+      window.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
+    };
+  }, [tipsNarrowViewport, catalogTipsOpen, catalogTipFixedTop, syncCatalogTipTop]);
+
+  useEffect(() => {
+    if (!tipsNarrowViewport || !modulesTipsOpen || modulesTipFixedTop < 0) return;
+    const onMove = () => syncModulesTipTop();
+    window.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
+    return () => {
+      window.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
+    };
+  }, [tipsNarrowViewport, modulesTipsOpen, modulesTipFixedTop, syncModulesTipTop]);
 
   /** Full list for adding categories (presets, saved extras, labels from published courses). */
   const categorySelectOptions = useMemo(() => {
@@ -1644,7 +1791,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 void loadCatalogCategoryPresets().then(setCategoryPresetsState);
               }
             }}
-            className={`inline-flex min-h-10 items-center gap-2 rounded-lg border border-[var(--border-color)] px-3 py-2 text-xs font-semibold hover:bg-[var(--hover-bg)] disabled:opacity-50 ${
+            className={`inline-flex min-h-11 touch-manipulation items-center gap-2 rounded-lg border border-[var(--border-color)] px-3 py-2 text-sm font-semibold hover:bg-[var(--hover-bg)] active:opacity-90 disabled:opacity-50 sm:text-xs ${
               contentCatalogSubTab !== 'catalog' &&
               contentCatalogSubTab !== 'paths' &&
               contentCatalogSubTab !== 'categories' &&
@@ -1670,54 +1817,56 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         </div>
       </div>
 
-      <div className="-mx-1 flex min-h-[2.75rem] gap-2 overflow-x-auto overflow-y-hidden overscroll-x-contain border-b border-[var(--border-color)] px-1 pb-2 [scrollbar-width:none] sm:flex-wrap sm:overflow-visible [&::-webkit-scrollbar]:hidden">
+      <div className="-mx-1 flex min-h-11 flex-wrap items-center gap-2 border-b border-[var(--border-color)] px-1 pb-2">
         <button
           type="button"
           onClick={() => requestContentCatalogSubTab('catalog')}
-          className={`inline-flex min-h-10 shrink-0 items-center rounded-lg px-3 py-2 text-sm font-semibold ${
+          className={`inline-flex min-h-11 touch-manipulation shrink-0 items-center rounded-lg px-3 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 active:opacity-90 ${
             contentCatalogSubTab === 'catalog' ? 'bg-orange-500/20 text-orange-500' : 'text-[var(--text-secondary)]'
           }`}
+          aria-current={contentCatalogSubTab === 'catalog' ? 'page' : undefined}
         >
           Catalog
         </button>
-        <button
-          type="button"
-          onClick={() => requestContentCatalogSubTab('paths')}
-          className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold ${
-            contentCatalogSubTab === 'paths' ? 'bg-orange-500/20 text-orange-500' : 'text-[var(--text-secondary)]'
-          }`}
-        >
-          <Route size={14} aria-hidden />
-          Learning paths
-        </button>
-        <button
-          type="button"
-          onClick={() => requestContentCatalogSubTab('categories')}
-          className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold ${
-            contentCatalogSubTab === 'categories' ? 'bg-orange-500/20 text-orange-500' : 'text-[var(--text-secondary)]'
-          }`}
-        >
-          <Tags size={14} aria-hidden />
-          Categories
-        </button>
-        <button
-          type="button"
-          onClick={() => requestContentCatalogSubTab('presets')}
-          className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold ${
-            contentCatalogSubTab === 'presets' ? 'bg-orange-500/20 text-orange-500' : 'text-[var(--text-secondary)]'
-          }`}
-        >
-          <SlidersHorizontal size={14} aria-hidden />
-          Topic presets
-        </button>
+        <div className="flex min-h-11 min-w-0 flex-1 gap-2 overflow-x-auto overflow-y-visible overscroll-x-contain pb-0.5 [scrollbar-width:none] [-webkit-overflow-scrolling:touch] sm:flex-wrap sm:overflow-visible sm:pb-0 [&::-webkit-scrollbar]:hidden">
+          <button
+            type="button"
+            onClick={() => requestContentCatalogSubTab('paths')}
+            className={`inline-flex min-h-11 touch-manipulation shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold active:opacity-90 ${
+              contentCatalogSubTab === 'paths' ? 'bg-orange-500/20 text-orange-500' : 'text-[var(--text-secondary)]'
+            }`}
+          >
+            <Route size={15} aria-hidden />
+            Learning paths
+          </button>
+          <button
+            type="button"
+            onClick={() => requestContentCatalogSubTab('categories')}
+            className={`inline-flex min-h-11 touch-manipulation shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold active:opacity-90 ${
+              contentCatalogSubTab === 'categories' ? 'bg-orange-500/20 text-orange-500' : 'text-[var(--text-secondary)]'
+            }`}
+          >
+            <Tags size={15} aria-hidden />
+            Categories
+          </button>
+          <button
+            type="button"
+            onClick={() => requestContentCatalogSubTab('presets')}
+            className={`inline-flex min-h-11 touch-manipulation shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold active:opacity-90 ${
+              contentCatalogSubTab === 'presets' ? 'bg-orange-500/20 text-orange-500' : 'text-[var(--text-secondary)]'
+            }`}
+          >
+            <SlidersHorizontal size={15} aria-hidden />
+            Topic presets
+          </button>
+        </div>
       </div>
 
       {contentCatalogSubTab === 'paths' && (
-        <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+        <p className="text-sm leading-relaxed text-[var(--text-muted)] sm:text-xs">
           Saved paths appear in the learner <strong className="text-[var(--text-secondary)]">Paths</strong> menu and
-          filter the course library. Published courses only can be added—use the{' '}
-          <strong className="text-[var(--text-secondary)]">Catalog</strong> tab first if the list is empty (
-          <strong className="text-[var(--text-secondary)]">Catalog bootstrap</strong> on Alerts when needed). Choose{' '}
+          filter the course library. Published courses only can be added—publish courses from the{' '}
+          <strong className="text-[var(--text-secondary)]">Catalog</strong> tab first if the list is empty. Choose{' '}
           <strong className="text-[var(--text-secondary)]">New path</strong> in the list for a fresh path (smallest unused{' '}
           <code className="text-orange-500/90">P1</code>, <code className="text-orange-500/90">P2</code>, …) or an
           existing path (sorted A–Z). Drag to reorder courses; expand a course to reorder modules and lessons—
@@ -1729,26 +1878,71 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
       {contentCatalogSubTab === 'catalog' && (
         <>
-      <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-        Saved changes appear in the live course catalog for learners. If the list is empty, use{' '}
-        <strong className="text-[var(--text-secondary)]">Catalog bootstrap</strong> on the Alerts tab first.
-        Open <strong className="text-[var(--text-secondary)]">Course</strong> once to load the list.
-        Pick <strong className="text-[var(--text-secondary)]">New Course</strong> for a fresh draft (smallest unused{' '}
-        <code className="text-orange-500/90">C1</code>, <code className="text-orange-500/90">C2</code>, …) or an existing
-        course (sorted A–Z). Modules <code className="text-orange-500/90">C1M1</code>; lessons{' '}
-        <code className="text-orange-500/90">C1M1L1</code>.
-      </p>
-
       <div ref={courseCatalogEditorRef} className="space-y-4">
         <div className="space-y-3">
         <div className="flex flex-col gap-3 md:grid md:grid-cols-3 md:items-start md:gap-x-3 md:gap-y-3">
           <div className="flex min-w-0 flex-col gap-1">
-            <label
-              htmlFor="admin-catalog-course-select"
-              className="text-xs font-semibold text-[var(--text-secondary)]"
-            >
-              Course
-            </label>
+            <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+              <label
+                htmlFor="admin-catalog-course-select"
+                className="text-xs font-semibold leading-none text-[var(--text-secondary)]"
+              >
+                Course
+              </label>
+              <span ref={catalogTipsWrapRef} className="relative inline-flex shrink-0 items-center gap-1">
+                <button
+                  ref={catalogTipBtnRef}
+                  type="button"
+                  onClick={() => setCatalogTipsOpen((o) => !o)}
+                  aria-expanded={catalogTipsOpen}
+                  aria-controls="admin-catalog-editor-notes"
+                  aria-label={catalogTipsOpen ? 'Close course field tips' : 'Open course field tips'}
+                  className={`inline-flex size-6 shrink-0 touch-manipulation items-center justify-center rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 active:opacity-90 ${
+                    catalogTipsOpen ? 'border-orange-500/50 text-orange-500' : ''
+                  }`}
+                >
+                  <Info size={14} className="text-orange-500/90" aria-hidden />
+                </button>
+                <div
+                  id="admin-catalog-editor-notes"
+                  role="region"
+                  aria-label="Course field tips"
+                  tabIndex={catalogTipsOpen && tipsNarrowViewport && catalogTipFixedTop >= 0 ? -1 : undefined}
+                  onPointerDown={
+                    catalogTipsOpen && tipsNarrowViewport && catalogTipFixedTop >= 0
+                      ? (e) => (e.currentTarget as HTMLElement).focus({ preventScroll: true })
+                      : undefined
+                  }
+                  className={
+                    !catalogTipsOpen
+                      ? 'hidden'
+                      : tipsNarrowViewport
+                        ? catalogTipFixedTop >= 0
+                          ? 'fixed z-[120] left-3 right-3 max-h-[min(58vh,28rem)] w-auto max-w-none translate-x-0 overflow-y-auto overscroll-y-contain touch-pan-y rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-3.5 text-left text-sm leading-relaxed text-[var(--text-primary)] shadow-xl pointer-events-auto pb-[max(0.75rem,env(safe-area-inset-bottom))] outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40'
+                          : 'hidden'
+                        : 'absolute left-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] max-w-sm rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-3 text-left text-xs leading-snug text-[var(--text-primary)] shadow-lg pointer-events-auto'
+                  }
+                  style={catalogTipsOpen && tipsNarrowViewport && catalogTipFixedTop >= 0 ? { top: catalogTipFixedTop } : undefined}
+                >
+                  <ul className="list-disc space-y-2 pl-4 text-[var(--text-muted)] marker:text-orange-500/70 sm:space-y-1.5">
+                    <li>Saves go to the live learner catalog (Firestore).</li>
+                    <li>
+                      Open this <strong className="font-semibold text-[var(--text-secondary)]">Course</strong> control once
+                      to load published titles.
+                    </li>
+                    <li>
+                      <strong className="font-semibold text-[var(--text-secondary)]">New Course</strong> → next free id (
+                      <code className="text-orange-500/90">C1</code>, <code className="text-orange-500/90">C2</code>…);
+                      existing courses A–Z.
+                    </li>
+                    <li>
+                      Modules <code className="text-orange-500/90">C1M1</code>; lessons{' '}
+                      <code className="text-orange-500/90">C1M1L1</code>.
+                    </li>
+                  </ul>
+                </div>
+              </span>
+            </div>
             <div className="flex min-w-0 items-stretch gap-2">
             <select
               id="admin-catalog-course-select"
@@ -1756,7 +1950,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               onFocus={openCourseCatalogOnce}
               onMouseDown={openCourseCatalogOnce}
               onChange={onCourseSelectChange}
-              className="box-border min-h-[42px] min-w-0 flex-1 rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
+              className="box-border min-h-11 min-w-0 flex-1 touch-manipulation rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] sm:text-sm"
             >
               <option value="" disabled>
                 {!catalogRequested
@@ -1796,7 +1990,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           </div>
           <div className="grid min-w-0 grid-cols-2 gap-2 md:contents">
             <div className="flex min-w-0 flex-col gap-1">
-              <span className="text-xs font-semibold text-[var(--text-secondary)]">Document ID</span>
+              <div className="flex min-h-6 min-w-0 items-center">
+                <span className="text-xs font-semibold leading-none text-[var(--text-secondary)]">
+                  Document ID
+                </span>
+              </div>
               <div
                 className="box-border flex min-h-[42px] w-full min-w-0 items-center rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm font-mono text-[var(--text-primary)] md:px-3"
                 aria-live="polite"
@@ -1809,12 +2007,14 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               </div>
             </div>
             <div className="flex min-w-0 flex-col gap-1">
-              <label
-                htmlFor="admin-catalog-course-level"
-                className="text-xs font-semibold text-[var(--text-secondary)]"
-              >
-                Level
-              </label>
+              <div className="flex min-h-6 min-w-0 items-center">
+                <label
+                  htmlFor="admin-catalog-course-level"
+                  className="text-xs font-semibold leading-none text-[var(--text-secondary)]"
+                >
+                  Level
+                </label>
+              </div>
               <select
                 id="admin-catalog-course-level"
                 value={draft?.level ?? ''}
@@ -2138,22 +2338,68 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
           <div className="space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <h3 className="text-sm font-bold text-[var(--text-primary)]">Modules and lessons</h3>
-                <p className="text-xs text-[var(--text-muted)] mt-1 max-w-xl">
-                  Each module is a group of lessons. Use ↑/↓ on module or lesson rows to reorder (repeat clicks stay
-                  under the cursor; with a reorder button focused, Arrow keys move the row). Or use{' '}
-                  <strong className="font-medium text-[var(--text-secondary)]">Move to module…</strong> on a lesson to
-                  move it to another section (add a second lesson first if it is the only one in its module). For
-                  courses with ids like C1, module and lesson ids are renumbered when you move items.
-                </p>
+              <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+                <h3 className="text-xs font-semibold text-[var(--text-secondary)]">Modules and lessons</h3>
+                <span ref={modulesTipsWrapRef} className="relative inline-flex shrink-0 items-center gap-1">
+                  <button
+                    ref={modulesTipBtnRef}
+                    type="button"
+                    onClick={() => setModulesTipsOpen((o) => !o)}
+                    aria-expanded={modulesTipsOpen}
+                    aria-controls="admin-modules-lessons-tips"
+                    aria-label={modulesTipsOpen ? 'Close modules and lessons tips' : 'Open modules and lessons tips'}
+                    className={`inline-flex size-6 shrink-0 touch-manipulation items-center justify-center rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 active:opacity-90 ${
+                      modulesTipsOpen ? 'border-orange-500/50 text-orange-500' : ''
+                    }`}
+                  >
+                    <Info size={14} className="text-orange-500/90" aria-hidden />
+                  </button>
+                  <div
+                    id="admin-modules-lessons-tips"
+                    role="region"
+                    aria-label="Modules and lessons tips"
+                    tabIndex={modulesTipsOpen && tipsNarrowViewport && modulesTipFixedTop >= 0 ? -1 : undefined}
+                    onPointerDown={
+                      modulesTipsOpen && tipsNarrowViewport && modulesTipFixedTop >= 0
+                        ? (e) => (e.currentTarget as HTMLElement).focus({ preventScroll: true })
+                        : undefined
+                    }
+                    className={
+                      !modulesTipsOpen
+                        ? 'hidden'
+                        : tipsNarrowViewport
+                          ? modulesTipFixedTop >= 0
+                            ? 'fixed z-[120] left-3 right-3 max-h-[min(58vh,28rem)] w-auto max-w-none translate-x-0 overflow-y-auto overscroll-y-contain touch-pan-y rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-3.5 text-left text-sm leading-relaxed text-[var(--text-primary)] shadow-xl pointer-events-auto pb-[max(0.75rem,env(safe-area-inset-bottom))] outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40'
+                            : 'hidden'
+                          : 'absolute left-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] max-w-sm rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-3 text-left text-xs leading-snug text-[var(--text-primary)] shadow-lg pointer-events-auto'
+                    }
+                    style={modulesTipsOpen && tipsNarrowViewport && modulesTipFixedTop >= 0 ? { top: modulesTipFixedTop } : undefined}
+                  >
+                    <ul className="list-disc space-y-2 pl-4 text-[var(--text-muted)] marker:text-orange-500/70 sm:space-y-1.5">
+                      <li>Each module is a group of lessons.</li>
+                      <li>
+                        Reorder with ↑/↓ on module or lesson rows (repeat clicks stay under the cursor). With a reorder
+                        button focused, Arrow keys move the row.
+                      </li>
+                      <li>
+                        <strong className="font-semibold text-[var(--text-secondary)]">Move to module…</strong> moves a
+                        lesson to another section—add a second lesson in its current module first if it is the only one
+                        there.
+                      </li>
+                      <li>
+                        For structured ids (e.g. <code className="text-orange-500/90">C1</code>…), module and lesson ids
+                        renumber when you move items.
+                      </li>
+                    </ul>
+                  </div>
+                </span>
               </div>
               <button
                 type="button"
                 onClick={addModule}
-                className="inline-flex items-center gap-1 text-xs font-bold text-orange-500 hover:text-orange-400"
+                className="inline-flex min-h-11 touch-manipulation items-center gap-1.5 rounded-lg px-2.5 text-sm font-bold text-orange-500 hover:bg-orange-500/10 hover:text-orange-400 active:opacity-90 sm:text-xs"
               >
-                <Plus size={14} /> Add module
+                <Plus size={16} className="shrink-0" aria-hidden /> Add module
               </button>
             </div>
 

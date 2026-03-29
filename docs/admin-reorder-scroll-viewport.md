@@ -2,6 +2,8 @@
 
 This document explains **why** and **how** arrow-based (↑/↓) reordering is implemented in the admin UI, so future work (human or AI) can extend it without regressing behavior.
 
+**Broader context:** [development-and-debugging.md](./development-and-debugging.md) (Strict Mode, repo layout, how to run `npm run lint`). Admin **Content** surface overview: [admin-portal-content.md](./admin-portal-content.md) (including **Modules and lessons** click-to-open tips for reorder behavior).
+
 ## What problem this solves
 
 ### 1. Stationary mouse / cursor

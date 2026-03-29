@@ -1,13 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Shield, Send, Database, BookOpen, Flag, Users, X, Sparkles } from 'lucide-react';
+import { Shield, Send, BookOpen, Flag, Users, X, Sparkles } from 'lucide-react';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { useDialogKeyboard } from '../hooks/useDialogKeyboard';
 import type { Course } from '../data/courses';
-import { STATIC_CATALOG_FALLBACK } from '../data/courses';
 import type { AdminHistoryTab } from '../utils/appHistory';
 import { createBroadcastAlert, type BroadcastAlertType } from '../utils/alertsFirestore';
-import { seedPublishedCoursesFromStaticCatalog } from '../utils/publishedCoursesFirestore';
 import { AdminCourseCatalogSection } from './admin/AdminCourseCatalogSection';
 import { AdminModerationSection } from './admin/AdminModerationSection';
 import { AdminGeminiModelsSection } from './admin/AdminGeminiModelsSection';
@@ -187,18 +185,6 @@ export const AdminPage: React.FC<AdminPageProps> = ({
     } else {
       showActionToast('Failed to publish (check console / rules).', 'danger');
     }
-  };
-
-  const handleSeedCatalog = async () => {
-    setBusy(true);
-    try {
-      await seedPublishedCoursesFromStaticCatalog(STATIC_CATALOG_FALLBACK);
-      await onCatalogChanged();
-      showActionToast('Seeded. Catalog updated in this session.');
-    } catch {
-      showActionToast('Seed failed (check console / rules).', 'danger');
-    }
-    setBusy(false);
   };
 
   const tabBtn = (id: AdminHistoryTab, label: string, icon: React.ReactNode) => (
@@ -394,25 +380,6 @@ export const AdminPage: React.FC<AdminPageProps> = ({
             className="min-h-11 w-full rounded-xl bg-orange-500 py-3 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-50"
           >
             {busy ? 'Publishing…' : 'Publish alert'}
-          </button>
-        </div>
-
-        <div className="space-y-4 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:p-6">
-          <h2 className="flex items-center gap-2 text-lg font-bold">
-            <Database size={20} className="text-orange-500" />
-            Catalog bootstrap
-          </h2>
-          <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-            One-time: populate the live course catalog from the bundled default courses so learners can browse them.
-            Requires admin access and deployed security rules. If seed fails, check the browser console.
-          </p>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void handleSeedCatalog()}
-            className="min-h-11 w-full rounded-xl border border-[var(--border-color)] py-3 text-sm font-bold hover:bg-[var(--hover-bg)] disabled:opacity-50"
-          >
-            Sync bundled courses into catalog
           </button>
         </div>
         </div>

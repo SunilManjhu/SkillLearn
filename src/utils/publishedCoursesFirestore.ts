@@ -4,7 +4,6 @@ import {
   doc,
   getDocs,
   setDoc,
-  writeBatch,
   serverTimestamp,
 } from 'firebase/firestore';
 import type { Course, Lesson, Module, QuizDefinition, QuizQuestion } from '../data/courses';
@@ -261,20 +260,6 @@ export function courseToFirestorePayload(course: Course): Record<string, unknown
     ...cleaned,
     updatedAt: serverTimestamp(),
   };
-}
-
-/** Admin: replace entire published catalog from bundled fallback (idempotent-ish). */
-export async function seedPublishedCoursesFromStaticCatalog(courses: Course[]): Promise<void> {
-  try {
-    const batch = writeBatch(db);
-    for (const c of courses) {
-      batch.set(doc(db, 'publishedCourses', c.id), courseToFirestorePayload(c));
-    }
-    await batch.commit();
-  } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, 'publishedCourses');
-    throw error;
-  }
 }
 
 /** Admin: write or overwrite one published course (document id = course.id). */
