@@ -18,6 +18,9 @@ export interface PhoneMockupAdRailProps {
 const SCREEN_BOX =
   'absolute left-[5.75%] right-[5.75%] top-[10.25%] bottom-[20.5%] z-10 overflow-hidden rounded-[1.2rem]';
 
+const TAP_MOVE_PX = 14;
+const TAP_MAX_MS = 450;
+
 function AdBlockText({ block }: { block: Extract<PhoneMockupAdBlock, { kind: 'text' }> }) {
   if (block.style === 'headline') {
     return <h3 className="shrink-0 text-sm font-bold leading-snug sm:text-[0.95rem]">{block.content}</h3>;
@@ -73,22 +76,84 @@ function AdBlockImage({ block }: { block: Extract<PhoneMockupAdBlock, { kind: 'i
   );
 }
 
+function SlideProgressTrack({
+  isActive,
+  progress,
+  showTrack,
+}: {
+  isActive: boolean;
+  progress: number;
+  showTrack: boolean;
+}) {
+  if (!showTrack) return null;
+  const p = isActive ? progress : 0;
+  return (
+    <div
+      className="mb-1.5 h-1 w-full shrink-0 overflow-hidden rounded-full bg-white/25"
+      aria-hidden={false}
+    >
+      <div
+        className="h-full rounded-full bg-white/95"
+        style={{ width: `${p * 100}%`, transition: 'none' }}
+      />
+    </div>
+  );
+}
+
 export const PhoneMockupAdRail: React.FC<PhoneMockupAdRailProps> = ({
   imageSrc,
   imageAlt,
   slides = DEFAULT_HERO_PHONE_AD_SLIDES,
 }) => {
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const slidesRef = useRef(slides);
+  slidesRef.current = slides;
+
   const [active, setActive] = useState(0);
+  const activeRef = useRef(0);
+  const [carouselProgress, setCarouselProgress] = useState(0);
+  const accumulatedMsRef = useRef(0);
+
+  const [holdPaused, setHoldPaused] = useState(false);
+  const [hoverPaused, setHoverPaused] = useState(false);
+  const pointersDownRef = useRef(new Set<number>());
+  const [finePointerHover, setFinePointerHover] = useState(false);
+
+  const tapStartRef = useRef<{ x: number; y: number; t: number } | null>(null);
+
+  const pausedRef = useRef(false);
+  pausedRef.current = holdPaused || (finePointerHover && hoverPaused);
 
   const syncActiveFromScroll = useCallback(() => {
     const el = scrollerRef.current;
-    if (!el || slides.length === 0) return;
+    const list = slidesRef.current;
+    if (!el || list.length === 0) return;
     const w = el.clientWidth;
     if (w <= 0) return;
     const i = Math.round(el.scrollLeft / w);
-    setActive(Math.min(Math.max(0, i), slides.length - 1));
-  }, [slides.length]);
+    setActive(Math.min(Math.max(0, i), list.length - 1));
+  }, []);
+
+  useEffect(() => {
+    activeRef.current = active;
+  }, [active]);
+
+  const slideCount = slides.length;
+  const advanceKey = `${slideCount}:${slides.map((s) => `${s.id}:${s.autoAdvanceSec}`).join('|')}`;
+
+  useEffect(() => {
+    accumulatedMsRef.current = 0;
+    setCarouselProgress(0);
+  }, [active, advanceKey]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(hover: hover) and (pointer: fine)');
+    const sync = () => setFinePointerHover(mq.matches);
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
 
   useEffect(() => {
     const el = scrollerRef.current;
@@ -98,15 +163,139 @@ export const PhoneMockupAdRail: React.FC<PhoneMockupAdRailProps> = ({
     return () => el.removeEventListener('scroll', syncActiveFromScroll);
   }, [syncActiveFromScroll]);
 
-  const goTo = (index: number) => {
+  const goTo = useCallback((index: number) => {
     const el = scrollerRef.current;
-    if (!el || slides.length === 0) return;
-    const i = Math.min(Math.max(0, index), slides.length - 1);
+    const list = slidesRef.current;
+    if (!el || list.length === 0) return;
+    const i = Math.min(Math.max(0, index), list.length - 1);
     const reduceMotion =
-      typeof window !== 'undefined' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     el.scrollTo({ left: i * el.clientWidth, behavior: reduceMotion ? 'auto' : 'smooth' });
+  }, []);
+
+  const goToRef = useRef(goTo);
+  goToRef.current = goTo;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (slideCount <= 1) {
+      setCarouselProgress(0);
+      return;
+    }
+
+    let raf = 0;
+    let lastTs = performance.now();
+
+    let lastProgressEmit = -1;
+    let lastEmitTs = 0;
+
+    const loop = (ts: number) => {
+      const dt = Math.min(64, ts - lastTs);
+      lastTs = ts;
+
+      const list = slidesRef.current;
+      const count = list.length;
+      const idx = activeRef.current;
+      const sec = list[idx]?.autoAdvanceSec ?? 0;
+      const durationMs = sec * 1000;
+
+      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const hidden = document.visibilityState === 'hidden';
+      const paused = pausedRef.current || hidden;
+
+      if (reduceMotion || count <= 1 || durationMs <= 0) {
+        if (lastProgressEmit !== 0) {
+          lastProgressEmit = 0;
+          setCarouselProgress(0);
+        }
+        raf = requestAnimationFrame(loop);
+        return;
+      }
+
+      if (!paused) {
+        accumulatedMsRef.current += dt;
+      }
+
+      const p = Math.min(1, accumulatedMsRef.current / durationMs);
+      const shouldEmit =
+        p >= 1 ||
+        Math.abs(p - lastProgressEmit) >= 0.02 ||
+        ts - lastEmitTs >= 100;
+      if (shouldEmit) {
+        lastProgressEmit = p;
+        lastEmitTs = ts;
+        setCarouselProgress(p);
+      }
+
+      if (!paused && p >= 1) {
+        accumulatedMsRef.current = 0;
+        lastProgressEmit = 0;
+        lastEmitTs = ts;
+        setCarouselProgress(0);
+        goToRef.current((idx + 1) % count);
+      }
+
+      raf = requestAnimationFrame(loop);
+    };
+
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [active, advanceKey, slideCount]);
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    const t = e.target as HTMLElement | null;
+    if (t?.closest('a')) {
+      tapStartRef.current = null;
+    } else {
+      tapStartRef.current = { x: e.clientX, y: e.clientY, t: Date.now() };
+    }
+    pointersDownRef.current.add(e.pointerId);
+    setHoldPaused(true);
   };
+
+  const onPointerUp = (e: React.PointerEvent) => {
+    pointersDownRef.current.delete(e.pointerId);
+    if (pointersDownRef.current.size === 0) {
+      setHoldPaused(false);
+    }
+
+    const t = e.target as HTMLElement | null;
+    if (t?.closest('a')) {
+      tapStartRef.current = null;
+      return;
+    }
+
+    const start = tapStartRef.current;
+    tapStartRef.current = null;
+    if (!start) return;
+
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    if (Math.abs(dx) > TAP_MOVE_PX || Math.abs(dy) > TAP_MOVE_PX) return;
+    if (Date.now() - start.t > TAP_MAX_MS) return;
+
+    const el = scrollerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const rx = (e.clientX - rect.left) / rect.width;
+    const i = activeRef.current;
+    const n = slidesRef.current.length;
+    if (rx < 0.2) {
+      goTo(i - 1);
+    } else {
+      goTo((i + 1) % n);
+    }
+  };
+
+  const onPointerCancel = (e: React.PointerEvent) => {
+    pointersDownRef.current.delete(e.pointerId);
+    if (pointersDownRef.current.size === 0) {
+      setHoldPaused(false);
+    }
+    tapStartRef.current = null;
+  };
+
+  const showAutoplayUi = slideCount > 1;
 
   return (
     <div className="relative mx-auto w-full max-w-[min(100%,280px)] sm:max-w-[300px] md:max-w-[320px] lg:max-w-[min(100%,380px)]">
@@ -127,6 +316,21 @@ export const PhoneMockupAdRail: React.FC<PhoneMockupAdRailProps> = ({
           aria-roledescription="carousel"
           aria-label="Advertisements in phone preview"
           tabIndex={0}
+          onPointerDown={onPointerDown}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerCancel}
+          onPointerLeave={(e) => {
+            if (e.pointerType === 'mouse' && pointersDownRef.current.size === 0) {
+              tapStartRef.current = null;
+            }
+          }}
+          onMouseEnter={() => {
+            if (finePointerHover) setHoverPaused(true);
+          }}
+          onMouseLeave={() => {
+            setHoverPaused(false);
+            tapStartRef.current = null;
+          }}
           onKeyDown={(e) => {
             if (e.key === 'ArrowLeft') {
               e.preventDefault();
@@ -136,77 +340,95 @@ export const PhoneMockupAdRail: React.FC<PhoneMockupAdRailProps> = ({
               goTo(active + 1);
             }
           }}
-          className="flex h-full w-full snap-x snap-mandatory overflow-x-auto overflow-y-hidden overscroll-x-contain [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [-ms-overflow-style:none] focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-black/20 [&::-webkit-scrollbar]:hidden"
+          className="relative flex h-full w-full snap-x snap-mandatory overflow-x-auto overflow-y-hidden overscroll-x-contain [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [-ms-overflow-style:none] touch-pan-x focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-black/20 [&::-webkit-scrollbar]:hidden"
         >
-          {slides.map((s) => (
-            <div
-              key={s.id}
-              id={`phone-ad-${s.id}`}
-              role="group"
-              aria-roledescription="slide"
-              aria-label={slideAriaLabel(s)}
-              className="h-full w-full shrink-0 snap-center snap-always px-0.5"
-            >
-              <article
-                className={`flex h-full min-h-0 flex-col gap-2 rounded-xl bg-gradient-to-br p-3 text-left text-white shadow-inner ring-1 ring-white/15 ${s.gradient}`}
+          {slides.map((s, i) => {
+            const sec = s.autoAdvanceSec ?? 0;
+            const track = showAutoplayUi && sec > 0;
+            return (
+              <div
+                key={s.id}
+                id={`phone-ad-${s.id}`}
+                role="group"
+                aria-roledescription="slide"
+                aria-label={slideAriaLabel(s)}
+                className="relative h-full w-full shrink-0 snap-center snap-always px-0.5"
               >
-                <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1.5 overflow-y-auto overscroll-contain">
-                  {s.label ? (
-                    <p className="flex shrink-0 items-center gap-1 text-[0.65rem] font-bold uppercase tracking-wider text-white/75">
-                      <Sparkles size={12} className="shrink-0 opacity-90" aria-hidden />
-                      {s.label}
+                <article
+                  className={`flex h-full min-h-0 flex-col gap-2 rounded-xl bg-gradient-to-br p-3 text-left text-white shadow-inner ring-1 ring-white/15 ${s.gradient}`}
+                >
+                  <SlideProgressTrack
+                    isActive={i === active}
+                    progress={carouselProgress}
+                    showTrack={track}
+                  />
+                  <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1.5 overflow-y-auto overscroll-contain">
+                    {s.label ? (
+                      <p className="flex shrink-0 items-center gap-1 text-[0.65rem] font-bold uppercase tracking-wider text-white/75">
+                        <Sparkles size={12} className="shrink-0 opacity-90" aria-hidden />
+                        {s.label}
+                      </p>
+                    ) : null}
+                    {s.blocks.map((b, j) => (
+                      <React.Fragment key={`${s.id}-b-${j}`}>
+                        {b.kind === 'text' ? <AdBlockText block={b} /> : <AdBlockImage block={b} />}
+                      </React.Fragment>
+                    ))}
+                  </div>
+                  {s.linkUrl ? (
+                    <a
+                      href={s.linkUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="relative z-10 inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-1.5 rounded-lg bg-white/20 px-3 py-2.5 text-center text-xs font-bold text-white ring-1 ring-white/35 backdrop-blur-sm hover:bg-white/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+                    >
+                      <span className="truncate">{s.linkLabel?.trim() || 'Learn more'}</span>
+                      <ExternalLink size={14} className="shrink-0 opacity-90" aria-hidden />
+                    </a>
+                  ) : (
+                    <p className="shrink-0 text-[0.65rem] font-semibold uppercase tracking-wide text-white/60">
+                      Tap sides or swipe · Ad
                     </p>
-                  ) : null}
-                  {s.blocks.map((b, i) => (
-                    <React.Fragment key={`${s.id}-b-${i}`}>
-                      {b.kind === 'text' ? <AdBlockText block={b} /> : <AdBlockImage block={b} />}
-                    </React.Fragment>
-                  ))}
-                </div>
-                {s.linkUrl ? (
-                  <a
-                    href={s.linkUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-1.5 rounded-lg bg-white/20 px-3 py-2.5 text-center text-xs font-bold text-white ring-1 ring-white/35 backdrop-blur-sm hover:bg-white/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
-                  >
-                    <span className="truncate">{s.linkLabel?.trim() || 'Learn more'}</span>
-                    <ExternalLink size={14} className="shrink-0 opacity-90" aria-hidden />
-                  </a>
-                ) : (
-                  <p className="shrink-0 text-[0.65rem] font-semibold uppercase tracking-wide text-white/60">
-                    Swipe for more · Ad
-                  </p>
-                )}
-              </article>
-            </div>
-          ))}
+                  )}
+                </article>
+              </div>
+            );
+          })}
         </div>
       </div>
 
-      <div
-        className="mt-3 flex justify-center gap-2"
-        role="tablist"
-        aria-label="Choose advertisement slide"
-      >
-        {slides.map((s, i) => (
-          <button
-            key={s.id}
-            type="button"
-            role="tab"
-            aria-selected={i === active}
-            aria-controls={`phone-ad-${s.id}`}
-            tabIndex={i === active ? 0 : -1}
-            onClick={() => goTo(i)}
-            className={`min-h-11 min-w-11 flex items-center justify-center rounded-full p-2 touch-manipulation ${i === active ? 'bg-orange-500/90' : 'bg-[var(--hover-bg)] hover:bg-[var(--border-color)]'}`}
-            aria-label={`Show ad ${i + 1} of ${slides.length}`}
-          >
-            <span
-              className={`block rounded-full transition-all ${i === active ? 'h-2 w-6 bg-white' : 'h-2 w-2 bg-[var(--text-muted)]'}`}
-            />
-          </button>
-        ))}
-      </div>
+      {showAutoplayUi ? (
+        <div
+          className="mt-3 flex gap-1.5 px-0.5"
+          role="tablist"
+          aria-label="Advertisement slides and progress"
+        >
+          {slides.map((s, i) => {
+            const hasTimer = (s.autoAdvanceSec ?? 0) > 0;
+            const fillPct = i < active ? 100 : i === active && hasTimer ? carouselProgress * 100 : 0;
+            return (
+              <button
+                key={s.id}
+                type="button"
+                role="tab"
+                aria-selected={i === active}
+                aria-controls={`phone-ad-${s.id}`}
+                tabIndex={i === active ? 0 : -1}
+                onClick={() => goTo(i)}
+                className="flex min-h-11 min-w-0 flex-1 touch-manipulation flex-col justify-center gap-1 rounded-lg px-0.5 py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/80"
+                aria-label={`Show ad ${i + 1} of ${slides.length}`}
+              >
+                <span className="block h-1.5 w-full overflow-hidden rounded-full bg-[var(--hover-bg)] ring-1 ring-[var(--border-color)]/40">
+                  <span
+                    className="block h-full rounded-full bg-orange-500/95"
+                    style={{ width: `${fillPct}%`, transition: 'none' }}
+                  />
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
     </div>
   );
 };

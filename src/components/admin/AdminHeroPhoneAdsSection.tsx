@@ -1,9 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronUp, ImagePlus, Megaphone, Plus, Trash2, Type } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronUp,
+  ImagePlus,
+  Megaphone,
+  Plus,
+  RotateCcw,
+  Timer,
+  Trash2,
+  Type,
+} from 'lucide-react';
 import { PhoneMockupAdRail } from '../PhoneMockupAdRail';
 import {
   HERO_AD_IMAGE_FIT_OPTIONS,
   HERO_PHONE_AD_GRADIENT_PRESET_OPTIONS,
+  HERO_PHONE_AD_MAX_AUTO_SEC,
   INITIAL_STORED_HERO_PHONE_ADS,
   type HeroAdBlockStored,
   type HeroPhoneAdGradientPreset,
@@ -41,6 +52,9 @@ function cloneStoredSlides(s: HeroPhoneAdSlideStored[]): HeroPhoneAdSlideStored[
     ...(x.label != null && x.label !== '' ? { label: x.label } : {}),
     ...(x.linkUrl != null && x.linkUrl !== '' ? { linkUrl: x.linkUrl } : {}),
     ...(x.linkLabel != null && x.linkLabel !== '' ? { linkLabel: x.linkLabel } : {}),
+    ...(typeof x.slideDurationSec === 'number' && Number.isFinite(x.slideDurationSec)
+      ? { slideDurationSec: x.slideDurationSec }
+      : {}),
   }));
 }
 
@@ -75,6 +89,8 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
   const [savedSlides, setSavedSlides] = useState<HeroPhoneAdSlideStored[]>(() =>
     cloneStoredSlides(INITIAL_STORED_HERO_PHONE_ADS)
   );
+  const [draftDefaultSec, setDraftDefaultSec] = useState(0);
+  const [savedDefaultSec, setSavedDefaultSec] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -82,6 +98,9 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
     if (doc) {
       setEnabled(doc.enabled);
       setSavedEnabled(doc.enabled);
+      const def = doc.defaultSlideDurationSec ?? 0;
+      setDraftDefaultSec(def);
+      setSavedDefaultSec(def);
       const cl = cloneStoredSlides(doc.slides);
       setDraftSlides(cl);
       setSavedSlides(cl);
@@ -89,6 +108,8 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
       const seed = cloneStoredSlides(INITIAL_STORED_HERO_PHONE_ADS);
       setEnabled(false);
       setSavedEnabled(false);
+      setDraftDefaultSec(0);
+      setSavedDefaultSec(0);
       setDraftSlides(seed);
       setSavedSlides(cloneStoredSlides(seed));
     }
@@ -100,8 +121,11 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
   }, [load]);
 
   const dirty = useMemo(
-    () => enabled !== savedEnabled || !slidesEqual(draftSlides, savedSlides),
-    [enabled, savedEnabled, draftSlides, savedSlides]
+    () =>
+      enabled !== savedEnabled ||
+      draftDefaultSec !== savedDefaultSec ||
+      !slidesEqual(draftSlides, savedSlides),
+    [enabled, savedEnabled, draftDefaultSec, savedDefaultSec, draftSlides, savedSlides]
   );
 
   useEffect(() => {
@@ -112,7 +136,10 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
     return () => onDirtyChange?.(false);
   }, [onDirtyChange]);
 
-  const previewSlides = useMemo(() => draftSlides.map(storedSlideToRailSlide), [draftSlides]);
+  const previewSlides = useMemo(
+    () => draftSlides.map((s) => storedSlideToRailSlide(s, draftDefaultSec)),
+    [draftSlides, draftDefaultSec]
+  );
 
   const updateSlide = (slideIndex: number, patch: Partial<HeroPhoneAdSlideStored>) => {
     setDraftSlides((prev) => {
@@ -233,7 +260,30 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
     });
   };
 
+  const resetSlideToTemplate = (slideIndex: number) => {
+    setDraftSlides((prev) => {
+      const cur = prev[slideIndex];
+      if (!cur) return prev;
+      const next = [...prev];
+      next[slideIndex] = {
+        id: cur.id,
+        label: 'Sponsored',
+        gradientPreset: 'cyan_blue',
+        blocks: [
+          { kind: 'text', style: 'headline', content: 'New headline' },
+          { kind: 'text', style: 'body', content: 'Short promo copy for learners.' },
+        ],
+      };
+      return next;
+    });
+  };
+
   const validateBeforeSave = (): boolean => {
+    const def = Math.round(draftDefaultSec);
+    if (!Number.isFinite(def) || def < 0 || def > HERO_PHONE_AD_MAX_AUTO_SEC) {
+      showActionToast(`Default duration must be 0–${HERO_PHONE_AD_MAX_AUTO_SEC} seconds.`, 'danger');
+      return false;
+    }
     for (const s of draftSlides) {
       if (!s.id.trim()) {
         showActionToast('Each slide needs an id.', 'danger');
@@ -274,6 +324,11 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
         showActionToast('Add a link URL if you set a button label.', 'danger');
         return false;
       }
+      const sd = s.slideDurationSec;
+      if (typeof sd === 'number' && (!Number.isFinite(sd) || sd < 0 || sd > HERO_PHONE_AD_MAX_AUTO_SEC)) {
+        showActionToast(`Per-slide duration must be 0–${HERO_PHONE_AD_MAX_AUTO_SEC} or left empty.`, 'danger');
+        return false;
+      }
     }
     return true;
   };
@@ -283,18 +338,23 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
     setSaving(true);
     const ok = await saveHeroPhoneAdsAsAdmin({
       enabled,
+      defaultSlideDurationSec: draftDefaultSec,
       slides: draftSlides.map((s) => ({
         id: s.id.trim(),
         gradientPreset: s.gradientPreset,
         label: s.label?.trim() || undefined,
         linkUrl: s.linkUrl?.trim() || undefined,
         linkLabel: s.linkLabel?.trim() || undefined,
+        ...(typeof s.slideDurationSec === 'number' && Number.isFinite(s.slideDurationSec)
+          ? { slideDurationSec: s.slideDurationSec }
+          : {}),
         blocks: cloneBlocks(s.blocks),
       })),
     });
     setSaving(false);
     if (ok) {
       setSavedEnabled(enabled);
+      setSavedDefaultSec(draftDefaultSec);
       setSavedSlides(cloneStoredSlides(draftSlides));
       showActionToast('Home hero phone ads saved.');
     } else {
@@ -304,6 +364,7 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
 
   const handleDiscard = () => {
     setEnabled(savedEnabled);
+    setDraftDefaultSec(savedDefaultSec);
     setDraftSlides(cloneStoredSlides(savedSlides));
   };
 
@@ -328,6 +389,37 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
           fill, and adjust <strong>max height %</strong> so the image uses more of the card. Optional{' '}
           <strong>overlay</strong> lines draw text on top of that image.
         </p>
+
+        <div className="mb-4 flex flex-col gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-4 sm:flex-row sm:items-end sm:gap-4">
+          <div className="flex min-w-0 flex-1 items-start gap-2">
+            <Timer size={18} className="mt-0.5 shrink-0 text-orange-500" aria-hidden />
+            <div className="min-w-0 flex-1 space-y-1">
+              <label className="text-xs font-semibold text-[var(--text-secondary)]" htmlFor="hero-ad-default-sec">
+                Default auto-advance (seconds)
+              </label>
+              <p className="text-[0.65rem] text-[var(--text-muted)]">
+                <strong>0</strong> = swipe only (no timer). Otherwise the home hero carousel advances each slide after this
+                many seconds. Per-slide overrides below. Respects <strong>reduced motion</strong> (no auto-advance).
+              </p>
+            </div>
+          </div>
+          <input
+            id="hero-ad-default-sec"
+            type="number"
+            min={0}
+            max={HERO_PHONE_AD_MAX_AUTO_SEC}
+            value={draftDefaultSec}
+            onChange={(e) => {
+              const n = parseInt(e.target.value, 10);
+              if (!Number.isFinite(n)) {
+                setDraftDefaultSec(0);
+                return;
+              }
+              setDraftDefaultSec(Math.min(HERO_PHONE_AD_MAX_AUTO_SEC, Math.max(0, n)));
+            }}
+            className="w-full min-w-0 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-[var(--text-primary)] sm:w-28"
+          />
+        </div>
 
         <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-4">
           <input
@@ -395,6 +487,15 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                       >
                         <Trash2 size={18} aria-hidden />
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => resetSlideToTemplate(slideIndex)}
+                        className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-[var(--border-color)] px-2 py-2 text-xs font-bold text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]"
+                        title="Replace this slide with starter text and clear link and duration override"
+                      >
+                        <RotateCcw size={16} aria-hidden />
+                        Reset slide
+                      </button>
                     </div>
                   </div>
 
@@ -456,6 +557,37 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                         className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-[var(--text-primary)]"
                         maxLength={47}
                       />
+                    </div>
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="text-xs font-semibold text-[var(--text-secondary)]">
+                        Auto-advance override (optional)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={HERO_PHONE_AD_MAX_AUTO_SEC}
+                        value={s.slideDurationSec === undefined ? '' : String(s.slideDurationSec)}
+                        onChange={(e) => {
+                          const t = e.target.value.trim();
+                          if (t === '') {
+                            updateSlide(slideIndex, { slideDurationSec: undefined });
+                            return;
+                          }
+                          const n = parseInt(t, 10);
+                          if (!Number.isFinite(n)) return;
+                          updateSlide(slideIndex, {
+                            slideDurationSec: Math.min(HERO_PHONE_AD_MAX_AUTO_SEC, Math.max(0, n)),
+                          });
+                        }}
+                        placeholder={
+                          draftDefaultSec === 0 ? 'Default (off — swipe only)' : `Default (${draftDefaultSec}s)`
+                        }
+                        className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                      />
+                      <p className="text-[0.65rem] text-[var(--text-muted)]">
+                        Leave empty to use the default above. <strong>0</strong> = stay on this slide until the user
+                        swipes (overrides a non-zero default).
+                      </p>
                     </div>
                   </div>
 

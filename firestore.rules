@@ -595,11 +595,12 @@ service cloud.firestore {
     function isValidHeroPhoneAdSlideBlocks(s) {
       return s is map &&
         s.keys().hasAll(['id', 'gradientPreset', 'blocks']) &&
-        s.keys().hasOnly(['id', 'gradientPreset', 'blocks', 'label', 'linkUrl', 'linkLabel']) &&
+        s.keys().hasOnly(['id', 'gradientPreset', 'blocks', 'label', 'linkUrl', 'linkLabel', 'slideDurationSec']) &&
         s.id is string && s.id.size() > 0 && s.id.size() < 120 &&
         s.gradientPreset in ['sky_indigo', 'violet_fuchsia', 'emerald_teal', 'rose_orange', 'amber_stone', 'cyan_blue'] &&
         validHeroPhoneBlocksList(s.blocks) &&
-        heroPhoneSlideLinksValid(s);
+        heroPhoneSlideLinksValid(s) &&
+        (!('slideDurationSec' in s) || (s.slideDurationSec is int && s.slideDurationSec >= 0 && s.slideDurationSec <= 120));
     }
 
     function isValidHeroPhoneAdSlide(s) {
@@ -620,10 +621,12 @@ service cloud.firestore {
 
     function isValidHeroPhoneAdsWrite(data) {
       return data.keys().hasAll(['enabled', 'slides', 'updatedAt']) &&
-        data.keys().hasOnly(['enabled', 'slides', 'updatedAt']) &&
+        data.keys().hasOnly(['enabled', 'slides', 'updatedAt', 'defaultSlideDurationSec']) &&
         data.enabled is bool &&
         validHeroPhoneAdsSlidesList(data.slides) &&
-        (data.updatedAt == request.time || data.updatedAt is timestamp);
+        (data.updatedAt == request.time || data.updatedAt is timestamp) &&
+        (!('defaultSlideDurationSec' in data) ||
+          (data.defaultSlideDurationSec is int && data.defaultSlideDurationSec >= 0 && data.defaultSlideDurationSec <= 120));
     }
 
     match /siteSettings/heroPhoneAds {

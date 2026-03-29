@@ -113,17 +113,39 @@ function parseSlide(raw: unknown): HeroPhoneAdSlideStored | null {
   }
   if (!blocks || blocks.length === 0) return null;
 
+  const slideDurRaw = o.slideDurationSec;
+  let slideDurationSec: number | undefined;
+  if (slideDurRaw != null) {
+    if (typeof slideDurRaw !== 'number' || !Number.isFinite(slideDurRaw)) return null;
+    const r = Math.round(slideDurRaw);
+    if (r < 0 || r > 120) return null;
+    slideDurationSec = r;
+  }
+
   return {
     id,
     gradientPreset: gp,
     ...(typeof label === 'string' && label.trim() !== '' ? { label: label.trim() } : {}),
     ...(linkUrl != null ? { linkUrl } : {}),
     ...(linkLabel != null && linkUrl != null ? { linkLabel } : {}),
+    ...(slideDurationSec != null ? { slideDurationSec } : {}),
     blocks,
   };
 }
 
-function parseDocument(data: Record<string, unknown> | undefined): { enabled: boolean; slides: HeroPhoneAdSlideStored[] } | null {
+function parseDefaultSlideDurationSec(data: Record<string, unknown>): number {
+  const v = data.defaultSlideDurationSec;
+  if (v == null) return 0;
+  if (typeof v !== 'number' || !Number.isFinite(v)) return 0;
+  const r = Math.round(v);
+  if (r <= 0) return 0;
+  if (r > 120) return 120;
+  return r;
+}
+
+function parseDocument(
+  data: Record<string, unknown> | undefined
+): { enabled: boolean; slides: HeroPhoneAdSlideStored[]; defaultSlideDurationSec: number } | null {
   if (!data) return null;
   const enabled = data.enabled;
   if (typeof enabled !== 'boolean') return null;
@@ -135,13 +157,14 @@ function parseDocument(data: Record<string, unknown> | undefined): { enabled: bo
     if (!s) return null;
     slides.push(s);
   }
-  return { enabled, slides };
+  const defaultSlideDurationSec = parseDefaultSlideDurationSec(data);
+  return { enabled, slides, defaultSlideDurationSec };
 }
 
 export function resolvedRailSlidesFromDoc(data: Record<string, unknown> | undefined): PhoneMockupAdSlide[] {
   const parsed = parseDocument(data);
   if (!parsed || !parsed.enabled) return DEFAULT_HERO_PHONE_AD_SLIDES;
-  return parsed.slides.map(storedSlideToRailSlide);
+  return parsed.slides.map((s) => storedSlideToRailSlide(s, parsed.defaultSlideDurationSec));
 }
 
 export function subscribeHeroPhoneAdsForPublic(
@@ -164,7 +187,11 @@ export function subscribeHeroPhoneAdsForPublic(
   );
 }
 
-export async function loadHeroPhoneAdsForAdmin(): Promise<{ enabled: boolean; slides: HeroPhoneAdSlideStored[] } | null> {
+export async function loadHeroPhoneAdsForAdmin(): Promise<{
+  enabled: boolean;
+  slides: HeroPhoneAdSlideStored[];
+  defaultSlideDurationSec: number;
+} | null> {
   try {
     const snap = await getDoc(doc(db, COLLECTION, HERO_PHONE_ADS_DOC_ID));
     if (!snap.exists()) return null;
@@ -197,20 +224,28 @@ function serializeBlockForFirestore(b: HeroAdBlockStored): Record<string, unknow
 export async function saveHeroPhoneAdsAsAdmin(input: {
   enabled: boolean;
   slides: HeroPhoneAdSlideStored[];
+  defaultSlideDurationSec: number;
 }): Promise<boolean> {
   if (input.slides.length < 1 || input.slides.length > 8) return false;
+  const defaultSec = Math.round(input.defaultSlideDurationSec);
+  const safeDefault = defaultSec <= 0 ? 0 : Math.min(120, Math.max(1, defaultSec));
   try {
     await setDoc(doc(db, COLLECTION, HERO_PHONE_ADS_DOC_ID), {
       enabled: input.enabled,
+      defaultSlideDurationSec: safeDefault,
       slides: input.slides.map((s) => {
         const linkUrl = s.linkUrl?.trim();
         const linkLabel = s.linkLabel?.trim();
+        const sd = s.slideDurationSec;
         return {
           id: s.id.trim(),
           gradientPreset: s.gradientPreset,
           ...(s.label != null && s.label.trim() !== '' ? { label: s.label.trim() } : {}),
           ...(linkUrl && isAllowedHeroAdHttpUrl(linkUrl) ? { linkUrl } : {}),
           ...(linkUrl && linkLabel && linkLabel.length > 0 && linkLabel.length < 48 ? { linkLabel } : {}),
+          ...(typeof sd === 'number' && Number.isFinite(sd)
+            ? { slideDurationSec: Math.min(120, Math.max(0, Math.round(sd))) }
+            : {}),
           blocks: s.blocks.map(serializeBlockForFirestore),
         };
       }),

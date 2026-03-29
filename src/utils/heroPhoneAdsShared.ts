@@ -29,6 +29,8 @@ export interface PhoneMockupAdSlide {
   linkUrl?: string;
   linkLabel?: string;
   blocks: PhoneMockupAdBlock[];
+  /** Seconds before auto-advancing; 0 = manual only for this slide. */
+  autoAdvanceSec: number;
 }
 
 /** Stored in Firestore (block-based or legacy migrated on read). */
@@ -38,6 +40,8 @@ export interface HeroPhoneAdSlideStored {
   label?: string;
   linkUrl?: string;
   linkLabel?: string;
+  /** If set (including 0), overrides document default; 0 = no auto-advance on this slide. */
+  slideDurationSec?: number;
   blocks: HeroAdBlockStored[];
 }
 
@@ -74,6 +78,29 @@ export function isHeroPhoneAdGradientPreset(s: string): s is HeroPhoneAdGradient
 
 export function isHeroAdImageFit(s: string): s is 'cover' | 'contain' | 'fill' {
   return s === 'cover' || s === 'contain' || s === 'fill';
+}
+
+/** Auto-advance bounds (seconds); 0 = off. */
+export const HERO_PHONE_AD_MIN_AUTO_SEC = 1;
+export const HERO_PHONE_AD_MAX_AUTO_SEC = 120;
+
+export function clampHeroPhoneAdDurationSec(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  const r = Math.round(n);
+  if (r <= 0) return 0;
+  return Math.min(HERO_PHONE_AD_MAX_AUTO_SEC, Math.max(HERO_PHONE_AD_MIN_AUTO_SEC, r));
+}
+
+/** Resolve per-slide timer: explicit override (including 0) wins; else document default. */
+export function effectiveAutoAdvanceSec(defaultSec: number, slideOverride?: number): number {
+  if (typeof slideOverride === 'number' && Number.isFinite(slideOverride)) {
+    const o = Math.round(slideOverride);
+    if (o <= 0) return 0;
+    return clampHeroPhoneAdDurationSec(o);
+  }
+  const d = Math.round(defaultSec);
+  if (d <= 0) return 0;
+  return clampHeroPhoneAdDurationSec(d);
 }
 
 const MAX_OPTIONAL_URL_LEN = 2000;
@@ -160,7 +187,10 @@ export const INITIAL_STORED_HERO_PHONE_ADS: HeroPhoneAdSlideStored[] = [
   },
 ];
 
-export function storedSlideToRailSlide(s: HeroPhoneAdSlideStored): PhoneMockupAdSlide {
+export function storedSlideToRailSlide(
+  s: HeroPhoneAdSlideStored,
+  defaultSlideDurationSec = 0
+): PhoneMockupAdSlide {
   const gradient = HERO_PHONE_AD_GRADIENT_PRESETS[s.gradientPreset] ?? HERO_PHONE_AD_GRADIENT_PRESETS.sky_indigo;
   const linkUrl = s.linkUrl?.trim();
   const linkLabel = s.linkLabel?.trim();
@@ -169,6 +199,7 @@ export function storedSlideToRailSlide(s: HeroPhoneAdSlideStored): PhoneMockupAd
     blocks.length > 0
       ? blocks
       : [{ kind: 'text' as const, content: 'Add content', style: 'body' as const }];
+  const autoAdvanceSec = effectiveAutoAdvanceSec(defaultSlideDurationSec, s.slideDurationSec);
   return {
     id: s.id,
     ...(s.label != null && s.label.trim() !== '' ? { label: s.label.trim() } : {}),
@@ -180,6 +211,7 @@ export function storedSlideToRailSlide(s: HeroPhoneAdSlideStored): PhoneMockupAd
         }
       : {}),
     blocks: safeBlocks,
+    autoAdvanceSec,
   };
 }
 
@@ -192,5 +224,6 @@ export function slideAriaLabel(s: PhoneMockupAdSlide): string {
 }
 
 /** Shown when Firestore doc is missing, invalid, disabled, or empty. */
-export const DEFAULT_HERO_PHONE_AD_SLIDES: PhoneMockupAdSlide[] =
-  INITIAL_STORED_HERO_PHONE_ADS.map(storedSlideToRailSlide);
+export const DEFAULT_HERO_PHONE_AD_SLIDES: PhoneMockupAdSlide[] = INITIAL_STORED_HERO_PHONE_ADS.map((s) =>
+  storedSlideToRailSlide(s, 0)
+);
