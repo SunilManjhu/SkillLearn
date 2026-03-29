@@ -393,7 +393,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             Models
           </h2>
           <div className="mt-3 space-y-5">
-            <div className="flex min-h-11 items-center justify-between gap-3">
+            <div className="flex flex-col gap-3 sm:min-h-11 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
               <div className="flex min-w-0 items-start gap-2">
                 <MessageCircle size={16} className="mt-0.5 shrink-0 text-orange-500" aria-hidden />
                 <div className="min-w-0">
@@ -422,12 +422,12 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                   if (assistantSwitchDisabled || !siteAssistantEnabled) return;
                   setAssistantVisible(!assistantVisible);
                 }}
-                className={`relative h-9 w-14 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500/60 disabled:cursor-not-allowed disabled:opacity-50 ${
+                className={`relative h-11 w-14 shrink-0 touch-manipulation self-end rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500/60 disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto ${
                   assistantEffectiveOn ? 'bg-orange-500' : 'bg-[var(--border-color)]'
                 }`}
               >
                 <span
-                  className={`pointer-events-none absolute top-1 left-1 h-7 w-7 rounded-full bg-white shadow transition-transform ${
+                  className={`pointer-events-none absolute top-2 left-1 h-7 w-7 rounded-full bg-white shadow transition-transform ${
                     assistantEffectiveOn ? 'translate-x-5' : 'translate-x-0'
                   }`}
                 />
@@ -437,7 +437,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               </button>
             </div>
 
-            <div className="flex min-h-11 items-center justify-between gap-3">
+            <div className="flex flex-col gap-3 sm:min-h-11 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
               <div className="flex min-w-0 items-start gap-2">
                 <Sparkles size={16} className="mt-0.5 shrink-0 text-orange-500" aria-hidden />
                 <div className="min-w-0">
@@ -466,12 +466,12 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                   if (aiModelsSwitchDisabled || !siteLearnerAiModelsEnabled) return;
                   setAiModelsEnabled(!aiModelsEnabled);
                 }}
-                className={`relative h-9 w-14 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500/60 disabled:cursor-not-allowed disabled:opacity-50 ${
+                className={`relative h-11 w-14 shrink-0 touch-manipulation self-end rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500/60 disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto ${
                   aiModelsEffectiveOn ? 'bg-orange-500' : 'bg-[var(--border-color)]'
                 }`}
               >
                 <span
-                  className={`pointer-events-none absolute top-1 left-1 h-7 w-7 rounded-full bg-white shadow transition-transform ${
+                  className={`pointer-events-none absolute top-2 left-1 h-7 w-7 rounded-full bg-white shadow transition-transform ${
                     aiModelsEffectiveOn ? 'translate-x-5' : 'translate-x-0'
                   }`}
                 />
@@ -489,7 +489,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
           <div className="mt-5 space-y-5 border-t border-[var(--border-color)] pt-5">
             {onAlertsMutedChange && (
               <div>
-                <div className="flex min-h-11 items-center justify-between gap-3">
+                <div className="flex flex-col gap-3 sm:min-h-11 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                   <div className="flex min-w-0 items-center gap-2">
                     <BellOff size={16} className="shrink-0 text-orange-500" aria-hidden />
                     <span
@@ -505,12 +505,12 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                     aria-checked={alertsMuted}
                     aria-labelledby="profile-notifications-label"
                     onClick={() => onAlertsMutedChange(!alertsMuted)}
-                    className={`relative h-9 w-14 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500/60 ${
+                    className={`relative h-11 w-14 shrink-0 touch-manipulation self-end rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500/60 sm:self-auto ${
                       alertsMuted ? 'bg-orange-500' : 'bg-[var(--border-color)]'
                     }`}
                   >
                     <span
-                      className={`pointer-events-none absolute top-1 left-1 h-7 w-7 rounded-full bg-white shadow transition-transform ${
+                      className={`pointer-events-none absolute top-2 left-1 h-7 w-7 rounded-full bg-white shadow transition-transform ${
                         alertsMuted ? 'translate-x-5' : 'translate-x-0'
                       }`}
                     />

@@ -7,7 +7,8 @@ export type AdminActionToastVariant = 'success' | 'danger' | 'neutral';
 const TOAST_MS = 2200;
 
 /**
- * Bottom-right toast: emerald success, red danger, muted neutral (e.g. no-op actions).
+ * Mobile-first toast: full width between side insets + safe-area bottom on phones;
+ * bottom-right chip from `sm` up. Emerald success, red danger, muted neutral.
  */
 export function useAdminActionToast() {
   const [text, setText] = useState<string | null>(null);
@@ -48,7 +49,7 @@ export function useAdminActionToast() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 10, scale: 0.98 }}
                 transition={{ duration: 0.22, ease: 'easeOut' }}
-                className={`pointer-events-none fixed bottom-6 right-6 z-[90] rounded-xl border px-4 py-2.5 text-sm font-semibold shadow-2xl backdrop-blur-sm max-w-[min(100vw-2rem,28rem)] ${
+                className={`pointer-events-none fixed z-[90] w-auto max-w-none rounded-xl border px-3 py-2.5 text-left text-sm font-semibold shadow-2xl backdrop-blur-sm min-w-0 break-words sm:max-w-[min(100vw-3rem,28rem)] left-4 right-4 bottom-[max(1rem,env(safe-area-inset-bottom,0px))] sm:left-auto sm:right-6 sm:bottom-6 sm:w-[min(100vw-3rem,28rem)] ${
                   variant === 'danger'
                     ? 'border-red-500/45 bg-red-500/15 text-red-800 dark:border-red-400/50 dark:text-red-200'
                     : variant === 'neutral'

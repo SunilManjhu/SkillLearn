@@ -200,7 +200,7 @@ export function DemoLearningAgent({ onOpenCourse, courses = STATIC_CATALOG_FALLB
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="fixed bottom-6 right-6 z-[60] flex h-14 w-14 items-center justify-center rounded-full border border-[var(--border-color)] bg-[var(--bg-secondary)] text-orange-500 shadow-lg transition-colors hover:bg-[var(--hover-bg)] focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+        className="fixed z-[60] flex h-14 w-14 touch-manipulation items-center justify-center rounded-full border border-[var(--border-color)] bg-[var(--bg-secondary)] text-orange-500 shadow-lg transition-colors hover:bg-[var(--hover-bg)] focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 bottom-[max(1rem,env(safe-area-inset-bottom,0px))] right-4 sm:bottom-6 sm:right-6"
         aria-expanded={open}
         aria-label={open ? 'Close learning assistant' : 'Open learning assistant'}
       >
@@ -209,7 +209,7 @@ export function DemoLearningAgent({ onOpenCourse, courses = STATIC_CATALOG_FALLB
 
       {open && (
         <div
-          className={`fixed bottom-24 right-6 z-[60] flex w-[min(22rem,calc(100vw-3rem))] flex-col rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-xl max-h-[min(85dvh,32rem)] ${
+          className={`fixed z-[60] flex w-[min(22rem,calc(100vw-2rem))] flex-col rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-xl max-h-[min(85dvh,32rem)] bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] right-4 sm:bottom-24 sm:right-6 sm:w-[min(22rem,calc(100vw-3rem))] ${
             hasChatContent ? 'h-[min(85dvh,32rem)]' : ''
           }`}
           role="dialog"

@@ -2473,12 +2473,12 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                                 <div className="space-y-2">
                                   <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                                     <span className="text-xs font-semibold text-[var(--text-secondary)]">Choices</span>
-                                    <div className="flex flex-wrap items-center gap-2">
+                                    <div className="flex w-full min-w-0 flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
                                       <button
                                         type="button"
                                         disabled={!!mcqAiKeyBusy[`${mi}-${li}-${qi}`]}
                                         onClick={() => void suggestMcqCorrectWithAi(mi, li, qi, qq)}
-                                        className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-orange-500/40 bg-orange-500/10 px-2.5 py-1.5 text-xs font-bold text-orange-600 transition-colors hover:bg-orange-500/15 disabled:opacity-50 dark:text-orange-300"
+                                        className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center gap-1.5 rounded-lg border border-orange-500/40 bg-orange-500/10 px-3 py-2.5 text-xs font-bold text-orange-600 transition-colors hover:bg-orange-500/15 disabled:opacity-50 sm:w-auto dark:text-orange-300"
                                       >
                                         {mcqAiKeyBusy[`${mi}-${li}-${qi}`] ? (
                                           <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden />
@@ -2487,7 +2487,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                                         )}
                                         Check key with AI
                                       </button>
-                                      <span className="max-w-[min(100%,20rem)] text-[11px] leading-snug text-[var(--text-muted)]">
+                                      <span className="min-w-0 max-w-full text-[11px] leading-snug text-[var(--text-muted)] sm:max-w-[20rem]">
                                         Fixes wrong marked answers (same model as learner grading). Empty choice rows are
                                         skipped, matching the published quiz.
                                       </span>

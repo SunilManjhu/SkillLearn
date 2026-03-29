@@ -24,6 +24,8 @@ export interface CourseQuizPanelProps {
   onMarkComplete: () => void;
   /** Marks quiz complete and opens the next lesson (or course end flow). */
   onGoToNextLesson: () => void;
+  /** When true, lesson intro text is only in the player meta below (avoids duplicate with disclosure on mobile). */
+  omitLessonAbout?: boolean;
 }
 
 type AnswerState = Record<string, { mcqIndex?: number; text?: string }>;
@@ -103,6 +105,7 @@ export function CourseQuizPanel({
   user,
   onMarkComplete,
   onGoToNextLesson,
+  omitLessonAbout = false,
 }: CourseQuizPanelProps) {
   void _courseTitle;
   const questions = quiz.questions;
@@ -655,67 +658,14 @@ export function CourseQuizPanel({
   ]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto bg-[var(--bg-secondary)] p-4 text-left text-[var(--text-primary)] sm:p-6">
-      {hasFreeform && envGeminiKey && !learnerGeminiOn ? (
-        <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
-          {siteLearnerAiModelsEnabled ? (
-            <>
-              AI grading is off on this device. Open <strong>Profile</strong> → <strong>Models</strong> and turn on{' '}
-              <strong>Use AI models</strong> to submit open-ended answers.
-            </>
-          ) : (
-            <>An administrator has turned off learner AI for everyone, so open-ended grading is unavailable.</>
-          )}
-        </div>
-      ) : null}
-
-      {!learnerGeminiOn && hasMcq ? (
-        <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-xs leading-relaxed text-[var(--text-secondary)]">
-          {siteLearnerAiModelsEnabled ? (
-            <>
-              With <strong>Use AI models</strong> off on this device, multiple-choice is graded only against the{' '}
-              <strong>answer key stored in the course</strong>. If that key is wrong, turn AI back on for automatic
-              fact-checking, or ask the author to fix it in Admin (quiz editor → <strong>Check key with AI</strong>).
-            </>
-          ) : (
-            <>
-              An administrator has turned off learner AI. Multiple-choice uses only the{' '}
-              <strong>stored answer key</strong>; AI hints and key checking are unavailable until they turn it back on.
-            </>
-          )}
-        </div>
-      ) : null}
-
-      <div className="flex flex-col gap-1 border-b border-[var(--border-color)]/60 pb-3">
+    <div className="flex min-h-0 w-full flex-col gap-4 text-left text-[var(--text-primary)] bg-[var(--bg-secondary)] max-lg:h-auto max-lg:min-h-0 max-lg:flex-none max-lg:overflow-visible max-lg:gap-3 max-lg:px-4 max-lg:py-3 max-lg:pb-6 sm:max-lg:px-5 lg:min-h-0 lg:flex-1 lg:gap-4 lg:overflow-y-auto lg:p-6 xl:px-8">
+      <div className="flex min-w-0 flex-col gap-1 border-b border-[var(--border-color)]/60 pb-3 max-lg:pb-2.5">
         <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Quiz</p>
         <h2 className="text-lg font-bold leading-snug sm:text-xl">{lesson.title}</h2>
-        {lesson.about?.trim() ? (
+        {!omitLessonAbout && lesson.about?.trim() ? (
           <p className="text-sm leading-relaxed text-[var(--text-secondary)]">{lesson.about.trim()}</p>
         ) : null}
       </div>
-
-      {restoredFromStorage && submitted ? (
-        <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-xs leading-relaxed text-[var(--text-secondary)]">
-          You&apos;re viewing a saved attempt on this device. Use <strong>Take quiz again</strong> below to retry;
-          your scores stay visible for review until then.
-        </div>
-      ) : null}
-
-      {submitted && !allPassed && (nonPassingSubmitCount >= 2 || !restoredFromStorage) ? (
-        <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
-          {nonPassingSubmitCount >= 2 ? (
-            <p>
-              You can move on with <strong>Next lesson</strong> below. This lesson will be marked complete.
-            </p>
-          ) : (
-            <p>
-              For any incorrect question, use <strong>Hint</strong> once for AI guidance. If you still miss after
-              submitting again, the <strong>correct answer</strong> is shown. Open-ended needs {FREEFORM_PASS_THRESHOLD}
-              %+ to pass.
-            </p>
-          )}
-        </div>
-      ) : null}
 
       {submitted && allPassed ? (
         <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-800 dark:text-emerald-200">
@@ -772,7 +722,7 @@ export function CourseQuizPanel({
         </div>
       ) : null}
 
-      <ol className="flex flex-col gap-6">
+      <ol className="flex flex-col gap-6 sm:gap-6">
         {questions.map((q, idx) => {
           const locked = isLocked(q);
           const showResult = submitted && results;
@@ -789,8 +739,8 @@ export function CourseQuizPanel({
                 : coerceQuizIndex(q.correctIndex) ?? 0;
 
           return (
-            <li key={q.id} className="list-none">
-              <p className="mb-2 text-sm font-semibold text-[var(--text-primary)]">
+            <li key={q.id} className="list-none max-lg:scroll-mt-20">
+              <p className="mb-2 text-sm font-semibold leading-snug text-[var(--text-primary)]">
                 <span className="text-[var(--text-muted)]">{idx + 1}. </span>
                 {q.prompt}
                 {locked ? (
@@ -817,7 +767,7 @@ export function CourseQuizPanel({
                     return (
                       <label
                         key={ci}
-                        className={`flex min-h-11 cursor-pointer items-start gap-3 rounded-xl border px-3 py-2.5 text-sm transition-colors ${
+                        className={`flex min-h-11 cursor-pointer items-start gap-3 rounded-xl border px-3 py-2.5 text-sm transition-colors max-lg:px-3.5 max-lg:py-3 ${
                           wrong
                             ? 'border-red-500/60 bg-red-500/10'
                             : right
@@ -983,7 +933,7 @@ export function CourseQuizPanel({
         </div>
       ) : null}
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+      <div className="mt-1 flex flex-col gap-2 sm:mt-0 sm:flex-row sm:flex-wrap">
         {!allPassed && nonPassingSubmitCount >= 2 ? (
           usedNextLessonBypass ? (
             <button

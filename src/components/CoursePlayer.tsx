@@ -2191,19 +2191,274 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     setExpandedModules((prev) => (prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]));
   };
 
+  /** Mobile quiz: one page scroll — snap to top when lesson changes (no nested scroll container). */
+  useLayoutEffect(() => {
+    if (!isQuizLessonRow || typeof window === 'undefined') return;
+    if (!window.matchMedia('(max-width: 1023px)').matches) return;
+    window.scrollTo(0, 0);
+  }, [currentLesson.id, isQuizLessonRow, immersiveLayout]);
+
   const landscapeVideoH = immersiveLayout
     ? 'max-lg:landscape:h-[100dvh] max-lg:landscape:min-h-[100dvh]'
     : 'max-lg:landscape:h-[calc(100dvh-4rem)] max-lg:landscape:min-h-[calc(100dvh-4rem)]';
 
+  /** Lesson id, section, duration, course title — same row as in the player meta. */
+  const lessonContextChipsRow = (
+    <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-[var(--text-secondary)] sm:mb-5 sm:gap-3 md:gap-4">
+      <span className="rounded bg-[var(--hover-bg)] px-2 py-1">Lesson {currentLesson.id}</span>
+      {currentModule ? <span className="min-w-0">{currentModule.title}</span> : null}
+      <span>{lessonDurationLabel(currentLesson)}</span>
+      <span className="min-w-0 font-semibold text-orange-500">{course.title}</span>
+    </div>
+  );
+
+  const lessonAboutMobileDetails = (
+    <details className="group overflow-hidden rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] lg:hidden">
+      <summary className="flex min-h-10 w-full cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 touch-manipulation leading-snug [&::-webkit-details-marker]:hidden">
+        <span className="min-w-0 flex-1 text-left text-sm font-semibold text-[var(--text-primary)] leading-snug">
+          About this lesson
+        </span>
+        <ChevronDown
+          size={18}
+          className="shrink-0 text-[var(--text-muted)] transition-transform duration-200 group-open:rotate-180"
+          aria-hidden
+        />
+      </summary>
+      <div className="space-y-2 border-t border-[var(--border-color)]/60 px-3 py-3">
+        {currentModule && (
+          <p className="text-sm font-medium leading-snug text-[var(--text-primary)]">
+            Section: <span className="text-orange-500">{currentModule.title}</span>
+          </p>
+        )}
+        <p
+          key={`${currentLesson.id}-mabout`}
+          className="min-w-0 text-pretty text-sm leading-relaxed text-[var(--text-secondary)]"
+        >
+          {currentLesson.about ?? aboutFallback}
+        </p>
+      </div>
+    </details>
+  );
+
+  /** Lesson title, actions, chips, and about — used below the player (and inside mobile quiz disclosure). */
+  const lessonPlayerFullMeta = (
+    <>
+      <div className="mb-3 flex flex-col gap-3 md:mb-4 md:flex-row md:items-start md:justify-between md:gap-4">
+        <div className="min-w-0 w-full md:w-auto">
+          <div className="mb-0 flex flex-wrap items-center gap-2">
+            <h1
+              className={`min-w-0 text-[var(--text-primary)] ${
+                isQuizKindLesson ? 'text-xl font-bold sm:text-2xl lg:text-3xl' : 'text-3xl font-bold'
+              }`}
+            >
+              {currentLesson.title}
+            </h1>
+            {isWebLessonRow ? (
+              <span className="rounded-full border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">
+                External page
+              </span>
+            ) : isQuizKindLesson ? (
+              <span className="rounded-full border border-orange-500/30 bg-orange-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-orange-500">
+                Quiz
+              </span>
+            ) : (
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                  customVideoUrl
+                    ? 'border border-orange-500/20 bg-orange-500/10 text-orange-500'
+                    : 'border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-secondary)]'
+                }`}
+              >
+                {customVideoUrl ? 'Your version' : 'Default'}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex min-w-0 w-full flex-wrap items-center gap-2 md:w-auto md:shrink-0">
+          {!blocksVideoPlayback ? (
+            <>
+              <button
+                onClick={() => setIsCustomizeModalOpen(true)}
+                className="flex min-h-11 items-center gap-2 rounded-full border border-[var(--border-color)] px-4 py-2 text-sm font-bold text-[var(--text-primary)] transition-all hover:bg-[var(--hover-bg)] touch-manipulation"
+              >
+                <Settings2 size={18} />
+                Customize
+              </button>
+
+              <div className="mx-1 hidden h-8 w-px bg-[var(--border-color)] sm:block" />
+            </>
+          ) : null}
+
+          <button
+            onClick={() => handleVote('up')}
+            className={`flex min-h-11 items-center gap-2 rounded-full border px-4 py-2 transition-all touch-manipulation ${
+              userVote === 'up'
+                ? 'border-orange-500 bg-orange-500 text-white'
+                : 'border-[var(--border-color)] text-[var(--text-secondary)] hover:border-orange-500/50'
+            }`}
+          >
+            <ThumbsUp size={18} />
+            <span className="text-sm font-bold">{upvotes}</span>
+          </button>
+          <button
+            onClick={() => {
+              if (hasActiveUserReport) {
+                setReportMode('recall');
+                setIsReportModalOpen(true);
+                return;
+              }
+              setReportMode('create');
+              setIsReportModalOpen(true);
+              setReportStep(1);
+              setSelectedReportReason(null);
+              setReportDetails('');
+            }}
+            disabled={isRecallingReport}
+            className={`flex min-h-11 items-center gap-2 rounded-full border px-4 py-2 transition-all touch-manipulation ${
+              hasActiveUserReport
+                ? 'border-red-500 bg-red-500 text-white'
+                : 'border-[var(--border-color)] text-[var(--text-secondary)] hover:border-red-500/50'
+            } ${isRecallingReport ? 'cursor-not-allowed opacity-60' : ''}`}
+            title={hasActiveUserReport ? 'Click to recall your report' : 'Report an issue'}
+          >
+            <Flag size={18} />
+            <span className="text-sm font-bold">
+              {isRecallingReport ? 'Recalling...' : hasActiveUserReport ? 'Reported' : 'Report'}
+            </span>
+          </button>
+        </div>
+      </div>
+
+      {lessonContextChipsRow}
+
+      <div className="prose prose-invert max-w-none hidden lg:block">
+        <h2 className="mb-1 text-lg font-semibold text-[var(--text-primary)] sm:text-xl">About this lesson</h2>
+        {currentModule && (
+          <p className="mb-2 text-sm font-medium text-[var(--text-primary)] not-prose">
+            Section: <span className="text-orange-500">{currentModule.title}</span>
+          </p>
+        )}
+        <p key={currentLesson.id} className="mb-0 leading-relaxed text-[var(--text-secondary)] not-prose">
+          {currentLesson.about ?? aboutFallback}
+        </p>
+      </div>
+
+      {!isQuizLessonRow ? lessonAboutMobileDetails : null}
+    </>
+  );
+
+  const courseOutlineBody = (
+    <>
+      <div className="border-b border-[var(--border-color)] p-4 sm:p-6">
+        <h2 className="text-lg font-bold text-[var(--text-primary)]">Course Content</h2>
+        <div className="mt-1 text-sm text-[var(--text-secondary)]">
+          {course.modules.length} modules • {course.modules.reduce((acc, m) => acc + m.lessons.length, 0)} lessons
+        </div>
+      </div>
+
+      <div className="divide-y divide-[var(--border-color)]">
+        {course.modules.map((module, idx) => (
+          <div key={module.id} className="flex flex-col">
+            <button
+              type="button"
+              onClick={() => toggleModule(module.id)}
+              className="flex items-center justify-between p-4 text-left transition-colors hover:bg-[var(--hover-bg)]"
+            >
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-sm text-[var(--text-secondary)]">{String(idx + 1).padStart(2, '0')}</span>
+                <span className="text-sm font-semibold text-[var(--text-primary)]">{module.title}</span>
+              </div>
+              {expandedModules.includes(module.id) ? (
+                <ChevronDown size={18} className="text-[var(--text-secondary)]" />
+              ) : (
+                <ChevronRight size={18} className="text-[var(--text-secondary)]" />
+              )}
+            </button>
+
+            <AnimatePresence>
+              {expandedModules.includes(module.id) && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="overflow-hidden bg-black/5"
+                >
+                  {module.lessons.map((lesson) => {
+                    const pct = progressPercent(progressByLesson[lesson.id]);
+                    const done = isLessonPlaybackComplete(progressByLesson[lesson.id]);
+                    return (
+                      <button
+                        key={lesson.id}
+                        type="button"
+                        onClick={() => selectLesson(lesson)}
+                        className={`flex w-full flex-col gap-1.5 p-4 pl-12 text-left text-sm transition-colors hover:bg-[var(--hover-bg)] ${currentLesson.id === lesson.id ? 'bg-orange-500/10 text-orange-500' : 'text-[var(--text-secondary)]'}`}
+                      >
+                        <div className="flex min-w-0 items-center gap-3">
+                          {currentLesson.id === lesson.id ? (
+                            <Play size={14} fill="currentColor" className="shrink-0" />
+                          ) : done ? (
+                            <CheckCircle2 size={14} className="shrink-0 text-orange-500/80" />
+                          ) : (
+                            <CheckCircle2 size={14} className="shrink-0 text-gray-600" />
+                          )}
+                          <span className="min-w-0 flex-1 truncate font-medium">{lesson.title}</span>
+                          <span className="shrink-0 text-xs opacity-60">{lessonDurationLabel(lesson)}</span>
+                        </div>
+                        <div className="flex w-full items-center gap-2 pl-7">
+                          <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--hover-bg)]">
+                            <div
+                              className="h-full rounded-full bg-orange-500 transition-[width] duration-300"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <span className="w-9 shrink-0 text-right text-[10px] tabular-nums text-[var(--text-muted)]">
+                            {pct}%
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+
+  /** Mobile portrait: same 16:9 stage as native video so web / link lessons align with video lessons. */
+  const blockedPlaybackPortraitStage =
+    'max-lg:portrait:aspect-video max-lg:portrait:w-full max-lg:portrait:shrink-0 max-lg:portrait:bg-[var(--bg-secondary)]';
+
   return (
     <div
-      className={`min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] flex flex-col lg:flex-row transition-[padding-top,colors] duration-300 ease-out ${immersiveLayout ? 'pt-0' : 'pt-16'}`}
+      className={`min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] flex flex-col lg:flex-row transition-[padding-top,colors] duration-300 ease-out ${
+        isQuizLessonRow
+          ? 'max-lg:min-h-0 max-lg:pb-[env(safe-area-inset-bottom,0px)]'
+          : 'max-lg:portrait:min-h-0 max-lg:portrait:h-[100dvh] max-lg:portrait:overflow-hidden'
+      } lg:items-start ${immersiveLayout ? 'pt-0' : 'pt-16'}`}
     >
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div
+        className={`flex min-h-0 min-w-0 flex-1 flex-col lg:min-h-0 ${
+          isQuizLessonRow
+            ? 'max-lg:min-h-0 max-lg:overflow-visible'
+            : `${immersiveLayout ? 'max-lg:portrait:max-h-[100dvh]' : 'max-lg:portrait:max-h-[calc(100dvh-4rem)]'} max-lg:portrait:min-h-0 max-lg:portrait:overflow-hidden max-lg:portrait:flex max-lg:portrait:flex-col`
+        }`}
+      >
         <div
           ref={videoAreaRef}
           data-skillstream-video-area
-          className={`aspect-video touch-manipulation bg-black relative group max-lg:landscape:aspect-auto ${landscapeVideoH} max-lg:landscape:w-full max-lg:landscape:shrink-0 max-lg:landscape:transition-[height,min-height] max-lg:landscape:duration-300 max-lg:landscape:ease-out ${!showTopControls && !mediaPaused ? 'cursor-none' : ''}`}
+          className={`touch-manipulation relative group max-lg:landscape:aspect-auto ${landscapeVideoH} max-lg:landscape:w-full max-lg:landscape:shrink-0 max-lg:landscape:transition-[height,min-height] max-lg:landscape:duration-300 max-lg:landscape:ease-out ${
+            blocksVideoPlayback
+              ? isQuizLessonRow
+                ? 'max-lg:min-h-0 max-lg:h-auto max-lg:w-full max-lg:flex-none max-lg:shrink-0 max-lg:bg-[var(--bg-secondary)] lg:aspect-video lg:min-h-0 lg:bg-black'
+                : `${blockedPlaybackPortraitStage} lg:aspect-video lg:bg-black`
+              : 'aspect-video bg-black'
+          } ${!showTopControls && !mediaPaused && !blocksVideoPlayback ? 'cursor-none' : ''} ${
+            !isQuizLessonRow ? 'max-lg:portrait:shrink-0' : ''
+          }`}
         >
           <div
             className={`absolute inset-0 overflow-hidden ${youtubeEmbedUrl ? 'z-[1]' : 'hidden'} ${blockPlayerPointerWhilePaused && youtubeEmbedUrl ? 'pointer-events-none' : ''}`}
@@ -2343,7 +2598,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
           ) : null}
 
           {isQuizLessonRow && quizDefinition ? (
-            <div className="absolute inset-0 z-[25] flex min-h-0 flex-col overflow-hidden bg-[var(--bg-secondary)]">
+            <div className="relative z-[25] flex min-h-0 w-full flex-col bg-[var(--bg-secondary)] lg:absolute lg:inset-0 lg:overflow-hidden">
               <CourseQuizPanel
                 courseId={course.id}
                 courseTitle={course.title}
@@ -2352,6 +2607,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                 user={user ?? null}
                 onMarkComplete={handleWebLessonMarkDone}
                 onGoToNextLesson={handleQuizGoToNextLesson}
+                omitLessonAbout
               />
             </div>
           ) : isQuizKindLesson ? (
@@ -2460,29 +2716,31 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
             </div>
           )}
 
-          <div className="pointer-events-none absolute inset-x-0 top-0 z-40 flex justify-between gap-4 px-4 pt-4 transition-[padding] duration-300 ease-out max-lg:px-2 max-lg:pt-2 lg:px-4 lg:pt-4">
-            <div
-              className={`flex w-full items-start justify-end gap-4 transition-opacity duration-200 ease-out ${
-                showTopControls ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
-              }`}
-            >
-              <label className="flex shrink-0 cursor-pointer select-none items-center gap-1.5 rounded-full bg-black/50 px-3 py-1.5 text-white backdrop-blur-sm transition-[padding,gap] duration-300 ease-out max-lg:gap-1 max-lg:px-2 max-lg:py-1 max-lg:shadow-none lg:gap-2 lg:px-3 lg:py-1.5">
-                <span className="text-xs max-lg:text-[10px] max-lg:leading-none lg:leading-normal">Auto-next (videos)</span>
-                <input
-                  type="checkbox"
-                  className="peer sr-only"
-                  checked={autoAdvance}
-                  onChange={(e) => setAutoAdvance(e.target.checked)}
-                />
-                <span
-                  className="relative inline-flex h-6 w-11 shrink-0 rounded-full bg-white/20 transition-[width,height,transform] duration-300 ease-out peer-checked:bg-orange-500 peer-focus-visible:ring-2 peer-focus-visible:ring-orange-400 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-black peer-checked:[&>span]:translate-x-5 max-lg:h-5 max-lg:w-9 max-lg:peer-checked:[&>span]:translate-x-4 max-lg:peer-focus-visible:ring-offset-0"
-                  aria-hidden
-                >
-                  <span className="pointer-events-none absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform duration-300 ease-out max-lg:top-px max-lg:left-px max-lg:h-4 max-lg:w-4" />
-                </span>
-              </label>
+          {!blocksVideoPlayback ? (
+            <div className="pointer-events-none absolute inset-x-0 top-0 z-40 flex justify-between gap-4 px-4 pt-4 transition-[padding] duration-300 ease-out max-lg:px-2 max-lg:pt-2 lg:px-4 lg:pt-4">
+              <div
+                className={`flex w-full items-start justify-end gap-4 transition-opacity duration-200 ease-out ${
+                  showTopControls ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
+                }`}
+              >
+                <label className="flex shrink-0 cursor-pointer select-none items-center gap-1.5 rounded-full bg-black/50 px-3 py-1.5 text-white backdrop-blur-sm transition-[padding,gap] duration-300 ease-out max-lg:gap-1 max-lg:px-2 max-lg:py-1 max-lg:shadow-none lg:gap-2 lg:px-3 lg:py-1.5">
+                  <span className="text-xs max-lg:text-[10px] max-lg:leading-none lg:leading-normal">Auto-next (videos)</span>
+                  <input
+                    type="checkbox"
+                    className="peer sr-only"
+                    checked={autoAdvance}
+                    onChange={(e) => setAutoAdvance(e.target.checked)}
+                  />
+                  <span
+                    className="relative inline-flex h-6 w-11 shrink-0 rounded-full bg-white/20 transition-[width,height,transform] duration-300 ease-out peer-checked:bg-orange-500 peer-focus-visible:ring-2 peer-focus-visible:ring-orange-400 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-black peer-checked:[&>span]:translate-x-5 max-lg:h-5 max-lg:w-9 max-lg:peer-checked:[&>span]:translate-x-4 max-lg:peer-focus-visible:ring-offset-0"
+                    aria-hidden
+                  >
+                    <span className="pointer-events-none absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform duration-300 ease-out max-lg:top-px max-lg:left-px max-lg:h-4 max-lg:w-4" />
+                  </span>
+                </label>
+              </div>
             </div>
-          </div>
+          ) : null}
 
           {youtubeEmbedUrl && (
             <div className="pointer-events-none absolute inset-x-0 bottom-0 z-40 bg-gradient-to-t from-black/70 to-transparent px-4 pb-3 pt-8 transition-[padding] duration-300 ease-out max-lg:portrait:px-3 max-lg:portrait:pb-2.5 max-lg:portrait:pt-6 max-lg:landscape:px-2 max-lg:landscape:pb-2 max-lg:landscape:pt-4">
@@ -2716,92 +2974,67 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
           )}
         </div>
 
-          <div className="p-8 max-w-4xl">
-            <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-4">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <h1 className="text-3xl font-bold text-[var(--text-primary)]">{currentLesson.title}</h1>
-                  {isWebLessonRow ? (
-                    <span className="rounded-full border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">
-                      External page
-                    </span>
-                  ) : isQuizKindLesson ? (
-                    <span className="rounded-full border border-orange-500/30 bg-orange-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-orange-500">
-                      Quiz
-                    </span>
-                  ) : (
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
-                        customVideoUrl
-                          ? 'border border-orange-500/20 bg-orange-500/10 text-orange-500'
-                          : 'border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-secondary)]'
-                      }`}
-                    >
-                      {customVideoUrl ? 'Your version' : 'Default'}
-                    </span>
-                  )}
-                </div>
-                <p className="text-[var(--text-secondary)] text-sm">
-                  {currentModule?.title} • {lessonDurationLabel(currentLesson)}
-                </p>
-              </div>
-              
-              <div className="flex items-center gap-2">
-                {!blocksVideoPlayback ? (
-                  <>
-                    <button
-                      onClick={() => setIsCustomizeModalOpen(true)}
-                      className="flex items-center gap-2 rounded-full border border-[var(--border-color)] px-4 py-2 text-sm font-bold text-[var(--text-primary)] transition-all hover:bg-[var(--hover-bg)]"
-                    >
-                      <Settings2 size={18} />
-                      Customize
-                    </button>
+        {isQuizLessonRow ? (
+          <div className="mx-auto w-full max-w-4xl min-w-0 shrink-0 border-t border-[var(--border-color)] bg-[var(--bg-primary)] px-4 pt-2 pb-3 sm:px-5 sm:pt-3 sm:pb-4 lg:hidden">
+            {lessonContextChipsRow}
+            <div className="min-w-0">{lessonAboutMobileDetails}</div>
+          </div>
+        ) : null}
 
-                    <div className="mx-1 h-8 w-[1px] bg-[var(--border-color)]" />
-                  </>
-                ) : null}
+        {isQuizLessonRow ? (
+          <aside
+            className="min-h-0 w-full shrink-0 border-t border-[var(--border-color)] bg-[var(--bg-secondary)] max-lg:overflow-visible lg:hidden"
+            aria-label="Course outline"
+          >
+            {courseOutlineBody}
+          </aside>
+        ) : null}
 
-                <button
-                  onClick={() => handleVote('up')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-full border transition-all ${
-                    userVote === 'up' 
-                      ? 'bg-orange-500 border-orange-500 text-white' 
-                      : 'border-[var(--border-color)] text-[var(--text-secondary)] hover:border-orange-500/50'
-                  }`}
-                >
-                  <ThumbsUp size={18} />
-                  <span className="text-sm font-bold">{upvotes}</span>
-                </button>
-                <button
-                  onClick={() => {
-                    if (hasActiveUserReport) {
-                      setReportMode('recall');
-                      setIsReportModalOpen(true);
-                      return;
-                    }
-                    setReportMode('create');
-                    setIsReportModalOpen(true);
-                    setReportStep(1);
-                    setSelectedReportReason(null);
-                    setReportDetails('');
-                  }}
-                  disabled={isRecallingReport}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-full border transition-all ${
-                    hasActiveUserReport
-                      ? 'bg-red-500 border-red-500 text-white' 
-                      : 'border-[var(--border-color)] text-[var(--text-secondary)] hover:border-red-500/50'
-                  } ${isRecallingReport ? 'opacity-60 cursor-not-allowed' : ''}`}
-                  title={hasActiveUserReport ? 'Click to recall your report' : 'Report an issue'}
-                >
-                  <Flag size={18} />
-                  <span className="text-sm font-bold">
-                    {isRecallingReport ? 'Recalling...' : hasActiveUserReport ? 'Reported' : 'Report'}
-                  </span>
-                </button>
-              </div>
+        <div
+          className={
+            isQuizLessonRow
+              ? 'contents'
+              : 'max-lg:portrait:flex max-lg:portrait:min-h-0 max-lg:portrait:w-full max-lg:portrait:flex-1 max-lg:portrait:flex-col max-lg:portrait:overflow-y-auto max-lg:portrait:overscroll-y-contain lg:contents'
+          }
+        >
+          <div
+            className={`w-full max-w-4xl min-w-0 px-2.5 py-2 sm:px-4 sm:py-3 lg:px-5 lg:py-4 ${isQuizKindLesson ? 'max-lg:hidden' : ''}`}
+          >
+            {isQuizKindLesson ? (
+              <>
+                <details className="group mb-4 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] lg:hidden">
+                  <summary className="flex min-h-11 w-full cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 touch-manipulation [&::-webkit-details-marker]:hidden">
+                    <span className="min-w-0 pr-2 text-left text-sm font-semibold text-[var(--text-primary)]">
+                      Lesson details, vote &amp; about
+                    </span>
+                    <ChevronDown
+                      size={18}
+                      className="shrink-0 text-[var(--text-muted)] transition-transform duration-200 group-open:rotate-180"
+                      aria-hidden
+                    />
+                  </summary>
+                  <div className="border-t border-[var(--border-color)]/60 px-3 pb-4 pt-4 sm:px-4">
+                    {lessonPlayerFullMeta}
+                  </div>
+                </details>
+                <div className="hidden lg:block">{lessonPlayerFullMeta}</div>
+              </>
+            ) : (
+              lessonPlayerFullMeta
+            )}
+          </div>
+
+          {!isQuizLessonRow ? (
+            <div
+              className="min-w-0 w-full border-t border-[var(--border-color)] bg-[var(--bg-secondary)] lg:hidden"
+              aria-label="Course content"
+            >
+              {courseOutlineBody}
             </div>
+          ) : null}
+        </div>
 
-            <AnimatePresence>
+        <AnimatePresence>
               {isCustomizeModalOpen && (
                 <div
                   className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
@@ -3235,107 +3468,16 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                 </div>
               )}
             </AnimatePresence>
-
-            <div className="flex flex-wrap items-center gap-4 text-[var(--text-secondary)] text-sm mb-8">
-            <span className="bg-[var(--hover-bg)] px-2 py-1 rounded">Lesson {currentLesson.id}</span>
-            <span>{lessonDurationLabel(currentLesson)}</span>
-            <span className="text-orange-500 font-semibold">{course.title}</span>
-          </div>
-
-          <div className="prose prose-invert max-w-none">
-            <h2 className="text-xl font-semibold mb-1 text-[var(--text-primary)]">About this lesson</h2>
-            {currentModule && (
-              <p className="text-sm font-medium text-[var(--text-primary)] mb-2 not-prose">
-                Section: <span className="text-orange-500">{currentModule.title}</span>
-              </p>
-            )}
-            <p
-              key={currentLesson.id}
-              className="text-[var(--text-secondary)] leading-relaxed not-prose mb-0"
-            >
-              {currentLesson.about ?? aboutFallback}
-            </p>
-          </div>
         </div>
-      </div>
 
-      <div
-        className={`w-full lg:w-[400px] border-l border-[var(--border-color)] bg-[var(--bg-secondary)] overflow-y-auto transition-colors duration-300 ${immersiveLayout ? 'max-h-[100dvh]' : 'max-h-[calc(100dvh-4rem)]'}`}
+      <aside
+        className={`hidden w-full shrink-0 flex-col overflow-y-auto border-[var(--border-color)] bg-[var(--bg-secondary)] transition-colors duration-300 lg:flex lg:w-[400px] lg:min-w-0 lg:border-l lg:self-start lg:sticky ${
+          immersiveLayout ? 'lg:top-0 lg:max-h-[100dvh]' : 'lg:top-16 lg:max-h-[calc(100dvh-4rem)]'
+        }`}
+        aria-label="Course content"
       >
-        <div className="p-6 border-b border-[var(--border-color)]">
-          <h2 className="font-bold text-lg text-[var(--text-primary)]">Course Content</h2>
-          <div className="text-sm text-[var(--text-secondary)] mt-1">
-            {course.modules.length} modules • {course.modules.reduce((acc, m) => acc + m.lessons.length, 0)} lessons
-          </div>
-        </div>
-
-        <div className="divide-y divide-[var(--border-color)]">
-          {course.modules.map((module, idx) => (
-            <div key={module.id} className="flex flex-col">
-              <button
-                onClick={() => toggleModule(module.id)}
-                className="flex items-center justify-between p-4 hover:bg-[var(--hover-bg)] transition-colors text-left"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="text-[var(--text-secondary)] font-mono text-sm">{String(idx + 1).padStart(2, '0')}</span>
-                  <span className="font-semibold text-sm text-[var(--text-primary)]">{module.title}</span>
-                </div>
-                {expandedModules.includes(module.id) ? (
-                  <ChevronDown size={18} className="text-[var(--text-secondary)]" />
-                ) : (
-                  <ChevronRight size={18} className="text-[var(--text-secondary)]" />
-                )}
-              </button>
-
-              <AnimatePresence>
-                {expandedModules.includes(module.id) && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    className="overflow-hidden bg-black/5"
-                  >
-                    {module.lessons.map((lesson) => {
-                      const pct = progressPercent(progressByLesson[lesson.id]);
-                      const done = isLessonPlaybackComplete(progressByLesson[lesson.id]);
-                      return (
-                        <button
-                          key={lesson.id}
-                          onClick={() => selectLesson(lesson)}
-                          className={`flex w-full flex-col gap-1.5 p-4 pl-12 text-left text-sm transition-colors hover:bg-[var(--hover-bg)] ${currentLesson.id === lesson.id ? 'bg-orange-500/10 text-orange-500' : 'text-[var(--text-secondary)]'}`}
-                        >
-                          <div className="flex min-w-0 items-center gap-3">
-                            {currentLesson.id === lesson.id ? (
-                              <Play size={14} fill="currentColor" className="shrink-0" />
-                            ) : done ? (
-                              <CheckCircle2 size={14} className="shrink-0 text-orange-500/80" />
-                            ) : (
-                              <CheckCircle2 size={14} className="shrink-0 text-gray-600" />
-                            )}
-                            <span className="min-w-0 flex-1 truncate font-medium">{lesson.title}</span>
-                            <span className="shrink-0 text-xs opacity-60">{lessonDurationLabel(lesson)}</span>
-                          </div>
-                          <div className="flex w-full items-center gap-2 pl-7">
-                            <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--hover-bg)]">
-                              <div
-                                className="h-full rounded-full bg-orange-500 transition-[width] duration-300"
-                                style={{ width: `${pct}%` }}
-                              />
-                            </div>
-                            <span className="w-9 shrink-0 text-right text-[10px] tabular-nums text-[var(--text-muted)]">
-                              {pct}%
-                            </span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          ))}
-        </div>
-      </div>
+        {courseOutlineBody}
+      </aside>
     </div>
   );
 };
