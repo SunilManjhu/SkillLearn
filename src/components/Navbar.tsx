@@ -415,7 +415,11 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           <button 
             ref={el => navItemsRef.current[4] = el}
-            onClick={() => onNavigate('contact')}
+            onClick={() => {
+              setOpenDropdown(null);
+              setFocusedItemIndex(-1);
+              onNavigate('contact');
+            }}
             onKeyDown={(e) => handleTopLevelKeyDown(e, 4)}
             tabIndex={focusedNavIndex === 4 ? 0 : -1}
             className={`hover:text-[var(--text-primary)] transition-colors h-16 focus:outline-none focus:text-[var(--text-primary)] ${activeView === 'contact' ? 'text-orange-500 border-b-2 border-orange-500' : 'text-[var(--text-secondary)]'}`}
@@ -814,6 +818,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 onClick={() => {
                   onNavigate('contact');
                   setMobileMenuOpen(false);
+                  setMobileNavExpand(null);
                 }}
               >
                 Contact Us
