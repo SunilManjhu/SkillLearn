@@ -122,6 +122,9 @@ function parseSlide(raw: unknown): HeroPhoneAdSlideStored | null {
     slideDurationSec = r;
   }
 
+  const enabledRaw = o.enabled;
+  if (enabledRaw != null && typeof enabledRaw !== 'boolean') return null;
+
   return {
     id,
     gradientPreset: gp,
@@ -129,6 +132,7 @@ function parseSlide(raw: unknown): HeroPhoneAdSlideStored | null {
     ...(linkUrl != null ? { linkUrl } : {}),
     ...(linkLabel != null && linkUrl != null ? { linkLabel } : {}),
     ...(slideDurationSec != null ? { slideDurationSec } : {}),
+    ...(enabledRaw === false ? { enabled: false } : {}),
     blocks,
   };
 }
@@ -164,7 +168,9 @@ function parseDocument(
 export function resolvedRailSlidesFromDoc(data: Record<string, unknown> | undefined): PhoneMockupAdSlide[] {
   const parsed = parseDocument(data);
   if (!parsed || !parsed.enabled) return DEFAULT_HERO_PHONE_AD_SLIDES;
-  return parsed.slides.map((s) => storedSlideToRailSlide(s, parsed.defaultSlideDurationSec));
+  const activeSlides = parsed.slides.filter((s) => s.enabled !== false);
+  if (activeSlides.length === 0) return DEFAULT_HERO_PHONE_AD_SLIDES;
+  return activeSlides.map((s) => storedSlideToRailSlide(s, parsed.defaultSlideDurationSec));
 }
 
 export function subscribeHeroPhoneAdsForPublic(
@@ -252,6 +258,7 @@ export async function saveHeroPhoneAdsAsAdmin(input: {
           ...(typeof sd === 'number' && Number.isFinite(sd)
             ? { slideDurationSec: Math.min(120, Math.max(0, Math.round(sd))) }
             : {}),
+          ...(s.enabled === false ? { enabled: false } : {}),
           blocks: s.blocks.map(serializeBlockForFirestore),
         };
       }),

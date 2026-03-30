@@ -42,6 +42,8 @@ export interface HeroPhoneAdSlideStored {
   linkLabel?: string;
   /** If set (including 0), overrides document default; 0 = no auto-advance on this slide. */
   slideDurationSec?: number;
+  /** Omit or `true`: slide is shown when site hero ads are enabled. `false`: hidden from learners (still in draft). */
+  enabled?: boolean;
   blocks: HeroAdBlockStored[];
 }
 

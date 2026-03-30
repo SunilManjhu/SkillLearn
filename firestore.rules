@@ -605,12 +605,13 @@ service cloud.firestore {
     function isValidHeroPhoneAdSlideBlocks(s) {
       return s is map &&
         s.keys().hasAll(['id', 'gradientPreset', 'blocks']) &&
-        s.keys().hasOnly(['id', 'gradientPreset', 'blocks', 'label', 'linkUrl', 'linkLabel', 'slideDurationSec']) &&
+        s.keys().hasOnly(['id', 'gradientPreset', 'blocks', 'label', 'linkUrl', 'linkLabel', 'slideDurationSec', 'enabled']) &&
         s.id is string && s.id.size() > 0 && s.id.size() < 120 &&
         s.gradientPreset in ['sky_indigo', 'violet_fuchsia', 'emerald_teal', 'rose_orange', 'amber_stone', 'cyan_blue'] &&
         validHeroPhoneBlocksList(s.blocks) &&
         heroPhoneSlideLinksValid(s) &&
-        (!('slideDurationSec' in s) || heroPhoneDurationSeconds(s.slideDurationSec));
+        (!('slideDurationSec' in s) || heroPhoneDurationSeconds(s.slideDurationSec)) &&
+        (!('enabled' in s) || s.enabled is bool);
     }
 
     function isValidHeroPhoneAdSlide(s) {

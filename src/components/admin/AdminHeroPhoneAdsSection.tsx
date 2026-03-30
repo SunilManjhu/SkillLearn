@@ -6,6 +6,7 @@ import {
   ChevronUp,
   ImagePlus,
   Megaphone,
+  Minus,
   Plus,
   RotateCcw,
   Timer,
@@ -15,6 +16,7 @@ import {
 } from 'lucide-react';
 import { PhoneMockupAdRail } from '../PhoneMockupAdRail';
 import {
+  DEFAULT_HERO_PHONE_AD_SLIDES,
   HERO_AD_IMAGE_FIT_OPTIONS,
   HERO_PHONE_AD_GRADIENT_PRESET_OPTIONS,
   HERO_PHONE_AD_MAX_AUTO_SEC,
@@ -51,7 +53,8 @@ function heroSlideCollapsedSummary(s: HeroPhoneAdSlideStored): { title: string; 
   const grad =
     HERO_PHONE_AD_GRADIENT_PRESET_OPTIONS.find((o) => o.value === s.gradientPreset)?.label ??
     s.gradientPreset;
-  const subtitle = `${s.blocks.length} block${s.blocks.length === 1 ? '' : 's'} · ${grad}`;
+  const off = s.enabled === false ? ' · Hidden' : '';
+  const subtitle = `${s.blocks.length} block${s.blocks.length === 1 ? '' : 's'} · ${grad}${off}`;
   return { title, subtitle };
 }
 
@@ -71,6 +74,24 @@ function cloneBlocks(blocks: HeroAdBlockStored[]): HeroAdBlockStored[] {
   });
 }
 
+/** Single-slide UX: Ads (global) off → Show (per slide) off and locked; Ads on → Show on and locked. */
+function normalizeHeroSlidesForAdsState(
+  slides: HeroPhoneAdSlideStored[],
+  adsEnabled: boolean
+): HeroPhoneAdSlideStored[] {
+  if (slides.length !== 1) return slides;
+  const s = slides[0];
+  if (!s) return slides;
+  if (!adsEnabled) {
+    if (s.enabled === false) return slides;
+    return [{ ...s, enabled: false }];
+  }
+  if (s.enabled === false) {
+    return [{ ...s, enabled: true }];
+  }
+  return slides;
+}
+
 function cloneStoredSlides(s: HeroPhoneAdSlideStored[]): HeroPhoneAdSlideStored[] {
   return s.map((x) => ({
     id: x.id,
@@ -82,11 +103,13 @@ function cloneStoredSlides(s: HeroPhoneAdSlideStored[]): HeroPhoneAdSlideStored[
     ...(typeof x.slideDurationSec === 'number' && Number.isFinite(x.slideDurationSec)
       ? { slideDurationSec: x.slideDurationSec }
       : {}),
+    ...(x.enabled === false ? { enabled: false } : {}),
   }));
 }
 
+/** Compare persisted-shaped slides so e.g. explicit `enabled: true` matches omitted (shown) slide flag. */
 function slidesEqual(a: HeroPhoneAdSlideStored[], b: HeroPhoneAdSlideStored[]): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
+  return JSON.stringify(cloneStoredSlides(a)) === JSON.stringify(cloneStoredSlides(b));
 }
 
 function newSlideId(): string {
@@ -125,6 +148,9 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
   );
   const [draftDefaultSec, setDraftDefaultSec] = useState(0);
   const [savedDefaultSec, setSavedDefaultSec] = useState(0);
+  /** Text in AutoView field — separate from `draftDefaultSec` so typing (e.g. "12") is not forced through `0` / leading zeros. */
+  const [autoViewSecText, setAutoViewSecText] = useState('0');
+  const autoViewSecInputRef = useRef<HTMLInputElement | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -136,8 +162,9 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
       setDraftDefaultSec(def);
       setSavedDefaultSec(def);
       const cl = cloneStoredSlides(doc.slides);
-      setDraftSlides(cl);
-      setSavedSlides(cl);
+      const normalized = normalizeHeroSlidesForAdsState(cl, doc.enabled);
+      setDraftSlides(normalized);
+      setSavedSlides(cloneStoredSlides(normalized));
     } else {
       const seed = cloneStoredSlides(INITIAL_STORED_HERO_PHONE_ADS);
       setEnabled(false);
@@ -153,6 +180,15 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (autoViewSecInputRef.current === document.activeElement) return;
+    setAutoViewSecText(String(draftDefaultSec));
+  }, [draftDefaultSec]);
+
+  useEffect(() => {
+    setDraftSlides((prev) => normalizeHeroSlidesForAdsState(prev, enabled));
+  }, [enabled, draftSlides.length]);
 
   const dirty = useMemo(
     () =>
@@ -201,9 +237,15 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
     setExpandedSlideId(null);
   }, []);
 
-  const previewSlides = useMemo(
-    () => draftSlides.map((s) => storedSlideToRailSlide(s, draftDefaultSec)),
-    [draftSlides, draftDefaultSec]
+  const previewSlides = useMemo(() => {
+    const active = draftSlides.filter((s) => s.enabled !== false);
+    const mapped = active.map((s) => storedSlideToRailSlide(s, draftDefaultSec));
+    return mapped.length > 0 ? mapped : DEFAULT_HERO_PHONE_AD_SLIDES;
+  }, [draftSlides, draftDefaultSec]);
+
+  const enabledSlideCount = useMemo(
+    () => draftSlides.filter((s) => s.enabled !== false).length,
+    [draftSlides]
   );
 
   const updateSlide = (slideIndex: number, patch: Partial<HeroPhoneAdSlideStored>) => {
@@ -348,15 +390,30 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
           { kind: 'text', style: 'headline', content: 'New headline' },
           { kind: 'text', style: 'body', content: 'Short promo copy for learners.' },
         ],
+        ...(cur.enabled === false ? { enabled: false } : {}),
       };
       return next;
     });
   };
 
+  const bumpDefaultSec = useCallback((delta: -1 | 1) => {
+    setDraftDefaultSec((v) => {
+      const n = Math.round(Number(v));
+      const base = Number.isFinite(n) ? n : 0;
+      const next = Math.min(HERO_PHONE_AD_MAX_AUTO_SEC, Math.max(0, base + delta));
+      setAutoViewSecText(String(next));
+      return next;
+    });
+  }, []);
+
   const validateBeforeSave = (): boolean => {
     const def = Math.round(draftDefaultSec);
     if (!Number.isFinite(def) || def < 0 || def > HERO_PHONE_AD_MAX_AUTO_SEC) {
       showActionToast(`Default duration must be 0–${HERO_PHONE_AD_MAX_AUTO_SEC} seconds.`, 'danger');
+      return false;
+    }
+    if (enabled && !draftSlides.some((s) => s.enabled !== false)) {
+      showActionToast('Enable at least one slide, or turn Ads (global) off.', 'danger');
       return false;
     }
     for (const s of draftSlides) {
@@ -445,6 +502,7 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
         ...(typeof s.slideDurationSec === 'number' && Number.isFinite(s.slideDurationSec)
           ? { slideDurationSec: s.slideDurationSec }
           : {}),
+        ...(s.enabled === false ? { enabled: false } : {}),
         blocks: cloneBlocks(s.blocks),
       })),
     });
@@ -462,9 +520,10 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
   const handleDiscard = () => {
     setEnabled(savedEnabled);
     setDraftDefaultSec(savedDefaultSec);
+    setAutoViewSecText(String(savedDefaultSec));
     const next = cloneStoredSlides(savedSlides);
     setDraftSlides(next);
-    setExpandedSlideId(next[0]?.id ?? null);
+    setExpandedSlideId((prev) => (prev != null && next.some((s) => s.id === prev) ? prev : null));
   };
 
   const handleResetSlidesToBundledDefaults = () => {
@@ -480,111 +539,172 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
   }
 
   return (
-    <div className="space-y-6">
-      <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:p-6">
-        <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-2">
-          <h2 className="flex items-center gap-2 text-lg font-bold text-[var(--text-primary)]">
-            <Megaphone size={20} className="text-orange-500" aria-hidden />
-            Home hero — phone ads
-          </h2>
-          <AdminLabelInfoTip
-            controlOnly
-            tipId="hero-ads-tip-section"
-            tipRegionAriaLabel="Home hero phone ads overview"
-            tipSubject="home hero phone ads"
-          >
-            <li>
-              Custom cards show on the <strong className="font-semibold text-[var(--text-secondary)]">home hero</strong>{' '}
-              mockup when <strong className="font-semibold text-[var(--text-secondary)]">Use custom ads</strong> is on
-              and you save.
-            </li>
-            <li>
-              Turn custom ads <strong className="font-semibold text-[var(--text-secondary)]">off</strong> to show
-              default sample content—your draft below is kept.
-            </li>
-          </AdminLabelInfoTip>
-        </div>
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3 sm:p-5">
+        <div className="mb-3 flex flex-col gap-3 lg:mb-4 lg:flex-row lg:items-center lg:justify-between lg:gap-6">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 lg:min-w-0 lg:flex-1">
+            <h2 className="flex items-center gap-2 text-base font-bold text-[var(--text-primary)] sm:text-lg">
+              <Megaphone size={18} className="shrink-0 text-orange-500 sm:size-5" aria-hidden />
+              Home hero — phone ads
+            </h2>
+            <AdminLabelInfoTip
+              controlOnly
+              tipId="hero-ads-tip-section"
+              tipRegionAriaLabel="Home hero phone ads overview"
+              tipSubject="home hero phone ads"
+            >
+              <li>
+                Custom cards show on the <strong className="font-semibold text-[var(--text-secondary)]">home hero</strong>{' '}
+                mockup when <strong className="font-semibold text-[var(--text-secondary)]">Ads (global)</strong> is on and
+                you save.
+              </li>
+              <li>
+                Turn <strong className="font-semibold text-[var(--text-secondary)]">Ads (global)</strong>{' '}
+                <strong className="font-semibold text-[var(--text-secondary)]">off</strong> to show default sample
+                content—your draft below is kept.
+              </li>
+            </AdminLabelInfoTip>
+          </div>
 
-        <div className="mb-4 flex flex-col gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-4 sm:flex-row sm:items-end sm:gap-4">
-          <div className="flex min-w-0 flex-1 items-start gap-2">
-            <Timer size={18} className="mt-1.5 shrink-0 text-orange-500" aria-hidden />
-            <div className="min-w-0 flex-1 space-y-1">
-              <AdminLabelInfoTip
-                htmlFor="hero-ad-default-sec"
-                label="Default auto-advance (seconds)"
-                tipId="hero-ads-tip-default-sec"
-                tipRegionAriaLabel="Default auto-advance tips"
-                tipSubject="default auto-advance"
-              >
-                <li>
-                  <strong className="font-semibold text-[var(--text-secondary)]">0</strong> = swipe only (no timer).
-                </li>
-                <li>Non-zero: the hero carousel advances each slide after that many seconds.</li>
-                <li>Per-slide overrides below when set.</li>
-                <li>
-                  Respects <strong className="font-semibold text-[var(--text-secondary)]">reduced motion</strong> (no
-                  auto-advance).
-                </li>
-              </AdminLabelInfoTip>
+          {/* AutoView + Ads (global): full-width on small screens; compact inline toolbar on lg+ */}
+          <div className="min-w-0 w-full shrink-0 lg:w-auto">
+            <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 sm:px-4 sm:py-3 lg:rounded-lg lg:px-3 lg:py-1.5">
+              <div className="flex min-h-11 flex-nowrap items-center gap-1.5 overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch] sm:gap-3 sm:overflow-visible lg:min-h-9 lg:gap-2">
+                <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2 lg:flex-none lg:gap-2">
+                  <Timer
+                    size={16}
+                    className="size-4 shrink-0 text-orange-500 sm:size-[18px] lg:size-4"
+                    aria-hidden
+                  />
+                  <div className="min-w-0 [&>div]:flex-nowrap [&>div]:gap-x-1 lg:[&>div]:gap-x-0.5">
+                    <AdminLabelInfoTip
+                      htmlFor="hero-ad-default-sec"
+                      label="AutoView"
+                      labelClassName="whitespace-nowrap text-xs font-semibold text-[var(--text-secondary)] sm:text-sm lg:text-xs lg:font-semibold"
+                      tipId="hero-ads-tip-default-sec"
+                      tipRegionAriaLabel="AutoView tips"
+                      tipSubject="AutoView"
+                    >
+                      <li>
+                        <strong className="font-semibold text-[var(--text-secondary)]">0</strong> = swipe only (no timer).
+                      </li>
+                      <li>Non-zero: the hero carousel advances each slide after that many seconds.</li>
+                      <li>Per-slide overrides below when set.</li>
+                      <li>
+                        Respects <strong className="font-semibold text-[var(--text-secondary)]">reduced motion</strong>{' '}
+                        (no auto-advance).
+                      </li>
+                    </AdminLabelInfoTip>
+                  </div>
+                  <div
+                    className="inline-flex shrink-0 overflow-hidden rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] lg:rounded-md"
+                    role="group"
+                    aria-label="AutoView seconds"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => bumpDefaultSec(-1)}
+                      disabled={draftDefaultSec <= 0}
+                      className="inline-flex min-h-10 min-w-11 touch-manipulation items-center justify-center border-r border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:pointer-events-none disabled:opacity-35 lg:h-8 lg:min-h-8 lg:min-w-9"
+                      aria-label="Decrease AutoView seconds by one"
+                    >
+                      <Minus size={18} className="shrink-0 lg:size-4" aria-hidden />
+                    </button>
+                    <input
+                      ref={autoViewSecInputRef}
+                      id="hero-ad-default-sec"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      value={autoViewSecText}
+                      aria-label="AutoView: seconds between slides; 0 means swipe only"
+                      aria-valuemin={0}
+                      aria-valuemax={HERO_PHONE_AD_MAX_AUTO_SEC}
+                      aria-valuenow={draftDefaultSec}
+                      onChange={(e) => {
+                        const digits = e.target.value.replace(/\D/g, '');
+                        if (digits === '') {
+                          setAutoViewSecText('');
+                          setDraftDefaultSec(0);
+                          return;
+                        }
+                        const n = parseInt(digits, 10);
+                        if (!Number.isFinite(n)) return;
+                        const c = Math.min(HERO_PHONE_AD_MAX_AUTO_SEC, Math.max(0, n));
+                        setDraftDefaultSec(c);
+                        setAutoViewSecText(String(c));
+                      }}
+                      onBlur={() => {
+                        setAutoViewSecText(String(draftDefaultSec));
+                      }}
+                      className="min-h-10 w-[4.75rem] border-0 bg-[var(--bg-secondary)] px-2 py-1.5 text-center text-sm tabular-nums text-[var(--text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 sm:w-28 sm:px-2.5 lg:h-8 lg:min-h-8 lg:w-[5.5rem] lg:py-0 lg:text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => bumpDefaultSec(1)}
+                      disabled={draftDefaultSec >= HERO_PHONE_AD_MAX_AUTO_SEC}
+                      className="inline-flex min-h-10 min-w-11 touch-manipulation items-center justify-center border-l border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:pointer-events-none disabled:opacity-35 lg:h-8 lg:min-h-8 lg:min-w-9"
+                      aria-label="Increase AutoView seconds by one"
+                    >
+                      <Plus size={18} className="shrink-0 lg:size-4" aria-hidden />
+                    </button>
+                  </div>
+                </div>
+
+                <span
+                  className="hidden h-8 w-px shrink-0 bg-[var(--border-color)]/70 sm:block lg:h-5"
+                  aria-hidden
+                />
+
+                <div className="flex shrink-0 cursor-pointer items-center gap-1.5 sm:gap-2 lg:gap-1.5">
+                  <input
+                    id="hero-ads-enabled"
+                    type="checkbox"
+                    checked={enabled}
+                    onChange={(e) => setEnabled(e.target.checked)}
+                    aria-label="Ads (global): use custom hero content on the home page"
+                    className="size-4 shrink-0 rounded border-[var(--border-color)] text-orange-500 focus:ring-orange-500"
+                  />
+                  <div className="flex min-w-0 items-center gap-1 lg:gap-0.5">
+                    <label
+                      htmlFor="hero-ads-enabled"
+                      className="cursor-pointer text-xs font-bold leading-tight text-[var(--text-primary)] sm:text-sm sm:leading-snug lg:text-xs"
+                    >
+                      Ads (global)
+                    </label>
+                    <AdminLabelInfoTip
+                      controlOnly
+                      tipId="hero-ads-tip-custom-enabled"
+                      tipRegionAriaLabel="Ads (global) tips"
+                      tipSubject="Ads (global)"
+                    >
+                      <li>
+                        When <strong className="font-semibold text-[var(--text-secondary)]">on</strong>, saved slides
+                        replace the default hero carousel for learners.
+                      </li>
+                      <li>
+                        When <strong className="font-semibold text-[var(--text-secondary)]">off</strong>, learners see
+                        default sample content; this draft stays in the editor.
+                      </li>
+                      <li>
+                        With only <strong className="font-semibold text-[var(--text-secondary)]">one slide</strong>,{' '}
+                        <strong className="font-semibold text-[var(--text-secondary)]">Show (per slide)</strong> is off and
+                        locked while <strong className="font-semibold text-[var(--text-secondary)]">Ads (global)</strong> is
+                        off; turning <strong className="font-semibold text-[var(--text-secondary)]">Ads (global)</strong> on
+                        turns it on and keeps it locked so the hero always has one card.
+                      </li>
+                    </AdminLabelInfoTip>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-          <input
-            id="hero-ad-default-sec"
-            type="number"
-            min={0}
-            max={HERO_PHONE_AD_MAX_AUTO_SEC}
-            value={draftDefaultSec}
-            onChange={(e) => {
-              const n = parseInt(e.target.value, 10);
-              if (!Number.isFinite(n)) {
-                setDraftDefaultSec(0);
-                return;
-              }
-              setDraftDefaultSec(Math.min(HERO_PHONE_AD_MAX_AUTO_SEC, Math.max(0, n)));
-            }}
-            className="w-full min-w-0 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-[var(--text-primary)] sm:w-28"
-          />
         </div>
 
-        <div className="flex cursor-pointer items-start gap-3 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-4">
-          <input
-            id="hero-ads-enabled"
-            type="checkbox"
-            checked={enabled}
-            onChange={(e) => setEnabled(e.target.checked)}
-            className="mt-1 h-4 w-4 shrink-0 rounded border-[var(--border-color)] text-orange-500 focus:ring-orange-500"
-          />
-          <div className="min-w-0 flex-1">
-            <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
-              <label
-                htmlFor="hero-ads-enabled"
-                className="cursor-pointer text-sm font-bold leading-none text-[var(--text-primary)]"
-              >
-                Use custom ads on the home page
-              </label>
-              <AdminLabelInfoTip
-                controlOnly
-                tipId="hero-ads-tip-custom-enabled"
-                tipRegionAriaLabel="Custom ads toggle tips"
-                tipSubject="use custom ads"
-              >
-                <li>
-                  When <strong className="font-semibold text-[var(--text-secondary)]">on</strong>, saved slides replace
-                  the default hero carousel for learners.
-                </li>
-                <li>
-                  When <strong className="font-semibold text-[var(--text-secondary)]">off</strong>, learners see default
-                  sample content; this draft stays in the editor.
-                </li>
-              </AdminLabelInfoTip>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-6 grid grid-cols-1 gap-6 border-t border-[var(--border-color)] pt-6 lg:grid-cols-[minmax(0,1fr)_min(100%,280px)] lg:items-start lg:gap-8 xl:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="mt-4 grid grid-cols-1 gap-4 border-t border-[var(--border-color)] pt-4 lg:mt-6 lg:grid-cols-[minmax(0,1fr)_min(100%,280px)] lg:items-start lg:gap-6 lg:pt-6 xl:grid-cols-[minmax(0,1fr)_300px] xl:gap-8">
           <div className="order-2 min-w-0 space-y-3 lg:order-1">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+            <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
+              <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5 sm:gap-x-1.5 sm:gap-y-1">
                 <h3 className="text-sm font-bold leading-none text-[var(--text-primary)]">
                   Slides ({draftSlides.length} / {MAX_SLIDES})
                 </h3>
@@ -620,32 +740,40 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                     <strong className="font-semibold text-[var(--text-secondary)]">Image URL</strong> tip on each image
                     block.
                   </li>
+                  <li>
+                    <strong className="font-semibold text-[var(--text-secondary)]">Show (per slide)</strong> picks which
+                    slides go live when <strong className="font-semibold text-[var(--text-secondary)]">Ads (global)</strong> is
+                    on. With <strong className="font-semibold text-[var(--text-secondary)]">two or more slides</strong>, you can
+                    mix on/off; with <strong className="font-semibold text-[var(--text-secondary)]">one slide</strong>, Show
+                    follows Ads (global)—see that tip.
+                  </li>
                 </AdminLabelInfoTip>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex w-full flex-wrap items-stretch gap-1.5 sm:w-auto sm:items-center sm:gap-2">
                 <button
                   type="button"
                   onClick={collapseAllSlides}
                   disabled={draftSlides.length === 0 || expandedSlideId === null}
-                  className="inline-flex min-h-11 items-center rounded-lg border border-[var(--border-color)] px-3 py-2 text-xs font-bold text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:pointer-events-none disabled:opacity-40"
+                  className="inline-flex min-h-11 flex-1 items-center justify-center rounded-lg border border-[var(--border-color)] px-2.5 py-2 text-xs font-bold text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:pointer-events-none disabled:opacity-40 sm:flex-initial sm:px-3"
                 >
                   Collapse all
                 </button>
                 <button
                   type="button"
                   onClick={handleResetSlidesToBundledDefaults}
-                  className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-[var(--border-color)] px-3 py-2 text-sm font-bold text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]"
+                  className="inline-flex min-h-11 flex-1 items-center justify-center gap-1 rounded-lg border border-[var(--border-color)] px-2.5 py-2 text-xs font-bold text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] sm:flex-initial sm:gap-1.5 sm:px-3 sm:text-sm"
                 >
-                  <RotateCcw size={18} aria-hidden />
-                  Default 3 slides
+                  <RotateCcw size={16} className="shrink-0 sm:size-[18px]" aria-hidden />
+                  <span className="sm:hidden">Defaults</span>
+                  <span className="hidden sm:inline">Default 3 slides</span>
                 </button>
                 <button
                   type="button"
                   disabled={draftSlides.length >= MAX_SLIDES}
                   onClick={addSlide}
-                  className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-orange-500/15 px-3 py-2 text-sm font-bold text-orange-600 hover:bg-orange-500/25 disabled:pointer-events-none disabled:opacity-40 dark:text-orange-400"
+                  className="inline-flex min-h-11 flex-[1_1_100%] items-center justify-center gap-1 rounded-lg bg-orange-500/15 px-2.5 py-2 text-xs font-bold text-orange-600 hover:bg-orange-500/25 disabled:pointer-events-none disabled:opacity-40 dark:text-orange-400 sm:flex-initial sm:gap-1.5 sm:px-3 sm:text-sm"
                 >
-                  <Plus size={18} aria-hidden />
+                  <Plus size={16} className="shrink-0 sm:size-[18px]" aria-hidden />
                   Add slide
                 </button>
               </div>
@@ -653,11 +781,22 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
 
             <div
               ref={slidesScrollContainerRef}
-              className="max-h-[min(75dvh,42rem)] overflow-y-auto overscroll-y-contain rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/40 px-2 py-1 sm:px-3 sm:py-2 [-webkit-overflow-scrolling:touch]"
+              className="max-h-[min(65dvh,34rem)] overflow-y-auto overscroll-y-contain rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/40 px-2 py-1 sm:max-h-[min(75dvh,42rem)] sm:px-3 sm:py-2 [-webkit-overflow-scrolling:touch]"
             >
               {draftSlides.map((s, slideIndex) => {
                 const isOpen = expandedSlideId === s.id;
                 const { title: summaryTitle, subtitle: summarySubtitle } = heroSlideCollapsedSummary(s);
+                const slideShown = s.enabled !== false;
+                const singleSlide = draftSlides.length === 1;
+                const cannotTurnOffLastShown =
+                  slideShown && enabled && enabledSlideCount <= 1;
+                const perSlideShowLocked =
+                  singleSlide && (!enabled || cannotTurnOffLastShown);
+                const perSlideShowTitle = perSlideShowLocked
+                  ? !enabled
+                    ? 'Turn on Ads (global) to change Show (per slide) for this slide.'
+                    : 'With Ads (global) on, this slide must stay visible.'
+                  : 'Show (per slide) on the home hero.';
                 return (
                 <div
                   key={s.id}
@@ -665,7 +804,9 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                     if (el) slideShellRefs.current.set(s.id, el);
                     else slideShellRefs.current.delete(s.id);
                   }}
-                  className="flex flex-wrap items-stretch gap-2 border-b border-[var(--border-color)]/50 py-3 last:border-b-0 sm:gap-3 sm:py-3.5"
+                  className={`flex flex-wrap items-stretch gap-2 border-b border-[var(--border-color)]/50 py-3 last:border-b-0 sm:gap-3 sm:py-3.5 ${
+                    slideShown ? '' : 'opacity-[0.88]'
+                  }`}
                 >
                   <button
                     type="button"
@@ -694,6 +835,28 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                     </span>
                   </button>
                   <div className="flex shrink-0 flex-wrap items-center justify-end gap-1 sm:gap-1">
+                    <div
+                      className="mr-0.5 flex items-center gap-1 border-r border-[var(--border-color)]/60 pr-1.5 sm:mr-1 sm:gap-1.5 sm:pr-2"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        id={`hero-slide-enabled-${s.id}`}
+                        type="checkbox"
+                        checked={slideShown}
+                        disabled={perSlideShowLocked}
+                        onChange={(e) => updateSlide(slideIndex, { enabled: e.target.checked })}
+                        title={perSlideShowTitle}
+                        aria-label={`Slide ${slideIndex + 1}: Show (per slide) on home hero`}
+                        className="size-4 shrink-0 rounded border-[var(--border-color)] text-orange-500 focus:ring-orange-500 disabled:opacity-40"
+                      />
+                      <label
+                        htmlFor={`hero-slide-enabled-${s.id}`}
+                        className="hidden max-w-[5.5rem] cursor-pointer text-[0.6rem] font-bold leading-tight text-[var(--text-muted)] sm:max-w-none sm:inline sm:text-xs sm:leading-snug sm:font-bold sm:text-[var(--text-secondary)]"
+                      >
+                        Show (per slide)
+                      </label>
+                    </div>
                     <button
                       type="button"
                       disabled={slideIndex === 0}
@@ -733,8 +896,8 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                   </div>
 
                   {isOpen ? (
-                  <div className="w-full min-w-0 border-t border-[var(--border-color)] p-4">
-                  <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="w-full min-w-0 border-t border-[var(--border-color)] p-3 sm:p-4">
+                  <div className="mb-3 grid grid-cols-1 gap-2.5 sm:mb-4 sm:grid-cols-2 sm:gap-3">
                     <div className="space-y-1">
                       <div className="flex min-h-6 min-w-0 items-center">
                         <label className="text-xs font-semibold leading-none text-[var(--text-secondary)]">
@@ -1117,12 +1280,12 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
               })}
             </div>
 
-            <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:flex-wrap">
+            <div className="flex flex-col gap-2 pt-1.5 sm:flex-row sm:flex-wrap sm:gap-3 sm:pt-2">
               <button
                 type="button"
                 disabled={saving || !dirty}
                 onClick={() => void handleSave()}
-                className="min-h-11 flex-1 rounded-xl bg-orange-500 px-4 py-3 text-sm font-bold text-white hover:bg-orange-600 disabled:pointer-events-none disabled:opacity-50 sm:flex-none sm:px-8"
+                className="min-h-11 flex-1 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-bold text-white hover:bg-orange-600 disabled:pointer-events-none disabled:opacity-50 sm:flex-none sm:py-3 sm:px-8"
               >
                 {saving ? 'Saving…' : 'Save to Firestore'}
               </button>
@@ -1130,7 +1293,7 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                 type="button"
                 disabled={!dirty}
                 onClick={handleDiscard}
-                className="min-h-11 flex-1 rounded-xl border border-[var(--border-color)] px-4 py-3 text-sm font-bold text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:pointer-events-none disabled:opacity-50 sm:flex-none sm:px-6"
+                className="min-h-11 flex-1 rounded-xl border border-[var(--border-color)] px-4 py-2.5 text-sm font-bold text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:pointer-events-none disabled:opacity-50 sm:flex-none sm:py-3 sm:px-6"
               >
                 Discard changes
               </button>
@@ -1138,10 +1301,10 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
           </div>
 
           <aside className="order-1 flex flex-col items-center lg:sticky lg:top-28 lg:order-2 lg:self-start">
-            <p className="mb-2 w-full text-center text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)] lg:text-center">
+            <p className="mb-1.5 w-full text-center text-[0.65rem] font-semibold uppercase tracking-wide text-[var(--text-muted)] sm:text-xs lg:text-center">
               Live preview
             </p>
-            <div className="w-full max-w-[260px] sm:max-w-[280px] lg:mx-0 lg:max-w-none">
+            <div className="w-full max-w-[220px] sm:max-w-[260px] lg:mx-0 lg:max-w-none">
               <PhoneMockupAdRail
                 imageSrc={phoneMockupSrc}
                 imageAlt="Preview: home hero phone"
