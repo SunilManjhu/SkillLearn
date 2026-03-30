@@ -64,7 +64,7 @@ Grouped by folder. **Large screens** get an extra line for sub-responsibilities 
 
 ## `src/components/LearnerPathMindmapPanel.tsx`
 
-- **Role:** Learner-facing **path mind map** + outline (progress, navigate to courses).
+- **Role:** Learner-facing **Learning Path** panel (outline / tree + optional layout view; progress, navigate to courses). Terminology: [learning-paths-lpaths.md](../learning-paths-lpaths.md).
 - **Primary exports:** `LearnerPathMindmapPanel`.
 - **Used by:** `App.tsx` catalog when a path is selected.
 
@@ -132,7 +132,7 @@ Grouped by folder. **Large screens** get an extra line for sub-responsibilities 
 
 ## `src/components/admin/PathBuilderSection.tsx`
 
-- **Role:** **Learning path** editor: course list, **mind map** editor (dnd-kit / custom layout), Firestore save for path + mindmap; arrow reorder for branches/courses; exposes imperative handle for dirty state.
+- **Role:** **Learning Path** admin editor: course list, **section → flat rows** outline (dividers, validation, flatten), arrow-based reorder (↑/↓), Firestore save for path + `pathMindmap`; exposes imperative handle for dirty state. See [learning-paths-lpaths.md](../learning-paths-lpaths.md).
 - **Primary exports:** `PathBuilderSection`, `PathBuilderSectionHandle`, props types.
 - **Used by:** `AdminPage` catalog (path editing).
 

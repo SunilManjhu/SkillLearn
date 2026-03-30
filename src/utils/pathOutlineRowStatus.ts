@@ -10,6 +10,14 @@ import { collectCourseIdsInSubtree } from './pathSectionProgress';
 
 export type PathOutlineRowStatus = 'completed' | 'in_progress' | 'not_started';
 
+/** Same rules as path outline course nodes — for `LearnerPathCourseRowList` (see `docs/learning-path-course-list.md`). */
+export function getLearningPathCourseRowStatus(
+  course: Course,
+  userId: string | null | undefined
+): PathOutlineRowStatus {
+  return courseRowStatus(course, userId ?? null);
+}
+
 function courseRowStatus(course: Course, userId: string | null): PathOutlineRowStatus {
   const m = loadLessonProgressMap(course.id, userId);
   /** Same source of truth as the path progress bar and Open / Continue / Review CTAs (`getCourseLessonProgressSummary`). Completion timestamps alone must not show a green check after retake when the lesson map was cleared. */
@@ -60,6 +68,7 @@ export function getPathOutlineRowStatus(
   userId: string | null | undefined
 ): PathOutlineRowStatus | null {
   const uid = userId ?? null;
+  if (node.kind === 'divider') return null;
   if (node.kind === 'course' && node.courseId) {
     const c = catalogCourses.find((x) => x.id === node.courseId);
     if (!c) return null;

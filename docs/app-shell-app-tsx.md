@@ -33,7 +33,7 @@
 
 **Cold-load deep links:** `getInitialRouteState` runs once with `peekResolvedCatalogCourses()` or static fallback; it can set `deferredCourseRoute` or fill `player` **lessonId** from resume when the hash has player without lesson.
 
-**Learning paths:** `selectedLearningPathId` scopes the catalog to a path’s `courseIds`. Initialized from hash; cleared if the path document disappears.
+**Learning Paths:** `selectedLearningPathId` scopes the catalog to a path’s `courseIds`. Initialized from hash; cleared if the path document disappears. Naming: user-facing **Learning Path(s)**; code shorthand **LPath** — see [learning-paths-lpaths.md](./learning-paths-lpaths.md).
 
 ## Enrollment (Firestore)
 
@@ -59,7 +59,7 @@
 
 Opening admin from notifications sets `adminTab` and optionally `pendingModerationSubTab`.
 
-**Content tab** (history id `catalog`, hash `#/admin/content`): course catalog editor, learning paths, categories, and topic presets — see [admin-portal-content.md](./admin-portal-content.md). Catalog refresh after publishes flows through `onCatalogChanged` → `refreshCatalogCourses`. **Course** and **Modules** labels pair with **info** buttons (**click/tap** tips; **Escape** / outside click closes).
+**Content tab** (history id `catalog`, hash `#/admin/content`): course catalog editor, Learning Paths, categories, and topic presets — see [admin-portal-content.md](./admin-portal-content.md). Catalog refresh after publishes flows through `onCatalogChanged` → `refreshCatalogCourses`. **Course** and **Modules** labels pair with **info** buttons (**click/tap** tips; **Escape** / outside click closes).
 
 ## Auth and profile cache
 

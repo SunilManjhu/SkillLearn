@@ -245,8 +245,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
         </div>
 
         {tab === 'alerts' && (
-        <div className="space-y-8">
-        <div className="space-y-4 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:p-6">
+        <div className="min-w-0 space-y-6 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:p-6">
           <h2 className="flex items-center gap-2 text-lg font-bold">
             <Send size={20} className="text-orange-500" />
             Send course alert
@@ -390,11 +389,10 @@ export const AdminPage: React.FC<AdminPageProps> = ({
             {busy ? 'Publishing…' : 'Publish alert'}
           </button>
         </div>
-        </div>
         )}
 
         {tab === 'ai' && (
-          <div className="space-y-4">
+          <div className="min-w-0 space-y-6 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:p-6">
             <AdminAiSiteControlsSection />
             <AdminGeminiModelsSection onDirtyChange={setAiModelsDirty} />
           </div>

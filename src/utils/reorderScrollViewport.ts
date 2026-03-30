@@ -30,6 +30,10 @@ export const REORDER_DATA_ATTR_SELECTORS = {
     up: 'button[data-gemini-reorder="up"]',
     down: 'button[data-gemini-reorder="down"]',
   },
+  pathCourse: {
+    up: 'button[data-path-course-reorder="up"]',
+    down: 'button[data-path-course-reorder="down"]',
+  },
 } as const;
 
 /**

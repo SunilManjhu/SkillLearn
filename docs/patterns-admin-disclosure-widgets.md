@@ -61,9 +61,11 @@ Structured courses can **renumber** ids when order changes. Expansion state is *
 
 ---
 
-## Paths — mind map branches + courses in path
+## Learning Paths — outline branches + courses in path
 
 **File:** [`PathBuilderSection.tsx`](../src/components/admin/PathBuilderSection.tsx)
+
+**Terminology:** Learners and admins see **Learning Path(s)**; internal docs/code may say **LPath**. See [learning-paths-lpaths.md](./learning-paths-lpaths.md).
 
 - **Branches:** chevron on rows with children (`expandedBranchIds`, `toggleBranchCollapse`, `focusBranchRow`). After expand/focus, `useLayoutEffect` scrolls `[data-path-branch-node-id="…"]` into view (viewport).
 - **Courses in path:** `expandedCourseId` + `openModuleIdx` keys `m-{courseId}-{mi}`. After expand/toggle, scroll the open **module** row if any (`data-path-course-id` + `data-path-module-index`), else the **course** shell (`data-path-course-disclosure`).
@@ -107,6 +109,14 @@ Structured courses can **renumber** ids when order changes. Expansion state is *
 3. Collapsed state shows a **scannable** title (and optional subtitle)—user can find the row without opening it.
 4. Prefer **`button`** for the toggle (not `div` + `onClick`) for keyboard and SR support.
 5. Do **not** mix this pattern with [info tips](./patterns-admin-label-info-tip.md) on the **same** control—tips use a separate **Info** affordance.
+
+### Presentation: avoid double chrome
+
+Do **not** wrap a **list of disclosure rows** inside an extra `rounded-* border bg-*` panel when those rows already sit inside the tab’s outer admin card (`patterns` in [admin portal](./admin-portal-content.md)). That stacks two boxes and fights the disclosure model.
+
+- Prefer **spacing** (`space-y-*`) plus **dividers** (`border-b` / `border-t` on the expanded body) between rows.
+- **Nested depth** can use a light **left rail** (`border-l`, accent tint) instead of boxing every child.
+- Inline help that uses native **`<details>`** should **not** use a second bordered card around the whole `<details>`—style `summary` only.
 
 ---
 

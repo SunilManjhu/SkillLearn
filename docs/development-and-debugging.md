@@ -11,7 +11,6 @@ This guide orients **developers** and **AI assistants** on how the app is struct
 | Styling | Tailwind CSS 4 (`@tailwindcss/vite`) |
 | Motion | `motion` (`motion/react`) |
 | Icons | `lucide-react` |
-| Drag-and-drop (some surfaces) | `@dnd-kit/*` |
 | Backend (client) | Firebase Auth + Firestore (`src/firebase.ts`) |
 | Generative AI | `@google/genai` via [`src/utils/geminiClient.ts`](../src/utils/geminiClient.ts) |
 
@@ -67,7 +66,7 @@ When searching the codebase semantically, phrases like “Firestore subscription
 
 - **Views** are a closed union (e.g. `home`, `catalog`, `player`, `admin`) — see `View` in `App.tsx` and `AppHistoryView` in `appHistory.ts`.
 - **Admin sub-tabs** are `AdminHistoryTab`: `alerts` | `ai` | `catalog` | `moderation` | `roles`. The **Content** tab uses `adminTab === 'catalog'`; canonical hash `#/admin/content` (see [admin-portal-content.md](./admin-portal-content.md)).
-- **Learning path scoping** can be carried in history as `learningPathId` for shareable catalog context.
+- **Learning Path** scoping (code: `learningPathId`) can be carried in history for shareable catalog context. See [learning-paths-lpaths.md](./learning-paths-lpaths.md) for terminology and file map.
 
 If “wrong screen after refresh” or “shared link opens wrong place” appears, trace `parseHashToPayload` / `buildHistoryUrl` and `popstate` handling in `App.tsx` together with `appHistory.ts`.
 

@@ -14,7 +14,7 @@
 
 ## `src/data/pathMindmap.ts`
 
-- **Role:** Types and parsers for **learning path mind map** tree (`MindmapTreeNode`, `MindmapDocument`), center node label, ID generation, normalization.
+- **Role:** Types and parsers for **Learning Path outline** tree (`MindmapTreeNode`, `MindmapDocument`): `label` | `course` | `lesson` | `link` | `divider`, center node label, ID generation, normalization.
 - **Primary exports:** `MindmapTreeNode`, `MindmapDocument`, `PATH_MINDMAP_CENTER_LABEL`, `newMindmapNodeId`, `normalizeMindmapNode`, `parseMindmapDocument`, `mindmapDocumentWithCenterChildren`, etc.
 - **Used by:** Path builder UI, `pathMindmapFirestore.ts`, path progress helpers.
 

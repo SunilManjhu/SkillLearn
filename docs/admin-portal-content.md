@@ -1,6 +1,6 @@
 # Admin portal → Content
 
-This document describes the **Content** tab of the admin portal: what it covers in the product, how it maps to code and URLs, and where persistence lives. Use it when changing course editing, learning paths, category tooling, or unsaved-work behavior.
+This document describes the **Content** tab of the admin portal: what it covers in the product, how it maps to code and URLs, and where persistence lives. Use it when changing course editing, **Learning Paths** (see [learning-paths-lpaths.md](./learning-paths-lpaths.md) for naming and overview), category tooling, or unsaved-work behavior.
 
 **Related:** [development-and-debugging.md](./development-and-debugging.md) (navigation, Firestore layout), [app-shell-app-tsx.md](./app-shell-app-tsx.md) (admin gate, `refreshCatalogCourses`), [admin-reorder-scroll-viewport.md](./admin-reorder-scroll-viewport.md) (↑/↓ reorder in catalog and path builder).
 
@@ -19,7 +19,7 @@ The Content tab renders a single large surface: [`AdminCourseCatalogSection.tsx`
 | Sub-tab | Purpose |
 |---------|---------|
 | **Catalog** | List published courses; open course editor (modules, lessons, video / web / quiz, validation, publish, delete). **Course** row (label + **info** button, same layout as **Modules and lessons**) toggles editor notes on **click/tap** (Firestore, **Course** control, **New Course** ids, `C1M1` / `C1M1L1`). Pattern detail: [patterns-admin-label-info-tip.md](./patterns-admin-label-info-tip.md). |
-| **Learning paths** | Path list and [`PathBuilderSection`](../src/components/admin/PathBuilderSection.tsx) (courses in path, mind map, Firestore save). |
+| **Learning Paths** | Path list and [`PathBuilderSection`](../src/components/admin/PathBuilderSection.tsx) (ordered courses + outline tree saved to Firestore; UI copy uses “Learning Path(s)”). |
 | **Categories** | [`AdminCatalogCategoriesPanel`](../src/components/admin/AdminCatalogCategoriesPanel.tsx) — custom catalog categories (“extras”) alongside presets. |
 | **Topic presets** | [`AdminCatalogCategoryPresetsPanel`](../src/components/admin/AdminCatalogCategoryPresetsPanel.tsx) — main/more category pills synced to Firestore. |
 

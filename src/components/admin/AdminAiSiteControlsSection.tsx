@@ -105,7 +105,7 @@ export const AdminAiSiteControlsSection: React.FC = () => {
   );
 
   return (
-    <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3 sm:p-4">
+    <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/40 p-3 sm:p-4">
       {actionToast}
       <p className="mb-2 text-[11px] leading-snug text-[var(--text-muted)]">
         Site-wide. Learners can narrow further in Profile when these stay on.

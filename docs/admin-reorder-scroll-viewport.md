@@ -33,8 +33,8 @@ Do **not** use a functional updater for the swap itself on those code paths.
 | `scrollWindowToKeepReorderControlViewportY` | Low-level viewport Y restore via `window.scrollBy`. |
 | `applyReorderViewportScrollAndFocus` | Given a row element + job + button selectors: scroll, then focus ↑/↓. |
 | `queryElementInScopeOrDocument` | `scopeRoot.querySelector` then `document.querySelector` fallback. |
-| `escapeSelectorAttrValue` | Safe attribute values in `[data-foo="…"]` (uses `globalThis.CSS.escape` so it never clashes with a library import named `CSS`, e.g. `@dnd-kit/utilities`). |
-| `REORDER_DATA_ATTR_SELECTORS` | Preset `up`/`down` query strings for `data-module-reorder`, `data-lesson-reorder`, `data-branch-reorder`, `data-gemini-reorder`. |
+| `escapeSelectorAttrValue` | Safe attribute values in `[data-foo="…"]` (uses `globalThis.CSS.escape` so it never clashes with a local import named `CSS`). |
+| `REORDER_DATA_ATTR_SELECTORS` | Preset `up`/`down` query strings for `data-module-reorder`, `data-lesson-reorder`, `data-branch-reorder`, `data-path-course-reorder`, `data-gemini-reorder`. |
 
 ## Where it is used today
 
@@ -43,7 +43,8 @@ Do **not** use a functional updater for the swap itself on those code paths.
 | Course catalog — modules | [`AdminCourseCatalogSection.tsx`](../src/components/admin/AdminCourseCatalogSection.tsx) | `data-admin-module-index` on module card | `moveModule` + `moduleReorderLayoutTick` + `useLayoutEffect`. |
 | Course catalog — lessons | Same | `data-admin-lesson-row` + `data-lesson-reorder` | `moveLesson` + `lessonReorderLayoutTick`. |
 | Learning path — mind map branches | [`PathBuilderSection.tsx`](../src/components/admin/PathBuilderSection.tsx) | `data-path-branch-node-id` on branch `<li>` | `moveBranchAmongSiblings` + `pathBranchReorderLayoutTick`. Root list wrapped in `pathBranchMindMapRootRef`. |
-| Learning path — course in path | Same | `data-path-course-id`, `data-path-module-index`, `data-path-lesson-index` | `moveCourseModule` / `moveCourseLesson` + `pathCourseReorderLayoutTick`; editor scoped with `pathCourseStructureEditorRef`. |
+| Learning path — courses in path (order) | Same | `data-path-course-disclosure` + `data-path-course-reorder` | `moveCourseInPathList` + shared `pathCourseReorderLayoutTick`; section `#admin-path-courses-section`. |
+| Learning path — course structure | Same | `data-path-course-id`, `data-path-module-index`, `data-path-lesson-index` | `moveCourseModule` / `moveCourseLesson` + `pathCourseReorderLayoutTick`; editor scoped with `pathCourseStructureEditorRef`. |
 
 ## Pattern to copy for a new reorder surface
 

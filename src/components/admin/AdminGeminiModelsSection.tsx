@@ -167,7 +167,7 @@ export const AdminGeminiModelsSection: React.FC<AdminGeminiModelsSectionProps> =
   };
 
   return (
-    <div className="space-y-3 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3 sm:p-4">
+    <div className="space-y-3 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/40 p-3 sm:p-4">
       {actionToast}
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">

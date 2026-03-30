@@ -1935,12 +1935,13 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           <button
             type="button"
             onClick={() => requestContentCatalogSubTab('paths')}
+            aria-current={contentCatalogSubTab === 'paths' ? 'page' : undefined}
             className={`inline-flex min-h-11 touch-manipulation shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold active:opacity-90 ${
               contentCatalogSubTab === 'paths' ? 'bg-orange-500/20 text-orange-500' : 'text-[var(--text-secondary)]'
             }`}
           >
             <Route size={15} aria-hidden />
-            Learning paths
+            Paths
           </button>
           <button
             type="button"
@@ -1966,17 +1967,30 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       </div>
 
       {contentCatalogSubTab === 'paths' && (
-        <p className="text-sm leading-relaxed text-[var(--text-muted)] sm:text-xs">
-          Saved paths appear in the learner <strong className="text-[var(--text-secondary)]">Paths</strong> menu and
-          filter the course library. Published courses only can be added—publish courses from the{' '}
-          <strong className="text-[var(--text-secondary)]">Catalog</strong> tab first if the list is empty. Choose{' '}
-          <strong className="text-[var(--text-secondary)]">New path</strong> in the list for a fresh path (smallest unused{' '}
-          <code className="text-orange-500/90">P1</code>, <code className="text-orange-500/90">P2</code>, …) or an
-          existing path (sorted A–Z). Drag to reorder courses; expand a course to reorder modules and lessons—
-          <strong className="text-[var(--text-secondary)]">Save path</strong> stores the path;{' '}
-          <strong className="text-[var(--text-secondary)]">Save course structure</strong> updates the published
-          course document like the catalog editor.
-        </p>
+        <div className="rounded-xl border border-[var(--border-color)]/80 bg-[var(--bg-primary)]/45 px-3 py-3 sm:px-4">
+          <p className="text-sm leading-snug text-[var(--text-primary)] sm:text-[13px]">
+            Build <strong className="font-semibold text-[var(--text-secondary)]">learning paths</strong> learners see
+            under Paths. Use published courses only—add or publish them in the{' '}
+            <strong className="font-semibold text-[var(--text-secondary)]">Catalog</strong> tab first.
+          </p>
+          <details className="mt-2.5 text-xs leading-relaxed text-[var(--text-muted)]">
+            <summary className="cursor-pointer select-none font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
+              Quick tips
+            </summary>
+            <ul className="mt-2 list-disc space-y-1.5 pl-4 marker:text-orange-500/60">
+              <li>
+                <strong className="font-medium text-[var(--text-secondary)]">Save path</strong> stores the path and
+                outline. <strong className="font-medium text-[var(--text-secondary)]">Save course structure</strong>{' '}
+                updates the course document (same as the catalog editor).
+              </li>
+              <li>
+                New paths use the next free id (<code className="text-orange-500/90">P1</code>,{' '}
+                <code className="text-orange-500/90">P2</code>…). Reorder path courses below the outline; expand a
+                course to edit module and lesson order.
+              </li>
+            </ul>
+          </details>
+        </div>
       )}
 
       {contentCatalogSubTab === 'catalog' && (
@@ -3401,7 +3415,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               </div>
               <div className="space-y-4 p-6">
                 <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
-                  Leaving Learning paths will discard unsaved changes to the path builder.
+                  Leaving Paths will discard unsaved path or course edits. Save first if you need to keep them.
                 </p>
                 <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                   <button

@@ -530,15 +530,15 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
 
   if (loading) {
     return (
-      <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-6 text-sm text-[var(--text-muted)]">
+      <div className="min-w-0 space-y-6 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:p-6 text-sm text-[var(--text-muted)]">
         Loading hero ads…
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-2.5 sm:p-5">
+    <>
+      <div className="min-w-0 space-y-6 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:p-6">
         <div className="mb-3 flex flex-col gap-3 lg:mb-4 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
           <div className="min-w-0 flex-1 space-y-1.5 lg:min-w-0">
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
@@ -1287,7 +1287,7 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
               })}
             </div>
 
-            <div className="sticky bottom-0 z-[5] -mx-2.5 mt-2 flex flex-col gap-2 border-t border-[var(--border-color)] bg-[var(--bg-secondary)]/95 px-2.5 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-4px_24px_-8px_rgba(0,0,0,0.12)] backdrop-blur-sm sm:static sm:z-0 sm:mx-0 sm:mt-0 sm:flex-row sm:flex-wrap sm:border-0 sm:bg-transparent sm:px-0 sm:py-0 sm:pt-2 sm:shadow-none sm:backdrop-blur-none dark:shadow-[0_-4px_24px_-8px_rgba(0,0,0,0.35)]">
+            <div className="sticky bottom-0 z-[5] -mx-4 mt-2 flex flex-col gap-2 border-t border-[var(--border-color)] bg-[var(--bg-secondary)]/95 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-4px_24px_-8px_rgba(0,0,0,0.12)] backdrop-blur-sm sm:static sm:z-0 sm:-mx-6 sm:mx-0 sm:mt-0 sm:flex-row sm:flex-wrap sm:border-0 sm:bg-transparent sm:px-0 sm:py-0 sm:pt-2 sm:shadow-none sm:backdrop-blur-none dark:shadow-[0_-4px_24px_-8px_rgba(0,0,0,0.35)]">
               <button
                 type="button"
                 disabled={saving || !dirty}
@@ -1464,6 +1464,6 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
       </AnimatePresence>
 
       {actionToast}
-    </div>
+    </>
   );
 };

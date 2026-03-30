@@ -33,7 +33,25 @@ import {
   markAlertRead,
   reportNoticesFromQuerySnapshot,
 } from './utils/alertsFirestore';
-import { Play, TrendingUp, Award, Users, Globe, ChevronRight, X, CheckCircle, Mail, LifeBuoy, Briefcase, Shield, Info, Clock, LogIn, AlertTriangle } from 'lucide-react';
+import {
+  Play,
+  TrendingUp,
+  Award,
+  Users,
+  Globe,
+  ChevronRight,
+  X,
+  CheckCircle,
+  Mail,
+  LifeBuoy,
+  Briefcase,
+  Shield,
+  Info,
+  Clock,
+  LogIn,
+  AlertTriangle,
+  LayoutGrid,
+} from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   auth,
@@ -405,12 +423,19 @@ export default function App() {
     () => initialRoute.deferredCourseRoute
   );
   /** When set, catalog lists only courses in this path's `courseIds` (from Firestore `learningPaths`). */
-  const [selectedLearningPathId, setSelectedLearningPathId] = useState<string | null>(
-    readInitialLearningPathIdFromHash
+  const [selectedLearningPathId, setSelectedLearningPathId] = useState<string | null>(() =>
+    readInitialLearningPathIdFromHash()
   );
   const [learningPaths, setLearningPaths] = useState<LearningPath[]>([]);
   /** True after first `loadLearningPathsFromFirestore()` completes (empty array is valid). */
   const [learningPathsFetched, setLearningPathsFetched] = useState(false);
+  const activeLearningPath = useMemo(
+    () =>
+      selectedLearningPathId == null
+        ? null
+        : learningPaths.find((p) => p.id === selectedLearningPathId) ?? null,
+    [learningPaths, selectedLearningPathId]
+  );
   const [libraryFilters, setLibraryFilters] = useState<LibraryFilterState>({
     categoryTags: [],
     skillTags: [],
@@ -629,6 +654,20 @@ export default function App() {
     return () => window.removeEventListener('popstate', onPop);
   }, [applyHistoryPayload]);
 
+  /** `#/catalog/path/...` edits: `popstate` does not fire for same-document hash changes. */
+  useEffect(() => {
+    const onHashChange = () => {
+      const raw = parseHashToPayload(window.location.hash);
+      if (!raw) return;
+      const resolved = resolvePayloadForCourses(raw, catalogCoursesRef.current, findLessonById);
+      window.history.replaceState({ [APP_HISTORY_KEY]: resolved }, '', buildHistoryUrl(resolved));
+      historySkipSyncRef.current = true;
+      applyHistoryPayload(raw);
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, [applyHistoryPayload]);
+
   useEffect(() => {
     if (historySkipSyncRef.current) {
       historySkipSyncRef.current = false;
@@ -725,15 +764,6 @@ export default function App() {
     setLiveCatalogHydrated(true);
     setLearningPathsFetched(true);
   }, []);
-
-  /** Drop path filter if the path document no longer exists (e.g. deleted in admin). */
-  useEffect(() => {
-    if (!learningPathsFetched) return;
-    if (!selectedLearningPathId) return;
-    if (!learningPaths.some((p) => p.id === selectedLearningPathId)) {
-      setSelectedLearningPathId(null);
-    }
-  }, [learningPathsFetched, learningPaths, selectedLearningPathId]);
 
   /**
    * Re-bind overview/player to the live catalog when it loads (or refreshes).
@@ -2140,10 +2170,12 @@ export default function App() {
 
   const renderCatalog = () => {
     const catalogHeading = selectedLearningPathId == null ? 'Course Library' : null;
-    const activePathTitle =
+    const pathHeroTitle =
       selectedLearningPathId != null
-        ? learningPaths.find((p) => p.id === selectedLearningPathId)?.title?.trim() || selectedLearningPathId
+        ? activeLearningPath?.title?.trim() || selectedLearningPathId
         : null;
+    const pathUnknown =
+      selectedLearningPathId != null && learningPathsFetched && activeLearningPath == null;
     return (
       <div className="mx-auto min-w-0 max-w-7xl px-4 pb-12 pt-[max(5.5rem,calc(4rem+env(safe-area-inset-top,0px)))] sm:px-6 sm:pb-20 sm:pt-24">
         <div className="sticky top-16 z-30 -mx-4 mb-6 border-b border-[var(--border-color)]/80 bg-[var(--bg-primary)] px-4 pb-4 sm:static sm:z-auto sm:mx-0 sm:mb-10 sm:border-0 sm:bg-transparent sm:px-0 sm:pb-0">
@@ -2153,12 +2185,42 @@ export default function App() {
                 {catalogHeading}
               </h1>
             </div>
-          ) : activePathTitle != null ? (
-            <div className="min-w-0 md:hidden">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-orange-500">Learning path</p>
-              <h1 className="mt-1 min-w-0 break-words text-xl font-bold leading-snug text-[var(--text-primary)]">
-                {activePathTitle}
-              </h1>
+          ) : selectedLearningPathId != null && pathHeroTitle != null ? (
+            <div className="mb-2 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:mb-4 sm:p-5">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex min-w-0 gap-3">
+                  <div
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-orange-500/35 bg-orange-500/10 text-orange-500"
+                    aria-hidden
+                  >
+                    <LayoutGrid size={22} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-orange-500 sm:text-xs">
+                      Learning path
+                    </p>
+                    <h1 className="mt-1 min-w-0 break-words text-xl font-bold leading-snug text-[var(--text-primary)] sm:text-2xl md:text-3xl">
+                      {pathHeroTitle}
+                    </h1>
+                    <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-[var(--text-secondary)]">
+                      Everything you need, in the right order. Go at your own pace.
+                    </p>
+                    {pathUnknown ? (
+                      <p className="mt-2 text-sm font-medium text-amber-600 dark:text-amber-400">
+                        This path ID is not in the published catalog. Check Firestore or pick a path from the Paths
+                        menu.
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleNavigate('catalog')}
+                  className="shrink-0 rounded-xl border border-[var(--border-color)] bg-[var(--hover-bg)] px-4 py-2.5 text-sm font-semibold text-[var(--text-primary)] transition-colors hover:border-orange-500/40 hover:text-orange-500"
+                >
+                  Browse all courses
+                </button>
+              </div>
             </div>
           ) : null}
         </div>
@@ -2167,13 +2229,13 @@ export default function App() {
           <div className="mb-4 min-w-0 max-w-full sm:mb-6">
             <LearnerPathMindmapPanel
               pathId={selectedLearningPathId}
-              pathTitle={
-                learningPaths.find((p) => p.id === selectedLearningPathId)?.title?.trim() ||
-                selectedLearningPathId
-              }
+              pathTitle={pathHeroTitle ?? selectedLearningPathId}
               catalogCourses={catalogCourses}
               progressUserId={user?.uid ?? null}
               progressSnapshotVersion={pathProgressSnapshot + remoteProfileDataVersion}
+              viewerIsAdmin={isAdminUser}
+              suppressPathHeader
+              pathCourseIds={activeLearningPath?.courseIds ?? []}
               onOpenCourse={(courseId) => {
                 const c = catalogCourses.find((x) => x.id === courseId);
                 if (c) handleCourseClick(c);

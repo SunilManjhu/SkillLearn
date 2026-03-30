@@ -321,7 +321,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             Browse Catalog
           </button>
 
-          {/* Paths Dropdown */}
+          {/* Learning Paths dropdown */}
           <div className="relative">
             <button 
               ref={el => navItemsRef.current[2] = el}
@@ -333,14 +333,15 @@ export const Navbar: React.FC<NavbarProps> = ({
               tabIndex={focusedNavIndex === 2 ? 0 : -1}
               className="hover:text-[var(--text-primary)] transition-colors flex items-center gap-1 h-16 focus:outline-none focus:text-[var(--text-primary)]"
             >
-              Paths <ChevronDown size={14} className={`${openDropdown === 'paths' ? 'rotate-180' : ''} transition-transform`} />
+              Learning Paths{' '}
+              <ChevronDown size={14} className={`${openDropdown === 'paths' ? 'rotate-180' : ''} transition-transform`} />
             </button>
             {openDropdown === 'paths' && (
               <div 
                 className="absolute top-full left-0 w-56 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-b-lg shadow-xl py-2 z-50"
               >
                 {learningPaths.length === 0 ? (
-                  <p className="px-4 py-2 text-sm text-[var(--text-muted)]">No learning paths yet</p>
+                  <p className="px-4 py-2 text-sm text-[var(--text-muted)]">No Learning Paths yet</p>
                 ) : (
                   learningPaths.map((path, index) => (
                     <button
@@ -756,13 +757,13 @@ export const Navbar: React.FC<NavbarProps> = ({
                   onClick={() => setMobileNavExpand((e) => (e === 'paths' ? null : 'paths'))}
                   aria-expanded={mobileNavExpand === 'paths'}
                 >
-                  <span>Paths</span>
+                  <span>Learning Paths</span>
                   <ChevronDown size={16} className={`shrink-0 transition-transform ${mobileNavExpand === 'paths' ? 'rotate-180' : ''}`} />
                 </button>
                 {mobileNavExpand === 'paths' && (
                   <div className="border-t border-[var(--border-color)] bg-[var(--bg-primary)]/30 pb-2">
                     {learningPaths.length === 0 ? (
-                      <p className="px-6 py-2.5 text-sm text-[var(--text-muted)]">No learning paths yet</p>
+                      <p className="px-6 py-2.5 text-sm text-[var(--text-muted)]">No Learning Paths yet</p>
                     ) : (
                       learningPaths.map((path) => (
                         <button
