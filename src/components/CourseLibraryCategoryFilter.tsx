@@ -176,34 +176,6 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
         visibleLevels.length >
       0;
 
-    const firstMobileCloseSection =
-      visibleMainCat.length > 0
-        ? 'mainCat'
-        : visibleMoreCat.length > 0
-          ? 'moreCat'
-          : visibleMainSkill.length > 0
-            ? 'mainSkill'
-            : visibleMoreSkill.length > 0
-              ? 'moreSkill'
-              : visibleLevels.length > 0
-                ? 'level'
-                : 'empty';
-
-    const mobileFilterClose = (slot: typeof firstMobileCloseSection) =>
-      firstMobileCloseSection === slot ? (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            setOpen(false);
-          }}
-          className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-full text-[var(--text-muted)] outline-none transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus-visible:ring-2 focus-visible:ring-orange-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)] md:hidden"
-          aria-label="Close filters"
-        >
-          <X size={18} strokeWidth={2} aria-hidden />
-        </button>
-      ) : null;
-
     const inputPlaceholder =
       filterFocusedWithin || query.trim() !== '' ? '' : 'Filter courses…';
 
@@ -220,14 +192,18 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
         }}
       >
         <div
-          className="flex w-full min-w-0 items-stretch gap-0.5 rounded-full border border-[var(--border-color)] bg-[var(--bg-secondary)] py-1 pl-2 pr-0.5 shadow-sm transition-colors focus-within:border-orange-500/40 focus-within:ring-1 focus-within:ring-orange-500/25"
+          className="flex w-full min-w-0 items-stretch gap-1 rounded-full border border-[var(--border-color)] bg-[var(--bg-secondary)] py-1 pl-2 pr-1 shadow-sm transition-colors focus-within:border-orange-500/40 focus-within:ring-1 focus-within:ring-orange-500/25 max-md:min-h-11 max-md:py-1.5 max-md:pl-2.5 max-md:pr-1.5"
           role="group"
           aria-label="Course filters"
         >
-          <Search size={16} className="ml-1 shrink-0 self-center text-[var(--text-muted)]" aria-hidden />
-          <div className="flex min-h-10 min-w-0 flex-1 items-center gap-1.5 overflow-x-auto overscroll-x-contain py-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {/* Below md, active tags live in the nav drawer (Categories / Skills); bar stays search-only. */}
-            <div className="hidden md:contents">
+          <Search
+            size={16}
+            className={`ml-0.5 shrink-0 self-center text-[var(--text-muted)] max-md:h-5 max-md:w-5 ${filterFocusedWithin ? 'hidden' : ''}`}
+            aria-hidden
+          />
+          {/* Single scroll row on all breakpoints: md = chips then input; max-md reverse so field stays left, chips scroll right (avoids layout jump from a second row). */}
+          <div className="flex min-h-10 min-w-0 flex-1 flex-row-reverse items-center gap-1 overflow-x-auto overscroll-x-contain py-0.5 [-ms-overflow-style:none] [scrollbar-width:none] md:flex-row md:gap-1.5 [&::-webkit-scrollbar]:hidden max-md:min-h-10">
+            <div className="contents">
               {filters.categoryTags.map((tag) =>
                 renderActiveChip(
                   `c-${tag}`,
@@ -270,10 +246,37 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
               }}
               onFocus={() => setOpen(true)}
               placeholder={inputPlaceholder}
-              className="min-h-9 min-w-[6rem] flex-1 shrink-0 border-0 bg-transparent px-2 py-1.5 text-sm text-[var(--text-primary)] shadow-none outline-none ring-0 placeholder:text-[var(--text-muted)] focus:border-0 focus:ring-0 focus-visible:outline-none focus-visible:ring-0 sm:min-w-[8rem] [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none"
+              className="min-h-9 min-w-0 shrink-0 border-0 bg-transparent px-1 py-1.5 text-sm text-[var(--text-primary)] shadow-none outline-none ring-0 placeholder:text-[var(--text-muted)] focus:border-0 focus:ring-0 focus-visible:outline-none focus-visible:ring-0 max-md:min-h-10 max-md:min-w-[6.5rem] max-md:flex-1 max-md:shrink-0 max-md:px-2 max-md:text-base max-md:leading-normal md:min-w-0 md:flex-1 sm:min-w-[8rem] [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none"
             />
           </div>
-          <div className="flex shrink-0 items-center self-stretch">
+          <div className="flex shrink-0 items-center gap-0.5 self-stretch pr-0.5">
+            {/* Mobile: open/close full filter panel (input also opens on focus). */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setOpen((o) => !o);
+              }}
+              aria-expanded={open}
+              aria-controls={panelId}
+              className="inline-flex h-full min-h-10 min-w-11 touch-manipulation items-center justify-center rounded-full text-[var(--text-muted)] outline-none transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus-visible:ring-2 focus-visible:ring-orange-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)] md:hidden"
+              aria-label={open ? 'Close filter options' : 'Open filter options'}
+            >
+              <ChevronDown size={20} className={`transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden />
+            </button>
+            {query.trim() !== '' ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setQuery('');
+                }}
+                className="inline-flex h-full min-h-10 min-w-11 touch-manipulation items-center justify-center rounded-full text-[var(--text-muted)] outline-none transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus-visible:ring-2 focus-visible:ring-orange-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)] md:min-w-10"
+                aria-label="Clear search text"
+              >
+                <X size={18} strokeWidth={2} aria-hidden />
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={(e) => {
@@ -292,7 +295,7 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
               tabIndex={activeCount > 0 ? 0 : -1}
               aria-hidden={activeCount === 0}
               onClick={activeCount > 0 ? clearAllFilters : undefined}
-              className={`inline-flex h-full min-h-10 min-w-10 items-center justify-center rounded-full text-[var(--text-muted)] outline-none transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus-visible:ring-2 focus-visible:ring-orange-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)] ${activeCount === 0 ? 'pointer-events-none invisible' : ''}`}
+              className={`inline-flex h-full min-h-10 min-w-11 touch-manipulation items-center justify-center rounded-full text-[var(--text-muted)] outline-none transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus-visible:ring-2 focus-visible:ring-orange-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)] md:min-w-10 ${activeCount === 0 ? 'pointer-events-none max-md:hidden md:invisible' : ''}`}
               aria-label="Clear all filters"
             >
               <X size={18} strokeWidth={2} aria-hidden />
@@ -306,18 +309,15 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
             id={panelId}
             role="dialog"
             aria-label="Course filters"
-            className="filterWindow dropdown card absolute left-0 right-0 top-full z-50 mt-2 max-h-[min(75vh,32rem)] overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl sm:left-0 sm:right-auto sm:w-[min(100%,26rem)] max-md:fixed max-md:left-[5vw] max-md:right-[5vw] max-md:top-[calc(4rem+env(safe-area-inset-top,0px)+0.375rem)] max-md:mt-0 max-md:z-[60] max-md:flex max-md:h-[calc((100dvh-4.5rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))*0.9)] max-md:max-h-[calc((100dvh-4.5rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))*0.9)] max-md:w-auto max-md:flex-col"
+            className="filterWindow dropdown card absolute left-0 right-0 top-full z-50 mt-2 max-h-[min(75vh,32rem)] overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl sm:left-0 sm:right-auto sm:w-[min(100%,26rem)] max-md:fixed max-md:left-3 max-md:right-3 max-md:top-[calc(4rem+env(safe-area-inset-top,0px)+0.5rem)] max-md:mt-0 max-md:z-[60] max-md:flex max-md:h-[min(88dvh,calc(100dvh-4.5rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px)-0.75rem))] max-md:max-h-[min(88dvh,calc(100dvh-4.5rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px)-0.75rem))] max-md:w-auto max-md:flex-col max-md:rounded-3xl max-md:shadow-[0_12px_48px_-12px_rgba(0,0,0,0.35)] dark:max-md:shadow-[0_12px_48px_-12px_rgba(0,0,0,0.55)]"
           >
-            <div className="max-h-[min(65vh,28rem)] overflow-y-auto overscroll-contain px-3 py-3 max-md:max-h-none max-md:min-h-0 max-md:flex-1">
+            <div className="max-h-[min(65vh,28rem)] overflow-y-auto overscroll-y-contain px-3 py-3 max-md:max-h-none max-md:min-h-0 max-md:flex-1 max-md:px-4 max-md:pb-[max(1rem,env(safe-area-inset-bottom,0px))] max-md:pt-4">
               {visibleMainCat.length > 0 ? (
                 <section className="mb-4">
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <div className="title min-w-0 flex-1 text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
-                      Popular topics
-                    </div>
-                    {mobileFilterClose('mainCat')}
+                  <div className="title mb-2 text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
+                    Popular topics
                   </div>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-2 max-md:gap-2.5">
                     {visibleMainCat.map((label) => (
                       <React.Fragment key={`cm-${label}`}>
                         <FilterTagButton
@@ -337,13 +337,10 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
 
               {visibleMoreCat.length > 0 ? (
                 <section className="mb-4">
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <div className="title min-w-0 flex-1 text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
-                      More topics
-                    </div>
-                    {mobileFilterClose('moreCat')}
+                  <div className="title mb-2 text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
+                    More topics
                   </div>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-2 max-md:gap-2.5">
                     {visibleMoreCat.map((label) => (
                       <React.Fragment key={`cx-${label}`}>
                         <FilterTagButton
@@ -364,13 +361,10 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
 
               {visibleMainSkill.length > 0 ? (
                 <section className="mb-4">
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <div className="title min-w-0 flex-1 text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
-                      Popular skills
-                    </div>
-                    {mobileFilterClose('mainSkill')}
+                  <div className="title mb-2 text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
+                    Popular skills
                   </div>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-2 max-md:gap-2.5">
                     {visibleMainSkill.map((label) => (
                       <React.Fragment key={`sm-${label}`}>
                         <FilterTagButton label={label} selected={filters.skillTags} onToggle={toggleSkill} />
@@ -386,13 +380,10 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
 
               {visibleMoreSkill.length > 0 ? (
                 <section className="mb-4">
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <div className="title min-w-0 flex-1 text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
-                      More skills
-                    </div>
-                    {mobileFilterClose('moreSkill')}
+                  <div className="title mb-2 text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
+                    More skills
                   </div>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-2 max-md:gap-2.5">
                     {visibleMoreSkill.map((label) => (
                       <React.Fragment key={`sx-${label}`}>
                         <FilterTagButton label={label} selected={filters.skillTags} onToggle={toggleSkill} />
@@ -408,14 +399,11 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
 
               {visibleLevels.length > 0 ? (
                 <section>
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <div className="title min-w-0 flex-1 text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
-                      Level
-                    </div>
-                    {mobileFilterClose('level')}
+                  <div className="title mb-2 text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
+                    Level
                   </div>
                   <p className="mb-2 text-[11px] text-[var(--text-muted)]">Pick one level to narrow results.</p>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-2 max-md:gap-2.5">
                     {visibleLevels.map((level) => (
                       <React.Fragment key={`lv-${level}`}>
                         <FilterTagButton
@@ -430,12 +418,7 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
               ) : null}
 
               {!anyVisible ? (
-                <>
-                  <div className="mb-2 flex items-center justify-end gap-2 md:hidden">
-                    {mobileFilterClose('empty')}
-                  </div>
-                  <p className="py-6 text-center text-sm text-[var(--text-muted)]">Nothing matches that search.</p>
-                </>
+                <p className="py-6 text-center text-sm text-[var(--text-muted)]">Nothing matches that search.</p>
               ) : null}
             </div>
           </div>

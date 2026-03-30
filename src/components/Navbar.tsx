@@ -104,6 +104,12 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
+  useEffect(() => {
+    if (activeView !== 'catalog' || typeof window === 'undefined') return;
+    if (!window.matchMedia('(max-width: 767px)').matches) return;
+    setOpenDropdown((d) => (d === 'notifications' ? null : d));
+  }, [activeView]);
+
   useBodyScrollLock(mobileMenuOpen);
 
   const skillItems = catalogBrowseSkills;
@@ -424,8 +430,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
         </button>
 
-        {/* Notifications */}
-        <div className="relative" ref={notificationRef}>
+        {/* Notifications — hidden on small screens while browsing catalog so the filter bar has room. */}
+        <div
+          className={`relative ${activeView === 'catalog' ? 'max-md:hidden' : ''}`}
+          ref={notificationRef}
+        >
           <button 
             type="button"
             onClick={() => {
@@ -733,7 +742,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                 type="button"
                 className={`px-4 py-3 text-left transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] ${activeView === 'catalog' ? 'text-orange-500' : ''}`}
                 onClick={() => {
-                  onNavigate('catalog', false);
+                  /* Default shouldClear=true matches desktop Browse Catalog: clears learning path + library filters. */
+                  onNavigate('catalog');
                   setMobileMenuOpen(false);
                 }}
               >
