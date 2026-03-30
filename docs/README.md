@@ -12,6 +12,7 @@ Notes for **contributors** and **AI assistants**: architecture pointers, debuggi
 | [**admin-reorder-scroll-viewport.md**](./admin-reorder-scroll-viewport.md) | Admin ↑/↓ reorder: viewport scroll compensation, `flushSync`, Strict Mode, [`reorderScrollViewport.ts`](../src/utils/reorderScrollViewport.ts), and wiring per screen. |
 | [**patterns-admin-label-info-tip.md**](./patterns-admin-label-info-tip.md) | **Reusable UI pattern:** field label + compact info button + click/tap tips (wide vs narrow panel, a11y, close behavior). Reference: [`AdminCourseCatalogSection`](../src/components/admin/AdminCourseCatalogSection.tsx). |
 | [**patterns-in-app-confirmation-dialog.md**](./patterns-in-app-confirmation-dialog.md) | **Reusable UI pattern:** confirmations and alerts via in-app modals—no `window.confirm` / `window.alert`; `useBodyScrollLock`, `useDialogKeyboard`, layout/a11y checklist. Reference: [`AdminHeroPhoneAdsSection`](../src/components/admin/AdminHeroPhoneAdsSection.tsx). |
+| [**patterns-admin-disclosure-widgets.md**](./patterns-admin-disclosure-widgets.md) | **Disclosure / disclosure widgets** for long admin editors (accordion). **Catalog:** modules/lessons + course details ([`AdminCourseCatalogSection`](../src/components/admin/AdminCourseCatalogSection.tsx)). **Marketing:** one slide at a time ([`AdminHeroPhoneAdsSection`](../src/components/admin/AdminHeroPhoneAdsSection.tsx)). |
 
 ## Full file reference (every source file)
 

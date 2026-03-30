@@ -83,6 +83,7 @@ import {
   queryElementInScopeOrDocument,
   REORDER_DATA_ATTR_SELECTORS,
 } from '../../utils/reorderScrollViewport';
+import { scrollDisclosureRowToTop } from '../../utils/scrollDisclosureRowToTop';
 
 function deepClone<T>(x: T): T {
   return JSON.parse(JSON.stringify(x)) as T;
@@ -1538,6 +1539,7 @@ function PathCourseRow({
     <div
       ref={setNodeRef}
       style={style}
+      data-path-course-disclosure={courseId}
       className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/40 overflow-hidden"
     >
       <div className="flex flex-wrap items-center gap-2 p-3 sm:p-4">
@@ -1874,6 +1876,8 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
   const pathBranchTreeRef = useRef<PathBranchNode[]>([]);
   pathBranchTreeRef.current = pathBranchTree;
   const pathBranchMindMapRootRef = useRef<HTMLDivElement | null>(null);
+  /** After expanding a branch row, align its card to the top of the viewport. */
+  const pendingBranchDisclosureScrollRef = useRef<string | null>(null);
   const pendingPathBranchReorderFocusRef = useRef<{
     nodeId: string;
     control: 'up' | 'down';
@@ -1895,6 +1899,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
 
   const [expandedCourseId, setExpandedCourseId] = useState<string | null>(null);
   const [openModuleIdx, setOpenModuleIdx] = useState<Record<string, boolean>>({});
+  const pathCoursesDisclosureOpenKey = useMemo(() => JSON.stringify(openModuleIdx), [openModuleIdx]);
   const [courseEditDraft, setCourseEditDraft] = useState<Course | null>(null);
   const [courseEditBaseline, setCourseEditBaseline] = useState<string | null>(null);
   const courseEditDraftRef = useRef<Course | null>(null);
@@ -1933,10 +1938,12 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     (id: string) => {
       setExpandedBranchIds((prev) => {
         if (prev.has(id)) {
+          pendingBranchDisclosureScrollRef.current = null;
           const next = new Set<string>(prev);
           stripBranchExpandState(next, pathBranchTree, id);
           return next;
         }
+        pendingBranchDisclosureScrollRef.current = id;
         return accordionExpandBranchRow(prev, pathBranchTree, id);
       });
     },
@@ -1945,6 +1952,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
 
   const focusBranchRow = useCallback(
     (id: string) => {
+      pendingBranchDisclosureScrollRef.current = id;
       setExpandedBranchIds((prev) => accordionExpandBranchRow(prev, pathBranchTree, id));
     },
     [pathBranchTree]
@@ -2201,7 +2209,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
       setCourseEditDraft(draft);
       setCourseEditBaseline(JSON.stringify(draft));
       setExpandedCourseId(courseId);
-      setOpenModuleIdx({ 0: true });
+      setOpenModuleIdx({ [`m-${courseId}-0`]: true });
     },
     [publishedList, showActionToast]
   );
@@ -2547,6 +2555,37 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     const row = queryElementInScopeOrDocument(pathCourseStructureEditorRef.current, sel);
     applyReorderViewportScrollAndFocus(row, lesJob, REORDER_DATA_ATTR_SELECTORS.lesson);
   }, [pathCourseReorderLayoutTick]);
+
+  useLayoutEffect(() => {
+    const id = pendingBranchDisclosureScrollRef.current;
+    if (!id) return;
+    pendingBranchDisclosureScrollRef.current = null;
+    const sel = `[data-path-branch-node-id="${escapeSelectorAttrValue(id)}"]`;
+    const row = queryElementInScopeOrDocument(pathBranchMindMapRootRef.current, sel);
+    scrollDisclosureRowToTop(null, row);
+  }, [expandedBranchIds]);
+
+  useLayoutEffect(() => {
+    if (!expandedCourseId) return;
+    const section = document.getElementById('admin-path-courses-section');
+    if (!section) return;
+    const esc = escapeSelectorAttrValue(expandedCourseId);
+    const prefix = `m-${expandedCourseId}-`;
+    let bestMi: number | null = null;
+    for (const [k, v] of Object.entries(openModuleIdx)) {
+      if (!v || !k.startsWith(prefix)) continue;
+      const mi = Number(k.slice(prefix.length));
+      if (Number.isInteger(mi) && (bestMi === null || mi > bestMi)) bestMi = mi;
+    }
+    let el: HTMLElement | null = null;
+    if (bestMi !== null) {
+      el = section.querySelector(`[data-path-course-id="${esc}"][data-path-module-index="${bestMi}"]`);
+    }
+    if (!el) {
+      el = section.querySelector(`[data-path-course-disclosure="${esc}"]`);
+    }
+    scrollDisclosureRowToTop(null, el);
+  }, [expandedCourseId, pathCoursesDisclosureOpenKey]);
 
   const moveCourseLessonToModule = useCallback(
     (cid: string, mi: number, li: number, targetMi: number) => {

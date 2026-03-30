@@ -101,6 +101,7 @@ The workspace rule **mobile-first** applies: assume phone-width layouts unless t
 | Admin Content tab: course/path/category editors, URLs, Firestore modules | [admin-portal-content.md](./admin-portal-content.md) |
 | Admin ↑/↓ reorder feels random; row “jumps”; wrong item moves; Strict Mode double swap | [admin-reorder-scroll-viewport.md](./admin-reorder-scroll-viewport.md) |
 | Adding a destructive confirm or blocking alert; avoiding native `window.confirm` | [patterns-in-app-confirmation-dialog.md](./patterns-in-app-confirmation-dialog.md) |
+| Admin **disclosure widgets** (**Content** modules/lessons; **Marketing** slides)—accordion, quick ref, lifecycles | [patterns-admin-disclosure-widgets.md](./patterns-admin-disclosure-widgets.md) |
 
 Add new deep-dive files under `docs/` and link them from [`docs/README.md`](./README.md).
 

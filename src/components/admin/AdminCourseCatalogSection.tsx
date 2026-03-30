@@ -76,6 +76,7 @@ import {
   queryElementInScopeOrDocument,
   REORDER_DATA_ATTR_SELECTORS,
 } from '../../utils/reorderScrollViewport';
+import { scrollDisclosureRowToTop } from '../../utils/scrollDisclosureRowToTop';
 
 function deepClone<T>(x: T): T {
   return JSON.parse(JSON.stringify(x)) as T;
@@ -414,6 +415,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   } | null>(null);
   const [moduleReorderLayoutTick, setModuleReorderLayoutTick] = useState(0);
   const courseCatalogEditorRef = useRef<HTMLDivElement | null>(null);
+  const courseDetailsDisclosureRef = useRef<HTMLDivElement | null>(null);
   /** After choosing New Course (or equivalent), focus Course title once details are expanded. */
   const pendingFocusCourseTitleRef = useRef(false);
   /** Avoid collapsing the editor when selector moves from __new__ to draft.id after first save (draft id unchanged). */
@@ -1260,6 +1262,38 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       return { [key]: true };
     });
   };
+
+  const catalogDisclosureLessonKey = useMemo(() => {
+    const k = Object.keys(openLessons).find((key) => openLessons[key]);
+    return k ?? null;
+  }, [openLessons]);
+
+  const catalogDisclosureModuleMi = useMemo(() => {
+    const e = Object.entries(openModules).find(([, v]) => v);
+    if (!e) return null;
+    const mi = Number(e[0]);
+    return Number.isInteger(mi) ? mi : null;
+  }, [openModules]);
+
+  /** Align expanded course details / module / lesson block to top of viewport (catalog has no inner scroll shell). */
+  useLayoutEffect(() => {
+    const root = courseCatalogEditorRef.current;
+    if (!root) return;
+    let el: HTMLElement | null = null;
+    if (catalogDisclosureLessonKey) {
+      const parts = catalogDisclosureLessonKey.split(':');
+      const mi = Number(parts[0]);
+      const li = Number(parts[1]);
+      if (Number.isInteger(mi) && Number.isInteger(li)) {
+        el = root.querySelector(`[data-lesson-mi="${mi}"][data-lesson-li="${li}"]`);
+      }
+    } else if (catalogDisclosureModuleMi != null) {
+      el = root.querySelector(`[data-admin-module-index="${catalogDisclosureModuleMi}"]`);
+    } else if (courseDetailsOpen) {
+      el = courseDetailsDisclosureRef.current;
+    }
+    scrollDisclosureRowToTop(null, el);
+  }, [catalogDisclosureLessonKey, catalogDisclosureModuleMi, courseDetailsOpen]);
 
   const getFirstRequiredFieldTarget = (c: Course): RequiredFieldTarget | null => {
     if (!c.title.trim()) return { targetId: 'admin-course-title', scope: 'course', moduleIndex: 0 };
@@ -2146,7 +2180,10 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
         {draft && (
           <div className="space-y-4">
-          <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/20">
+          <div
+            ref={courseDetailsDisclosureRef}
+            className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/20"
+          >
             <button
               type="button"
               onClick={() => setCourseDetailsOpen((v) => !v)}

@@ -28,6 +28,10 @@ Treat the bullets below as **requirements** for any new label + info tip in admi
 - **Course** row and **Modules and lessons** (catalog sub-tab).
 - **Categories** (Course details): **label + info** tip with short bullets (required count; when custom names hit library filters). Closing **Course details** closes the tip; same narrow/wide panel behavior as the other tips.
 
+**Shared component (Marketing / reuse):** [`adminLabelInfoTip.tsx`](../src/components/admin/adminLabelInfoTip.tsx) exports **`AdminLabelInfoTip`** (same interaction, narrow/wide placement, and bullet list wrapper). **Marketing** tab: [`AdminHeroPhoneAdsSection.tsx`](../src/components/admin/AdminHeroPhoneAdsSection.tsx) — tips on the section title, default auto-advance, custom ads toggle, slides header, per-slide duration, and **Image URL** per image block. Use **`controlOnly`** when the label is separate (e.g. checkbox text or section `h2`).
+
+**Disclosure widgets** for heavy admin rows (catalog **modules/lessons**, Marketing **slides**, etc.) are documented in [patterns-admin-disclosure-widgets.md](./patterns-admin-disclosure-widgets.md) (accordion: one module, one lesson, one slide editor at a time).
+
 ---
 
 ## Visual layout (match other field labels)

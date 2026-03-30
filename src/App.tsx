@@ -1804,14 +1804,26 @@ export default function App() {
 
   const handleFooterKeyDown = (e: React.KeyboardEvent, index: number) => {
     const footerLinksCount = 6; // Focusable footer links (Solutions rows are static)
+    /** Contact Us is hidden below md — hamburger-only entry on narrow viewports. */
+    const skipContactIndex =
+      typeof window !== 'undefined' && !window.matchMedia('(min-width: 768px)').matches;
+    const stepFooterIndex = (from: number, delta: number) => {
+      let i = from;
+      for (let n = 0; n < footerLinksCount; n++) {
+        i = (i + delta + footerLinksCount) % footerLinksCount;
+        if (i === 1 && skipContactIndex) continue;
+        return i;
+      }
+      return from;
+    };
     if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
       e.preventDefault();
-      const nextIndex = (index + 1) % footerLinksCount;
+      const nextIndex = stepFooterIndex(index, 1);
       setFocusedFooterIndex(nextIndex);
       footerRefs.current[nextIndex]?.focus();
     } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
       e.preventDefault();
-      const prevIndex = (index - 1 + footerLinksCount) % footerLinksCount;
+      const prevIndex = stepFooterIndex(index, -1);
       setFocusedFooterIndex(prevIndex);
       footerRefs.current[prevIndex]?.focus();
     } else if (e.key === 'Enter') {
@@ -2018,7 +2030,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => handleNavigate('contact')}
-                className="inline-flex min-h-11 min-w-0 flex-1 items-center justify-center rounded-md bg-[var(--hover-bg)] px-6 py-4 font-bold text-[var(--text-primary)] transition-colors hover:bg-[var(--hover-bg)]/80 sm:flex-initial sm:px-8"
+                className="hidden min-h-11 min-w-0 items-center justify-center rounded-md bg-[var(--hover-bg)] px-6 py-4 font-bold text-[var(--text-primary)] transition-colors hover:bg-[var(--hover-bg)]/80 md:inline-flex md:px-8"
               >
                 Contact Us
               </button>
@@ -2710,7 +2722,7 @@ export default function App() {
                   tabIndex={focusedFooterIndex === 1 ? 0 : -1}
                   onKeyDown={(e) => handleFooterKeyDown(e as any, 1)}
                   onClick={() => handleNavigate('contact')} 
-                  className="hover:text-orange-500 cursor-pointer focus:outline-none focus:text-orange-500"
+                  className="max-md:hidden hover:text-orange-500 cursor-pointer focus:outline-none focus:text-orange-500"
                 >
                   Contact Us
                 </li>
