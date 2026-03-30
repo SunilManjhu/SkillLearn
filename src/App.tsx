@@ -416,6 +416,9 @@ export default function App() {
     skillTags: [],
     level: null,
   });
+  /** Navbar Browse → Skills / topic: narrows catalog without showing in Course filters pill. Cleared when Course filters change or clearFilters. */
+  const [navCatalogSkillTag, setNavCatalogSkillTag] = useState<string | null>(null);
+  const [navCatalogCategoryTag, setNavCatalogCategoryTag] = useState<string | null>(null);
   const [categoryPresets, setCategoryPresets] = useState<CatalogCategoryPresetsState>(() =>
     normalizeCatalogCategoryPresets(DEFAULT_CATALOG_CATEGORY_PRESETS)
   );
@@ -1405,13 +1408,34 @@ export default function App() {
       selectedLearningPathId == null ||
       (pathCourseIds != null && pathCourseIds.includes(course.id));
 
-    return matchesPath && courseMatchesLibraryFilters(course, libraryFilters);
+    if (!matchesPath) return false;
+
+    if (navCatalogSkillTag) {
+      const k = navCatalogSkillTag.trim().toLowerCase();
+      const ss = course.skills.map((s) => s.trim().toLowerCase());
+      if (!ss.includes(k)) return false;
+    }
+    if (navCatalogCategoryTag) {
+      const k = navCatalogCategoryTag.trim().toLowerCase();
+      const cc = course.categories.map((c) => c.trim().toLowerCase());
+      if (!cc.includes(k)) return false;
+    }
+
+    return courseMatchesLibraryFilters(course, libraryFilters);
   });
 
   const clearFilters = () => {
     setSelectedLearningPathId(null);
     setLibraryFilters({ categoryTags: [], skillTags: [], level: null });
+    setNavCatalogSkillTag(null);
+    setNavCatalogCategoryTag(null);
   };
+
+  const handleCourseLibraryFiltersChange = useCallback((next: LibraryFilterState) => {
+    setNavCatalogSkillTag(null);
+    setNavCatalogCategoryTag(null);
+    setLibraryFilters(next);
+  }, []);
 
   useEffect(() => {
     const onExtras = () => setCategoryFilterRevision((r) => r + 1);
@@ -1716,25 +1740,28 @@ export default function App() {
 
   const handleCategorySelect = (category: string) => {
     setSelectedLearningPathId(null);
-    setLibraryFilters((f) => ({
-      ...f,
-      categoryTags: toggleFilterTag(f.categoryTags, category, catalogBrowseCategories),
-    }));
+    setLibraryFilters({ categoryTags: [], skillTags: [], level: null });
+    const tags = toggleFilterTag([], category, catalogBrowseCategories);
+    setNavCatalogCategoryTag(tags[0] ?? null);
+    setNavCatalogSkillTag(null);
     handleNavigate('catalog', false);
   };
 
   const handlePathSelect = (pathId: string) => {
     setSelectedLearningPathId(pathId);
     setLibraryFilters({ categoryTags: [], skillTags: [], level: null });
+    setNavCatalogSkillTag(null);
+    setNavCatalogCategoryTag(null);
     handleNavigate('catalog', false);
   };
 
+  /** Navbar Skills: narrow catalog by skill without syncing to Course filters pill. */
   const handleSkillSelect = (skill: string) => {
     setSelectedLearningPathId(null);
-    setLibraryFilters((f) => ({
-      ...f,
-      skillTags: toggleFilterTag(f.skillTags, skill, catalogBrowseSkills),
-    }));
+    setLibraryFilters({ categoryTags: [], skillTags: [], level: null });
+    const tags = toggleFilterTag([], skill, catalogBrowseSkills);
+    setNavCatalogSkillTag(tags[0] ?? null);
+    setNavCatalogCategoryTag(null);
     handleNavigate('catalog', false);
   };
 
@@ -2455,15 +2482,17 @@ export default function App() {
                 mainSkills={allPresetCatalogSkills()}
                 moreSkills={moreSkills}
                 filters={libraryFilters}
-                onFiltersChange={setLibraryFilters}
+                onFiltersChange={handleCourseLibraryFiltersChange}
               />
             ) : undefined
           }
           onCategorySelect={handleCategorySelect}
           catalogBrowseCategories={catalogBrowseCategories}
           catalogBrowseSkills={catalogBrowseSkills}
-          catalogActiveCategoryTags={libraryFilters.categoryTags}
-          catalogActiveSkillTags={libraryFilters.skillTags}
+          catalogActiveCategoryTags={
+            navCatalogCategoryTag ? [navCatalogCategoryTag] : libraryFilters.categoryTags
+          }
+          catalogActiveSkillTags={navCatalogSkillTag ? [navCatalogSkillTag] : libraryFilters.skillTags}
           learningPaths={learningPaths}
           onPathSelect={handlePathSelect}
           onSkillSelect={handleSkillSelect}
