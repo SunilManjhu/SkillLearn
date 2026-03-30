@@ -1966,15 +1966,15 @@ export default function App() {
   };
 
   const renderHome = () => (
-    <div className="pt-16">
-      {/* Hero Section */}
-      <section className="relative overflow-hidden border-b border-[var(--border-color)] bg-[var(--bg-primary)] px-6 py-12 sm:px-12 md:py-16 lg:min-h-[560px] lg:py-20">
-        <div className="mx-auto flex max-w-7xl flex-col items-center gap-10 lg:flex-row lg:items-center lg:justify-between lg:gap-16">
-          <div className="relative z-10 w-full min-w-0 max-w-2xl">
+    <div className="pt-14 sm:pt-16">
+      {/* Hero Section — tighter vertical rhythm + lg:items-start so phone tab bars stay in view (min-h + center was pushing mockup down). */}
+      <section className="relative overflow-x-hidden border-b border-[var(--border-color)] bg-[var(--bg-primary)] px-0 pb-10 pt-6 sm:pb-12 sm:pt-8 md:pb-12 md:pt-10 lg:pb-14 lg:pt-8">
+        <div className="mx-auto flex max-w-7xl flex-col items-center gap-6 sm:gap-8 lg:flex-row lg:items-start lg:justify-between lg:gap-14">
+          <div className="relative z-10 mt-4 w-full min-w-0 max-w-2xl sm:mt-5">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="mb-6 inline-flex items-center gap-2 rounded-full bg-orange-500/20 px-3 py-1 text-xs font-bold uppercase tracking-widest text-orange-500"
+              className="mb-3 inline-flex items-center gap-2 rounded-full bg-orange-500/20 px-3 py-1 text-xs font-bold uppercase tracking-widest text-orange-500 sm:mb-6"
             >
               <TrendingUp size={14} />
               Trending in Software Development
@@ -1983,7 +1983,7 @@ export default function App() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 }}
-              className="mb-6 text-4xl font-bold leading-tight text-[var(--text-primary)] sm:text-5xl lg:text-6xl xl:text-7xl"
+              className="mb-3 text-4xl font-bold leading-tight text-[var(--text-primary)] sm:mb-6 sm:text-5xl lg:text-6xl xl:text-7xl"
             >
               Build your <span className="text-orange-500">future</span> with SkillStream.
             </motion.h1>
@@ -1991,7 +1991,7 @@ export default function App() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
-              className="mb-8 text-lg text-[var(--text-secondary)] sm:text-xl"
+              className="mb-5 text-lg text-[var(--text-secondary)] sm:mb-8 sm:text-xl"
             >
               The technology learning platform to build tomorrow&apos;s skills today. Get access to 7,000+ courses from
               industry experts.
@@ -2028,7 +2028,7 @@ export default function App() {
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.15, duration: 0.45 }}
-            className="relative z-10 flex w-full shrink-0 justify-center lg:w-[min(100%,380px)] lg:min-w-[min(100%,380px)] lg:justify-end"
+            className="relative z-10 flex w-full shrink-0 justify-center lg:w-[min(100%,380px)] lg:min-w-[min(100%,380px)] lg:justify-end lg:self-start"
           >
             <PhoneMockupAdRail
               imageSrc={mobileHeroSrc}

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   ChevronDown,
   ChevronUp,
@@ -9,6 +10,7 @@ import {
   Timer,
   Trash2,
   Type,
+  X,
 } from 'lucide-react';
 import { PhoneMockupAdRail } from '../PhoneMockupAdRail';
 import {
@@ -23,6 +25,8 @@ import {
   isHeroAdImageFit,
   storedSlideToRailSlide,
 } from '../../utils/heroPhoneAdsShared';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
+import { useDialogKeyboard } from '../../hooks/useDialogKeyboard';
 import { loadHeroPhoneAdsForAdmin, saveHeroPhoneAdsAsAdmin } from '../../utils/heroPhoneAdsFirestore';
 import { useAdminActionToast } from './useAdminActionToast';
 
@@ -79,6 +83,7 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
   onDirtyChange,
 }) => {
   const { showActionToast, actionToast } = useAdminActionToast();
+  const [saveErrorDialog, setSaveErrorDialog] = useState<{ code?: string; message?: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [enabled, setEnabled] = useState(false);
@@ -333,10 +338,19 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
     return true;
   };
 
+  const closeSaveErrorDialog = useCallback(() => setSaveErrorDialog(null), []);
+
+  useBodyScrollLock(saveErrorDialog !== null);
+  useDialogKeyboard({
+    open: saveErrorDialog !== null,
+    onClose: closeSaveErrorDialog,
+    onPrimaryAction: closeSaveErrorDialog,
+  });
+
   const handleSave = async () => {
     if (!validateBeforeSave()) return;
     setSaving(true);
-    const ok = await saveHeroPhoneAdsAsAdmin({
+    const result = await saveHeroPhoneAdsAsAdmin({
       enabled,
       defaultSlideDurationSec: draftDefaultSec,
       slides: draftSlides.map((s) => ({
@@ -352,13 +366,13 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
       })),
     });
     setSaving(false);
-    if (ok) {
+    if (result.ok) {
       setSavedEnabled(enabled);
       setSavedDefaultSec(draftDefaultSec);
       setSavedSlides(cloneStoredSlides(draftSlides));
       showActionToast('Home hero phone ads saved.');
     } else {
-      showActionToast('Could not save (check rules / console).', 'danger');
+      setSaveErrorDialog({ code: result.code, message: result.message });
     }
   };
 
@@ -869,6 +883,81 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
           </aside>
         </div>
       </div>
+
+      <AnimatePresence>
+        {saveErrorDialog && (
+          <div
+            className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] backdrop-blur-sm sm:items-center sm:p-6"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="hero-ads-save-error-title"
+            aria-describedby="hero-ads-save-error-desc"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) closeSaveErrorDialog();
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 12 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              className="w-full max-w-lg overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl sm:rounded-3xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-3 border-b border-[var(--border-color)] p-4 sm:p-6">
+                <h2
+                  id="hero-ads-save-error-title"
+                  className="text-lg font-bold text-[var(--text-primary)] sm:text-xl"
+                >
+                  Couldn’t save to Firestore
+                </h2>
+                <button
+                  type="button"
+                  onClick={closeSaveErrorDialog}
+                  className="shrink-0 rounded-full p-2 transition-colors hover:bg-[var(--hover-bg)]"
+                  aria-label="Close"
+                >
+                  <X size={20} className="text-[var(--text-secondary)]" aria-hidden />
+                </button>
+              </div>
+              <div id="hero-ads-save-error-desc" className="space-y-3 p-4 text-sm leading-relaxed text-[var(--text-secondary)] sm:p-6">
+                {saveErrorDialog.code === 'permission-denied' ? (
+                  <>
+                    <p>
+                      Firebase blocked this write (missing or insufficient permissions). That usually means security
+                      rules don’t allow your account to update this document, or rules were published to a{' '}
+                      <strong className="font-semibold text-[var(--text-primary)]">different</strong> Firestore database
+                      than the one this app uses.
+                    </p>
+                    <p>
+                      In Firebase Console, open <strong className="font-semibold text-[var(--text-primary)]">Firestore</strong>
+                      , select the <strong className="font-semibold text-[var(--text-primary)]">same database</strong> the
+                      app is configured for (not only the default), then <strong className="font-semibold text-[var(--text-primary)]">Rules</strong>
+                      , paste the project’s <code className="rounded bg-[var(--hover-bg)] px-1 py-0.5 text-xs">firestore.rules</code>
+                      , and publish. Ensure your user has admin access per those rules.
+                    </p>
+                  </>
+                ) : (
+                  <p>{saveErrorDialog.message?.trim() || 'Something went wrong while saving. Try again in a moment.'}</p>
+                )}
+                {saveErrorDialog.code && saveErrorDialog.code !== 'permission-denied' ? (
+                  <p className="font-mono text-xs text-[var(--text-muted)]">Code: {saveErrorDialog.code}</p>
+                ) : null}
+              </div>
+              <div className="border-t border-[var(--border-color)] p-4 sm:flex sm:justify-end sm:p-6">
+                <button
+                  type="button"
+                  autoFocus
+                  onClick={closeSaveErrorDialog}
+                  className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-orange-600 sm:w-auto"
+                >
+                  OK
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {actionToast}
     </div>

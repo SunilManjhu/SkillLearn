@@ -221,12 +221,18 @@ function serializeBlockForFirestore(b: HeroAdBlockStored): Record<string, unknow
   return out;
 }
 
+export type SaveHeroPhoneAdsResult =
+  | { ok: true }
+  | { ok: false; code?: string; message?: string };
+
 export async function saveHeroPhoneAdsAsAdmin(input: {
   enabled: boolean;
   slides: HeroPhoneAdSlideStored[];
   defaultSlideDurationSec: number;
-}): Promise<boolean> {
-  if (input.slides.length < 1 || input.slides.length > 8) return false;
+}): Promise<SaveHeroPhoneAdsResult> {
+  if (input.slides.length < 1 || input.slides.length > 8) {
+    return { ok: false, message: 'Slide count must be between 1 and 8.' };
+  }
   const defaultSec = Math.round(input.defaultSlideDurationSec);
   const safeDefault = defaultSec <= 0 ? 0 : Math.min(120, Math.max(1, defaultSec));
   try {
@@ -251,9 +257,12 @@ export async function saveHeroPhoneAdsAsAdmin(input: {
       }),
       updatedAt: serverTimestamp(),
     });
-    return true;
+    return { ok: true };
   } catch (e) {
     handleFirestoreError(e, OperationType.WRITE, `${COLLECTION}/${HERO_PHONE_ADS_DOC_ID}`);
-    return false;
+    const code =
+      typeof e === 'object' && e !== null && 'code' in e ? String((e as { code: string }).code) : undefined;
+    const message = e instanceof Error ? e.message : String(e);
+    return { ok: false, code, message };
   }
 }
