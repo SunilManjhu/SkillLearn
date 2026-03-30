@@ -247,8 +247,8 @@ export function DemoLearningAgent({ onOpenCourse, courses = STATIC_CATALOG_FALLB
             <p className="shrink-0 border-b border-[var(--border-color)] px-4 py-3 text-xs leading-relaxed text-[var(--text-primary)]">
               {siteLearnerAiModelsEnabled ? (
                 <>
-                  AI models are turned off on this device. Open <strong>Profile</strong> → <strong>Models</strong> and
-                  enable <strong>Use AI models</strong> to use the assistant.
+                  Smart Verify is off on this device. Open <strong>Profile</strong> → <strong>Smart Hub</strong> and enable{' '}
+                  <strong>Smart Verify</strong> to use the assistant.
                 </>
               ) : (
                 <>An administrator has turned off learner AI for everyone. The assistant cannot run until they turn it

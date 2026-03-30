@@ -261,7 +261,7 @@ export function CourseQuizPanel({
       }
       if (!learnerGeminiOn) {
         setError(
-          'Open-ended questions need AI grading. In Profile → Models, turn on Use AI models.'
+          'Open-ended questions need AI grading. In Profile → Smart Hub, turn on Smart Verify.'
         );
         return;
       }
