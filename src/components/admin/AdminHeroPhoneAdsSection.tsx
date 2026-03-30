@@ -84,6 +84,7 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
 }) => {
   const { showActionToast, actionToast } = useAdminActionToast();
   const [saveErrorDialog, setSaveErrorDialog] = useState<{ code?: string; message?: string } | null>(null);
+  const [resetDefaultsDialogOpen, setResetDefaultsDialogOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [enabled, setEnabled] = useState(false);
@@ -339,12 +340,23 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
   };
 
   const closeSaveErrorDialog = useCallback(() => setSaveErrorDialog(null), []);
+  const closeResetDefaultsDialog = useCallback(() => setResetDefaultsDialogOpen(false), []);
+  const confirmResetDefaults = useCallback(() => {
+    setDraftSlides(cloneStoredSlides(INITIAL_STORED_HERO_PHONE_ADS));
+    showActionToast('Draft replaced with the default three slides.', 'neutral');
+    setResetDefaultsDialogOpen(false);
+  }, [showActionToast]);
 
-  useBodyScrollLock(saveErrorDialog !== null);
+  useBodyScrollLock(saveErrorDialog !== null || resetDefaultsDialogOpen);
   useDialogKeyboard({
     open: saveErrorDialog !== null,
     onClose: closeSaveErrorDialog,
     onPrimaryAction: closeSaveErrorDialog,
+  });
+  useDialogKeyboard({
+    open: resetDefaultsDialogOpen,
+    onClose: closeResetDefaultsDialog,
+    onPrimaryAction: confirmResetDefaults,
   });
 
   const handleSave = async () => {
@@ -383,16 +395,7 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
   };
 
   const handleResetSlidesToBundledDefaults = () => {
-    if (
-      typeof window !== 'undefined' &&
-      !window.confirm(
-        'Replace all draft slides with the three SkillStream default cards? Your current draft will be overwritten until you save.'
-      )
-    ) {
-      return;
-    }
-    setDraftSlides(cloneStoredSlides(INITIAL_STORED_HERO_PHONE_ADS));
-    showActionToast('Draft replaced with the default three slides.', 'neutral');
+    setResetDefaultsDialogOpen(true);
   };
 
   if (loading) {
@@ -952,6 +955,70 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                   className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-orange-600 sm:w-auto"
                 >
                   OK
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {resetDefaultsDialogOpen && (
+          <div
+            className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] backdrop-blur-sm sm:items-center sm:p-6"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="hero-ads-reset-defaults-title"
+            aria-describedby="hero-ads-reset-defaults-desc"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) closeResetDefaultsDialog();
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 12 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              className="w-full max-w-lg overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl sm:rounded-3xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-3 border-b border-[var(--border-color)] p-4 sm:p-6">
+                <h2
+                  id="hero-ads-reset-defaults-title"
+                  className="text-lg font-bold text-[var(--text-primary)] sm:text-xl"
+                >
+                  Replace draft slides?
+                </h2>
+                <button
+                  type="button"
+                  onClick={closeResetDefaultsDialog}
+                  className="shrink-0 rounded-full p-2 transition-colors hover:bg-[var(--hover-bg)]"
+                  aria-label="Close"
+                >
+                  <X size={20} className="text-[var(--text-secondary)]" aria-hidden />
+                </button>
+              </div>
+              <div id="hero-ads-reset-defaults-desc" className="p-4 text-sm leading-relaxed text-[var(--text-secondary)] sm:p-6">
+                <p>
+                  Replace all draft slides with the three SkillStream default cards? Your current draft will be
+                  overwritten until you save.
+                </p>
+              </div>
+              <div className="flex flex-col gap-3 border-t border-[var(--border-color)] p-4 sm:flex-row sm:justify-end sm:gap-3 sm:p-6">
+                <button
+                  type="button"
+                  onClick={closeResetDefaultsDialog}
+                  className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-5 py-3 text-sm font-bold text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)] sm:w-auto"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  autoFocus
+                  onClick={confirmResetDefaults}
+                  className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-orange-600 sm:w-auto"
+                >
+                  Replace with defaults
                 </button>
               </div>
             </motion.div>

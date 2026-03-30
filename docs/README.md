@@ -11,6 +11,7 @@ Notes for **contributors** and **AI assistants**: architecture pointers, debuggi
 | [**admin-portal-content.md**](./admin-portal-content.md) | **Admin → Content:** `adminTab` `catalog`, `#/admin/content`, [`AdminCourseCatalogSection`](../src/components/admin/AdminCourseCatalogSection.tsx) (sub-tab strip, **Course** / **Modules** info rows), Firestore touchpoints, dirty-state wiring. |
 | [**admin-reorder-scroll-viewport.md**](./admin-reorder-scroll-viewport.md) | Admin ↑/↓ reorder: viewport scroll compensation, `flushSync`, Strict Mode, [`reorderScrollViewport.ts`](../src/utils/reorderScrollViewport.ts), and wiring per screen. |
 | [**patterns-admin-label-info-tip.md**](./patterns-admin-label-info-tip.md) | **Reusable UI pattern:** field label + compact info button + click/tap tips (wide vs narrow panel, a11y, close behavior). Reference: [`AdminCourseCatalogSection`](../src/components/admin/AdminCourseCatalogSection.tsx). |
+| [**patterns-in-app-confirmation-dialog.md**](./patterns-in-app-confirmation-dialog.md) | **Reusable UI pattern:** confirmations and alerts via in-app modals—no `window.confirm` / `window.alert`; `useBodyScrollLock`, `useDialogKeyboard`, layout/a11y checklist. Reference: [`AdminHeroPhoneAdsSection`](../src/components/admin/AdminHeroPhoneAdsSection.tsx). |
 
 ## Full file reference (every source file)
 

@@ -59,7 +59,7 @@ See [`.env.example`](../.env.example) for copy-paste templates and comments.
 | Static / fallback catalog data | [`src/data/`](../src/data/) | e.g. `courses.ts`, `learningPaths.ts` — used with published Firestore data. |
 | Admin UI | [`src/components/AdminPage.tsx`](../src/components/AdminPage.tsx), [`src/components/admin/`](../src/components/admin/) | Tabs: `alerts`, `ai`, `catalog` (UI label **Content**), `moderation`, `roles`. Deep dive: [admin-portal-content.md](./admin-portal-content.md). |
 | Learner UI | [`src/components/`](../src/components/) | e.g. `CoursePlayer`, `CourseOverview`, `LearnerPathMindmapPanel`. |
-| Shared hooks | [`src/hooks/`](../src/hooks/) | Scroll lock, dialogs, FAB visibility, YouTube helpers, etc. |
+| Shared hooks | [`src/hooks/`](../src/hooks/) | Scroll lock, dialogs, FAB visibility, YouTube helpers, etc. Confirmations: [patterns-in-app-confirmation-dialog.md](./patterns-in-app-confirmation-dialog.md). |
 
 When searching the codebase semantically, phrases like “Firestore subscription”, “admin catalog draft”, or “history payload” usually land faster than component names alone.
 
@@ -100,6 +100,7 @@ The workspace rule **mobile-first** applies: assume phone-width layouts unless t
 | Wrong view after Back/Forward; hash vs `history.state`; deferred overview/player on cold load | [app-shell-app-tsx.md](./app-shell-app-tsx.md) |
 | Admin Content tab: course/path/category editors, URLs, Firestore modules | [admin-portal-content.md](./admin-portal-content.md) |
 | Admin ↑/↓ reorder feels random; row “jumps”; wrong item moves; Strict Mode double swap | [admin-reorder-scroll-viewport.md](./admin-reorder-scroll-viewport.md) |
+| Adding a destructive confirm or blocking alert; avoiding native `window.confirm` | [patterns-in-app-confirmation-dialog.md](./patterns-in-app-confirmation-dialog.md) |
 
 Add new deep-dive files under `docs/` and link them from [`docs/README.md`](./README.md).
 
@@ -115,6 +116,7 @@ For **every** `src/**/*.ts(x)` module (plus Vite/Firebase entrypoints), see **[`
 4. After UI changes, reason about **~375px width** and tap targets (project rule).
 5. If behavior differs **only in dev**, consider **Strict Mode** double invocation.
 6. Run **`npm run lint`** before finishing a change that touches types or imports.
+7. For **confirmations and blocking alerts**, follow **[patterns-in-app-confirmation-dialog.md](./patterns-in-app-confirmation-dialog.md)** (in-app modal + hooks; no `window.confirm` / `window.alert`).
 
 ## Checklist for human debugging
 
