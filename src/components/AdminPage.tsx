@@ -208,8 +208,10 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   );
 
   return (
-    <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] px-4 pb-16 pt-24 sm:px-6">
-      <div className="mx-auto max-w-4xl min-w-0 space-y-5 sm:space-y-6">
+    <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] px-3 pb-20 pt-24 sm:px-6 sm:pb-16">
+      <div
+        className={`mx-auto min-w-0 space-y-5 sm:space-y-6 ${tab === 'marketing' ? 'max-w-6xl' : 'max-w-4xl'}`}
+      >
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
             <div className="shrink-0 rounded-lg bg-orange-500/15 p-2 text-orange-500">

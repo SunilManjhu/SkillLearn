@@ -130,7 +130,6 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
 }) => {
   /** Accordion: at most one slide editor open (same idea as catalog modules)—see docs/patterns-admin-disclosure-widgets.md */
   const slideShellRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
-  const slidesScrollContainerRef = useRef<HTMLDivElement | null>(null);
   const didExpandAfterLoadRef = useRef(false);
   const [expandedSlideId, setExpandedSlideId] = useState<string | null>(null);
   const { showActionToast, actionToast } = useAdminActionToast();
@@ -221,12 +220,11 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
     });
   }, [draftSlides, loading]);
 
-  /** Align expanded slide to top of scroll list so the editor is visible without scrolling up. */
+  /** Align expanded slide into view (page scroll — slides are not in an inner scroll box). */
   useLayoutEffect(() => {
     if (expandedSlideId == null) return;
-    const container = slidesScrollContainerRef.current;
     const slideEl = slideShellRefs.current.get(expandedSlideId);
-    scrollDisclosureRowToTop(container, slideEl);
+    scrollDisclosureRowToTop(null, slideEl);
   }, [expandedSlideId]);
 
   const toggleSlideExpanded = useCallback((id: string) => {
@@ -540,19 +538,20 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3 sm:p-5">
-        <div className="mb-3 flex flex-col gap-3 lg:mb-4 lg:flex-row lg:items-center lg:justify-between lg:gap-6">
-          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 lg:min-w-0 lg:flex-1">
-            <h2 className="flex items-center gap-2 text-base font-bold text-[var(--text-primary)] sm:text-lg">
-              <Megaphone size={18} className="shrink-0 text-orange-500 sm:size-5" aria-hidden />
-              Home hero — phone ads
-            </h2>
-            <AdminLabelInfoTip
-              controlOnly
-              tipId="hero-ads-tip-section"
-              tipRegionAriaLabel="Home hero phone ads overview"
-              tipSubject="home hero phone ads"
-            >
+      <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-2.5 sm:p-5">
+        <div className="mb-3 flex flex-col gap-3 lg:mb-4 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
+          <div className="min-w-0 flex-1 space-y-1.5 lg:min-w-0">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
+              <h2 className="flex min-w-0 items-center gap-1.5 text-[0.95rem] font-bold leading-tight text-[var(--text-primary)] sm:gap-2 sm:text-base sm:leading-normal md:text-lg">
+                <Megaphone size={17} className="shrink-0 text-orange-500 sm:size-[18px] md:size-5" aria-hidden />
+                <span className="min-w-0">Home Hero — Phone Ads</span>
+              </h2>
+              <AdminLabelInfoTip
+                controlOnly
+                tipId="hero-ads-tip-section"
+                tipRegionAriaLabel="Home Hero Phone Ads Overview"
+                tipSubject="Home Hero Phone Ads"
+              >
               <li>
                 Custom cards show on the <strong className="font-semibold text-[var(--text-secondary)]">home hero</strong>{' '}
                 mockup when <strong className="font-semibold text-[var(--text-secondary)]">Ads (global)</strong> is on and
@@ -563,14 +562,18 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                 <strong className="font-semibold text-[var(--text-secondary)]">off</strong> to show default sample
                 content—your draft below is kept.
               </li>
-            </AdminLabelInfoTip>
+              </AdminLabelInfoTip>
+            </div>
+            <p className="max-w-xl text-[0.7rem] leading-snug text-[var(--text-muted)] sm:text-xs">
+              Set carousel timing, turn custom ads on or off, then build slides. The preview updates as you edit.
+            </p>
           </div>
 
           {/* AutoView + Ads (global): full-width on small screens; compact inline toolbar on lg+ */}
           <div className="min-w-0 w-full shrink-0 lg:w-auto">
-            <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 sm:px-4 sm:py-3 lg:rounded-lg lg:px-3 lg:py-1.5">
-              <div className="flex min-h-11 flex-nowrap items-center gap-1.5 overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch] sm:gap-3 sm:overflow-visible lg:min-h-9 lg:gap-2">
-                <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2 lg:flex-none lg:gap-2">
+            <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-2.5 py-2.5 sm:px-4 sm:py-3 lg:rounded-lg lg:px-3 lg:py-1.5">
+              <div className="flex min-h-0 flex-col gap-3 sm:min-h-11 sm:flex-row sm:flex-nowrap sm:items-center sm:gap-3 sm:overflow-x-auto sm:overscroll-x-contain sm:[-webkit-overflow-scrolling:touch] lg:min-h-9 lg:gap-2 lg:overflow-visible">
+                <div className="flex min-w-0 w-full items-center justify-between gap-2 sm:w-auto sm:flex-1 sm:justify-start sm:gap-2 lg:flex-none">
                   <Timer
                     size={16}
                     className="size-4 shrink-0 text-orange-500 sm:size-[18px] lg:size-4"
@@ -652,11 +655,11 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                 </div>
 
                 <span
-                  className="hidden h-8 w-px shrink-0 bg-[var(--border-color)]/70 sm:block lg:h-5"
+                  className="hidden h-8 w-px shrink-0 self-center bg-[var(--border-color)]/70 sm:block lg:h-5"
                   aria-hidden
                 />
 
-                <div className="flex shrink-0 cursor-pointer items-center gap-1.5 sm:gap-2 lg:gap-1.5">
+                <div className="flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg border border-[var(--border-color)]/60 bg-[var(--bg-secondary)]/50 px-2.5 py-2 sm:w-auto sm:shrink-0 sm:gap-2 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0 lg:gap-1.5">
                   <input
                     id="hero-ads-enabled"
                     type="checkbox"
@@ -701,11 +704,11 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-1 gap-4 border-t border-[var(--border-color)] pt-4 lg:mt-6 lg:grid-cols-[minmax(0,1fr)_min(100%,280px)] lg:items-start lg:gap-6 lg:pt-6 xl:grid-cols-[minmax(0,1fr)_300px] xl:gap-8">
+        <div className="mt-4 grid grid-cols-1 gap-5 border-t border-[var(--border-color)] pt-4 sm:gap-6 lg:mt-6 lg:grid-cols-[minmax(0,1fr)_minmax(240px,300px)] lg:items-start lg:gap-8 lg:pt-6 xl:grid-cols-[minmax(0,1fr)_minmax(260px,320px)] xl:gap-10">
           <div className="order-2 min-w-0 space-y-3 lg:order-1">
-            <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
+            <div className="flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3">
               <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5 sm:gap-x-1.5 sm:gap-y-1">
-                <h3 className="text-sm font-bold leading-none text-[var(--text-primary)]">
+                <h3 className="text-xs font-bold leading-tight text-[var(--text-primary)] sm:text-sm sm:leading-none">
                   Slides ({draftSlides.length} / {MAX_SLIDES})
                 </h3>
                 <AdminLabelInfoTip
@@ -723,13 +726,13 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                   </li>
                   <li>
                     Up to <strong className="font-semibold text-[var(--text-secondary)]">{MAX_SLIDES}</strong> slides;{' '}
-                    <strong className="font-semibold text-[var(--text-secondary)]">Default 3 slides</strong> restores
+                    <strong className="font-semibold text-[var(--text-secondary)]">Default 3 Slides</strong> restores
                     bundled starters.
                   </li>
                   <li>
                     Only <strong className="font-semibold text-[var(--text-secondary)]">one slide</strong> editor is open
                     at a time (like catalog modules). Tap the <strong className="font-semibold text-[var(--text-secondary)]">chevron</strong>{' '}
-                    to switch slides or collapse. <strong className="font-semibold text-[var(--text-secondary)]">Collapse all</strong>{' '}
+                    to switch slides or collapse. <strong className="font-semibold text-[var(--text-secondary)]">Collapse All</strong>{' '}
                     closes the open editor.
                   </li>
                   <li>
@@ -749,40 +752,41 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                   </li>
                 </AdminLabelInfoTip>
               </div>
-              <div className="flex w-full flex-wrap items-stretch gap-1.5 sm:w-auto sm:items-center sm:gap-2">
+              <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:gap-2">
                 <button
                   type="button"
                   onClick={collapseAllSlides}
                   disabled={draftSlides.length === 0 || expandedSlideId === null}
-                  className="inline-flex min-h-11 flex-1 items-center justify-center rounded-lg border border-[var(--border-color)] px-2.5 py-2 text-xs font-bold text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:pointer-events-none disabled:opacity-40 sm:flex-initial sm:px-3"
+                  className="inline-flex min-h-11 items-center justify-center rounded-lg border border-[var(--border-color)] px-2 py-2 text-[0.65rem] font-bold leading-tight text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:pointer-events-none disabled:opacity-40 sm:min-h-11 sm:flex-initial sm:px-3 sm:text-xs"
                 >
-                  Collapse all
+                  Collapse All
                 </button>
                 <button
                   type="button"
                   onClick={handleResetSlidesToBundledDefaults}
-                  className="inline-flex min-h-11 flex-1 items-center justify-center gap-1 rounded-lg border border-[var(--border-color)] px-2.5 py-2 text-xs font-bold text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] sm:flex-initial sm:gap-1.5 sm:px-3 sm:text-sm"
+                  className="inline-flex min-h-11 items-center justify-center gap-1 rounded-lg border border-[var(--border-color)] px-2 py-2 text-[0.65rem] font-bold leading-tight text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] sm:flex-initial sm:gap-1.5 sm:px-3 sm:text-xs sm:text-sm"
                 >
                   <RotateCcw size={16} className="shrink-0 sm:size-[18px]" aria-hidden />
                   <span className="sm:hidden">Defaults</span>
-                  <span className="hidden sm:inline">Default 3 slides</span>
+                  <span className="hidden sm:inline">Default 3 Slides</span>
                 </button>
                 <button
                   type="button"
                   disabled={draftSlides.length >= MAX_SLIDES}
                   onClick={addSlide}
-                  className="inline-flex min-h-11 flex-[1_1_100%] items-center justify-center gap-1 rounded-lg bg-orange-500/15 px-2.5 py-2 text-xs font-bold text-orange-600 hover:bg-orange-500/25 disabled:pointer-events-none disabled:opacity-40 dark:text-orange-400 sm:flex-initial sm:gap-1.5 sm:px-3 sm:text-sm"
+                  className="col-span-2 inline-flex min-h-11 items-center justify-center gap-1 rounded-lg bg-orange-500/15 px-2.5 py-2 text-xs font-bold text-orange-600 hover:bg-orange-500/25 disabled:pointer-events-none disabled:opacity-40 dark:text-orange-400 sm:col-span-1 sm:flex-initial sm:gap-1.5 sm:px-3 sm:text-sm"
                 >
                   <Plus size={16} className="shrink-0 sm:size-[18px]" aria-hidden />
-                  Add slide
+                  Add Slide
                 </button>
               </div>
             </div>
+            <p className="text-[0.65rem] leading-snug text-[var(--text-muted)] sm:text-xs">
+              <span className="lg:hidden">Preview at the top shows how cards will look on phones.</span>
+              <span className="hidden lg:inline">The phone preview on the right updates as you change slides.</span>
+            </p>
 
-            <div
-              ref={slidesScrollContainerRef}
-              className="max-h-[min(65dvh,34rem)] overflow-y-auto overscroll-y-contain rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/40 px-2 py-1 sm:max-h-[min(75dvh,42rem)] sm:px-3 sm:py-2 [-webkit-overflow-scrolling:touch]"
-            >
+            <div className="min-w-0 divide-y divide-[var(--border-color)]/50">
               {draftSlides.map((s, slideIndex) => {
                 const isOpen = expandedSlideId === s.id;
                 const { title: summaryTitle, subtitle: summarySubtitle } = heroSlideCollapsedSummary(s);
@@ -804,7 +808,7 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                     if (el) slideShellRefs.current.set(s.id, el);
                     else slideShellRefs.current.delete(s.id);
                   }}
-                  className={`flex flex-wrap items-stretch gap-2 border-b border-[var(--border-color)]/50 py-3 last:border-b-0 sm:gap-3 sm:py-3.5 ${
+                  className={`flex flex-col gap-2 py-2.5 sm:flex-row sm:flex-wrap sm:items-stretch sm:gap-2 sm:py-3.5 md:gap-3 ${
                     slideShown ? '' : 'opacity-[0.88]'
                   }`}
                 >
@@ -817,7 +821,7 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                         ? `Collapse slide ${slideIndex + 1} editor`
                         : `Expand slide ${slideIndex + 1} editor`
                     }
-                    className="flex min-h-11 min-w-0 flex-1 touch-manipulation items-center gap-2 rounded-lg px-1 py-1 text-left transition-colors hover:bg-[var(--hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40"
+                    className="flex min-h-11 min-w-0 w-full touch-manipulation items-center gap-2 rounded-lg px-1 py-1 text-left transition-colors hover:bg-[var(--hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 sm:w-auto sm:flex-1"
                   >
                     <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-secondary)]">
                       {isOpen ? <ChevronDown size={18} aria-hidden /> : <ChevronRight size={18} aria-hidden />}
@@ -834,9 +838,10 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                       </span>
                     </span>
                   </button>
-                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-1 sm:gap-1">
-                    <div
-                      className="mr-0.5 flex items-center gap-1 border-r border-[var(--border-color)]/60 pr-1.5 sm:mr-1 sm:gap-1.5 sm:pr-2"
+                  <div className="flex w-full min-w-0 shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-2 sm:w-auto sm:justify-end sm:gap-1">
+                    <label
+                      htmlFor={`hero-slide-enabled-${s.id}`}
+                      className="flex min-h-11 min-w-0 cursor-pointer items-center gap-1.5 border-[var(--border-color)]/60 pr-2 sm:mr-1 sm:border-r sm:pr-2"
                       onClick={(e) => e.stopPropagation()}
                       onKeyDown={(e) => e.stopPropagation()}
                     >
@@ -848,51 +853,53 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                         onChange={(e) => updateSlide(slideIndex, { enabled: e.target.checked })}
                         title={perSlideShowTitle}
                         aria-label={`Slide ${slideIndex + 1}: Show (per slide) on home hero`}
-                        className="size-4 shrink-0 rounded border-[var(--border-color)] text-orange-500 focus:ring-orange-500 disabled:opacity-40"
+                        className="size-[1.125rem] shrink-0 rounded border-[var(--border-color)] text-orange-500 focus:ring-orange-500 disabled:opacity-40 sm:size-4"
                       />
-                      <label
-                        htmlFor={`hero-slide-enabled-${s.id}`}
-                        className="hidden max-w-[5.5rem] cursor-pointer text-[0.6rem] font-bold leading-tight text-[var(--text-muted)] sm:max-w-none sm:inline sm:text-xs sm:leading-snug sm:font-bold sm:text-[var(--text-secondary)]"
-                      >
+                      <span className="text-[0.65rem] font-bold leading-tight text-[var(--text-secondary)] sm:hidden">
+                        Show
+                      </span>
+                      <span className="hidden text-xs font-bold leading-snug text-[var(--text-secondary)] sm:inline">
                         Show (per slide)
-                      </label>
+                      </span>
+                    </label>
+                    <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-1">
+                      <button
+                        type="button"
+                        disabled={slideIndex === 0}
+                        onClick={() => moveSlide(slideIndex, -1)}
+                        className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-40"
+                        aria-label="Move slide up"
+                      >
+                        <ChevronUp size={18} aria-hidden />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={slideIndex >= draftSlides.length - 1}
+                        onClick={() => moveSlide(slideIndex, 1)}
+                        className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-40"
+                        aria-label="Move slide down"
+                      >
+                        <ChevronDown size={18} aria-hidden />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={draftSlides.length <= 1}
+                        onClick={() => removeSlide(slideIndex)}
+                        className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-red-400 hover:bg-red-500/10 disabled:opacity-40"
+                        aria-label="Remove slide"
+                      >
+                        <Trash2 size={18} aria-hidden />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => resetSlideToTemplate(slideIndex)}
+                        className="inline-flex min-h-11 min-w-11 items-center justify-center gap-1 rounded-lg border border-[var(--border-color)] px-2 py-2 text-xs font-bold text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] sm:w-auto"
+                        title="Replace this slide with starter text and clear link and duration override"
+                      >
+                        <RotateCcw size={16} aria-hidden />
+                        <span className="hidden sm:inline">Reset</span>
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      disabled={slideIndex === 0}
-                      onClick={() => moveSlide(slideIndex, -1)}
-                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-40"
-                      aria-label="Move slide up"
-                    >
-                      <ChevronUp size={18} aria-hidden />
-                    </button>
-                    <button
-                      type="button"
-                      disabled={slideIndex >= draftSlides.length - 1}
-                      onClick={() => moveSlide(slideIndex, 1)}
-                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-40"
-                      aria-label="Move slide down"
-                    >
-                      <ChevronDown size={18} aria-hidden />
-                    </button>
-                    <button
-                      type="button"
-                      disabled={draftSlides.length <= 1}
-                      onClick={() => removeSlide(slideIndex)}
-                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-red-400 hover:bg-red-500/10 disabled:opacity-40"
-                      aria-label="Remove slide"
-                    >
-                      <Trash2 size={18} aria-hidden />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => resetSlideToTemplate(slideIndex)}
-                      className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-[var(--border-color)] px-2 py-2 text-xs font-bold text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]"
-                      title="Replace this slide with starter text and clear link and duration override"
-                    >
-                      <RotateCcw size={16} aria-hidden />
-                      <span className="hidden sm:inline">Reset</span>
-                    </button>
                   </div>
 
                   {isOpen ? (
@@ -1280,12 +1287,12 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
               })}
             </div>
 
-            <div className="flex flex-col gap-2 pt-1.5 sm:flex-row sm:flex-wrap sm:gap-3 sm:pt-2">
+            <div className="sticky bottom-0 z-[5] -mx-2.5 mt-2 flex flex-col gap-2 border-t border-[var(--border-color)] bg-[var(--bg-secondary)]/95 px-2.5 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-4px_24px_-8px_rgba(0,0,0,0.12)] backdrop-blur-sm sm:static sm:z-0 sm:mx-0 sm:mt-0 sm:flex-row sm:flex-wrap sm:border-0 sm:bg-transparent sm:px-0 sm:py-0 sm:pt-2 sm:shadow-none sm:backdrop-blur-none dark:shadow-[0_-4px_24px_-8px_rgba(0,0,0,0.35)]">
               <button
                 type="button"
                 disabled={saving || !dirty}
                 onClick={() => void handleSave()}
-                className="min-h-11 flex-1 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-bold text-white hover:bg-orange-600 disabled:pointer-events-none disabled:opacity-50 sm:flex-none sm:py-3 sm:px-8"
+                className="min-h-11 flex-1 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-orange-600 disabled:pointer-events-none disabled:opacity-50 sm:flex-none sm:py-3 sm:px-8 sm:shadow-none"
               >
                 {saving ? 'Saving…' : 'Save to Firestore'}
               </button>
@@ -1293,23 +1300,25 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                 type="button"
                 disabled={!dirty}
                 onClick={handleDiscard}
-                className="min-h-11 flex-1 rounded-xl border border-[var(--border-color)] px-4 py-2.5 text-sm font-bold text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:pointer-events-none disabled:opacity-50 sm:flex-none sm:py-3 sm:px-6"
+                className="min-h-11 flex-1 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-2.5 text-sm font-bold text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:pointer-events-none disabled:opacity-50 sm:flex-none sm:bg-transparent sm:py-3 sm:px-6"
               >
-                Discard changes
+                Discard Changes
               </button>
             </div>
           </div>
 
-          <aside className="order-1 flex flex-col items-center lg:sticky lg:top-28 lg:order-2 lg:self-start">
-            <p className="mb-1.5 w-full text-center text-[0.65rem] font-semibold uppercase tracking-wide text-[var(--text-muted)] sm:text-xs lg:text-center">
-              Live preview
-            </p>
-            <div className="w-full max-w-[220px] sm:max-w-[260px] lg:mx-0 lg:max-w-none">
-              <PhoneMockupAdRail
-                imageSrc={phoneMockupSrc}
-                imageAlt="Preview: home hero phone"
-                slides={previewSlides}
-              />
+          <aside className="order-1 flex min-w-0 flex-col lg:sticky lg:top-24 lg:order-2 lg:self-start">
+            <div className="w-full min-w-0 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-primary)]/60 p-2 shadow-sm ring-1 ring-[var(--border-color)]/40 sm:p-4">
+              <p className="mb-1.5 text-center text-[0.65rem] font-semibold uppercase tracking-wide text-[var(--text-muted)] sm:mb-2 sm:text-xs sm:normal-case sm:tracking-normal sm:text-[var(--text-secondary)] lg:text-center">
+                Live Preview
+              </p>
+              <div className="mx-auto w-full max-w-[min(100%,240px)] min-w-0 sm:max-w-[260px] lg:max-w-none">
+                <PhoneMockupAdRail
+                  imageSrc={phoneMockupSrc}
+                  imageAlt="Preview: home hero phone"
+                  slides={previewSlides}
+                />
+              </div>
             </div>
           </aside>
         </div>

@@ -417,7 +417,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             setMobileMenuOpen(false);
             onThemeToggle();
           }}
-          className="rounded-lg p-2 text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-orange-500/50"
+          className="hidden rounded-lg p-2 text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-orange-500/50 md:inline-flex md:items-center md:justify-center"
           aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
           title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
         >
@@ -518,8 +518,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           )}
         </div>
 
-        {/* User Profile / Login — loading uses same footprint as avatar to avoid shifting search/notifications. */}
-        <div className="relative flex h-10 shrink-0 items-center" ref={profileRef}>
+        {/* User Profile / Login — top bar from md up; mobile uses hamburger account section. */}
+        <div className="relative hidden h-10 shrink-0 items-center md:flex" ref={profileRef}>
           {user ? (
             <>
               <button 
@@ -662,13 +662,71 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="border-b border-[var(--border-color)] px-2 py-2">
               <button
                 type="button"
-                className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-[var(--text-primary)] hover:bg-[var(--hover-bg)]"
+                className="flex w-full min-h-11 items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-[var(--text-primary)] hover:bg-[var(--hover-bg)] touch-manipulation"
                 onClick={() => onThemeToggle()}
                 aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
               >
                 {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
                 {theme === 'dark' ? 'Light mode' : 'Dark mode'}
               </button>
+            </div>
+            <div className="border-b border-[var(--border-color)] px-2 py-2">
+              {user ? (
+                <div className="flex flex-col gap-0.5">
+                  <button
+                    type="button"
+                    className="flex w-full min-h-11 items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-[var(--text-primary)] hover:bg-[var(--hover-bg)] touch-manipulation"
+                    onClick={() => {
+                      onNavigate('profile');
+                      setMobileMenuOpen(false);
+                      setMobileNavExpand(null);
+                    }}
+                  >
+                    <User size={18} className="shrink-0 text-[var(--text-secondary)]" aria-hidden />
+                    Profile
+                  </button>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      className="flex w-full min-h-11 items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-orange-500 hover:bg-orange-500/10 touch-manipulation"
+                      onClick={() => {
+                        onNavigate('admin');
+                        setMobileMenuOpen(false);
+                        setMobileNavExpand(null);
+                      }}
+                    >
+                      <Shield size={18} className="shrink-0" aria-hidden />
+                      Admin
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="flex w-full min-h-11 items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-red-400 hover:bg-red-500/10 touch-manipulation"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      setMobileNavExpand(null);
+                      onLogout();
+                    }}
+                  >
+                    <LogOut size={18} className="shrink-0" aria-hidden />
+                    Logout
+                  </button>
+                </div>
+              ) : !isAuthReady ? (
+                <p className="px-3 py-2 text-xs text-[var(--text-muted)]">Checking account…</p>
+              ) : (
+                <button
+                  type="button"
+                  className="flex w-full min-h-11 items-center gap-2 rounded-lg bg-orange-500 px-3 py-2.5 text-left text-sm font-bold text-white hover:bg-orange-600 touch-manipulation"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    onLogin();
+                  }}
+                >
+                  <LogIn size={18} className="shrink-0" aria-hidden />
+                  Login
+                </button>
+              )}
             </div>
             <div className="flex flex-col py-2 text-sm font-medium text-[var(--text-secondary)]">
               <button
@@ -745,18 +803,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </div>
                 )}
               </div>
-              {isAdmin && user && (
-                <button
-                  type="button"
-                  className="border-t border-[var(--border-color)] px-4 py-3 text-left text-orange-500 transition-colors hover:bg-orange-500/10"
-                  onClick={() => {
-                    onNavigate('admin');
-                    setMobileMenuOpen(false);
-                  }}
-                >
-                  Admin
-                </button>
-              )}
               <button
                 type="button"
                 className={`border-t border-[var(--border-color)] px-4 py-3 text-left transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] ${activeView === 'contact' ? 'text-orange-500' : ''}`}
