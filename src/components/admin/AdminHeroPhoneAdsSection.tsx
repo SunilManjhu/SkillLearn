@@ -368,6 +368,19 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
     setDraftSlides(cloneStoredSlides(savedSlides));
   };
 
+  const handleResetSlidesToBundledDefaults = () => {
+    if (
+      typeof window !== 'undefined' &&
+      !window.confirm(
+        'Replace all draft slides with the three SkillStream default cards? Your current draft will be overwritten until you save.'
+      )
+    ) {
+      return;
+    }
+    setDraftSlides(cloneStoredSlides(INITIAL_STORED_HERO_PHONE_ADS));
+    showActionToast('Draft replaced with the default three slides.', 'neutral');
+  };
+
   if (loading) {
     return (
       <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-6 text-sm text-[var(--text-muted)]">
@@ -440,15 +453,25 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
           <div className="order-2 min-w-0 space-y-3 lg:order-1">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="text-sm font-bold text-[var(--text-primary)]">Slides ({draftSlides.length} / 8)</h3>
-              <button
-                type="button"
-                disabled={draftSlides.length >= 8}
-                onClick={addSlide}
-                className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-orange-500/15 px-3 py-2 text-sm font-bold text-orange-600 hover:bg-orange-500/25 disabled:pointer-events-none disabled:opacity-40 dark:text-orange-400"
-              >
-                <Plus size={18} aria-hidden />
-                Add slide
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleResetSlidesToBundledDefaults}
+                  className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-[var(--border-color)] px-3 py-2 text-sm font-bold text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]"
+                >
+                  <RotateCcw size={18} aria-hidden />
+                  Default 3 slides
+                </button>
+                <button
+                  type="button"
+                  disabled={draftSlides.length >= 8}
+                  onClick={addSlide}
+                  className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-orange-500/15 px-3 py-2 text-sm font-bold text-orange-600 hover:bg-orange-500/25 disabled:pointer-events-none disabled:opacity-40 dark:text-orange-400"
+                >
+                  <Plus size={18} aria-hidden />
+                  Add slide
+                </button>
+              </div>
             </div>
 
             <div className="space-y-4">
@@ -837,7 +860,11 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
               Live preview
             </p>
             <div className="w-full max-w-[260px] sm:max-w-[280px] lg:mx-0 lg:max-w-none">
-              <PhoneMockupAdRail imageSrc={phoneMockupSrc} imageAlt="Preview: home hero phone" slides={previewSlides} />
+              <PhoneMockupAdRail
+                imageSrc={phoneMockupSrc}
+                imageAlt="Preview: home hero phone"
+                slides={previewSlides}
+              />
             </div>
           </aside>
         </div>

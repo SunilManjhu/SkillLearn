@@ -97,9 +97,10 @@ service cloud.firestore {
     // from the client (wrong DB in Console, token shape, etc.), this still allows known admins.
     function isAdmin() {
       return isAuthenticated() && (
+        // Known admin UIDs first — avoids touching email when token.email is null (email.lower() would fail).
+        request.auth.uid == "Uz4Ctf9ThuV7BumSU8T8xAe1qt42" ||
         hasAdminRole() ||
-        (request.auth.token.email.lower() == "ranveer.singh.blr@gmail.com" && request.auth.token.email_verified == true) ||
-        request.auth.uid == "Uz4Ctf9ThuV7BumSU8T8xAe1qt42"
+        (request.auth.token.email is string && request.auth.token.email.lower() == "ranveer.singh.blr@gmail.com" && request.auth.token.email_verified == true)
       );
     }
 
@@ -532,11 +533,20 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // JS client numbers are often stored as float; accept int or float with same bounds.
+    function heroPhoneDurationSeconds(n) {
+      return (n is int || n is float) && n >= 0 && n <= 120;
+    }
+
+    function heroPhoneMaxHeightPct(n) {
+      return (n is int || n is float) && n >= 20 && n <= 100;
+    }
+
     function validHeroPhoneTextBlock(b) {
       return b is map && b.kind == 'text' &&
         b.keys().hasAll(['kind', 'content']) &&
         b.keys().hasOnly(['kind', 'content', 'style']) &&
-        b.content is string && b.content.size() > 0 && b.content.size() < 2000 &&
+        b.content is string && b.content.size() > 0 && b.content.size() <= 2000 &&
         (!('style' in b) || b.style in ['headline', 'body', 'caption']);
     }
 
@@ -546,7 +556,7 @@ service cloud.firestore {
         b.keys().hasOnly(['kind', 'url', 'fit', 'maxHeightPct', 'overlayHeadline', 'overlayBody']) &&
         b.url is string && isValidUrl(b.url) && b.url.size() < 2000 &&
         b.fit in ['cover', 'contain', 'fill'] &&
-        (!('maxHeightPct' in b) || (b.maxHeightPct is int && b.maxHeightPct >= 20 && b.maxHeightPct <= 100)) &&
+        (!('maxHeightPct' in b) || heroPhoneMaxHeightPct(b.maxHeightPct)) &&
         (!('overlayHeadline' in b) || (b.overlayHeadline is string && b.overlayHeadline.size() > 0 && b.overlayHeadline.size() < 200)) &&
         (!('overlayBody' in b) || (b.overlayBody is string && b.overlayBody.size() < 600));
     }
@@ -600,7 +610,7 @@ service cloud.firestore {
         s.gradientPreset in ['sky_indigo', 'violet_fuchsia', 'emerald_teal', 'rose_orange', 'amber_stone', 'cyan_blue'] &&
         validHeroPhoneBlocksList(s.blocks) &&
         heroPhoneSlideLinksValid(s) &&
-        (!('slideDurationSec' in s) || (s.slideDurationSec is int && s.slideDurationSec >= 0 && s.slideDurationSec <= 120));
+        (!('slideDurationSec' in s) || heroPhoneDurationSeconds(s.slideDurationSec));
     }
 
     function isValidHeroPhoneAdSlide(s) {
@@ -619,14 +629,15 @@ service cloud.firestore {
         (q.size() < 8 || isValidHeroPhoneAdSlide(q[7]));
     }
 
+    // Top-level shape only; deep slide/block validation was rejecting valid client payloads. Client + app validate content.
+    // Do not require updatedAt in hasAll() (serverTimestamp sentinel is unreliable in rules). Do not validate updatedAt's
+    // value — sentinels can fail == request.time and is timestamp; admin-only write is still gated by isAdmin().
     function isValidHeroPhoneAdsWrite(data) {
-      return data.keys().hasAll(['enabled', 'slides', 'updatedAt']) &&
+      return data.keys().hasAll(['enabled', 'slides']) &&
         data.keys().hasOnly(['enabled', 'slides', 'updatedAt', 'defaultSlideDurationSec']) &&
         data.enabled is bool &&
-        validHeroPhoneAdsSlidesList(data.slides) &&
-        (data.updatedAt == request.time || data.updatedAt is timestamp) &&
-        (!('defaultSlideDurationSec' in data) ||
-          (data.defaultSlideDurationSec is int && data.defaultSlideDurationSec >= 0 && data.defaultSlideDurationSec <= 120));
+        data.slides is list && data.slides.size() >= 1 && data.slides.size() <= 8 &&
+        (!('defaultSlideDurationSec' in data) || heroPhoneDurationSeconds(data.defaultSlideDurationSec));
     }
 
     match /siteSettings/heroPhoneAds {

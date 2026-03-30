@@ -160,29 +160,44 @@ export function normalizeBlocks(blocks: HeroAdBlockStored[]): PhoneMockupAdBlock
 export const INITIAL_STORED_HERO_PHONE_ADS: HeroPhoneAdSlideStored[] = [
   {
     id: 'ad-1',
-    label: 'Sponsored',
+    label: 'SkillStream',
     gradientPreset: 'sky_indigo',
     blocks: [
-      { kind: 'text', style: 'headline', content: 'Cloud cert bootcamp' },
-      { kind: 'text', style: 'body', content: 'Live cohorts + labs. Enroll this week for 30% off.' },
+      { kind: 'text', style: 'headline', content: '7,000+ courses at your pace' },
+      {
+        kind: 'text',
+        style: 'body',
+        content:
+          'Learn software, cloud, data, and security from industry experts. Start free and build skills that matter.',
+      },
     ],
   },
   {
     id: 'ad-2',
-    label: 'Partner',
+    label: 'Hands-on',
     gradientPreset: 'violet_fuchsia',
     blocks: [
-      { kind: 'text', style: 'headline', content: 'AI pair-programming' },
-      { kind: 'text', style: 'body', content: 'Ship faster with guided reviews and instant refactors.' },
+      { kind: 'text', style: 'headline', content: 'Labs & real projects' },
+      {
+        kind: 'text',
+        style: 'body',
+        content:
+          'Practice in guided environments—not just videos. Ship portfolio work you can show in interviews.',
+      },
     ],
   },
   {
     id: 'ad-3',
-    label: 'Sponsored',
+    label: 'Your goals',
     gradientPreset: 'emerald_teal',
     blocks: [
-      { kind: 'text', style: 'headline', content: 'Interview-ready system design' },
-      { kind: 'text', style: 'body', content: 'Mock panels, rubrics, and feedback from staff engineers.' },
+      { kind: 'text', style: 'headline', content: 'Certs & career paths' },
+      {
+        kind: 'text',
+        style: 'caption',
+        content:
+          'Follow structured paths or pick topics à la carte. Track progress on web and mobile.',
+      },
     ],
   },
 ];

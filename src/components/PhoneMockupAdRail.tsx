@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ExternalLink, Sparkles } from 'lucide-react';
 import {
   DEFAULT_HERO_PHONE_AD_SLIDES,
@@ -15,11 +15,57 @@ export interface PhoneMockupAdRailProps {
   slides?: PhoneMockupAdSlide[];
 }
 
+/** One row grid + minmax(0,1fr) so the scroller always gets a definite height (single-slide path was short vs multi-slide). */
 const SCREEN_BOX =
-  'absolute left-[5.75%] right-[5.75%] top-[10.25%] bottom-[20.5%] z-10 overflow-hidden rounded-[1.2rem]';
+  'absolute left-[5.75%] right-[5.75%] top-[10.25%] bottom-[20.5%] z-10 grid min-h-0 grid-rows-[minmax(0,1fr)] overflow-hidden rounded-[1.2rem]';
 
 const TAP_MOVE_PX = 14;
 const TAP_MAX_MS = 450;
+
+function maxScrollLeft(el: HTMLDivElement): number {
+  return Math.max(0, el.scrollWidth - el.clientWidth);
+}
+
+/** Scroll to a slide using each child's offsetLeft — not i×clientWidth (padding/subpixels break the last slide). */
+function scrollScrollerToSlideIndex(el: HTMLDivElement, index: number, slideCount: number) {
+  if (slideCount < 1) return;
+  const i = Math.min(Math.max(0, index), slideCount - 1);
+  const children = el.children;
+  const maxSl = maxScrollLeft(el);
+  if (children.length === slideCount && children[i]) {
+    const target = (children[i] as HTMLElement).offsetLeft;
+    el.scrollTo({ left: Math.min(target, maxSl), behavior: 'auto' });
+    return;
+  }
+  const w = el.clientWidth;
+  if (w <= 0) return;
+  el.scrollTo({ left: Math.min(i * w, maxSl), behavior: 'auto' });
+}
+
+/** Which slide is aligned with the viewport — nearest offsetLeft to scrollLeft (handles max scroll vs last slide). */
+function activeIndexFromScroller(el: HTMLDivElement, n: number): number {
+  if (n < 2) return 0;
+  const sl = el.scrollLeft;
+  const children = el.children;
+  const maxSl = maxScrollLeft(el);
+  if (maxSl > 0 && sl >= maxSl - 0.5) return n - 1;
+  if (children.length !== n) {
+    const w = el.clientWidth;
+    if (w <= 0) return 0;
+    return Math.min(Math.max(0, Math.round(sl / w)), n - 1);
+  }
+  let best = 0;
+  let bestDist = Infinity;
+  for (let k = 0; k < n; k++) {
+    const left = (children[k] as HTMLElement).offsetLeft;
+    const dist = Math.abs(sl - left);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = k;
+    }
+  }
+  return best;
+}
 
 function AdBlockText({ block }: { block: Extract<PhoneMockupAdBlock, { kind: 'text' }> }) {
   if (block.style === 'headline') {
@@ -48,8 +94,12 @@ function AdBlockImage({ block }: { block: Extract<PhoneMockupAdBlock, { kind: 'i
 
   return (
     <div
-      className="flex min-h-0 w-full min-w-0 flex-1 flex-col"
-      style={{ maxHeight: `${maxPct}%`, minHeight: '3.5rem' }}
+      className="flex min-h-0 w-full min-w-0 flex-1 flex-col basis-0"
+      style={{
+        minHeight: '3.5rem',
+        // cqh = % of slide article ([container-type:size]); % max-height vs flex parent often mis-resolves.
+        maxHeight: `${maxPct}cqh`,
+      }}
     >
       <div className="relative min-h-0 w-full flex-1 overflow-hidden rounded-lg bg-black/20 ring-1 ring-white/25">
         <img
@@ -128,10 +178,10 @@ export const PhoneMockupAdRail: React.FC<PhoneMockupAdRailProps> = ({
     const el = scrollerRef.current;
     const list = slidesRef.current;
     if (!el || list.length === 0) return;
-    const w = el.clientWidth;
-    if (w <= 0) return;
-    const i = Math.round(el.scrollLeft / w);
-    setActive(Math.min(Math.max(0, i), list.length - 1));
+    if (el.clientWidth <= 0) return;
+    const n = list.length;
+    const next = activeIndexFromScroller(el, n);
+    setActive(next);
   }, []);
 
   useEffect(() => {
@@ -161,17 +211,66 @@ export const PhoneMockupAdRail: React.FC<PhoneMockupAdRailProps> = ({
     syncActiveFromScroll();
     el.addEventListener('scroll', syncActiveFromScroll, { passive: true });
     return () => el.removeEventListener('scroll', syncActiveFromScroll);
-  }, [syncActiveFromScroll]);
+  }, [syncActiveFromScroll, slideCount]);
 
-  const goTo = useCallback((index: number) => {
+  const goTo = useCallback(
+    (index: number) => {
+      const el = scrollerRef.current;
+      const list = slidesRef.current;
+      if (!el || list.length === 0) return;
+      const i = Math.min(Math.max(0, index), list.length - 1);
+      const w = el.clientWidth;
+      if (w <= 0) return;
+      // Always instant: smooth + scroll listener updates active mid-tween and misaligns snap/layout.
+      scrollScrollerToSlideIndex(el, i, list.length);
+      // Keep tabs/progress in sync: scroll events can lag or not fire; subpixel scrollLeft can mis-round vs tabs.
+      activeRef.current = i;
+      setActive(i);
+    },
+    []
+  );
+
+  // Clamp index when slide count changes and resync scroll offset + tabs.
+  useLayoutEffect(() => {
     const el = scrollerRef.current;
     const list = slidesRef.current;
     if (!el || list.length === 0) return;
-    const i = Math.min(Math.max(0, index), list.length - 1);
-    const reduceMotion =
-      typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    el.scrollTo({ left: i * el.clientWidth, behavior: reduceMotion ? 'auto' : 'smooth' });
-  }, []);
+    const w = el.clientWidth;
+    if (w <= 0) return;
+    const n = list.length;
+    let prevForLog: number | null = null;
+    let nextForScroll = 0;
+    setActive((prev) => {
+      prevForLog = prev;
+      const next = Math.min(Math.max(0, prev), n - 1);
+      nextForScroll = next;
+      if (next !== prev) {
+        activeRef.current = next;
+        return next;
+      }
+      return prev;
+    });
+    if (prevForLog !== null && prevForLog !== nextForScroll) {
+      scrollScrollerToSlideIndex(el, nextForScroll, n);
+    }
+  }, [slides.length]);
+
+  // Phone mockup width changes (breakpoints, font): resnap scroll so active index matches pixels.
+  useLayoutEffect(() => {
+    const el = scrollerRef.current;
+    const list = slidesRef.current;
+    if (!el || list.length <= 1) return;
+    const ro = new ResizeObserver(() => {
+      const w = el.clientWidth;
+      if (w <= 0) return;
+      const listNow = slidesRef.current;
+      const idx = Math.min(Math.max(0, activeRef.current), listNow.length - 1);
+      scrollScrollerToSlideIndex(el, idx, listNow.length);
+      syncActiveFromScroll();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [slides.length, syncActiveFromScroll]);
 
   const goToRef = useRef(goTo);
   goToRef.current = goTo;
@@ -281,7 +380,7 @@ export const PhoneMockupAdRail: React.FC<PhoneMockupAdRailProps> = ({
     const i = activeRef.current;
     const n = slidesRef.current.length;
     if (rx < 0.2) {
-      goTo(i - 1);
+      goTo((i - 1 + n) % n);
     } else {
       goTo((i + 1) % n);
     }
@@ -298,11 +397,11 @@ export const PhoneMockupAdRail: React.FC<PhoneMockupAdRailProps> = ({
   const showAutoplayUi = slideCount > 1;
 
   return (
-    <div className="relative mx-auto w-full max-w-[min(100%,280px)] sm:max-w-[300px] md:max-w-[320px] lg:max-w-[min(100%,380px)]">
+    <div className="relative mx-auto w-full max-w-[min(100%,280px)] shrink-0 sm:max-w-[min(100%,300px)] md:max-w-[min(100%,320px)] lg:max-w-[min(100%,380px)] lg:w-full">
       <img
         src={imageSrc}
         alt={imageAlt}
-        className="relative z-0 w-full select-none"
+        className="relative z-0 block h-auto w-full max-w-full select-none aspect-[640/1280]"
         width={640}
         height={1280}
         decoding="async"
@@ -332,68 +431,79 @@ export const PhoneMockupAdRail: React.FC<PhoneMockupAdRailProps> = ({
             tapStartRef.current = null;
           }}
           onKeyDown={(e) => {
+            if (slideCount <= 1) return;
+            const n = slideCount;
             if (e.key === 'ArrowLeft') {
               e.preventDefault();
-              goTo(active - 1);
+              goTo((active - 1 + n) % n);
             } else if (e.key === 'ArrowRight') {
               e.preventDefault();
-              goTo(active + 1);
+              goTo((active + 1) % n);
             }
           }}
-          className="relative flex h-full w-full snap-x snap-mandatory overflow-x-auto overflow-y-hidden overscroll-x-contain [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [-ms-overflow-style:none] touch-pan-x focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-black/20 [&::-webkit-scrollbar]:hidden"
+          className={
+            // Always row + stretch so one-slide (typical Firestore custom ads) matches the layout engine path
+            // used for default 3-slide content — avoids a flex-col single-slide path that left dead space below the card.
+            'relative box-border flex h-full min-h-0 w-full min-w-0 flex-row items-stretch focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-black/20' +
+            (slideCount > 1
+              ? ' snap-x snap-mandatory overflow-x-auto overflow-y-hidden overscroll-x-contain [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [-ms-overflow-style:none] touch-pan-x [&::-webkit-scrollbar]:hidden'
+              : ' overflow-hidden')
+          }
         >
-          {slides.map((s, i) => {
-            const sec = s.autoAdvanceSec ?? 0;
-            const track = showAutoplayUi && sec > 0;
-            return (
-              <div
-                key={s.id}
-                id={`phone-ad-${s.id}`}
-                role="group"
-                aria-roledescription="slide"
-                aria-label={slideAriaLabel(s)}
-                className="relative h-full w-full shrink-0 snap-center snap-always px-0.5"
-              >
-                <article
-                  className={`flex h-full min-h-0 flex-col gap-2 rounded-xl bg-gradient-to-br p-3 text-left text-white shadow-inner ring-1 ring-white/15 ${s.gradient}`}
+            {slides.map((s, i) => {
+              const sec = s.autoAdvanceSec ?? 0;
+              const track = showAutoplayUi && sec > 0;
+              const slideHasImage = s.blocks.some((b) => b.kind === 'image');
+              return (
+                <div
+                  key={s.id}
+                  id={`phone-ad-${s.id}`}
+                  role="group"
+                  aria-roledescription="slide"
+                  aria-label={slideAriaLabel(s)}
+                  className={`relative box-border min-h-0 w-full min-w-full shrink-0 self-stretch ${slideCount > 1 ? 'h-full snap-start snap-always px-0.5' : 'h-full px-0'}`}
                 >
-                  <SlideProgressTrack
-                    isActive={i === active}
-                    progress={carouselProgress}
-                    showTrack={track}
-                  />
-                  <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1.5 overflow-y-auto overscroll-contain">
-                    {s.label ? (
-                      <p className="flex shrink-0 items-center gap-1 text-[0.65rem] font-bold uppercase tracking-wider text-white/75">
-                        <Sparkles size={12} className="shrink-0 opacity-90" aria-hidden />
-                        {s.label}
+                  {/* inset-0 fills slide so no dead band below the card (outside rounded article). */}
+                  <article
+                    className={`absolute inset-0 flex min-h-0 flex-col gap-2 rounded-xl bg-gradient-to-br p-3 text-left text-white shadow-inner ring-1 ring-white/15 ${slideHasImage ? '[container-type:size]' : ''} ${s.gradient}`}
+                  >
+                    <SlideProgressTrack
+                      isActive={i === active}
+                      progress={carouselProgress}
+                      showTrack={track}
+                    />
+                    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1.5 overflow-y-auto overscroll-contain">
+                      {s.label ? (
+                        <p className="flex shrink-0 items-center gap-1 text-[0.65rem] font-bold uppercase tracking-wider text-white/75">
+                          <Sparkles size={12} className="shrink-0 opacity-90" aria-hidden />
+                          {s.label}
+                        </p>
+                      ) : null}
+                      {s.blocks.map((b, j) => (
+                        <React.Fragment key={`${s.id}-b-${j}`}>
+                          {b.kind === 'text' ? <AdBlockText block={b} /> : <AdBlockImage block={b} />}
+                        </React.Fragment>
+                      ))}
+                    </div>
+                    {s.linkUrl ? (
+                      <a
+                        href={s.linkUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="relative z-10 inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-1.5 rounded-lg bg-white/20 px-3 py-2.5 text-center text-xs font-bold text-white ring-1 ring-white/35 backdrop-blur-sm hover:bg-white/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+                      >
+                        <span className="truncate">{s.linkLabel?.trim() || 'Learn more'}</span>
+                        <ExternalLink size={14} className="shrink-0 opacity-90" aria-hidden />
+                      </a>
+                    ) : (
+                      <p className="shrink-0 text-[0.65rem] font-semibold uppercase tracking-wide text-white/60">
+                        Tap sides or swipe · Ad
                       </p>
-                    ) : null}
-                    {s.blocks.map((b, j) => (
-                      <React.Fragment key={`${s.id}-b-${j}`}>
-                        {b.kind === 'text' ? <AdBlockText block={b} /> : <AdBlockImage block={b} />}
-                      </React.Fragment>
-                    ))}
-                  </div>
-                  {s.linkUrl ? (
-                    <a
-                      href={s.linkUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="relative z-10 inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-1.5 rounded-lg bg-white/20 px-3 py-2.5 text-center text-xs font-bold text-white ring-1 ring-white/35 backdrop-blur-sm hover:bg-white/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
-                    >
-                      <span className="truncate">{s.linkLabel?.trim() || 'Learn more'}</span>
-                      <ExternalLink size={14} className="shrink-0 opacity-90" aria-hidden />
-                    </a>
-                  ) : (
-                    <p className="shrink-0 text-[0.65rem] font-semibold uppercase tracking-wide text-white/60">
-                      Tap sides or swipe · Ad
-                    </p>
-                  )}
-                </article>
-              </div>
-            );
-          })}
+                    )}
+                  </article>
+                </div>
+              );
+            })}
         </div>
       </div>
 
@@ -405,7 +515,9 @@ export const PhoneMockupAdRail: React.FC<PhoneMockupAdRailProps> = ({
         >
           {slides.map((s, i) => {
             const hasTimer = (s.autoAdvanceSec ?? 0) > 0;
-            const fillPct = i < active ? 100 : i === active && hasTimer ? carouselProgress * 100 : 0;
+            // Without a per-slide timer, still show full orange on the active tab (otherwise last/manual slides stay at 0%).
+            const fillPct =
+              i < active ? 100 : i === active ? (hasTimer ? carouselProgress * 100 : 100) : 0;
             return (
               <button
                 key={s.id}
@@ -428,7 +540,17 @@ export const PhoneMockupAdRail: React.FC<PhoneMockupAdRailProps> = ({
             );
           })}
         </div>
-      ) : null}
+      ) : (
+        // Invisible row matching multi-slide tab strip so flex/min-content width matches 3-slide layout.
+        <div
+          className="mt-3 flex min-h-11 w-full gap-1.5 px-0.5 opacity-0 pointer-events-none select-none"
+          aria-hidden
+        >
+          <span className="min-h-11 min-w-0 flex-1 rounded-lg" />
+          <span className="min-h-11 min-w-0 flex-1 rounded-lg" />
+          <span className="min-h-11 min-w-0 flex-1 rounded-lg" />
+        </div>
+      )}
     </div>
   );
 };

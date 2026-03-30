@@ -2028,7 +2028,7 @@ export default function App() {
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.15, duration: 0.45 }}
-            className="relative z-10 flex w-full shrink-0 justify-center lg:w-auto lg:justify-end"
+            className="relative z-10 flex w-full shrink-0 justify-center lg:w-[min(100%,380px)] lg:min-w-[min(100%,380px)] lg:justify-end"
           >
             <PhoneMockupAdRail
               imageSrc={mobileHeroSrc}
