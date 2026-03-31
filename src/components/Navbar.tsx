@@ -303,7 +303,12 @@ export const Navbar: React.FC<NavbarProps> = ({
           <span className={`text-xl font-bold tracking-tighter hidden sm:block transition-colors ${activeView === 'home' ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>SKILLSTREAM</span>
         </button>
         
-        <div className="hidden md:flex items-center gap-6 text-sm font-medium text-[var(--text-secondary)]" ref={dropdownRef}>
+        <div
+          className={`hidden items-center gap-6 text-sm font-medium text-[var(--text-secondary)] ${
+            activeView === 'catalog' ? 'lg:flex' : 'md:flex'
+          }`}
+          ref={dropdownRef}
+        >
           <button
             type="button"
             ref={(el) => {
@@ -412,7 +417,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {catalogNavFilter ? (
-          <div className="min-w-0 flex-1 max-w-xl py-1 lg:max-w-2xl">{catalogNavFilter}</div>
+          <div className="min-w-0 flex-1 py-1">{catalogNavFilter}</div>
         ) : null}
       </div>
 
@@ -633,7 +638,9 @@ export const Navbar: React.FC<NavbarProps> = ({
         <button
           ref={mobileMenuToggleRef}
           type="button"
-          className="p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] md:hidden"
+          className={`p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] ${
+            activeView === 'catalog' ? 'lg:hidden' : 'md:hidden'
+          }`}
           onClick={() => {
             setMobileMenuOpen((open) => !open);
             setOpenDropdown(null);
@@ -650,7 +657,9 @@ export const Navbar: React.FC<NavbarProps> = ({
         <>
           <button
             type="button"
-            className="fixed inset-0 top-16 z-[45] bg-black/50 md:hidden"
+            className={`fixed inset-0 top-16 z-[45] bg-black/50 ${
+              activeView === 'catalog' ? 'lg:hidden' : 'md:hidden'
+            }`}
             aria-label="Close menu"
             onClick={() => {
               setMobileMenuOpen(false);
@@ -661,7 +670,9 @@ export const Navbar: React.FC<NavbarProps> = ({
             id="mobile-nav-drawer"
             ref={mobileMenuRef}
             tabIndex={-1}
-            className="fixed bottom-0 left-0 top-16 z-[46] flex w-full max-w-sm flex-col overflow-y-auto overscroll-contain border-r border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-xl outline-none focus:outline-none md:hidden"
+            className={`fixed bottom-0 left-0 top-16 z-[46] flex w-full max-w-sm flex-col overflow-y-auto overscroll-contain border-r border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-xl outline-none focus:outline-none ${
+              activeView === 'catalog' ? 'lg:hidden' : 'md:hidden'
+            }`}
             role="dialog"
             aria-modal="true"
             aria-label="Main navigation"

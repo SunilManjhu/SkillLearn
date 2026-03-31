@@ -13,14 +13,8 @@ export type CatalogCategoryPresetsState = {
 
 /** Used when Firestore has no document yet or read fails. */
 export const DEFAULT_CATALOG_CATEGORY_PRESETS: CatalogCategoryPresetsState = {
-  mainPills: [
-    'Software Development',
-    'Cloud Computing',
-    'Data Science',
-    'Cybersecurity',
-    'AI & ML',
-  ],
-  moreTopics: ['Business', 'Design', 'Marketing', 'Personal Development'],
+  mainPills: [],
+  moreTopics: [],
 };
 
 let cachedPresets: CatalogCategoryPresetsState = normalizeCatalogCategoryPresetsInternal(
@@ -30,9 +24,7 @@ let cachedPresets: CatalogCategoryPresetsState = normalizeCatalogCategoryPresets
 function normalizeCatalogCategoryPresetsInternal(input: CatalogCategoryPresetsState): CatalogCategoryPresetsState {
   const mainPills = dedupeLabelsPreserveOrder(input.mainPills);
   const moreTopics = dedupeLabelsPreserveOrder(input.moreTopics);
-  const safeMain =
-    mainPills.length > 0 ? mainPills : dedupeLabelsPreserveOrder(DEFAULT_CATALOG_CATEGORY_PRESETS.mainPills);
-  return { mainPills: safeMain, moreTopics };
+  return { mainPills, moreTopics };
 }
 
 export function normalizeCatalogCategoryPresets(input: CatalogCategoryPresetsState): CatalogCategoryPresetsState {

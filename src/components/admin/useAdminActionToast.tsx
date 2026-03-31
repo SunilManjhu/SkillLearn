@@ -14,6 +14,9 @@ export function useAdminActionToast() {
   const [text, setText] = useState<string | null>(null);
   const [variant, setVariant] = useState<AdminActionToastVariant>('success');
   const hideTimerRef = useRef<number | null>(null);
+  const hideDeadlineRef = useRef<number | null>(null);
+  const remainingMsRef = useRef<number>(TOAST_MS);
+  const pausedRef = useRef(false);
 
   useEffect(
     () => () => {
@@ -32,11 +35,46 @@ export function useAdminActionToast() {
     }
     setVariant(v);
     setText(msg);
+    pausedRef.current = false;
+    remainingMsRef.current = TOAST_MS;
+    hideDeadlineRef.current = Date.now() + TOAST_MS;
     hideTimerRef.current = window.setTimeout(() => {
       setText(null);
       hideTimerRef.current = null;
+      hideDeadlineRef.current = null;
     }, TOAST_MS);
   }, []);
+
+  const pause = useCallback(() => {
+    if (pausedRef.current) return;
+    pausedRef.current = true;
+    if (hideTimerRef.current) {
+      window.clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+    const dl = hideDeadlineRef.current;
+    if (dl != null) {
+      remainingMsRef.current = Math.max(0, dl - Date.now());
+      hideDeadlineRef.current = null;
+    }
+  }, []);
+
+  const resume = useCallback(() => {
+    if (!pausedRef.current) return;
+    pausedRef.current = false;
+    if (text == null) return;
+    const ms = Math.max(250, remainingMsRef.current || 0);
+    hideDeadlineRef.current = Date.now() + ms;
+    if (hideTimerRef.current) {
+      window.clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+    hideTimerRef.current = window.setTimeout(() => {
+      setText(null);
+      hideTimerRef.current = null;
+      hideDeadlineRef.current = null;
+    }, ms);
+  }, [text]);
 
   /** Portal avoids `space-y-*` / scroll ancestors treating the toast as a flow sibling (fixes layout jump). */
   const actionToast =
@@ -49,7 +87,12 @@ export function useAdminActionToast() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 10, scale: 0.98 }}
                 transition={{ duration: 0.22, ease: 'easeOut' }}
-                className={`pointer-events-none fixed z-[90] w-auto max-w-none rounded-xl border px-3 py-2.5 text-left text-sm font-semibold shadow-2xl backdrop-blur-sm min-w-0 break-words sm:max-w-[min(100vw-3rem,28rem)] left-4 right-4 bottom-[max(1rem,env(safe-area-inset-bottom,0px))] sm:left-auto sm:right-6 sm:bottom-6 sm:w-[min(100vw-3rem,28rem)] ${
+                onMouseEnter={pause}
+                onMouseLeave={resume}
+                onFocus={pause}
+                onBlur={resume}
+                tabIndex={0}
+                className={`pointer-events-auto fixed z-[90] w-auto max-w-none whitespace-pre-line rounded-xl border px-3 py-2.5 text-left text-sm font-semibold shadow-2xl backdrop-blur-sm min-w-0 break-words sm:max-w-[min(100vw-3rem,28rem)] left-4 right-4 bottom-[max(1rem,env(safe-area-inset-bottom,0px))] sm:left-auto sm:right-6 sm:bottom-6 sm:w-[min(100vw-3rem,28rem)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 ${
                   variant === 'danger'
                     ? 'border-red-500/45 bg-red-500/15 text-red-800 dark:border-red-400/50 dark:text-red-200'
                     : variant === 'neutral'

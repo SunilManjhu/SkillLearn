@@ -45,9 +45,6 @@ export async function loadCatalogCategoryPresets(): Promise<CatalogCategoryPrese
 /** Admin: write presets document. */
 export async function saveCatalogCategoryPresets(state: CatalogCategoryPresetsState): Promise<boolean> {
   const normalized = normalizeCatalogCategoryPresets(state);
-  if (normalized.mainPills.length < 1) {
-    return false;
-  }
   try {
     await setDoc(doc(db, COLLECTION, CATALOG_CATEGORY_PRESETS_DOC_ID), {
       mainPills: normalized.mainPills,

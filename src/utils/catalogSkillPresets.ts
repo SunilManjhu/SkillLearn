@@ -1,17 +1,11 @@
 /**
- * Built-in skill tags for Course Library filters and admin (aligned with learner nav “Skills” names).
- * User-added names also live in localStorage via catalogSkillExtras.
+ * Legacy compatibility shim.
+ *
+ * Skill presets are Firestore-backed via `catalogSkillPresetsState` + `catalogSkillPresetsFirestore`.
+ * This file intentionally contains no hard-coded skill names.
  */
-export const CATALOG_SKILL_PRESETS = [
-  'React',
-  'TypeScript',
-  'Node.js',
-  'Python',
-  'Docker',
-  'Kubernetes',
-  'AWS',
-] as const;
 
+/** @deprecated Use Firestore-backed `CatalogSkillPresetsState` instead. */
 export function allPresetCatalogSkills(): string[] {
-  return [...CATALOG_SKILL_PRESETS];
+  return [];
 }

@@ -163,10 +163,6 @@ export const AdminCatalogCategoryPresetsPanel: React.FC<AdminCatalogCategoryPres
 
   const handleSave = async () => {
     const normalized = normalizeCatalogCategoryPresets({ mainPills, moreTopics });
-    if (normalized.mainPills.length < 1) {
-      showActionToast('Add at least one popular topic.', 'danger');
-      return;
-    }
     setSaving(true);
     const ok = await saveCatalogCategoryPresets(normalized);
     setSaving(false);
@@ -212,7 +208,7 @@ export const AdminCatalogCategoryPresetsPanel: React.FC<AdminCatalogCategoryPres
         items={mainPills}
         onChange={setMainPills}
         addPlaceholder="e.g. DevOps"
-        minItems={1}
+        minItems={0}
       />
 
       <PresetColumn

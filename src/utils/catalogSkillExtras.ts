@@ -1,4 +1,4 @@
-import { allPresetCatalogSkills } from './catalogSkillPresets';
+import { getCachedCatalogSkillPresets } from './catalogSkillPresetsState';
 
 const STORAGE_KEY = 'skilllearn.catalogSkillExtras';
 
@@ -48,7 +48,8 @@ export function replaceCatalogSkillExtra(oldName: string, newName: string): void
   const o = oldName.trim();
   const n = newName.trim();
   if (!o || !n) return;
-  const presetLower = new Set(allPresetCatalogSkills().map((x) => x.toLowerCase()));
+  const p = getCachedCatalogSkillPresets();
+  const presetLower = new Set([...p.mainPills, ...p.moreSkills].map((x) => x.toLowerCase()));
   let next = readCatalogSkillExtras().filter((c) => c.toLowerCase() !== o.toLowerCase());
   if (!presetLower.has(n.toLowerCase()) && !next.some((c) => c.toLowerCase() === n.toLowerCase())) {
     next.push(n);

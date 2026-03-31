@@ -182,7 +182,7 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
     return (
       <div
         ref={rootRef}
-        className="relative min-w-0"
+        className="relative w-full min-w-0 md:max-w-full md:w-[clamp(16rem,28vw,26rem)]"
         onFocusCapture={() => setFilterFocusedWithin(true)}
         onBlurCapture={(e) => {
           const next = e.relatedTarget as Node | null;
@@ -309,7 +309,7 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
             id={panelId}
             role="dialog"
             aria-label="Course filters"
-            className="filterWindow dropdown card absolute left-0 right-0 top-full z-50 mt-2 max-h-[min(75vh,32rem)] overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl sm:left-0 sm:right-auto sm:w-[min(100%,26rem)] max-md:fixed max-md:left-3 max-md:right-3 max-md:top-[calc(4rem+env(safe-area-inset-top,0px)+0.5rem)] max-md:mt-0 max-md:z-[60] max-md:flex max-md:h-[min(88dvh,calc(100dvh-4.5rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px)-0.75rem))] max-md:max-h-[min(88dvh,calc(100dvh-4.5rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px)-0.75rem))] max-md:w-auto max-md:flex-col max-md:rounded-3xl max-md:shadow-[0_12px_48px_-12px_rgba(0,0,0,0.35)] dark:max-md:shadow-[0_12px_48px_-12px_rgba(0,0,0,0.55)]"
+            className="filterWindow dropdown card absolute left-0 right-0 top-full z-50 mt-2 max-h-[min(75vh,32rem)] overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl sm:left-auto sm:right-0 sm:translate-x-0 sm:min-w-[18rem] sm:w-[min(26rem,calc(100vw-2rem))] max-md:fixed max-md:left-3 max-md:right-3 max-md:top-[calc(4rem+env(safe-area-inset-top,0px)+0.5rem)] max-md:mt-0 max-md:z-[60] max-md:flex max-md:h-[min(88dvh,calc(100dvh-4.5rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px)-0.75rem))] max-md:max-h-[min(88dvh,calc(100dvh-4.5rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px)-0.75rem))] max-md:w-auto max-md:flex-col max-md:rounded-3xl max-md:shadow-[0_12px_48px_-12px_rgba(0,0,0,0.35)] dark:max-md:shadow-[0_12px_48px_-12px_rgba(0,0,0,0.55)]"
           >
             <div className="max-h-[min(65vh,28rem)] overflow-y-auto overscroll-y-contain px-3 py-3 max-md:max-h-none max-md:min-h-0 max-md:flex-1 max-md:px-4 max-md:pb-[max(1rem,env(safe-area-inset-bottom,0px))] max-md:pt-4">
               {visibleMainCat.length > 0 ? (

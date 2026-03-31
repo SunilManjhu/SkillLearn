@@ -106,7 +106,12 @@ import {
   CATALOG_SKILL_EXTRAS_CHANGED,
   readCatalogSkillExtras,
 } from './utils/catalogSkillExtras';
-import { allPresetCatalogSkills } from './utils/catalogSkillPresets';
+import {
+  CATALOG_SKILL_PRESETS_CHANGED,
+  DEFAULT_CATALOG_SKILL_PRESETS,
+  normalizeCatalogSkillPresets,
+  type CatalogSkillPresetsState,
+} from './utils/catalogSkillPresetsState';
 import {
   CATALOG_CATEGORY_PRESETS_CHANGED,
   catalogCategoriesRowFromState,
@@ -115,6 +120,8 @@ import {
   type CatalogCategoryPresetsState,
 } from './utils/catalogCategoryPresets';
 import { loadCatalogCategoryPresets } from './utils/catalogCategoryPresetsFirestore';
+import { loadCatalogSkillPresets } from './utils/catalogSkillPresetsFirestore';
+import { buildCatalogTaxonomy } from './utils/catalogTaxonomy';
 import {
   courseMatchesLibraryFilters,
   toggleFilterTag,
@@ -446,6 +453,9 @@ export default function App() {
   const [navCatalogCategoryTag, setNavCatalogCategoryTag] = useState<string | null>(null);
   const [categoryPresets, setCategoryPresets] = useState<CatalogCategoryPresetsState>(() =>
     normalizeCatalogCategoryPresets(DEFAULT_CATALOG_CATEGORY_PRESETS)
+  );
+  const [skillPresets, setSkillPresets] = useState<CatalogSkillPresetsState>(() =>
+    normalizeCatalogSkillPresets(DEFAULT_CATALOG_SKILL_PRESETS)
   );
   const [heroPhoneAdSlides, setHeroPhoneAdSlides] =
     useState<PhoneMockupAdSlide[]>(DEFAULT_HERO_PHONE_AD_SLIDES);
@@ -1389,19 +1399,10 @@ export default function App() {
         : ADMIN_DELETE_BLOCKED_MULTI_MSG;
 
   const moreCategories = useMemo(() => {
-    const mainSet = new Set<string>(catalogCategoriesRowFromState(categoryPresets));
-    const pool = new Set<string>([...categoryPresets.moreTopics]);
-    for (const c of readCatalogCategoryExtras()) pool.add(c);
-    for (const co of catalogCourses) {
-      for (const cat of co.categories ?? []) {
-        const t = cat?.trim();
-        if (t) pool.add(t);
-      }
-    }
-    return [...pool]
-      .filter((c) => !mainSet.has(c))
-      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-  }, [catalogCourses, categoryFilterRevision, categoryPresets]);
+    // Derived via shared taxonomy builder (presets + extras + discovered-from-courses), excluding main.
+    const t = buildCatalogTaxonomy({ courses: catalogCourses, topicPresets: categoryPresets, skillPresets });
+    return t.topics.more;
+  }, [catalogCourses, categoryFilterRevision, categoryPresets, skillPresets]);
 
   /** Browse menu categories — same sources as Course Library (main pills + More), excluding “All”. */
   const catalogBrowseCategories = useMemo(
@@ -1410,23 +1411,13 @@ export default function App() {
   );
 
   const moreSkills = useMemo(() => {
-    const presetSet = new Set(allPresetCatalogSkills().map((s) => s.toLowerCase()));
-    const pool = new Set<string>();
-    for (const s of readCatalogSkillExtras()) pool.add(s);
-    for (const co of catalogCourses) {
-      for (const sk of co.skills ?? []) {
-        const t = sk?.trim();
-        if (t) pool.add(t);
-      }
-    }
-    return [...pool]
-      .filter((s) => !presetSet.has(s.toLowerCase()))
-      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-  }, [catalogCourses, skillFilterRevision]);
+    const t = buildCatalogTaxonomy({ courses: catalogCourses, topicPresets: categoryPresets, skillPresets });
+    return t.skills.more;
+  }, [catalogCourses, categoryPresets, skillFilterRevision, skillPresets]);
 
   const catalogBrowseSkills = useMemo(
-    () => [...allPresetCatalogSkills(), ...moreSkills],
-    [moreSkills]
+    () => [...skillPresets.mainPills, ...moreSkills],
+    [skillPresets.mainPills, moreSkills]
   );
 
   const filteredCourses = catalogCourses.filter((course) => {
@@ -1478,6 +1469,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    void loadCatalogSkillPresets().then(setSkillPresets);
+  }, []);
+
+  useEffect(() => {
     const unsub = subscribeHeroPhoneAdsForPublic(setHeroPhoneAdSlides);
     return unsub;
   }, []);
@@ -1486,6 +1481,12 @@ export default function App() {
     const onPresets = () => void loadCatalogCategoryPresets().then(setCategoryPresets);
     window.addEventListener(CATALOG_CATEGORY_PRESETS_CHANGED, onPresets);
     return () => window.removeEventListener(CATALOG_CATEGORY_PRESETS_CHANGED, onPresets);
+  }, []);
+
+  useEffect(() => {
+    const onPresets = () => void loadCatalogSkillPresets().then(setSkillPresets);
+    window.addEventListener(CATALOG_SKILL_PRESETS_CHANGED, onPresets);
+    return () => window.removeEventListener(CATALOG_SKILL_PRESETS_CHANGED, onPresets);
   }, []);
 
   useEffect(() => {
@@ -2541,7 +2542,7 @@ export default function App() {
                 ref={catalogCategoryFilterTriggerRef}
                 mainTopics={categoryPresets.mainPills}
                 moreTopics={moreCategories}
-                mainSkills={allPresetCatalogSkills()}
+                mainSkills={skillPresets.mainPills}
                 moreSkills={moreSkills}
                 filters={libraryFilters}
                 onFiltersChange={handleCourseLibraryFiltersChange}
