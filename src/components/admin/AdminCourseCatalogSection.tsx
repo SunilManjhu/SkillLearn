@@ -2097,38 +2097,12 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         </div>
       </div>
 
-      {contentCatalogSubTab === 'paths' && (
-        <div className="rounded-xl border border-[var(--border-color)]/80 bg-[var(--bg-primary)]/45 px-3 py-3 sm:px-4">
-          <p className="text-sm leading-snug text-[var(--text-primary)] sm:text-[13px]">
-            Build <strong className="font-semibold text-[var(--text-secondary)]">learning paths</strong> learners see
-            under Paths. Use published courses only—add or publish them in the{' '}
-            <strong className="font-semibold text-[var(--text-secondary)]">Catalog</strong> tab first.
-          </p>
-          <details className="mt-2.5 text-xs leading-relaxed text-[var(--text-muted)]">
-            <summary className="cursor-pointer select-none font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
-              Quick tips
-            </summary>
-            <ul className="mt-2 list-disc space-y-1.5 pl-4 marker:text-orange-500/60">
-              <li>
-                <strong className="font-medium text-[var(--text-secondary)]">Save path</strong> stores the path and
-                outline. <strong className="font-medium text-[var(--text-secondary)]">Save course structure</strong>{' '}
-                updates the course document (same as the catalog editor).
-              </li>
-              <li>
-                New paths use the next free id (<code className="text-orange-500/90">P1</code>,{' '}
-                <code className="text-orange-500/90">P2</code>…). Reorder path courses below the outline; expand a
-                course to edit module and lesson order.
-              </li>
-            </ul>
-          </details>
-        </div>
-      )}
-
       {contentCatalogSubTab === 'catalog' && (
         <>
       <div ref={courseCatalogEditorRef} className="space-y-4">
         <div className="space-y-3">
-        <div className="flex flex-col gap-3 md:grid md:grid-cols-3 md:items-start md:gap-x-3 md:gap-y-3">
+        <div className="min-w-0 overflow-x-auto overflow-y-visible [-webkit-overflow-scrolling:touch] pb-0.5">
+        <div className="grid w-full min-w-[720px] grid-cols-[minmax(0,1.5fr)_minmax(0,0.85fr)_minmax(0,0.85fr)_auto] items-start gap-x-3 gap-y-3">
           <div className="flex min-w-0 flex-col gap-1">
             <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
               <label
@@ -2240,7 +2214,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             )}
             </div>
           </div>
-          <div className="grid min-w-0 grid-cols-2 gap-2 md:contents">
+          <div className="contents min-w-0">
             <div className="flex min-w-0 flex-col gap-1">
               <div className="flex min-h-6 min-w-0 items-center">
                 <span className="text-xs font-semibold leading-none text-[var(--text-secondary)]">
@@ -2288,39 +2262,52 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               </select>
             </div>
           </div>
-        </div>
 
-        {draft && (
-          <div className="flex min-w-0 flex-row flex-nowrap items-stretch gap-2">
+        <div className="flex min-w-0 w-full flex-col gap-1 md:w-auto md:max-w-full">
+          <div className="flex min-h-6 min-w-0 items-center">
+            <span className="text-xs font-semibold leading-none text-[var(--text-secondary)] max-md:sr-only">
+              Actions
+            </span>
+          </div>
+          <div className="flex flex-nowrap items-center gap-2 overflow-x-auto pb-0.5 [-webkit-overflow-scrolling:touch]">
             <button
               type="button"
               disabled={busy || !draft || (baselineJson !== null && !isDirty)}
               onClick={() => void handleSave()}
               aria-busy={busy}
-              aria-label={busy ? 'Saving changes…' : 'Save changes to catalog'}
-              className="inline-flex min-h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl bg-orange-500 px-3 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-40 md:flex-initial md:gap-2 md:px-5"
+              aria-label={busy ? 'Saving…' : 'Save course to catalog'}
+              className="inline-flex min-h-11 shrink-0 touch-manipulation items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-40 sm:px-5"
             >
               {busy ? (
                 <Loader2 size={18} className="shrink-0 animate-spin" aria-hidden />
               ) : (
                 <Save size={18} className="shrink-0" aria-hidden />
               )}
-              <span className="md:hidden">Save</span>
-              <span className="hidden md:inline">Save changes</span>
+              Save
             </button>
             <button
               type="button"
-              disabled={busy || !publishedList.some((c) => c.id === draft.id)}
+              disabled={busy || !draft || !publishedList.some((c) => c.id === draft.id)}
               onClick={openDeleteDialog}
-              aria-label="Delete published course from catalog"
-              className="inline-flex min-h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl border border-red-500/40 px-3 py-2 text-sm font-bold text-red-400 hover:bg-red-500/10 disabled:opacity-40 md:flex-initial md:gap-2 md:px-5"
+              aria-label="Delete course from catalog"
+              className="inline-flex min-h-11 shrink-0 touch-manipulation items-center justify-center gap-2 rounded-xl border border-red-500/40 px-4 py-2 text-sm font-bold text-red-400 hover:bg-red-500/10 disabled:opacity-40 sm:px-5"
             >
               <Trash2 size={18} className="shrink-0" aria-hidden />
-              <span className="md:hidden">Delete</span>
-              <span className="hidden md:inline">Delete published</span>
+              Delete
             </button>
           </div>
-        )}
+          {draft && isDirty ? (
+            <p className="text-xs font-medium text-amber-800 dark:text-amber-200" role="status">
+              Unsaved changes
+            </p>
+          ) : draft && !isDirty && selector !== '__new__' ? (
+            <p className="text-xs text-[var(--text-muted)]" role="status">
+              All changes saved
+            </p>
+          ) : null}
+        </div>
+        </div>
+        </div>
         </div>
 
         {draft && (
@@ -3522,7 +3509,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         />
       )}
 
-      {contentCatalogSubTab === 'paths' && (
+      {/* Keep mounted while Content is open so paths load in the background on Catalog; avoids remount + Firestore delay every time Paths is selected. */}
+      <div
+        className={contentCatalogSubTab === 'paths' ? 'min-w-0' : 'hidden'}
+        aria-hidden={contentCatalogSubTab !== 'paths'}
+      >
         <PathBuilderSection
           ref={pathBuilderRef}
           key={pathBuilderResetKey}
@@ -3532,7 +3523,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           onPathsDirtyChange={setPathBuilderDirty}
           onPathsLoadingChange={setPathsListLoading}
         />
-      )}
+      </div>
 
       <AnimatePresence>
         {pathSubTabSwitchConfirmOpen && (

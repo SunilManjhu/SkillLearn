@@ -46,6 +46,7 @@ import {
 } from '../../utils/learningPathsFirestore';
 import { fetchPathMindmapFromFirestore, savePathMindmapToFirestore } from '../../utils/pathMindmapFirestore';
 import { normalizeExternalHref } from '../../utils/externalUrl';
+import { AdminLabelInfoTip } from './adminLabelInfoTip';
 import { useAdminActionToast } from './useAdminActionToast';
 import {
   applyReorderViewportScrollAndFocus,
@@ -1300,7 +1301,7 @@ function PathBranchRow({
         <button
           type="button"
           onClick={() => onToggleCollapse(b.id)}
-          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]/80 focus:outline-none focus:ring-2 focus:ring-orange-500/40"
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]/80 focus:outline-none focus:ring-2 focus:ring-orange-500/40"
           aria-expanded={!isCollapsed}
           aria-label={
             isCollapsed
@@ -1316,12 +1317,12 @@ function PathBranchRow({
           )}
         </button>
       ) : (
-        <span className="inline-block h-10 w-10 shrink-0" aria-hidden />
+        <span className="inline-block h-7 w-7 shrink-0" aria-hidden />
       )}
       <button
         type="button"
         onClick={() => onRequestChangeType(b.id)}
-        className={`inline-flex h-10 shrink-0 items-center rounded-md px-2.5 text-[10px] font-bold uppercase transition-colors hover:ring-2 hover:ring-orange-500/40 focus:outline-none focus:ring-2 focus:ring-orange-500/40 ${kindBadgeClass}`}
+        className={`inline-flex h-7 min-w-[3.25rem] shrink-0 items-center justify-center rounded-md px-3.5 text-[10px] font-bold uppercase leading-none transition-colors hover:ring-2 hover:ring-orange-500/40 focus:outline-none focus:ring-2 focus:ring-orange-500/40 ${kindBadgeClass}`}
         title="Change branch type"
         aria-label={`Change branch type, now ${pathBranchKindBadgeShortLabel(b.kind)}`}
       >
@@ -1342,8 +1343,8 @@ function PathBranchRow({
           >
             Title
           </span>
-          <div className="max-md:flex max-md:min-w-0 max-md:flex-row max-md:items-end max-md:gap-2 md:contents">
-            <div className="md:col-start-1 md:row-start-2">{branchBadgeGroup}</div>
+          <div className="max-md:flex max-md:min-w-0 max-md:flex-row max-md:items-center max-md:gap-2 md:contents">
+            <div className="flex items-center md:col-start-1 md:row-start-2">{branchBadgeGroup}</div>
             <input
               type="text"
               value={b.label}
@@ -1366,8 +1367,8 @@ function PathBranchRow({
           >
             Title
           </span>
-          <div className="max-md:flex max-md:min-w-0 max-md:flex-row max-md:items-end max-md:gap-2 md:contents">
-            <div className="md:col-start-1 md:row-start-2">{branchBadgeGroup}</div>
+          <div className="max-md:flex max-md:min-w-0 max-md:flex-row max-md:items-center max-md:gap-2 md:contents">
+            <div className="flex items-center md:col-start-1 md:row-start-2">{branchBadgeGroup}</div>
             <input
               type="text"
               value={b.label}
@@ -1389,8 +1390,8 @@ function PathBranchRow({
             <span className={PATH_BRANCH_TITLE_FIELD_LABEL_CLASS}>Title</span>
             <span className={PATH_BRANCH_TITLE_FIELD_LABEL_CLASS}>URL</span>
           </div>
-          <div className="max-md:flex max-md:min-w-0 max-md:flex-row max-md:flex-wrap max-md:items-end max-md:gap-2 md:contents">
-            <div className="md:col-start-1 md:row-start-2">{branchBadgeGroup}</div>
+          <div className="max-md:flex max-md:min-w-0 max-md:flex-row max-md:flex-wrap max-md:items-center max-md:gap-2 md:contents">
+            <div className="flex items-center md:col-start-1 md:row-start-2">{branchBadgeGroup}</div>
             <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end sm:gap-x-3 sm:gap-y-2 md:col-start-2 md:row-start-2">
               <input
                 type="text"
@@ -1425,8 +1426,8 @@ function PathBranchRow({
         >
           Title
         </span>
-        <div className="max-md:flex max-md:min-w-0 max-md:flex-row max-md:items-end max-md:gap-2 md:contents">
-          <div className="md:col-start-1 md:row-start-2">{branchBadgeGroup}</div>
+        <div className="max-md:flex max-md:min-w-0 max-md:flex-row max-md:items-center max-md:gap-2 md:contents">
+          <div className="flex items-center md:col-start-1 md:row-start-2">{branchBadgeGroup}</div>
           <span className="flex min-h-10 min-w-0 items-center truncate text-sm font-bold text-[var(--text-primary)] md:col-start-2 md:row-start-2">
             {branchNodeDisplayLabel(b, publishedList)}
           </span>
@@ -1609,7 +1610,8 @@ function PathBranchTreeList({
       className={
         depth > 0
           ? 'space-y-0 border-l-2 border-orange-500/30 pl-3 sm:pl-4'
-          : 'space-y-0'
+          : // Reserve space so the first md “between rows” insert strip (–translate-y-1/2) does not overlap the Outline heading above the list.
+            'space-y-0 pt-5 md:pt-6'
       }
     >
       <Fragment key={`ins-${insKey}-0`}>
@@ -1683,7 +1685,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
   const [pathSelector, setPathSelector] = useState<string>('');
   /** Bumps when starting a new path draft so we focus Path title even if the allocated id matches the previous draft. */
   const [pathTitleFocusKey, setPathTitleFocusKey] = useState(0);
-  /** Shown after Save path when the path has no courses (inline hint like module field errors). */
+  /** Shown after Save when the path has no courses (inline hint like module field errors). */
   const [showPathCourseRequiredHint, setShowPathCourseRequiredHint] = useState(false);
   const [pathDraft, setPathDraft] = useState<LearningPath | null>(null);
   const [pathBaselineJson, setPathBaselineJson] = useState<string | null>(null);
@@ -2175,12 +2177,24 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
       <div className="space-y-3">
         <div className="flex flex-col gap-3 md:grid md:grid-cols-[minmax(0,1.5fr)_minmax(0,0.85fr)_minmax(0,0.85fr)_auto] md:items-start md:gap-x-3 md:gap-y-3">
           <div className="flex min-w-0 flex-col gap-1">
-            <label
+            <AdminLabelInfoTip
               htmlFor="admin-learning-path-select"
-              className="text-xs font-semibold text-[var(--text-secondary)]"
+              label="Path"
+              tipId="admin-path-field-tips"
+              tipRegionAriaLabel="Path field tips"
+              tipSubject="Path"
             >
-              Path
-            </label>
+              <li>Saves go to the live path and outline (Firestore).</li>
+              <li>
+                Open <strong className="font-semibold text-[var(--text-secondary)]">Path</strong> once to load titles.
+              </li>
+              <li>
+                <strong className="font-semibold text-[var(--text-secondary)]">Create new path</strong>: next id{' '}
+                <code className="text-orange-500/90">P1</code>, <code className="text-orange-500/90">P2</code>…; list
+                A–Z.
+              </li>
+              <li>Use published courses in the outline—add or publish them in the Catalog tab first.</li>
+            </AdminLabelInfoTip>
             <select
               id="admin-learning-path-select"
               value={pathSelector}
@@ -2189,7 +2203,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
               className="box-border min-h-11 min-w-0 w-full touch-manipulation rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-[42px] sm:text-sm"
             >
               <option value="" disabled>
-                {pathsLoading ? 'Loading paths…' : 'Choose a path…'}
+                Choose a path…
               </option>
               {!pathsLoading && (
                 <>
@@ -2205,7 +2219,9 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
           </div>
           <div className="grid min-w-0 grid-cols-2 gap-2 md:contents">
             <div className="flex min-w-0 flex-col gap-1">
-              <span className="text-xs font-semibold text-[var(--text-secondary)]">Path id</span>
+              <div className="flex min-h-6 min-w-0 items-center">
+                <span className="text-xs font-semibold leading-none text-[var(--text-secondary)]">Path id</span>
+              </div>
               <div
                 className="box-border flex min-h-[42px] w-full min-w-0 items-center rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm font-mono text-[var(--text-primary)] md:px-3"
                 aria-live="polite"
@@ -2219,7 +2235,9 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
               </div>
             </div>
             <div className="flex min-w-0 flex-col gap-1">
-              <span className="text-xs font-semibold text-[var(--text-secondary)]">Linked courses</span>
+              <div className="flex min-h-6 min-w-0 items-center">
+                <span className="text-xs font-semibold leading-none text-[var(--text-secondary)]">Linked courses</span>
+              </div>
               <div
                 className="box-border flex min-h-[42px] w-full min-w-0 items-center rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm text-[var(--text-primary)] md:px-3"
                 aria-live="polite"
@@ -2239,23 +2257,28 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
             </div>
           </div>
           <div className="flex min-w-0 w-full flex-col gap-1 md:w-auto md:max-w-full">
-            <span className="text-xs font-semibold text-[var(--text-secondary)] md:min-h-[1rem] max-md:sr-only">
-              Actions
-            </span>
+            <div className="flex min-h-6 min-w-0 items-center">
+              <span className="text-xs font-semibold leading-none text-[var(--text-secondary)] max-md:sr-only">
+                Actions
+              </span>
+            </div>
             <div className="flex flex-nowrap items-center gap-2 overflow-x-auto pb-0.5 [-webkit-overflow-scrolling:touch]">
               <button
                 type="button"
                 disabled={pathBusy || !pathDraft || !pathDirty}
                 onClick={() => void handleSavePath()}
+                aria-busy={pathBusy}
+                aria-label={pathBusy ? 'Saving…' : 'Save path to catalog'}
                 className="inline-flex min-h-11 shrink-0 touch-manipulation items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-40 sm:px-5"
               >
                 {pathBusy ? <Loader2 size={18} className="animate-spin" aria-hidden /> : <Save size={18} aria-hidden />}
-                Save path
+                Save
               </button>
               <button
                 type="button"
                 disabled={pathBusy || !pathDraft}
                 onClick={requestDeletePath}
+                aria-label="Delete path from catalog"
                 className="inline-flex min-h-11 shrink-0 touch-manipulation items-center justify-center gap-2 rounded-xl border border-red-500/40 px-4 py-2 text-sm font-semibold text-red-500 hover:bg-red-500/10 dark:text-red-400 disabled:opacity-40 sm:px-5"
               >
                 <Trash2 size={18} aria-hidden />
@@ -2277,13 +2300,6 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
           </div>
         </div>
       </div>
-
-      {pathsLoading ? (
-        <div className="flex min-h-10 items-center gap-2 text-sm text-[var(--text-muted)]">
-          <Loader2 size={18} className="shrink-0 animate-spin" aria-hidden />
-          Loading paths…
-        </div>
-      ) : null}
 
       {!pathDraft && !pathsLoading ? (
         <div className="rounded-xl border border-dashed border-[var(--border-color)] bg-[var(--bg-primary)]/35 px-4 py-8 text-center sm:py-10">
@@ -2326,15 +2342,34 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
             className={`space-y-3 ${pathMindmapLoading ? 'pointer-events-none opacity-60' : ''}`}
           >
             <div className="space-y-2">
-              <h3 className="text-sm font-bold text-[var(--text-primary)]">Outline</h3>
+              <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+                <h3 className="m-0 text-sm font-bold leading-none text-[var(--text-primary)]">Outline</h3>
+                <AdminLabelInfoTip
+                  controlOnly
+                  tipId="admin-path-outline-tips"
+                  tipRegionAriaLabel="Outline tips"
+                  tipSubject="Outline"
+                >
+                  <li>
+                    <strong className="font-semibold text-[var(--text-secondary)]">Section divider</strong> — in-section
+                    subheading (not collapsible).
+                  </li>
+                  <li>
+                    Courses and lessons update{' '}
+                    <strong className="font-semibold text-[var(--text-secondary)]">Linked courses</strong>.
+                  </li>
+                  <li>
+                    <strong className="font-semibold text-[var(--text-secondary)]">Show</strong> off hides the row for
+                    everyone. On: <strong className="font-semibold text-[var(--text-secondary)]">User</strong> or{' '}
+                    <strong className="font-semibold text-[var(--text-secondary)]">Administrators only</strong>.
+                  </li>
+                </AdminLabelInfoTip>
+              </div>
               <p className="text-xs leading-relaxed text-[var(--text-muted)]">
-                Top-level rows are <strong className="text-[var(--text-secondary)]">sections</strong>. Inside each
-                section, use one flat list: courses, lessons, links, or dividers—no nested labels. Reorder with{' '}
-                <strong className="text-[var(--text-secondary)]">↑</strong>{' '}
-                <strong className="text-[var(--text-secondary)]">↓</strong>. Tap{' '}
-                <strong className="text-[var(--text-secondary)]">Add branch here</strong> between rows to insert in that spot;
-                on wider screens the control is easier to see when you point between rows. Expand a section to see those
-                gaps inside it. Click <strong className="text-[var(--text-secondary)]">Save path</strong> when done.
+                <strong className="text-[var(--text-secondary)]">Sections</strong> hold one flat list (courses, lessons,
+                links, dividers). <strong className="text-[var(--text-secondary)]">↑↓</strong> to reorder;{' '}
+                <strong className="text-[var(--text-secondary)]">Add branch here</strong> to insert.{' '}
+                <strong className="text-[var(--text-secondary)]">Save</strong> to apply.
               </p>
               {pathBranchFlatnessIssues.length > 0 ? (
                 <div
@@ -2367,27 +2402,6 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                   </button>
                 </div>
               ) : null}
-              <details className="text-xs text-[var(--text-muted)]">
-                <summary className="cursor-pointer select-none py-1 font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
-                  Visibility and row types
-                </summary>
-                <ul className="mt-2 list-disc space-y-1.5 pl-4 leading-relaxed marker:text-orange-500/50">
-                  <li>
-                    <strong className="text-[var(--text-secondary)]">Section divider</strong>: subheading inside a
-                    section (not collapsible).
-                  </li>
-                  <li>
-                    Course and lesson rows update <strong className="text-[var(--text-secondary)]">Linked courses</strong>{' '}
-                    automatically.
-                  </li>
-                  <li>
-                    Turn off <strong className="text-[var(--text-secondary)]">Show</strong> to hide a row
-                    from everyone (including admins). When on, <strong className="text-[var(--text-secondary)]">Who can see it</strong>{' '}
-                    is <strong className="text-[var(--text-secondary)]">User</strong> or{' '}
-                    <strong className="text-[var(--text-secondary)]">Administrators only</strong>.
-                  </li>
-                </ul>
-              </details>
             </div>
             {pathMindmapLoading && pathSelector !== '__new__' ? (
               <div className="flex items-center gap-2 py-4 text-sm text-[var(--text-muted)]">
