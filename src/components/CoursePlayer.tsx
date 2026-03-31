@@ -22,6 +22,8 @@ import {
   Volume2,
   VolumeX,
   Cog,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import { Course, Lesson } from '../data/courses';
 import { motion, AnimatePresence } from 'motion/react';
@@ -177,6 +179,8 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   const [unpauseFrostLinger, setUnpauseFrostLinger] = useState(false);
   /** When playing: chrome hides after idle; any activity in the video rect shows it again (like native / streaming UIs). */
   const [chromeVisible, setChromeVisible] = useState(true);
+  /** True when `videoAreaRef` is the current fullscreen element (synced via fullscreen events). */
+  const [isVideoAreaFullscreen, setIsVideoAreaFullscreen] = useState(false);
   const [seekNudgeSeconds, setSeekNudgeSeconds] = useState<5 | -5>(5);
   const [seekNudgeVisible, setSeekNudgeVisible] = useState(false);
   const [progressByLesson, setProgressByLesson] = useState<Record<string, LessonProgress>>(() =>
@@ -510,14 +514,68 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
       if (current === el) {
         if (document.exitFullscreen) await document.exitFullscreen();
         else await doc.webkitExitFullscreen?.();
+        // #region agent log
+        fetch('http://127.0.0.1:7596/ingest/5454287d-2e40-49c9-8b24-1c8d7ddb4bb1', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '4c9383' },
+          body: JSON.stringify({
+            sessionId: '4c9383',
+            location: 'CoursePlayer.tsx:toggleVideoAreaFullscreen',
+            message: 'fullscreen_toggle',
+            data: { action: 'exit', hypothesisId: 'FS' },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion
         return;
       }
       const host = el as HTMLElement & { webkitRequestFullscreen?: () => Promise<void> };
       if (el.requestFullscreen) await el.requestFullscreen();
       else await host.webkitRequestFullscreen?.();
-    } catch {
-      /* ignore */
+      // #region agent log
+      fetch('http://127.0.0.1:7596/ingest/5454287d-2e40-49c9-8b24-1c8d7ddb4bb1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '4c9383' },
+        body: JSON.stringify({
+          sessionId: '4c9383',
+          location: 'CoursePlayer.tsx:toggleVideoAreaFullscreen',
+          message: 'fullscreen_toggle',
+          data: { action: 'enter', hypothesisId: 'FS' },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
+    } catch (err) {
+      // #region agent log
+      fetch('http://127.0.0.1:7596/ingest/5454287d-2e40-49c9-8b24-1c8d7ddb4bb1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '4c9383' },
+        body: JSON.stringify({
+          sessionId: '4c9383',
+          location: 'CoursePlayer.tsx:toggleVideoAreaFullscreen',
+          message: 'fullscreen_toggle_error',
+          data: { hypothesisId: 'FS', err: String(err) },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
     }
+  }, []);
+
+  useEffect(() => {
+    const syncVideoAreaFullscreen = () => {
+      const el = videoAreaRef.current;
+      const doc = document as Document & { webkitFullscreenElement?: Element | null };
+      const current = document.fullscreenElement ?? doc.webkitFullscreenElement ?? null;
+      setIsVideoAreaFullscreen(!!el && current === el);
+    };
+    syncVideoAreaFullscreen();
+    document.addEventListener('fullscreenchange', syncVideoAreaFullscreen);
+    document.addEventListener('webkitfullscreenchange', syncVideoAreaFullscreen);
+    return () => {
+      document.removeEventListener('fullscreenchange', syncVideoAreaFullscreen);
+      document.removeEventListener('webkitfullscreenchange', syncVideoAreaFullscreen);
+    };
   }, []);
 
   /**
@@ -3010,8 +3068,57 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                     className="h-1.5 w-full min-w-[72px] cursor-pointer accent-orange-500 transition-[height] duration-300 ease-out sm:min-w-[100px] max-lg:portrait:min-w-[64px] max-lg:landscape:h-1 max-lg:landscape:min-w-[56px]"
                     aria-label="Volume"
                   />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearChromeHideTimer();
+                      setChromeVisible(true);
+                      void toggleVideoAreaFullscreen();
+                    }}
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-white transition-[padding] duration-300 ease-out hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60 max-lg:portrait:h-10 max-lg:portrait:w-10 max-lg:landscape:h-9 max-lg:landscape:w-9"
+                    aria-label={isVideoAreaFullscreen ? 'Exit full screen' : 'Full screen'}
+                  >
+                    {isVideoAreaFullscreen ? (
+                      <Minimize2
+                        size={20}
+                        className="max-lg:portrait:h-[18px] max-lg:portrait:w-[18px] max-lg:landscape:h-4 max-lg:landscape:w-4"
+                        aria-hidden
+                      />
+                    ) : (
+                      <Maximize2
+                        size={20}
+                        className="max-lg:portrait:h-[18px] max-lg:portrait:w-[18px] max-lg:landscape:h-4 max-lg:landscape:w-4"
+                        aria-hidden
+                      />
+                    )}
+                  </button>
                 </div>
               </div>
+            </div>
+          )}
+
+          {!youtubeEmbedUrl && !blocksVideoPlayback && (
+            <div
+              className={`absolute bottom-2 right-2 z-40 transition-opacity duration-200 ease-out max-lg:bottom-[max(0.5rem,env(safe-area-inset-bottom,0px))] max-lg:right-[max(0.5rem,env(safe-area-inset-right,0px))] ${
+                showTopControls ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
+              }`}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  clearChromeHideTimer();
+                  setChromeVisible(true);
+                  void toggleVideoAreaFullscreen();
+                }}
+                className="flex h-11 w-11 items-center justify-center rounded-md bg-black/45 text-white shadow-lg ring-1 ring-white/10 backdrop-blur-sm transition-colors hover:bg-black/55 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+                aria-label={isVideoAreaFullscreen ? 'Exit full screen' : 'Full screen'}
+              >
+                {isVideoAreaFullscreen ? (
+                  <Minimize2 size={22} aria-hidden />
+                ) : (
+                  <Maximize2 size={22} aria-hidden />
+                )}
+              </button>
             </div>
           )}
         </div>
