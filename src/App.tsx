@@ -2310,10 +2310,14 @@ export default function App() {
 
   const renderCatalog = () => {
     const catalogHeading = selectedLearningPathId == null ? 'Course Library' : null;
+    /** Avoid flashing the raw path id (e.g. P1) before Firestore returns `learningPaths`. */
+    const pathTitleLoading = selectedLearningPathId != null && !learningPathsFetched;
     const pathHeroTitle =
-      selectedLearningPathId != null
-        ? activeLearningPath?.title?.trim() || selectedLearningPathId
-        : null;
+      selectedLearningPathId == null
+        ? null
+        : learningPathsFetched
+          ? activeLearningPath?.title?.trim() || selectedLearningPathId
+          : null;
     const pathUnknown =
       selectedLearningPathId != null && learningPathsFetched && activeLearningPath == null;
     return (
@@ -2325,7 +2329,7 @@ export default function App() {
                 {catalogHeading}
               </h1>
             </div>
-          ) : selectedLearningPathId != null && pathHeroTitle != null ? (
+          ) : selectedLearningPathId != null && (pathTitleLoading || pathHeroTitle != null) ? (
             <div className="mb-2 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:mb-4 sm:p-5">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div className="flex min-w-0 gap-3">
@@ -2339,8 +2343,21 @@ export default function App() {
                     <p className="text-[10px] font-semibold uppercase tracking-wide text-orange-500 sm:text-xs">
                       Learning path
                     </p>
-                    <h1 className="mt-1 min-w-0 break-words text-xl font-bold leading-snug text-[var(--text-primary)] sm:text-2xl md:text-3xl">
-                      {pathHeroTitle}
+                    <h1
+                      className="mt-1 min-w-0 break-words text-xl font-bold leading-snug text-[var(--text-primary)] sm:text-2xl md:text-3xl"
+                      aria-busy={pathTitleLoading}
+                    >
+                      {pathTitleLoading ? (
+                        <>
+                          <span className="sr-only">Loading learning path title</span>
+                          <span
+                            className="inline-block h-8 w-[min(100%,12rem)] max-w-full animate-pulse rounded-md bg-[var(--hover-bg)] sm:h-9 md:h-10"
+                            aria-hidden
+                          />
+                        </>
+                      ) : (
+                        pathHeroTitle
+                      )}
                     </h1>
                     <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-[var(--text-secondary)]">
                       Everything you need, in the right order. Go at your own pace.
@@ -2369,7 +2386,7 @@ export default function App() {
           <div className="mb-4 min-w-0 max-w-full sm:mb-6">
             <LearnerPathMindmapPanel
               pathId={selectedLearningPathId}
-              pathTitle={pathHeroTitle ?? selectedLearningPathId}
+              pathTitle={pathHeroTitle ?? (pathTitleLoading ? 'Learning path' : selectedLearningPathId)}
               catalogCourses={catalogCourses}
               progressUserId={user?.uid ?? null}
               progressSnapshotVersion={pathProgressSnapshot + remoteProfileDataVersion}
