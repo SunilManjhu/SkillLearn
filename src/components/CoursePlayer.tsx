@@ -514,51 +514,13 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
       if (current === el) {
         if (document.exitFullscreen) await document.exitFullscreen();
         else await doc.webkitExitFullscreen?.();
-        // #region agent log
-        fetch('http://127.0.0.1:7596/ingest/5454287d-2e40-49c9-8b24-1c8d7ddb4bb1', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '4c9383' },
-          body: JSON.stringify({
-            sessionId: '4c9383',
-            location: 'CoursePlayer.tsx:toggleVideoAreaFullscreen',
-            message: 'fullscreen_toggle',
-            data: { action: 'exit', hypothesisId: 'FS' },
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {});
-        // #endregion
         return;
       }
       const host = el as HTMLElement & { webkitRequestFullscreen?: () => Promise<void> };
       if (el.requestFullscreen) await el.requestFullscreen();
       else await host.webkitRequestFullscreen?.();
-      // #region agent log
-      fetch('http://127.0.0.1:7596/ingest/5454287d-2e40-49c9-8b24-1c8d7ddb4bb1', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '4c9383' },
-        body: JSON.stringify({
-          sessionId: '4c9383',
-          location: 'CoursePlayer.tsx:toggleVideoAreaFullscreen',
-          message: 'fullscreen_toggle',
-          data: { action: 'enter', hypothesisId: 'FS' },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
-    } catch (err) {
-      // #region agent log
-      fetch('http://127.0.0.1:7596/ingest/5454287d-2e40-49c9-8b24-1c8d7ddb4bb1', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '4c9383' },
-        body: JSON.stringify({
-          sessionId: '4c9383',
-          location: 'CoursePlayer.tsx:toggleVideoAreaFullscreen',
-          message: 'fullscreen_toggle_error',
-          data: { hypothesisId: 'FS', err: String(err) },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
+    } catch {
+      /* ignore */
     }
   }, []);
 
