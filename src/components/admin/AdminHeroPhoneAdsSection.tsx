@@ -486,7 +486,7 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
       }
       const sd = s.slideDurationSec;
       if (typeof sd === 'number' && (!Number.isFinite(sd) || sd < 0 || sd > HERO_PHONE_AD_MAX_AUTO_SEC)) {
-        showActionToast(`Per-slide duration must be 0–${HERO_PHONE_AD_MAX_AUTO_SEC} or left empty.`, 'danger');
+        showActionToast(`Auto-Play must be 0–${HERO_PHONE_AD_MAX_AUTO_SEC} or left empty.`, 'danger');
         return false;
       }
     }
@@ -627,10 +627,10 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                         <strong className="font-semibold text-[var(--text-secondary)]">0</strong> = swipe only (no timer).
                       </li>
                       <li>Non-zero: the hero carousel advances each slide after that many seconds.</li>
-                      <li>Per-slide overrides below when set.</li>
+                      <li>Per-slide Auto-Play overrides below when set.</li>
                       <li>
                         Respects <strong className="font-semibold text-[var(--text-secondary)]">reduced motion</strong>{' '}
-                        (no auto-advance).
+                        (no Auto-Play).
                       </li>
                     </AdminLabelInfoTip>
                   </div>
@@ -939,22 +939,22 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
 
                   {isOpen ? (
                   <div className="w-full min-w-0 border-t border-[var(--border-color)] p-3 sm:p-4">
-                  <div className="mb-3 grid grid-cols-1 gap-2.5 sm:mb-4 sm:grid-cols-2 sm:gap-3">
-                    <div className="space-y-1">
+                  <div className="mb-3 grid grid-cols-1 gap-2.5 sm:mb-4 sm:grid-cols-2 lg:[grid-template-columns:1fr_1fr_auto_1fr] sm:gap-3">
+                    <div className="min-w-0 space-y-1">
                       <div className="flex min-h-6 min-w-0 items-center">
                         <label className="text-xs font-semibold leading-none text-[var(--text-secondary)]">
-                          Label (optional)
+                          Type of Ad
                         </label>
                       </div>
                       <input
                         value={s.label ?? ''}
                         onChange={(e) => updateSlide(slideIndex, { label: e.target.value || undefined })}
                         placeholder="Sponsored"
-                        className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                        className="w-full min-w-0 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:font-light placeholder:text-[var(--text-muted)] placeholder:opacity-80"
                         maxLength={79}
                       />
                     </div>
-                    <div className="space-y-1">
+                    <div className="min-w-0 space-y-1">
                       <div className="flex min-h-6 min-w-0 items-center">
                         <label className="text-xs font-semibold leading-none text-[var(--text-secondary)]">
                           Gradient
@@ -965,7 +965,7 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                         onChange={(e) =>
                           updateSlide(slideIndex, { gradientPreset: e.target.value as HeroPhoneAdGradientPreset })
                         }
-                        className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                        className="w-full min-w-0 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-[var(--text-primary)]"
                       >
                         {HERO_PHONE_AD_GRADIENT_PRESET_OPTIONS.map((o) => (
                           <option key={o.value} value={o.value}>
@@ -974,51 +974,13 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                         ))}
                       </select>
                     </div>
-                    <div className="space-y-1 sm:col-span-2">
-                      <div className="flex min-h-6 min-w-0 items-center">
-                        <label className="text-xs font-semibold leading-none text-[var(--text-secondary)]">
-                          Link URL (optional)
-                        </label>
-                      </div>
-                      <input
-                        value={s.linkUrl ?? ''}
-                        onChange={(e) =>
-                          updateSlide(slideIndex, {
-                            linkUrl: e.target.value.trim() === '' ? undefined : e.target.value,
-                          })
-                        }
-                        placeholder="https://…"
-                        className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-[var(--text-primary)]"
-                        maxLength={2000}
-                        inputMode="url"
-                        autoComplete="off"
-                      />
-                    </div>
-                    <div className="space-y-1 sm:col-span-2">
-                      <div className="flex min-h-6 min-w-0 items-center">
-                        <label className="text-xs font-semibold leading-none text-[var(--text-secondary)]">
-                          Button label (optional)
-                        </label>
-                      </div>
-                      <input
-                        value={s.linkLabel ?? ''}
-                        onChange={(e) =>
-                          updateSlide(slideIndex, {
-                            linkLabel: e.target.value.trim() === '' ? undefined : e.target.value,
-                          })
-                        }
-                        placeholder="Learn more"
-                        className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-[var(--text-primary)]"
-                        maxLength={47}
-                      />
-                    </div>
-                    <div className="space-y-1 sm:col-span-2">
+                    <div className="min-w-0 space-y-1">
                       <AdminLabelInfoTip
                         htmlFor={`hero-ad-slide-dur-${s.id}`}
-                        label="Auto-advance override (optional)"
+                        label="Auto-Play"
                         tipId={`hero-ads-tip-slide-dur-${slideIndex}`}
-                        tipRegionAriaLabel="Per-slide auto-advance tips"
-                        tipSubject="auto-advance override"
+                        tipRegionAriaLabel="Auto-Play tips"
+                        tipSubject="Auto-Play"
                       >
                         <li>
                           Leave <strong className="font-semibold text-[var(--text-secondary)]">empty</strong> to use the
@@ -1031,9 +993,9 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                       </AdminLabelInfoTip>
                       <input
                         id={`hero-ad-slide-dur-${s.id}`}
-                        type="number"
-                        min={0}
-                        max={HERO_PHONE_AD_MAX_AUTO_SEC}
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
                         value={s.slideDurationSec === undefined ? '' : String(s.slideDurationSec)}
                         onChange={(e) => {
                           const t = e.target.value.trim();
@@ -1047,10 +1009,46 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                             slideDurationSec: Math.min(HERO_PHONE_AD_MAX_AUTO_SEC, Math.max(0, n)),
                           });
                         }}
-                        placeholder={
-                          draftDefaultSec === 0 ? 'Default (off — swipe only)' : `Default (${draftDefaultSec}s)`
+                        placeholder="4"
+                        className="w-24 max-w-full min-w-0 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                      />
+                    </div>
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex min-h-6 min-w-0 items-center">
+                        <label className="text-xs font-semibold leading-none text-[var(--text-secondary)]">
+                          Button title
+                        </label>
+                      </div>
+                      <input
+                        value={s.linkLabel ?? ''}
+                        onChange={(e) =>
+                          updateSlide(slideIndex, {
+                            linkLabel: e.target.value.trim() === '' ? undefined : e.target.value,
+                          })
                         }
-                        className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                        placeholder="Learn more"
+                        className="w-full min-w-0 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                        maxLength={47}
+                      />
+                    </div>
+                    <div className="min-w-0 space-y-1 sm:col-span-2 lg:col-span-4">
+                      <div className="flex min-h-6 min-w-0 items-center">
+                        <label className="text-xs font-semibold leading-none text-[var(--text-secondary)]">
+                          Link URL (optional)
+                        </label>
+                      </div>
+                      <input
+                        value={s.linkUrl ?? ''}
+                        onChange={(e) =>
+                          updateSlide(slideIndex, {
+                            linkUrl: e.target.value.trim() === '' ? undefined : e.target.value,
+                          })
+                        }
+                        placeholder="https://…"
+                        className="w-full min-w-0 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                        maxLength={2000}
+                        inputMode="url"
+                        autoComplete="off"
                       />
                     </div>
                   </div>

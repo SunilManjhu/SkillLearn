@@ -13,6 +13,7 @@ import {
   saveNotificationsSiteEnabled,
 } from '../../utils/notificationsSettingsFirestore';
 import { useAdminActionToast } from './useAdminActionToast';
+import { AdminLabelInfoTip } from './adminLabelInfoTip';
 
 type AiSiteControlsCache = {
   assistantOn: boolean;
@@ -98,7 +99,10 @@ export const AdminAiSiteControlsSection: React.FC<{
     id,
     emoji,
     label,
-    sub,
+    tipId,
+    tipRegionAriaLabel,
+    tipSubject,
+    tipBullets,
     on,
     saving,
     onToggle,
@@ -107,22 +111,34 @@ export const AdminAiSiteControlsSection: React.FC<{
     id: string;
     emoji: string;
     label: string;
-    sub: string;
+    tipId: string;
+    tipRegionAriaLabel: string;
+    tipSubject: string;
+    tipBullets: React.ReactNode;
     on: boolean;
     saving: boolean;
     onToggle: (v: boolean) => void;
     disabled?: boolean;
   }) => (
-    <div className="flex min-h-11 min-w-0 items-center justify-between gap-2 py-1 sm:gap-3 sm:py-0">
+    <div className="flex min-h-10 min-w-0 items-center justify-between gap-2 py-0.5 sm:gap-3 sm:py-0">
       <div className="flex min-w-0 items-start gap-2">
         <span className="mt-0.5 shrink-0 text-[1.05rem] leading-none sm:text-lg" aria-hidden>
           {emoji}
         </span>
         <div className="min-w-0">
-          <p id={id} className="text-sm font-semibold text-[var(--text-primary)]">
-            {label}
-          </p>
-          <p className="text-[11px] leading-snug text-[var(--text-muted)]">{sub}</p>
+          <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+            <p id={id} className="text-sm font-semibold text-[var(--text-primary)]">
+              {label}
+            </p>
+            <AdminLabelInfoTip
+              controlOnly
+              tipId={tipId}
+              tipRegionAriaLabel={tipRegionAriaLabel}
+              tipSubject={tipSubject}
+            >
+              {tipBullets}
+            </AdminLabelInfoTip>
+          </div>
         </div>
       </div>
       <button
@@ -132,7 +148,7 @@ export const AdminAiSiteControlsSection: React.FC<{
         aria-labelledby={id}
         disabled={disabled || saving || loading}
         onClick={() => void onToggle(!on)}
-        className={`relative h-8 w-[3.25rem] shrink-0 rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 disabled:opacity-45 ${
+        className={`relative h-7 w-12 shrink-0 rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 disabled:opacity-45 ${
           on ? 'bg-emerald-500' : 'bg-[var(--border-color)]'
         }`}
       >
@@ -140,7 +156,7 @@ export const AdminAiSiteControlsSection: React.FC<{
           <Loader2 className="absolute left-1/2 top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 animate-spin text-white" />
         ) : (
           <span
-            className={`pointer-events-none absolute top-1 left-1 h-6 w-6 rounded-full bg-white shadow transition-transform ${
+            className={`pointer-events-none absolute top-1 left-1 h-5 w-5 rounded-full bg-white shadow transition-transform ${
               on ? 'translate-x-5' : 'translate-x-0'
             }`}
           />
@@ -156,7 +172,17 @@ export const AdminAiSiteControlsSection: React.FC<{
         id="admin-smart-hub-notifications-toggle"
         emoji="🔔"
         label="Notifications"
-        sub="Site-wide: when off, the notification bell is disabled for everyone."
+        tipId="admin-tip-smart-hub-notifications"
+        tipRegionAriaLabel="Notifications tips"
+        tipSubject="Notifications"
+        tipBullets={
+          <>
+            <li>Site-wide bell on/off.</li>
+            <li>Off: hides course/admin items for everyone.</li>
+            <li>Certificates can still appear.</li>
+            <li>Turning it back on doesn’t reset each learner’s Profile preference.</li>
+          </>
+        }
         on={notificationsOn}
         saving={savingNotifications}
         onToggle={toggleNotifications}
@@ -179,7 +205,15 @@ export const AdminAiSiteControlsSection: React.FC<{
               id="admin-smart-hub-assistant-toggle"
               emoji="💬"
               label="Learning Assistant"
-              sub="Site-wide: floating chat when on. Learners can still adjust visibility in Profile → Smart Hub."
+              tipId="admin-tip-smart-hub-learning-assistant"
+              tipRegionAriaLabel="Learning Assistant tips"
+              tipSubject="Learning Assistant"
+              tipBullets={
+                <>
+                  <li>Site-wide toggle for the floating chat.</li>
+                  <li>Learners can still show/hide it per device in Profile → Smart Hub.</li>
+                </>
+              }
               on={assistantOn}
               saving={savingAssistant}
               onToggle={toggleAssistant}
@@ -190,7 +224,15 @@ export const AdminAiSiteControlsSection: React.FC<{
               id="admin-smart-hub-smart-verify-toggle"
               emoji="✨"
               label="Smart Verify"
-              sub="Site-wide: quiz grading, hints, and assistant replies when on."
+              tipId="admin-tip-smart-hub-smart-verify"
+              tipRegionAriaLabel="Smart Verify tips"
+              tipSubject="Smart Verify"
+              tipBullets={
+                <>
+                  <li>Site-wide toggle for AI grading + hints.</li>
+                  <li>Learners can still turn it on/off per device in Profile → Smart Hub.</li>
+                </>
+              }
               on={learnerAiOn}
               saving={savingLearnerAi}
               onToggle={toggleLearnerAi}

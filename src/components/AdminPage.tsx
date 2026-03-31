@@ -12,6 +12,7 @@ import { AdminGeminiModelsSection } from './admin/AdminGeminiModelsSection';
 import { AdminAiSiteControlsSection } from './admin/AdminAiSiteControlsSection';
 import { AdminUserRolesSection } from './admin/AdminUserRolesSection';
 import { AdminHeroPhoneAdsSection } from './admin/AdminHeroPhoneAdsSection';
+import { AdminLabelInfoTip } from './admin/adminLabelInfoTip';
 import { useAdminActionToast } from './admin/useAdminActionToast';
 
 interface AdminPageProps {
@@ -277,17 +278,24 @@ export const AdminPage: React.FC<AdminPageProps> = ({
           className="min-w-0 space-y-6 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:p-6"
           role="region"
           aria-labelledby="admin-alerts-heading"
-          aria-describedby="admin-alerts-intro"
         >
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
             <div className="min-w-0">
-              <h2 id="admin-alerts-heading" className="flex items-center gap-2 text-lg font-bold">
-                <Send size={20} className="shrink-0 text-orange-500" aria-hidden />
-                Send course alert
-              </h2>
-              <p id="admin-alerts-intro" className="mt-1 text-xs leading-relaxed text-[var(--text-muted)]">
-                Only learners enrolled in the selected course see this in their notification bell.
-              </p>
+              <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+                <h2 id="admin-alerts-heading" className="m-0 flex items-center gap-2 text-lg font-bold leading-none">
+                  <Send size={20} className="shrink-0 text-orange-500" aria-hidden />
+                  Send course alert
+                </h2>
+                <AdminLabelInfoTip
+                  controlOnly
+                  tipId="admin-tip-alerts-send"
+                  tipRegionAriaLabel="Send course alert tips"
+                  tipSubject="Send course alert"
+                >
+                  <li>Only learners enrolled in the selected course see this in their bell.</li>
+                  <li>Optional targeting narrows it to one module or lesson.</li>
+                </AdminLabelInfoTip>
+              </div>
             </div>
             {alertsDirty && sortedCourses.length > 0 ? (
               <button

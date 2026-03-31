@@ -3,6 +3,7 @@ import { Copy, RefreshCw, ShieldCheck } from 'lucide-react';
 import { subscribeUsersForAdmin, updateUserRoleAsAdmin, type AdminUserRow } from '../../utils/adminUsersFirestore';
 import { countFirestoreAdminUsers, type UserRole } from '../../utils/userProfileFirestore';
 import { useAdminActionToast } from './useAdminActionToast';
+import { AdminLabelInfoTip } from './adminLabelInfoTip';
 
 interface AdminUserRolesSectionProps {
   currentAdminUid?: string;
@@ -100,14 +101,25 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
     <div className="min-w-0 space-y-6 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:p-6">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 pr-1">
-          <h2 className="flex items-center gap-1.5 text-base font-bold sm:text-lg">
-            <ShieldCheck size={18} className="shrink-0 text-orange-500" aria-hidden />
-            Roles
-          </h2>
-          <p className="mt-1 text-[11px] leading-snug text-[var(--text-muted)] sm:text-xs">
-            <code className="text-orange-500/80">users</code> docs use role <code className="text-orange-500/90">admin</code> or{' '}
-            <code className="text-orange-500/90">user</code>. Live updates; keep at least one admin.
-          </p>
+          <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+            <h2 className="m-0 flex items-center gap-1.5 text-base font-bold leading-none sm:text-lg">
+              <ShieldCheck size={18} className="shrink-0 text-orange-500" aria-hidden />
+              Roles
+            </h2>
+            <AdminLabelInfoTip
+              controlOnly
+              tipId="admin-tip-user-roles"
+              tipRegionAriaLabel="User roles tips"
+              tipSubject="Roles"
+            >
+              <li>
+                <code className="font-mono text-[0.7rem] text-orange-500/90 sm:text-xs">users</code> docs: role{' '}
+                <code className="text-orange-500/90">admin</code> or <code className="text-orange-500/90">user</code>.
+              </li>
+              <li>Live updates.</li>
+              <li>Keep at least one admin.</li>
+            </AdminLabelInfoTip>
+          </div>
         </div>
         <button
           type="button"
