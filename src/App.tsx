@@ -97,7 +97,9 @@ import {
   type AppHistoryPayload,
   buildHistoryUrl,
   historyPayloadsEqual,
+  mergeHashAndHistoryStatePayload,
   parseHashToPayload,
+  shouldPushCourseOverviewBeforePlayer,
   readPayloadFromHistoryState,
   resolvePayloadForCourses,
 } from './utils/appHistory';
@@ -659,10 +661,10 @@ export default function App() {
 
   useEffect(() => {
     const onPop = (_e: PopStateEvent) => {
-      /** Hash is the visible deep link; prefer it over history.state when they diverge (lesson segment / back-forward). */
+      /** Hash + state: URL wins for route; merge preserves learningPathId when legacy hash omitted it. */
       const fromHash = parseHashToPayload(window.location.hash);
       const fromState = readPayloadFromHistoryState(window.history.state);
-      const raw = fromHash ?? fromState;
+      const raw = mergeHashAndHistoryStatePayload(fromHash, fromState);
       if (!raw) return;
       applyHistoryPayload(raw);
     };
@@ -673,7 +675,9 @@ export default function App() {
   /** `#/catalog/path/...` edits: `popstate` does not fire for same-document hash changes. */
   useEffect(() => {
     const onHashChange = () => {
-      const raw = parseHashToPayload(window.location.hash);
+      const fromHash = parseHashToPayload(window.location.hash);
+      const fromState = readPayloadFromHistoryState(window.history.state);
+      const raw = mergeHashAndHistoryStatePayload(fromHash, fromState);
       if (!raw) return;
       const resolved = resolvePayloadForCourses(raw, catalogCoursesRef.current, findLessonById);
       window.history.replaceState({ [APP_HISTORY_KEY]: resolved }, '', buildHistoryUrl(resolved));
@@ -685,10 +689,6 @@ export default function App() {
   }, [applyHistoryPayload]);
 
   useEffect(() => {
-    if (historySkipSyncRef.current) {
-      historySkipSyncRef.current = false;
-      return;
-    }
     const params = new URLSearchParams(window.location.search);
     if (params.get('cert_id') && currentView === 'certificate' && certificateData?.isPublic) {
       return;
@@ -696,7 +696,29 @@ export default function App() {
 
     const payload = buildHistoryPayload();
     const prev = readPayloadFromHistoryState(window.history.state);
+
+    /**
+     * Skip one sync after popstate/hashchange so we do not duplicate pushState. If the ref is still
+     * set but React already moved (e.g. overview → player), prev !== payload — do not skip or Back
+     * can miss the player entry.
+     */
+    if (historySkipSyncRef.current) {
+      historySkipSyncRef.current = false;
+      if (historyPayloadsEqual(prev, payload)) {
+        return;
+      }
+    }
     if (historyPayloadsEqual(prev, payload)) {
+      if (historyActionRef.current === 'replace') {
+        historyActionRef.current = 'push';
+      }
+      /** `history.state` can match while the visible hash lags (e.g. replaceState without hash update). Heal so Back matches the real route. */
+      const expectedUrl = buildHistoryUrl(payload);
+      const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      const healed = currentUrl !== expectedUrl;
+      if (healed) {
+        window.history.replaceState({ [APP_HISTORY_KEY]: payload }, '', expectedUrl);
+      }
       return;
     }
 
@@ -705,7 +727,20 @@ export default function App() {
 
     if (historyActionRef.current === 'replace') {
       historyActionRef.current = 'push';
-      window.history.replaceState(state, '', url);
+      /** `replace` overwrites the current entry. Going player after overview must push so Back returns to the course. */
+      const pushInsteadOfReplaceForPlayer =
+        prev?.view === 'overview' &&
+        payload.view === 'player' &&
+        (prev.courseId ?? null) === (payload.courseId ?? null);
+      /** Stale `replace` (e.g. after course completion) must not replace catalog/path with overview — that drops the path from the stack. Push overview instead. */
+      const pushInsteadOfReplaceForCatalogToOverview =
+        prev?.view === 'catalog' && payload.view === 'overview';
+      const willPush = pushInsteadOfReplaceForPlayer || pushInsteadOfReplaceForCatalogToOverview;
+      if (willPush) {
+        window.history.pushState(state, '', url);
+      } else {
+        window.history.replaceState(state, '', url);
+      }
       return;
     }
 
@@ -787,10 +822,11 @@ export default function App() {
    * Prefer URL hash over history.state so the visible deep link wins if they diverge.
    */
   useLayoutEffect(() => {
-    if (currentView !== 'overview' && currentView !== 'player') return;
+    const view = currentViewRef.current;
+    if (view !== 'overview' && view !== 'player') return;
     const fromHash = parseHashToPayload(window.location.hash);
     const fromState = readPayloadFromHistoryState(window.history.state);
-    const raw = fromHash ?? fromState;
+    const raw = mergeHashAndHistoryStatePayload(fromHash, fromState);
     if (!raw || (raw.view !== 'overview' && raw.view !== 'player')) return;
     const resolved = resolvePayloadForCourses(raw, catalogCourses, findLessonById);
     if ((resolved.view !== 'overview' && resolved.view !== 'player') || !resolved.courseId) return;
@@ -808,7 +844,8 @@ export default function App() {
     } else if (resolved.view === 'overview') {
       setInitialLesson(undefined);
     }
-  }, [catalogCourses, currentView, user?.uid]);
+    /** Deps: catalog/user only — do not depend on `currentView`. After overview→player the URL updates in a later effect; running on view change read a stale hash as "overview" and cleared the active lesson. */
+  }, [catalogCourses, user?.uid]);
 
   /** Apply deep link once the live catalog contains a course that was missing on first paint (cold refresh). */
   useLayoutEffect(() => {
@@ -1646,6 +1683,41 @@ export default function App() {
     setCurrentView('overview');
   };
 
+  /**
+   * Before opening the player from course overview, ensure the history stack has an entry for this
+   * overview. Prefer the visible hash over merged state: state can match overview while the URL
+   * still shows catalog, so the sync effect skipped pushing and Back goes path → player.
+   *
+   * Do **not** push when `shouldPushCourseOverviewBeforePlayer` is false: always pushing in that
+   * case duplicated the same overview URL and required an extra Back on the same overview.
+   */
+  const handleStartCourseFromOverview = useCallback(
+    (lesson?: Lesson) => {
+      /** Stale `replace` skips resetting the ref when sync early-returns; next nav would replaceState over overview. */
+      historyActionRef.current = 'push';
+      const onOverview =
+        currentView === 'overview' || currentViewRef.current === 'overview';
+      if (onOverview && selectedCourseResolved) {
+        const overviewPayload = buildHistoryPayload();
+        if (overviewPayload.view === 'overview' && overviewPayload.courseId) {
+          const h = parseHashToPayload(window.location.hash);
+          const fromState = readPayloadFromHistoryState(window.history.state);
+          const shouldPushHeuristic = shouldPushCourseOverviewBeforePlayer(h, fromState, overviewPayload);
+          if (shouldPushHeuristic) {
+            window.history.pushState(
+              { [APP_HISTORY_KEY]: overviewPayload },
+              '',
+              buildHistoryUrl(overviewPayload)
+            );
+          }
+        }
+      }
+      setInitialLesson(lesson);
+      setCurrentView('player');
+    },
+    [buildHistoryPayload, currentView, selectedCourseResolved]
+  );
+
   const handleCertificateNotificationClick = useCallback(() => {
     setCompletedCoursesModalSignal((s) => s + 1);
     const prev = currentViewRef.current;
@@ -2261,10 +2333,26 @@ export default function App() {
                 if (!c) return;
                 const lesson = findLessonById(c, lessonId);
                 if (!lesson) return;
+                historyActionRef.current = 'push';
                 if (user?.uid) {
                   void enrollUserInCourse(user.uid, c.id);
                 }
                 setSelectedCourse(c);
+                const overviewPayload: AppHistoryPayload = {
+                  v: 1,
+                  view: 'overview',
+                  courseId: c.id,
+                  ...(selectedLearningPathId != null ? { learningPathId: selectedLearningPathId } : {}),
+                };
+                const h = parseHashToPayload(window.location.hash);
+                const fromState = readPayloadFromHistoryState(window.history.state);
+                if (shouldPushCourseOverviewBeforePlayer(h, fromState, overviewPayload)) {
+                  window.history.pushState(
+                    { [APP_HISTORY_KEY]: overviewPayload },
+                    '',
+                    buildHistoryUrl(overviewPayload)
+                  );
+                }
                 setInitialLesson(lesson);
                 setCurrentView('player');
                 scrollDocumentToTop();
@@ -2627,10 +2715,7 @@ export default function App() {
                 <CourseOverview
                   key={`${selectedCourseResolved.id}:${courseCurriculumSignature(selectedCourseResolved)}`}
                   course={selectedCourseResolved}
-                  onStartCourse={(lesson) => {
-                    setInitialLesson(lesson);
-                    setCurrentView('player');
-                  }}
+                  onStartCourse={handleStartCourseFromOverview}
                   user={navUser}
                   onLogin={handleLogin}
                   onShowCertificate={handleShowCertificate}

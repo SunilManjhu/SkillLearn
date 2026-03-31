@@ -8,6 +8,10 @@ import {
 } from '../data/pathMindmap';
 import { normalizeExternalHref } from '../utils/externalUrl';
 import { buildPathCourseRowLayoutBlocks } from '../utils/pathCourseOutlineGroups';
+import {
+  readPathCourseRowExpandedBlockKey,
+  writePathCourseRowExpandedBlockKey,
+} from '../utils/pathOutlineUiSession';
 import { LearnerPathCourseRowList } from './LearnerPathCourseRowList';
 import { PathMindmapOutline } from './PathMindmapOutline';
 
@@ -46,7 +50,7 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
   mindmapOutlineLoading: loading,
 }) => {
   const [storageProgressTick, setStorageProgressTick] = useState(0);
-  /** Which top-level block is open; `null` = all collapsed (accordion). */
+  /** Which top-level block is open; `null` = all collapsed (accordion). Restored from sessionStorage per path. */
   const [expandedPathBlockKey, setExpandedPathBlockKey] = useState<string | null>(null);
 
   const filteredBranchesForViewer = useMemo(
@@ -97,8 +101,18 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
   );
 
   useEffect(() => {
-    setExpandedPathBlockKey(null);
-  }, [pathId]);
+    const stored = readPathCourseRowExpandedBlockKey(pathId);
+    if (!courseRowBlocks || courseRowBlocks.length === 0) {
+      setExpandedPathBlockKey(stored);
+      return;
+    }
+    const valid = new Set(
+      courseRowBlocks.map((block, bIdx) => pathSectionBlockKey(bIdx, block.sectionLabel))
+    );
+    const next = stored && valid.has(stored) ? stored : null;
+    setExpandedPathBlockKey(next);
+    writePathCourseRowExpandedBlockKey(pathId, next);
+  }, [pathId, courseRowBlocks, pathSectionBlockKey]);
 
   const isPathSectionExpanded = useCallback(
     (key: string) => expandedPathBlockKey === key,
@@ -106,8 +120,12 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
   );
 
   const togglePathSectionBlock = useCallback((key: string) => {
-    setExpandedPathBlockKey((current) => (current === key ? null : key));
-  }, []);
+    setExpandedPathBlockKey((current) => {
+      const next = current === key ? null : key;
+      writePathCourseRowExpandedBlockKey(pathId, next);
+      return next;
+    });
+  }, [pathId]);
 
   const handleOpenCourseFromRow = (course: Course) => {
     onOpenCourse(course.id);
@@ -271,6 +289,7 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
       ) : branches === null ? null : useOutlineLayout ? (
         <PathMindmapOutline
           key={pathId}
+          pathId={pathId}
           pathTitle={pathTitle}
           branches={branches}
           catalogCourses={catalogCourses}

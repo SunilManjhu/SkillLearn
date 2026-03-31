@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
   ChevronDown,
@@ -21,6 +21,10 @@ import {
   countExternalLinksInSubtree,
 } from '../utils/pathSectionProgress';
 import { normalizeExternalHref } from '../utils/externalUrl';
+import {
+  readPathMindmapOutlineExpand,
+  writePathMindmapOutlineExpand,
+} from '../utils/pathOutlineUiSession';
 
 /** Matches Tailwind `md` (768px): flat path outline on small viewports. */
 function useOutlineCompactMobile(): boolean {
@@ -1127,6 +1131,8 @@ function OutlineNode({
 }
 
 export type PathMindmapOutlineProps = {
+  /** When set, section/branch expansion is restored across navigation via sessionStorage. */
+  pathId?: string;
   pathTitle: string;
   branches: MindmapTreeNode[];
   catalogCourses: readonly Course[];
@@ -1141,6 +1147,7 @@ export type PathMindmapOutlineProps = {
 };
 
 export const PathMindmapOutline: React.FC<PathMindmapOutlineProps> = ({
+  pathId,
   pathTitle,
   branches,
   catalogCourses,
@@ -1153,6 +1160,30 @@ export const PathMindmapOutline: React.FC<PathMindmapOutlineProps> = ({
   const [sectionExpanded, setSectionExpanded] = useState<Record<string, boolean>>({});
   const [branchExpanded, setBranchExpanded] = useState<Record<string, boolean>>({});
   const outlineCompactMobile = useOutlineCompactMobile();
+  /** Avoid writing previous path's expansion under a new pathId before layout hydration runs. */
+  const outlineHydratedForPathIdRef = useRef<string | null>(null);
+
+  useLayoutEffect(() => {
+    if (!pathId) {
+      outlineHydratedForPathIdRef.current = null;
+      return;
+    }
+    outlineHydratedForPathIdRef.current = null;
+    const snap = readPathMindmapOutlineExpand(pathId);
+    if (snap) {
+      setSectionExpanded(snap.sectionExpanded);
+      setBranchExpanded(snap.branchExpanded);
+    } else {
+      setSectionExpanded({});
+      setBranchExpanded({});
+    }
+    outlineHydratedForPathIdRef.current = pathId;
+  }, [pathId]);
+
+  useEffect(() => {
+    if (!pathId || outlineHydratedForPathIdRef.current !== pathId) return;
+    writePathMindmapOutlineExpand(pathId, { sectionExpanded, branchExpanded });
+  }, [pathId, sectionExpanded, branchExpanded]);
 
   const branchesForViewer = useMemo(
     () => filterOutlineBranchesForViewer(branches, viewerIsAdmin),

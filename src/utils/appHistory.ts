@@ -75,10 +75,19 @@ export function payloadToHash(payload: AppHistoryPayload): string {
   }
 
   if (view === 'overview' && courseId) {
-    return `#/course/${encodeURIComponent(courseId)}/overview`;
+    const base = `#/course/${encodeURIComponent(courseId)}/overview`;
+    if (learningPathId && learningPathId.length > 0) {
+      return `${base}/path/${encodeURIComponent(learningPathId)}`;
+    }
+    return base;
   }
   if (view === 'player' && courseId) {
     const base = `#/course/${encodeURIComponent(courseId)}/player`;
+    if (learningPathId && learningPathId.length > 0) {
+      const withPath = `${base}/path/${encodeURIComponent(learningPathId)}`;
+      if (lessonId) return `${withPath}/${encodeURIComponent(lessonId)}`;
+      return withPath;
+    }
     if (lessonId) return `${base}/${encodeURIComponent(lessonId)}`;
     return base;
   }
@@ -125,12 +134,30 @@ export function parseHashToPayload(hash: string): AppHistoryPayload | null {
   if (head === 'course' && segments.length >= 3) {
     const courseId = decodeURIComponent(segments[1]!);
     const mode = segments[2];
-    if (mode === 'overview' && segments.length === 3) {
-      return { v: 1, view: 'overview', courseId };
+    if (mode === 'overview') {
+      if (segments.length === 3) {
+        return { v: 1, view: 'overview', courseId };
+      }
+      if (segments.length === 5 && segments[3] === 'path') {
+        const pid = decodeURIComponent(segments[4]!);
+        if (pid.length > 0) {
+          return { v: 1, view: 'overview', courseId, learningPathId: pid };
+        }
+      }
     }
     if (mode === 'player') {
       if (segments.length === 3) {
         return { v: 1, view: 'player', courseId };
+      }
+      if (segments.length >= 5 && segments[3] === 'path') {
+        const pathId = decodeURIComponent(segments[4]!);
+        if (pathId.length > 0) {
+          const out: AppHistoryPayload = { v: 1, view: 'player', courseId, learningPathId: pathId };
+          if (segments.length >= 6) {
+            out.lessonId = decodeURIComponent(segments[5]!);
+          }
+          return out;
+        }
       }
       if (segments.length === 4) {
         return { v: 1, view: 'player', courseId, lessonId: decodeURIComponent(segments[3]!) };
@@ -164,6 +191,57 @@ export function parseHashToPayload(hash: string): AppHistoryPayload | null {
   }
 
   return null;
+}
+
+/**
+ * Combine hash (visible URL) with history.state from pushState. Hash wins for routing fields;
+ * when the hash omits `learningPathId` (legacy links), keep it from state so back/forward restores
+ * path-scoped catalog context.
+ */
+export function mergeHashAndHistoryStatePayload(
+  fromHash: AppHistoryPayload | null,
+  fromState: AppHistoryPayload | null
+): AppHistoryPayload | null {
+  if (!fromHash && !fromState) return null;
+  if (!fromHash) return fromState;
+  if (!fromState) return fromHash;
+  const merged: AppHistoryPayload = { ...fromState, ...fromHash, v: 1 };
+  if (merged.learningPathId == null && fromState.learningPathId != null) {
+    merged.learningPathId = fromState.learningPathId;
+  }
+  return merged;
+}
+
+/**
+ * Before opening the player from course overview, decide if we must push an overview history entry.
+ * The visible hash can already show `#/course/.../overview` while `history.state` on the stack top
+ * still reflects catalog/path (e.g. timing or replaceState). If we skip pushing because the hash
+ * matches, the next sync can push player on top of catalog and Back returns to the path, not the course.
+ */
+export function shouldPushCourseOverviewBeforePlayer(
+  hashPayload: AppHistoryPayload | null,
+  historyStatePayload: AppHistoryPayload | null,
+  overviewPayload: AppHistoryPayload
+): boolean {
+  if (overviewPayload.view !== 'overview' || !overviewPayload.courseId) return false;
+  if (!hashPayload) return true;
+  if (hashPayload.view !== 'overview') return true;
+  if (hashPayload.courseId !== overviewPayload.courseId) return true;
+  if ((hashPayload.learningPathId ?? null) !== (overviewPayload.learningPathId ?? null)) return true;
+
+  if (historyStatePayload != null) {
+    const s = historyStatePayload;
+    const stackIsThisOverview =
+      s.view === 'overview' &&
+      s.courseId === overviewPayload.courseId &&
+      (s.learningPathId ?? null) === (overviewPayload.learningPathId ?? null);
+    if (!stackIsThisOverview) return true;
+  } else {
+    // Hash can show overview while the stack top has no payload (initial visit, or entry without our key).
+    // Without a matching state we cannot skip pushing — otherwise sync pushes player on the wrong entry.
+    return true;
+  }
+  return false;
 }
 
 export function readPayloadFromHistoryState(state: unknown): AppHistoryPayload | null {
