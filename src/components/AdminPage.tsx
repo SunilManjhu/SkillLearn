@@ -73,6 +73,29 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   const titleRef = useRef<HTMLInputElement | null>(null);
   const messageRef = useRef<HTMLTextAreaElement | null>(null);
 
+  const sortedCourses = useMemo(
+    () =>
+      [...courses].sort((a, b) =>
+        (a.title || a.id).localeCompare(b.title || b.id, undefined, { sensitivity: 'base' })
+      ),
+    [courses]
+  );
+
+  useEffect(() => {
+    if (sortedCourses.length === 0) {
+      setCourseId('');
+      return;
+    }
+    setCourseId((current) =>
+      sortedCourses.some((c) => c.id === current) ? current : sortedCourses[0].id
+    );
+  }, [sortedCourses]);
+
+  useEffect(() => {
+    setModuleId('');
+    setLessonId('');
+  }, [courseId]);
+
   const alertsDirty = useMemo(() => {
     if (tab !== 'alerts') return false;
     return (
@@ -145,7 +168,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
     onClose: closeNavigationGuard,
   });
 
-  const selectedCourse = courses.find((c) => c.id === courseId);
+  const selectedCourse = sortedCourses.find((c) => c.id === courseId);
   const courseMissing = !courseId;
   const titleMissing = !title.trim();
   const messageMissing = !message.trim();
@@ -210,7 +233,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   return (
     <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] px-3 pb-20 pt-24 sm:px-6 sm:pb-16">
       <div
-        className={`mx-auto min-w-0 space-y-5 sm:space-y-6 ${tab === 'marketing' ? 'max-w-6xl' : 'max-w-4xl'}`}
+        className="mx-auto min-w-0 max-w-6xl space-y-5 sm:space-y-6"
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
@@ -245,156 +268,227 @@ export const AdminPage: React.FC<AdminPageProps> = ({
         </div>
 
         {tab === 'alerts' && (
-        <div className="min-w-0 space-y-6 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:p-6">
-          <h2 className="flex items-center gap-2 text-lg font-bold">
-            <Send size={20} className="text-orange-500" />
-            Send course alert
-          </h2>
-          <p className="text-xs text-[var(--text-muted)]">
-            Only users enrolled in the selected course receive this in their notification bell.
-          </p>
-
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="space-y-1">
-              <label className="block text-xs font-semibold text-[var(--text-secondary)]">Type</label>
-              <select
-                value={type}
-                onChange={(e) => setType(e.target.value as BroadcastAlertType)}
-                className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm"
-              >
-                {ALERT_TYPES.map((t) => (
-                  <option key={t.value} value={t.value}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
+        <div
+          className="min-w-0 space-y-6 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:p-6"
+          role="region"
+          aria-labelledby="admin-alerts-heading"
+          aria-describedby="admin-alerts-intro"
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+            <div className="min-w-0">
+              <h2 id="admin-alerts-heading" className="flex items-center gap-2 text-lg font-bold">
+                <Send size={20} className="shrink-0 text-orange-500" aria-hidden />
+                Send course alert
+              </h2>
+              <p id="admin-alerts-intro" className="mt-1 text-xs leading-relaxed text-[var(--text-muted)]">
+                Only learners enrolled in the selected course see this in their notification bell.
+              </p>
             </div>
-
-            <div className="space-y-1">
-              <label className="block text-xs font-semibold text-[var(--text-secondary)]">Course</label>
-              <select
-                ref={courseRef}
-                value={courseId}
-                onChange={(e) => setCourseId(e.target.value)}
-                aria-invalid={showValidationHints && courseMissing ? true : undefined}
-                className={`w-full bg-[var(--bg-primary)] border rounded-lg px-3 py-2 text-sm ${
-                  showValidationHints && courseMissing ? 'border-red-500/70' : 'border-[var(--border-color)]'
-                }`}
+            {alertsDirty && sortedCourses.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setTitle('');
+                  setMessage('');
+                  setModuleId('');
+                  setLessonId('');
+                  setTargetingOpen(false);
+                  setShowValidationHints(false);
+                }}
+                className="inline-flex min-h-11 shrink-0 touch-manipulation items-center justify-center self-start rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 text-sm font-semibold text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] sm:self-auto"
               >
-                {courses.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.title}
-                  </option>
-                ))}
-              </select>
-              {showValidationHints && courseMissing && (
-                <p className="text-xs text-red-400">Course is required.</p>
-              )}
+                Clear draft
+              </button>
+            ) : null}
+          </div>
+
+          {sortedCourses.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-[var(--border-color)] bg-[var(--bg-primary)]/35 px-4 py-8 text-center sm:px-6">
+              <p className="text-sm font-semibold text-[var(--text-primary)]">No courses yet</p>
+              <p className="mx-auto mt-2 max-w-sm text-xs leading-relaxed text-[var(--text-muted)]">
+                Publish at least one course in Content before you can target an alert.
+              </p>
+              <button
+                type="button"
+                onClick={() => requestAdminNavigation({ kind: 'tab', tab: 'catalog' })}
+                className="mt-5 inline-flex min-h-11 w-full max-w-xs touch-manipulation items-center justify-center rounded-xl bg-orange-500 px-4 text-sm font-bold text-white hover:bg-orange-600 sm:w-auto"
+              >
+                Open Content
+              </button>
             </div>
-          </div>
-
-          <div className="space-y-1">
-            <label className="block text-xs font-semibold text-[var(--text-secondary)]">Title</label>
-            <input
-              ref={titleRef}
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              aria-invalid={showValidationHints && titleMissing ? true : undefined}
-              className={`w-full bg-[var(--bg-primary)] border rounded-lg px-3 py-2 text-sm ${
-                showValidationHints && titleMissing ? 'border-red-500/70' : 'border-[var(--border-color)]'
-              }`}
-              placeholder="Short headline"
-            />
-            {showValidationHints && titleMissing && (
-              <p className="text-xs text-red-400">Title is required.</p>
-            )}
-          </div>
-
-          <div className="space-y-1">
-            <label className="block text-xs font-semibold text-[var(--text-secondary)]">Message</label>
-            <textarea
-              ref={messageRef}
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              rows={3}
-              aria-invalid={showValidationHints && messageMissing ? true : undefined}
-              className={`w-full bg-[var(--bg-primary)] border rounded-lg px-3 py-2 text-sm resize-none ${
-                showValidationHints && messageMissing ? 'border-red-500/70' : 'border-[var(--border-color)]'
-              }`}
-              placeholder="What changed?"
-            />
-            {showValidationHints && messageMissing && (
-              <p className="text-xs text-red-400">Message is required.</p>
-            )}
-          </div>
-
-          <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2.5">
-            <button
-              type="button"
-              onClick={() => setTargetingOpen((v) => !v)}
-              className="w-full flex items-center justify-between text-xs font-semibold text-[var(--text-secondary)]"
-            >
-              Optional targeting (module / lesson)
-              <span className="text-[10px]">{targetingOpen ? 'Hide' : 'Show'}</span>
-            </button>
-            {targetingOpen && (
-              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+          ) : (
+            <>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="space-y-1">
-                  <label className="block text-xs font-semibold text-[var(--text-secondary)]">
-                    Module ID (optional)
+                  <label htmlFor="admin-alerts-type" className="block text-xs font-semibold text-[var(--text-secondary)]">
+                    Type
                   </label>
                   <select
-                    value={moduleId}
-                    onChange={(e) => setModuleId(e.target.value)}
-                    className="w-full bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm"
+                    id="admin-alerts-type"
+                    value={type}
+                    onChange={(e) => setType(e.target.value as BroadcastAlertType)}
+                    className="box-border min-h-11 w-full touch-manipulation rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] sm:text-sm"
                   >
-                    <option value="">— None —</option>
-                    {(selectedCourse?.modules ?? []).map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.title} ({m.id})
+                    {ALERT_TYPES.map((t) => (
+                      <option key={t.value} value={t.value}>
+                        {t.label}
                       </option>
                     ))}
                   </select>
                 </div>
 
                 <div className="space-y-1">
-                  <label className="block text-xs font-semibold text-[var(--text-secondary)]">
-                    Lesson ID (optional)
+                  <label htmlFor="admin-alerts-course" className="block text-xs font-semibold text-[var(--text-secondary)]">
+                    Course
                   </label>
                   <select
-                    value={lessonId}
-                    onChange={(e) => setLessonId(e.target.value)}
-                    className="w-full bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm"
+                    id="admin-alerts-course"
+                    ref={courseRef}
+                    value={courseId}
+                    onChange={(e) => setCourseId(e.target.value)}
+                    aria-invalid={showValidationHints && courseMissing ? true : undefined}
+                    aria-describedby={showValidationHints && courseMissing ? 'admin-alerts-course-err' : undefined}
+                    className={`box-border min-h-11 w-full touch-manipulation rounded-lg border bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] sm:text-sm ${
+                      showValidationHints && courseMissing ? 'border-red-500/70' : 'border-[var(--border-color)]'
+                    }`}
                   >
-                    <option value="">— None —</option>
-                    {(selectedCourse?.modules ?? []).flatMap((m) =>
-                      m.lessons.map((l) => (
-                        <option key={l.id} value={l.id}>
-                          {l.title} ({l.id})
-                        </option>
-                      ))
-                    )}
+                    {sortedCourses.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.title} ({c.id})
+                      </option>
+                    ))}
                   </select>
+                  {showValidationHints && courseMissing ? (
+                    <p id="admin-alerts-course-err" className="text-xs text-red-400" role="alert">
+                      Course is required.
+                    </p>
+                  ) : null}
                 </div>
               </div>
-            )}
-          </div>
 
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void handleSend()}
-            className="min-h-11 w-full rounded-xl bg-orange-500 py-3 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-50"
-          >
-            {busy ? 'Publishing…' : 'Publish alert'}
-          </button>
+              <details
+                open={targetingOpen}
+                onToggle={(e) => setTargetingOpen(e.currentTarget.open)}
+                className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2.5"
+              >
+                <summary className="cursor-pointer list-none text-xs font-semibold text-[var(--text-secondary)] [&::-webkit-details-marker]:hidden">
+                  <span className="flex w-full items-center justify-between gap-2">
+                    <span>Optional targeting (module / lesson)</span>
+                    <span className="text-[10px] font-normal text-[var(--text-muted)]">
+                      {targetingOpen ? 'Hide' : 'Show'}
+                    </span>
+                  </span>
+                </summary>
+                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div className="space-y-1">
+                    <label htmlFor="admin-alerts-module" className="block text-xs font-semibold text-[var(--text-secondary)]">
+                      Module (optional)
+                    </label>
+                    <select
+                      id="admin-alerts-module"
+                      value={moduleId}
+                      onChange={(e) => setModuleId(e.target.value)}
+                      className="box-border min-h-11 w-full touch-manipulation rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-base text-[var(--text-primary)] sm:text-sm"
+                    >
+                      <option value="">— None —</option>
+                      {(selectedCourse?.modules ?? []).map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.title} ({m.id})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label htmlFor="admin-alerts-lesson" className="block text-xs font-semibold text-[var(--text-secondary)]">
+                      Lesson (optional)
+                    </label>
+                    <select
+                      id="admin-alerts-lesson"
+                      value={lessonId}
+                      onChange={(e) => setLessonId(e.target.value)}
+                      className="box-border min-h-11 w-full touch-manipulation rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-base text-[var(--text-primary)] sm:text-sm"
+                    >
+                      <option value="">— None —</option>
+                      {(selectedCourse?.modules ?? []).flatMap((m) =>
+                        m.lessons.map((l) => (
+                          <option key={l.id} value={l.id}>
+                            {l.title} ({l.id})
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </div>
+                </div>
+              </details>
+
+              <div className="space-y-1">
+                <label htmlFor="admin-alerts-title" className="block text-xs font-semibold text-[var(--text-secondary)]">
+                  Title
+                </label>
+                <input
+                  id="admin-alerts-title"
+                  ref={titleRef}
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  autoComplete="off"
+                  aria-invalid={showValidationHints && titleMissing ? true : undefined}
+                  aria-describedby={showValidationHints && titleMissing ? 'admin-alerts-title-err' : undefined}
+                  className={`box-border min-h-11 w-full touch-manipulation rounded-lg border bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] sm:text-sm ${
+                    showValidationHints && titleMissing ? 'border-red-500/70' : 'border-[var(--border-color)]'
+                  }`}
+                  placeholder="Short headline"
+                />
+                {showValidationHints && titleMissing ? (
+                  <p id="admin-alerts-title-err" className="text-xs text-red-400" role="alert">
+                    Title is required.
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="space-y-1">
+                <label htmlFor="admin-alerts-message" className="block text-xs font-semibold text-[var(--text-secondary)]">
+                  Message
+                </label>
+                <textarea
+                  id="admin-alerts-message"
+                  ref={messageRef}
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  rows={4}
+                  aria-invalid={showValidationHints && messageMissing ? true : undefined}
+                  aria-describedby={showValidationHints && messageMissing ? 'admin-alerts-message-err' : undefined}
+                  className={`box-border min-h-[5.5rem] w-full touch-manipulation resize-y rounded-lg border bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] sm:text-sm ${
+                    showValidationHints && messageMissing ? 'border-red-500/70' : 'border-[var(--border-color)]'
+                  }`}
+                  placeholder="What changed?"
+                />
+                {showValidationHints && messageMissing ? (
+                  <p id="admin-alerts-message-err" className="text-xs text-red-400" role="alert">
+                    Message is required.
+                  </p>
+                ) : null}
+              </div>
+
+              <button
+                type="button"
+                disabled={busy || sortedCourses.length === 0}
+                aria-busy={busy}
+                onClick={() => void handleSend()}
+                className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center rounded-xl bg-orange-500 px-4 py-3 text-sm font-bold text-white hover:bg-orange-600 disabled:pointer-events-none disabled:opacity-50"
+              >
+                {busy ? 'Publishing…' : 'Publish alert'}
+              </button>
+            </>
+          )}
         </div>
         )}
 
         {tab === 'ai' && (
           <div className="min-w-0 space-y-6 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:p-6">
-            <AdminAiSiteControlsSection />
-            <AdminGeminiModelsSection onDirtyChange={setAiModelsDirty} />
+            <AdminAiSiteControlsSection>
+              <AdminGeminiModelsSection onDirtyChange={setAiModelsDirty} />
+            </AdminAiSiteControlsSection>
           </div>
         )}
 

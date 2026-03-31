@@ -10,7 +10,7 @@ import {
 } from '../../utils/learnerAiModelsSettingsFirestore';
 import { useAdminActionToast } from './useAdminActionToast';
 
-export const AdminAiSiteControlsSection: React.FC = () => {
+export const AdminAiSiteControlsSection: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
   const [assistantOn, setAssistantOn] = useState(true);
   const [learnerAiOn, setLearnerAiOn] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -105,9 +105,9 @@ export const AdminAiSiteControlsSection: React.FC = () => {
   );
 
   return (
-    <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/40 p-3 sm:p-4">
+    <div className="min-w-0 space-y-4">
       {actionToast}
-      <p className="mb-2 text-[11px] leading-snug text-[var(--text-muted)]">
+      <p className="text-[11px] leading-snug text-[var(--text-muted)]">
         Site-wide. Learners can narrow further in Profile when these stay on.
       </p>
       {loading ? (
@@ -141,6 +141,11 @@ export const AdminAiSiteControlsSection: React.FC = () => {
           </div>
         </div>
       )}
+      {children ? (
+        <div className="border-t border-[var(--border-color)] pt-4">
+          {children}
+        </div>
+      ) : null}
     </div>
   );
 };
