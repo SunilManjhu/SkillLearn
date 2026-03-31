@@ -10,24 +10,36 @@ import {
 } from '../../utils/learnerAiModelsSettingsFirestore';
 import { useAdminActionToast } from './useAdminActionToast';
 
+type AiSiteControlsCache = {
+  assistantOn: boolean;
+  learnerAiOn: boolean;
+};
+
+let aiSiteControlsCache: AiSiteControlsCache | null = null;
+
 export const AdminAiSiteControlsSection: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
-  const [assistantOn, setAssistantOn] = useState(true);
-  const [learnerAiOn, setLearnerAiOn] = useState(true);
-  const [loading, setLoading] = useState(true);
+  const [assistantOn, setAssistantOn] = useState(() => aiSiteControlsCache?.assistantOn ?? true);
+  const [learnerAiOn, setLearnerAiOn] = useState(() => aiSiteControlsCache?.learnerAiOn ?? true);
+  const [loading, setLoading] = useState(() => aiSiteControlsCache == null);
   const [savingAssistant, setSavingAssistant] = useState(false);
   const [savingLearnerAi, setSavingLearnerAi] = useState(false);
   const { showActionToast, actionToast } = useAdminActionToast();
 
-  const reload = useCallback(async () => {
-    setLoading(true);
+  const reload = useCallback(async (opts?: { showLoading?: boolean }) => {
+    if (opts?.showLoading !== false) setLoading(true);
     const [a, l] = await Promise.all([loadLearningAssistantSiteEnabled(), loadLearnerAiModelsSiteEnabled()]);
     setAssistantOn(a);
     setLearnerAiOn(l);
+    aiSiteControlsCache = { assistantOn: a, learnerAiOn: l };
     setLoading(false);
   }, []);
 
   useEffect(() => {
-    void reload();
+    if (aiSiteControlsCache) {
+      const id = window.setTimeout(() => void reload({ showLoading: false }), 0);
+      return () => window.clearTimeout(id);
+    }
+    void reload({ showLoading: true });
   }, [reload]);
 
   const toggleAssistant = async (next: boolean) => {
@@ -37,6 +49,7 @@ export const AdminAiSiteControlsSection: React.FC<{ children?: React.ReactNode }
     setSavingAssistant(false);
     if (ok) {
       setAssistantOn(next);
+      aiSiteControlsCache = { assistantOn: next, learnerAiOn };
       showActionToast(next ? 'Assistant on for everyone.' : 'Assistant off for everyone.');
     } else showActionToast('Save failed.', 'danger');
   };
@@ -48,6 +61,7 @@ export const AdminAiSiteControlsSection: React.FC<{ children?: React.ReactNode }
     setSavingLearnerAi(false);
     if (ok) {
       setLearnerAiOn(next);
+      aiSiteControlsCache = { assistantOn, learnerAiOn: next };
       showActionToast(next ? 'Learner AI on.' : 'Learner AI off.');
     } else showActionToast('Save failed.', 'danger');
   };
@@ -107,9 +121,6 @@ export const AdminAiSiteControlsSection: React.FC<{ children?: React.ReactNode }
   return (
     <div className="min-w-0 space-y-4">
       {actionToast}
-      <p className="text-[11px] leading-snug text-[var(--text-muted)]">
-        Site-wide. Learners can narrow further in Profile when these stay on.
-      </p>
       {loading ? (
         <p className="flex items-center gap-2 py-2 text-xs text-[var(--text-muted)]">
           <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" aria-hidden />

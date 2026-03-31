@@ -22,16 +22,25 @@ function withKeys(rows: GeminiModelAdminRow[]): LocalModelRow[] {
   return rows.map((r) => ({ ...r, _key: crypto.randomUUID() }));
 }
 
+type GeminiModelsAdminCache = {
+  fromFirestore: boolean;
+  rows: GeminiModelAdminRow[];
+};
+
+let geminiModelsAdminCache: GeminiModelsAdminCache | null = null;
+
 interface FocusReorderControl {
   rowKey: string;
   which: 'up' | 'down';
 }
 
 export const AdminGeminiModelsSection: React.FC<AdminGeminiModelsSectionProps> = ({ onDirtyChange }) => {
-  const [rows, setRows] = useState<LocalModelRow[]>([]);
-  const [baselineJson, setBaselineJson] = useState<string>('');
-  const [fromFirestore, setFromFirestore] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<LocalModelRow[]>(() => withKeys(geminiModelsAdminCache?.rows ?? []));
+  const [baselineJson, setBaselineJson] = useState<string>(() =>
+    geminiModelsAdminCache ? JSON.stringify(normalizeGeminiModelRows(geminiModelsAdminCache.rows)) : ''
+  );
+  const [fromFirestore, setFromFirestore] = useState(() => geminiModelsAdminCache?.fromFirestore ?? false);
+  const [loading, setLoading] = useState(() => geminiModelsAdminCache == null);
   const [saving, setSaving] = useState(false);
   const [addSearch, setAddSearch] = useState('');
   const { showActionToast, actionToast } = useAdminActionToast();
@@ -39,18 +48,23 @@ export const AdminGeminiModelsSection: React.FC<AdminGeminiModelsSectionProps> =
 
   const envDefaultChain = useMemo(() => getGeminiModelChain(), []);
 
-  const reload = useCallback(async () => {
-    setLoading(true);
+  const reload = useCallback(async (opts?: { showLoading?: boolean }) => {
+    if (opts?.showLoading !== false) setLoading(true);
     const { fromFirestore: fs, rows: loaded } = await loadGeminiAiModelsForAdmin();
     setFromFirestore(fs);
     setRows(withKeys(loaded));
     const normalized = normalizeGeminiModelRows(loaded);
     setBaselineJson(JSON.stringify(normalized));
+    geminiModelsAdminCache = { fromFirestore: fs, rows: loaded };
     setLoading(false);
   }, []);
 
   useEffect(() => {
-    void reload();
+    if (geminiModelsAdminCache) {
+      const id = window.setTimeout(() => void reload({ showLoading: false }), 0);
+      return () => window.clearTimeout(id);
+    }
+    void reload({ showLoading: true });
   }, [reload]);
 
   const normalizedSnapshot = useMemo(() => normalizeGeminiModelRows(rows), [rows]);

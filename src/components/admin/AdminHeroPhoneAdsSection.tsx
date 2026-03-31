@@ -39,6 +39,14 @@ const MAX_BLOCKS_PER_SLIDE = 10;
 /** Firestore allows up to 8; keep list scrollable so many rows stay manageable if the cap rises. */
 const MAX_SLIDES = 8;
 
+type HeroAdsAdminCache = {
+  enabled: boolean;
+  defaultSlideDurationSec: number;
+  slides: HeroPhoneAdSlideStored[];
+};
+
+let heroAdsAdminCache: HeroAdsAdminCache | null = null;
+
 function heroSlideCollapsedSummary(s: HeroPhoneAdSlideStored): { title: string; subtitle: string } {
   const label = s.label?.trim();
   const headlineBlock = s.blocks.find((b) => b.kind === 'text' && (b.style ?? 'body') === 'headline');
@@ -131,29 +139,30 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
   /** Accordion: at most one slide editor open (same idea as catalog modules)—see docs/patterns-admin-disclosure-widgets.md */
   const slideShellRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
   const didExpandAfterLoadRef = useRef(false);
+  const shouldScrollOnExpandRef = useRef(false);
   const [expandedSlideId, setExpandedSlideId] = useState<string | null>(null);
   const { showActionToast, actionToast } = useAdminActionToast();
   const [saveErrorDialog, setSaveErrorDialog] = useState<{ code?: string; message?: string } | null>(null);
   const [resetDefaultsDialogOpen, setResetDefaultsDialogOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => heroAdsAdminCache == null);
   const [saving, setSaving] = useState(false);
-  const [enabled, setEnabled] = useState(false);
+  const [enabled, setEnabled] = useState(() => heroAdsAdminCache?.enabled ?? false);
   const [draftSlides, setDraftSlides] = useState<HeroPhoneAdSlideStored[]>(() =>
-    cloneStoredSlides(INITIAL_STORED_HERO_PHONE_ADS)
+    cloneStoredSlides(heroAdsAdminCache?.slides ?? INITIAL_STORED_HERO_PHONE_ADS)
   );
-  const [savedEnabled, setSavedEnabled] = useState(false);
+  const [savedEnabled, setSavedEnabled] = useState(() => heroAdsAdminCache?.enabled ?? false);
   const [savedSlides, setSavedSlides] = useState<HeroPhoneAdSlideStored[]>(() =>
-    cloneStoredSlides(INITIAL_STORED_HERO_PHONE_ADS)
+    cloneStoredSlides(heroAdsAdminCache?.slides ?? INITIAL_STORED_HERO_PHONE_ADS)
   );
-  const [draftDefaultSec, setDraftDefaultSec] = useState(0);
-  const [savedDefaultSec, setSavedDefaultSec] = useState(0);
+  const [draftDefaultSec, setDraftDefaultSec] = useState(() => heroAdsAdminCache?.defaultSlideDurationSec ?? 0);
+  const [savedDefaultSec, setSavedDefaultSec] = useState(() => heroAdsAdminCache?.defaultSlideDurationSec ?? 0);
   /** Text in AutoView field — separate from `draftDefaultSec` so typing (e.g. "12") is not forced through `0` / leading zeros. */
-  const [autoViewSecText, setAutoViewSecText] = useState('0');
+  const [autoViewSecText, setAutoViewSecText] = useState(() =>
+    String(heroAdsAdminCache?.defaultSlideDurationSec ?? 0)
+  );
   const autoViewSecInputRef = useRef<HTMLInputElement | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const doc = await loadHeroPhoneAdsForAdmin();
+  const applyLoaded = useCallback((doc: HeroAdsAdminCache | null) => {
     if (doc) {
       setEnabled(doc.enabled);
       setSavedEnabled(doc.enabled);
@@ -173,11 +182,29 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
       setDraftSlides(seed);
       setSavedSlides(cloneStoredSlides(seed));
     }
-    setLoading(false);
   }, []);
 
+  const load = useCallback(async (opts?: { showLoading?: boolean }) => {
+    if (opts?.showLoading !== false) setLoading(true);
+    const doc = await loadHeroPhoneAdsForAdmin();
+    const next: HeroAdsAdminCache | null = doc
+      ? {
+          enabled: doc.enabled,
+          defaultSlideDurationSec: doc.defaultSlideDurationSec ?? 0,
+          slides: cloneStoredSlides(normalizeHeroSlidesForAdsState(cloneStoredSlides(doc.slides), doc.enabled)),
+        }
+      : null;
+    heroAdsAdminCache = next;
+    applyLoaded(next);
+    setLoading(false);
+  }, [applyLoaded]);
+
   useEffect(() => {
-    void load();
+    if (heroAdsAdminCache) {
+      const id = window.setTimeout(() => void load({ showLoading: false }), 0);
+      return () => window.clearTimeout(id);
+    }
+    void load({ showLoading: true });
   }, [load]);
 
   useEffect(() => {
@@ -223,11 +250,14 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
   /** Align expanded slide into view (page scroll — slides are not in an inner scroll box). */
   useLayoutEffect(() => {
     if (expandedSlideId == null) return;
+    if (!shouldScrollOnExpandRef.current) return;
+    shouldScrollOnExpandRef.current = false;
     const slideEl = slideShellRefs.current.get(expandedSlideId);
     scrollDisclosureRowToTop(null, slideEl);
   }, [expandedSlideId]);
 
   const toggleSlideExpanded = useCallback((id: string) => {
+    shouldScrollOnExpandRef.current = true;
     setExpandedSlideId((prev) => (prev === id ? null : id));
   }, []);
 
@@ -509,6 +539,11 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
       setSavedEnabled(enabled);
       setSavedDefaultSec(draftDefaultSec);
       setSavedSlides(cloneStoredSlides(draftSlides));
+      heroAdsAdminCache = {
+        enabled,
+        defaultSlideDurationSec: draftDefaultSec,
+        slides: cloneStoredSlides(draftSlides),
+      };
       showActionToast('Home hero phone ads saved.');
     } else {
       setSaveErrorDialog({ code: result.code, message: result.message });
