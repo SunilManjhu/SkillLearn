@@ -28,8 +28,12 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   applyYoutubeCaptionsModule,
   loadYoutubeIframeApi,
+  readPlayerMutedPreference,
+  readPlayerVolumePreference,
   readYoutubeCaptionLang,
   readYoutubeCaptionsPreference,
+  writePlayerMutedPreference,
+  writePlayerVolumePreference,
   writeYoutubeCaptionsPreference,
   YOUTUBE_EMBED_TOP_CROP_PX,
   youtubeEmbedSrcForVideoId,
@@ -156,8 +160,8 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   ytSeekDraggingRef.current = ytSeekDragging;
   /** True between pointer down/up on the seek bar so we only preview during drag; keyboard uses `onInput` commits. */
   const ytPointerSeekRef = useRef(false);
-  const [ytVolume, setYtVolume] = useState(100);
-  const [ytMuted, setYtMuted] = useState(false);
+  const [ytVolume, setYtVolume] = useState(() => readPlayerVolumePreference());
+  const [ytMuted, setYtMuted] = useState(() => readPlayerMutedPreference());
   const [ytSettingsOpen, setYtSettingsOpen] = useState(false);
   const [ytPlaybackRates, setYtPlaybackRates] = useState<number[]>([1]);
   const [ytPlaybackRate, setYtPlaybackRate] = useState(1);
@@ -571,7 +575,10 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
         p.mute?.();
         setYtMuted(true);
       }
-      setYtVolume(p.getVolume?.() ?? 0);
+      const vol = p.getVolume?.() ?? 0;
+      setYtVolume(vol);
+      writePlayerVolumePreference(vol);
+      writePlayerMutedPreference(!wasMuted);
     } catch {
       /* ignore */
     }
@@ -580,6 +587,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   const handleYtVolumeSlider = useCallback((value: number) => {
     const v = Math.max(0, Math.min(100, Math.round(value)));
     setYtVolume(v);
+    writePlayerVolumePreference(v);
     const p = ytPlayerRef.current as { setVolume?: (n: number) => void; unMute?: () => void } | null;
     if (!p?.setVolume) return;
     try {
@@ -587,6 +595,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
       if (v > 0) {
         p.unMute?.();
         setYtMuted(false);
+        writePlayerMutedPreference(false);
       }
     } catch {
       /* ignore */
@@ -989,8 +998,8 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     setYtHudTime({ current: 0, duration: 0 });
     setYtSeekDragging(false);
     setYtSeekDragSeconds(0);
-    setYtVolume(100);
-    setYtMuted(false);
+    setYtVolume(readPlayerVolumePreference());
+    setYtMuted(readPlayerMutedPreference());
     setYtSettingsOpen(false);
     setYtPlaybackRates([1]);
     setYtPlaybackRate(1);
@@ -1501,10 +1510,20 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     void v.play().catch(() => {});
   }, [currentLesson.id, mergeProgress, youtubeEmbedUrl]);
 
+  const handleNativeVolumeChange = useCallback(() => {
+    if (youtubeEmbedUrl) return;
+    const v = videoRef.current;
+    if (!v) return;
+    writePlayerVolumePreference(Math.round(v.volume * 100));
+    writePlayerMutedPreference(v.muted);
+  }, [youtubeEmbedUrl]);
+
   const handleNativeLoadedMetadata = useCallback(() => {
     if (youtubeEmbedUrl) return;
     const v = videoRef.current;
     if (!v || !Number.isFinite(v.duration) || v.duration <= 0) return;
+    v.volume = readPlayerVolumePreference() / 100;
+    v.muted = readPlayerMutedPreference();
     const saved = savedProgressForLesson(currentLesson.id);
     const alreadyComplete = isLessonPlaybackComplete(saved);
     if (playNextAfterEndRef.current) {
@@ -1574,8 +1593,23 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
             const player = ev.target;
             applyYoutubeCaptionsModule(player, youtubeCaptionsEnabledRef.current, youtubeCaptionLangRef.current);
             try {
-              setYtVolume(player.getVolume());
-              setYtMuted(player.isMuted());
+              const volPref = readPlayerVolumePreference();
+              const mutedPref = readPlayerMutedPreference();
+              /**
+               * YouTube IFrame API: setVolume() then unMute() on ready can leave volume at 100.
+               * Unmute first, then setVolume, when the learner wants sound.
+               */
+              if (mutedPref) {
+                player.setVolume(volPref);
+                player.mute();
+                setYtMuted(true);
+                setYtVolume(volPref);
+              } else {
+                player.unMute();
+                player.setVolume(volPref);
+                setYtMuted(false);
+                setYtVolume(volPref);
+              }
               const d0 = player.getDuration();
               if (Number.isFinite(d0) && d0 > 0) {
                 setYtHudTime({ current: player.getCurrentTime(), duration: d0 });
@@ -2500,6 +2534,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
             }`}
             controls={!youtubeEmbedUrl && !blocksVideoPlayback}
             onLoadedMetadata={handleNativeLoadedMetadata}
+            onVolumeChange={handleNativeVolumeChange}
             onTimeUpdate={() => {
               const v = videoRef.current;
               if (!v || !Number.isFinite(v.duration) || v.duration <= 0) return;

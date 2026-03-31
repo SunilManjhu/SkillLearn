@@ -2,7 +2,7 @@
 
 [`src/App.tsx`](../src/App.tsx) is the **single root component**: routing by view, URL/history sync, catalog and learning-path loading, auth and admin gates, navbar notifications, and composition of learner/admin surfaces. It is **large** on purpose; use this map before editing.
 
-**Related:** [`appHistory.ts`](../src/utils/appHistory.ts) (payload shape, `buildHistoryUrl` / `parseHashToPayload`), [`development-and-debugging.md`](./development-and-debugging.md) (broader stack and debugging).
+**Related:** [`appHistory.ts`](../src/utils/appHistory.ts) (payload shape, `buildHistoryUrl` / `parseHashToPayload`), [`video-player-and-history.md`](./video-player-and-history.md) (CoursePlayer, Back button, lesson in URL, volume prefs), [`development-and-debugging.md`](./development-and-debugging.md) (broader stack and debugging).
 
 ## View model
 
@@ -13,9 +13,9 @@
 ## URL and history (critical for bugs)
 
 - **Serialized state:** `AppHistoryPayload` (`v: 1`, `view`, optional `courseId`, `lessonId`, `certificate`, `adminTab`, `learningPathId`). Stored in `history.state` under **`APP_HISTORY_KEY`** (`skillstreamApp`) and mirrored in the **hash** via `buildHistoryUrl` (see `appHistory.ts`).
-- **`buildHistoryPayload`:** Derives the payload from React state. Note the comment that **player URLs omit the lesson segment**; the active lesson lives in component state and `CoursePlayer`.
+- **`buildHistoryPayload`:** Derives the payload from React state. For **`player`**, includes **`lessonId`** when `playerLessonIdForUrl` / `initialLesson` is set so reload restores the active lesson; see [`video-player-and-history.md`](./video-player-and-history.md).
 - **`applyHistoryPayload`:** Applies a payload to state (course selection, `initialLesson`, `adminTab`, path id, certificate snapshot). Used on **browser Back/Forward** (`popstate`). Prefers **hash** over `history.state` when they diverge.
-- **`historySkipSyncRef`:** Skips the “push new history entry” effect for one cycle after programmatic navigation that already updated the URL.
+- **`historySkipSyncRef`:** Skips the “push new history entry” effect for one cycle after programmatic navigation that already updated the URL — **unless** `historyPayloadsEqual(prev, payload)` is false (React moved but ref still set); see [`video-player-and-history.md`](./video-player-and-history.md).
 - **`historyActionRef`:** `'replace'` vs `'push'` — used for auth return, certificate public links, deferred-route resolution, profile overlay transitions, etc.
 
 **Debugging “Back button wrong” or “URL doesn’t match screen”:** trace `popstate` → `applyHistoryPayload`, then the effect that calls `pushState`/`replaceState` when `buildHistoryPayload` changes.
