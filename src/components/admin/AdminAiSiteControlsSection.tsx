@@ -69,7 +69,7 @@ export const AdminAiSiteControlsSection: React.FC = () => {
     saving: boolean;
     onToggle: (v: boolean) => void;
   }) => (
-    <div className="flex min-h-11 items-center justify-between gap-3 py-2 first:pt-0 last:pb-0">
+    <div className="flex min-h-11 min-w-0 items-center justify-between gap-2 py-1 sm:gap-3 sm:py-0">
       <div className="flex min-w-0 items-start gap-2">
         <span className="mt-0.5 shrink-0 text-orange-500">{icon}</span>
         <div className="min-w-0">
@@ -116,25 +116,29 @@ export const AdminAiSiteControlsSection: React.FC = () => {
           Loading…
         </p>
       ) : (
-        <div className="divide-y divide-[var(--border-color)]">
-          <SwitchRow
-            id="admin-ai-assistant-toggle"
-            label="Floating assistant"
-            sub="Chat button + panel."
-            icon={<MessageCircle size={16} aria-hidden />}
-            on={assistantOn}
-            saving={savingAssistant}
-            onToggle={toggleAssistant}
-          />
-          <SwitchRow
-            id="admin-ai-learner-toggle"
-            label="Learner AI"
-            sub="Quiz grading, hints, assistant replies."
-            icon={<Sparkles size={16} aria-hidden />}
-            on={learnerAiOn}
-            saving={savingLearnerAi}
-            onToggle={toggleLearnerAi}
-          />
+        <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
+          <div className="min-w-0">
+            <SwitchRow
+              id="admin-ai-assistant-toggle"
+              label="Floating assistant"
+              sub="Chat button + panel."
+              icon={<MessageCircle size={16} aria-hidden />}
+              on={assistantOn}
+              saving={savingAssistant}
+              onToggle={toggleAssistant}
+            />
+          </div>
+          <div className="min-w-0">
+            <SwitchRow
+              id="admin-ai-learner-toggle"
+              label="Learner AI"
+              sub="Quiz grading, hints, assistant replies."
+              icon={<Sparkles size={16} aria-hidden />}
+              on={learnerAiOn}
+              saving={savingLearnerAi}
+              onToggle={toggleLearnerAi}
+            />
+          </div>
         </div>
       )}
     </div>
