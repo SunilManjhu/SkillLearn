@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Loader2, MessageCircle, Sparkles } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import {
   loadLearningAssistantSiteEnabled,
   saveLearningAssistantSiteEnabled,
@@ -8,29 +8,45 @@ import {
   loadLearnerAiModelsSiteEnabled,
   saveLearnerAiModelsSiteEnabled,
 } from '../../utils/learnerAiModelsSettingsFirestore';
+import {
+  loadNotificationsSiteEnabled,
+  saveNotificationsSiteEnabled,
+} from '../../utils/notificationsSettingsFirestore';
 import { useAdminActionToast } from './useAdminActionToast';
 
 type AiSiteControlsCache = {
   assistantOn: boolean;
   learnerAiOn: boolean;
+  notificationsOn: boolean;
 };
 
 let aiSiteControlsCache: AiSiteControlsCache | null = null;
 
-export const AdminAiSiteControlsSection: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
+export const AdminAiSiteControlsSection: React.FC<{
+  children?: React.ReactNode;
+  alertsMuted?: boolean;
+  onAlertsMutedChange?: (muted: boolean) => void;
+}> = ({ children, alertsMuted = false, onAlertsMutedChange }) => {
   const [assistantOn, setAssistantOn] = useState(() => aiSiteControlsCache?.assistantOn ?? true);
   const [learnerAiOn, setLearnerAiOn] = useState(() => aiSiteControlsCache?.learnerAiOn ?? true);
+  const [notificationsOn, setNotificationsOn] = useState(() => aiSiteControlsCache?.notificationsOn ?? true);
   const [loading, setLoading] = useState(() => aiSiteControlsCache == null);
   const [savingAssistant, setSavingAssistant] = useState(false);
   const [savingLearnerAi, setSavingLearnerAi] = useState(false);
+  const [savingNotifications, setSavingNotifications] = useState(false);
   const { showActionToast, actionToast } = useAdminActionToast();
 
   const reload = useCallback(async (opts?: { showLoading?: boolean }) => {
     if (opts?.showLoading !== false) setLoading(true);
-    const [a, l] = await Promise.all([loadLearningAssistantSiteEnabled(), loadLearnerAiModelsSiteEnabled()]);
+    const [a, l, n] = await Promise.all([
+      loadLearningAssistantSiteEnabled(),
+      loadLearnerAiModelsSiteEnabled(),
+      loadNotificationsSiteEnabled(),
+    ]);
     setAssistantOn(a);
     setLearnerAiOn(l);
-    aiSiteControlsCache = { assistantOn: a, learnerAiOn: l };
+    setNotificationsOn(n);
+    aiSiteControlsCache = { assistantOn: a, learnerAiOn: l, notificationsOn: n };
     setLoading(false);
   }, []);
 
@@ -49,8 +65,8 @@ export const AdminAiSiteControlsSection: React.FC<{ children?: React.ReactNode }
     setSavingAssistant(false);
     if (ok) {
       setAssistantOn(next);
-      aiSiteControlsCache = { assistantOn: next, learnerAiOn };
-      showActionToast(next ? 'Assistant on for everyone.' : 'Assistant off for everyone.');
+      aiSiteControlsCache = { assistantOn: next, learnerAiOn, notificationsOn };
+      showActionToast(next ? 'Learning Assistant on for everyone.' : 'Learning Assistant off for everyone.');
     } else showActionToast('Save failed.', 'danger');
   };
 
@@ -61,31 +77,47 @@ export const AdminAiSiteControlsSection: React.FC<{ children?: React.ReactNode }
     setSavingLearnerAi(false);
     if (ok) {
       setLearnerAiOn(next);
-      aiSiteControlsCache = { assistantOn, learnerAiOn: next };
-      showActionToast(next ? 'Learner AI on.' : 'Learner AI off.');
+      aiSiteControlsCache = { assistantOn, learnerAiOn: next, notificationsOn };
+      showActionToast(next ? 'Smart Verify on.' : 'Smart Verify off.');
+    } else showActionToast('Save failed.', 'danger');
+  };
+
+  const toggleNotifications = async (next: boolean) => {
+    if (savingNotifications) return;
+    setSavingNotifications(true);
+    const ok = await saveNotificationsSiteEnabled(next);
+    setSavingNotifications(false);
+    if (ok) {
+      setNotificationsOn(next);
+      aiSiteControlsCache = { assistantOn, learnerAiOn, notificationsOn: next };
+      showActionToast(next ? 'Notifications on.' : 'Notifications off.');
     } else showActionToast('Save failed.', 'danger');
   };
 
   const SwitchRow = ({
     id,
+    emoji,
     label,
     sub,
-    icon,
     on,
     saving,
     onToggle,
+    disabled,
   }: {
     id: string;
+    emoji: string;
     label: string;
     sub: string;
-    icon: React.ReactNode;
     on: boolean;
     saving: boolean;
     onToggle: (v: boolean) => void;
+    disabled?: boolean;
   }) => (
     <div className="flex min-h-11 min-w-0 items-center justify-between gap-2 py-1 sm:gap-3 sm:py-0">
       <div className="flex min-w-0 items-start gap-2">
-        <span className="mt-0.5 shrink-0 text-orange-500">{icon}</span>
+        <span className="mt-0.5 shrink-0 text-[1.05rem] leading-none sm:text-lg" aria-hidden>
+          {emoji}
+        </span>
         <div className="min-w-0">
           <p id={id} className="text-sm font-semibold text-[var(--text-primary)]">
             {label}
@@ -98,7 +130,7 @@ export const AdminAiSiteControlsSection: React.FC<{ children?: React.ReactNode }
         role="switch"
         aria-checked={on}
         aria-labelledby={id}
-        disabled={saving || loading}
+        disabled={disabled || saving || loading}
         onClick={() => void onToggle(!on)}
         className={`relative h-8 w-[3.25rem] shrink-0 rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 disabled:opacity-45 ${
           on ? 'bg-emerald-500' : 'bg-[var(--border-color)]'
@@ -118,6 +150,20 @@ export const AdminAiSiteControlsSection: React.FC<{ children?: React.ReactNode }
     </div>
   );
 
+  const notificationsRow = (
+    <div className="min-w-0">
+      <SwitchRow
+        id="admin-smart-hub-notifications-toggle"
+        emoji="🔔"
+        label="Notifications"
+        sub="Site-wide: when off, the notification bell is disabled for everyone."
+        on={notificationsOn}
+        saving={savingNotifications}
+        onToggle={toggleNotifications}
+      />
+    </div>
+  );
+
   return (
     <div className="min-w-0 space-y-4">
       {actionToast}
@@ -127,13 +173,13 @@ export const AdminAiSiteControlsSection: React.FC<{ children?: React.ReactNode }
           Loading…
         </p>
       ) : (
-        <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
+        <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 sm:gap-4">
           <div className="min-w-0">
             <SwitchRow
-              id="admin-ai-assistant-toggle"
-              label="Floating assistant"
-              sub="Chat button + panel."
-              icon={<MessageCircle size={16} aria-hidden />}
+              id="admin-smart-hub-assistant-toggle"
+              emoji="💬"
+              label="Learning Assistant"
+              sub="Site-wide: floating chat when on. Learners can still adjust visibility in Profile → Smart Hub."
               on={assistantOn}
               saving={savingAssistant}
               onToggle={toggleAssistant}
@@ -141,15 +187,16 @@ export const AdminAiSiteControlsSection: React.FC<{ children?: React.ReactNode }
           </div>
           <div className="min-w-0">
             <SwitchRow
-              id="admin-ai-learner-toggle"
-              label="Learner AI"
-              sub="Quiz grading, hints, assistant replies."
-              icon={<Sparkles size={16} aria-hidden />}
+              id="admin-smart-hub-smart-verify-toggle"
+              emoji="✨"
+              label="Smart Verify"
+              sub="Site-wide: quiz grading, hints, and assistant replies when on."
               on={learnerAiOn}
               saving={savingLearnerAi}
               onToggle={toggleLearnerAi}
             />
           </div>
+          {notificationsRow}
         </div>
       )}
       {children ? (

@@ -5,6 +5,7 @@ import { useLearnerGeminiEnabled } from '../hooks/useLearnerGeminiEnabled';
 import { useLearnerAssistantVisible } from '../hooks/useLearnerAssistantVisible';
 import { useLearningAssistantSiteEnabled } from '../hooks/useLearningAssistantSiteEnabled';
 import { useLearnerAiModelsSiteEnabled } from '../hooks/useLearnerAiModelsSiteEnabled';
+import { useNotificationsSiteEnabled } from '../hooks/useNotificationsSiteEnabled';
 import { User, auth } from '../firebase';
 import { computeCourseEnrollmentCounts, computeLearningStats } from '../utils/learningStats';
 import { loadCompletionTimestamps } from '../utils/courseCompletionLog';
@@ -84,6 +85,9 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   const { visible: assistantVisible, setVisible: setAssistantVisible } = useLearnerAssistantVisible();
   const { siteAssistantEnabled, siteAssistantLoading } = useLearningAssistantSiteEnabled();
   const { siteLearnerAiModelsEnabled, siteLearnerAiModelsLoading } = useLearnerAiModelsSiteEnabled();
+  const { siteNotificationsEnabled, siteNotificationsLoading } = useNotificationsSiteEnabled();
+  /** When site-wide is off, show the switch off; when on, reflect stored mute preference (preserved across site toggles). */
+  const notificationsEffectiveOn = siteNotificationsEnabled && !alertsMuted;
   const assistantSwitchDisabled = siteAssistantLoading || !siteAssistantEnabled;
   const assistantEffectiveOn = siteAssistantEnabled && assistantVisible;
   const aiModelsSwitchDisabled = siteLearnerAiModelsLoading || !siteLearnerAiModelsEnabled;
@@ -522,32 +526,52 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                       tipRegionAriaLabel="Notifications Tips"
                       tipSubject="Notifications"
                     >
-                      <li>When muted, course and admin items are hidden from the bell.</li>
+                      <li>When off, course and admin items are hidden from the bell.</li>
                       <li>Certificate notices still appear.</li>
+                      <li>If notifications are turned off site-wide, your choice here is kept for when they are available again.</li>
                     </AdminLabelInfoTip>
                   </div>
                   <button
                     type="button"
                     role="switch"
-                    aria-checked={alertsMuted}
+                    aria-checked={notificationsEffectiveOn}
                     aria-labelledby="profile-notifications-label"
+                    aria-describedby={
+                      !siteNotificationsLoading && !siteNotificationsEnabled
+                        ? 'profile-notifications-soft-block-hint'
+                        : undefined
+                    }
+                    title={
+                      !siteNotificationsLoading && !siteNotificationsEnabled
+                        ? 'Notifications are disabled site-wide. Check back later or contact support.'
+                        : undefined
+                    }
+                    disabled={siteNotificationsLoading || !siteNotificationsEnabled}
                     onClick={() => {
-                      const next = !alertsMuted;
-                      onAlertsMutedChange(next);
-                      showActionToast(next ? 'Alerts muted.' : 'Alerts on.');
+                      if (siteNotificationsLoading || !siteNotificationsEnabled) return;
+                      const nextMuted = !alertsMuted;
+                      onAlertsMutedChange(nextMuted);
+                      showActionToast(nextMuted ? 'Notifications off.' : 'Notifications on.');
                     }}
                     className={profilePrefSwitchOuterClass}
                   >
                     <span
                       className={`${profilePrefSwitchTrackClass} ${
-                        alertsMuted ? profilePrefSwitchTrackOn : profilePrefSwitchTrackOff
+                        notificationsEffectiveOn ? profilePrefSwitchTrackOn : profilePrefSwitchTrackOff
                       }`}
                     >
-                      <span className={profilePrefSwitchKnobClass(alertsMuted)} />
+                      <span className={profilePrefSwitchKnobClass(notificationsEffectiveOn)} />
                     </span>
-                    <span className="sr-only">{alertsMuted ? 'Alerts muted' : 'Alerts on'}</span>
+                    <span className="sr-only">
+                      {notificationsEffectiveOn ? 'Notifications on' : 'Notifications off'}
+                    </span>
                   </button>
                 </div>
+                {!siteNotificationsLoading && !siteNotificationsEnabled ? (
+                  <span id="profile-notifications-soft-block-hint" className="sr-only">
+                    Notifications are disabled site-wide. Check back later or contact support.
+                  </span>
+                ) : null}
               </div>
             )}
           </div>

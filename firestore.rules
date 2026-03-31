@@ -533,6 +533,12 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /siteSettings/notifications {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidSiteBooleanToggleWrite(request.resource.data);
+      allow delete: if false;
+    }
+
     // JS client numbers are often stored as float; accept int or float with same bounds.
     function heroPhoneDurationSeconds(n) {
       return (n is int || n is float) && n >= 0 && n <= 120;

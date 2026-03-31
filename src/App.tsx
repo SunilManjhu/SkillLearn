@@ -13,6 +13,7 @@ import { useDialogKeyboard } from './hooks/useDialogKeyboard';
 import { ContactForm } from './components/ContactForm';
 import { DemoLearningAgent } from './components/DemoLearningAgent';
 import { useLearningAssistantFabVisible } from './hooks/useLearningAssistantFabVisible';
+import { useNotificationsSiteEnabled } from './hooks/useNotificationsSiteEnabled';
 import { STATIC_CATALOG_FALLBACK, Course, Lesson } from './data/courses';
 import type { LearningPath } from './data/learningPaths';
 import { AdminPage } from './components/AdminPage';
@@ -415,6 +416,7 @@ export default function App() {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   /** In-app bell: hide course/admin alerts; certificates still show. Persisted per uid. */
   const [alertsMuted, setAlertsMuted] = useState(false);
+  const { siteNotificationsEnabled } = useNotificationsSiteEnabled();
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(initialRoute.selectedCourse);
   const [initialLesson, setInitialLesson] = useState<Lesson | undefined>(initialRoute.initialLesson);
   const [adminTab, setAdminTab] = useState<AdminHistoryTab>(() => initialRoute.adminTab);
@@ -1380,13 +1382,16 @@ export default function App() {
   }, []);
 
   const navbarNotifications = useMemo(() => {
+    if (!siteNotificationsEnabled) {
+      return notifications.filter((n) => n.kind === 'certificate');
+    }
     if (user?.uid && alertsMuted) {
       return notifications.filter(
         (n) => n.kind === 'certificate' || n.id.startsWith('admin-moderation-')
       );
     }
     return notifications;
-  }, [user?.uid, alertsMuted, notifications]);
+  }, [siteNotificationsEnabled, user?.uid, alertsMuted, notifications]);
 
   const accountDeletionBlockLoading =
     isAdminUser && adminAccessResolved && firestoreAdminCount === null;
@@ -2676,6 +2681,8 @@ export default function App() {
               onCatalogChanged={refreshCatalogCourses}
               heroPhoneMockupSrc={mobileHeroSrc}
               onUnsavedWorkChange={handleAdminUnsavedWorkChange}
+              alertsMuted={alertsMuted}
+              onAlertsMutedChange={handleToggleAlertsMuted}
             />
           )}
           {mainView === 'admin' && isAuthReady && user && !adminAccessResolved && (

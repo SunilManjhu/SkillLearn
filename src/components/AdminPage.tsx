@@ -28,6 +28,9 @@ interface AdminPageProps {
   heroPhoneMockupSrc: string;
   /** Notifies parent when Alerts/Content drafts have unsaved work (for leaving admin via shell navigation). */
   onUnsavedWorkChange?: (dirty: boolean) => void;
+  /** Same bell mute preference as Profile → Smart Hub (per signed-in account). */
+  alertsMuted?: boolean;
+  onAlertsMutedChange?: (muted: boolean) => void;
 }
 
 const ALERT_TYPES: { value: BroadcastAlertType; label: string }[] = [
@@ -52,6 +55,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   onCatalogChanged,
   heroPhoneMockupSrc,
   onUnsavedWorkChange,
+  alertsMuted = false,
+  onAlertsMutedChange,
 }) => {
   const [type, setType] = useState<BroadcastAlertType>('course_update');
   const [courseId, setCourseId] = useState(courses[0]?.id ?? '');
@@ -243,7 +248,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
             <div className="min-w-0">
               <h1 className="text-lg font-bold tracking-tight sm:text-xl">Admin portal</h1>
               <p className="mt-0.5 line-clamp-2 text-xs text-[var(--text-secondary)] sm:text-sm sm:line-clamp-none">
-                Alerts, AI, catalog, marketing, moderation, roles. Not visible to learners.
+                Alerts, Smart Hub, catalog, marketing, moderation, roles. Not visible to learners.
               </p>
             </div>
           </div>
@@ -260,7 +265,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
 
         <div className="-mx-1 flex gap-2 overflow-x-auto overflow-y-hidden overscroll-x-contain px-1 py-0.5 [scrollbar-width:none] sm:flex-wrap sm:overflow-visible [&::-webkit-scrollbar]:hidden">
           {tabBtn('alerts', 'Alerts', <Send size={16} />)}
-          {tabBtn('ai', 'AI', <Sparkles size={16} />)}
+          {tabBtn('ai', 'Smart Hub', <Sparkles size={16} />)}
           {tabBtn('catalog', 'Content', <BookOpen size={16} />)}
           {tabBtn('marketing', 'Marketing', <Megaphone size={16} />)}
           {tabBtn('moderation', 'Moderation', <Flag size={16} />)}
@@ -486,7 +491,10 @@ export const AdminPage: React.FC<AdminPageProps> = ({
 
         {tab === 'ai' && (
           <div className="min-w-0 space-y-6 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:p-6">
-            <AdminAiSiteControlsSection>
+            <AdminAiSiteControlsSection
+              alertsMuted={alertsMuted}
+              onAlertsMutedChange={onAlertsMutedChange}
+            >
               <AdminGeminiModelsSection onDirtyChange={setAiModelsDirty} />
             </AdminAiSiteControlsSection>
           </div>
