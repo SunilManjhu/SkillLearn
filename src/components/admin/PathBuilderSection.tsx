@@ -1086,11 +1086,14 @@ function PathBranchInsertSlot({
   insertIndex,
   depth,
   onInsertBranchAt,
+  /** When a section has no children yet, keep the control visible on md+ (default is hover-reveal between rows). */
+  persistVisibleOnMd = false,
 }: {
   parentId: string | null;
   insertIndex: number;
   depth: number;
   onInsertBranchAt: (parentId: string | null, insertIndex: number) => void;
+  persistVisibleOnMd?: boolean;
 }) {
   const atTopLevel = parentId == null;
   const label = atTopLevel ? 'Add top-level branch here' : 'Add branch here';
@@ -1100,17 +1103,29 @@ function PathBranchInsertSlot({
   const pad =
     depth > 0 ? ({ paddingLeft: `${Math.min(depth, 8) * 0.75}rem` } as const) : undefined;
   return (
-    <li className="group/ins relative min-w-0 list-none overflow-visible py-0.5 md:h-0 md:py-0">
+    <li
+      className={`group/ins relative min-w-0 list-none overflow-visible py-0.5 ${
+        persistVisibleOnMd ? '' : 'md:h-0 md:py-0'
+      }`}
+    >
       {/* md+: zero list height; hover/focus hit strip straddles the gap between rows */}
       <div
-        className="w-full md:pointer-events-auto md:absolute md:inset-x-0 md:top-0 md:z-[5] md:flex md:min-h-11 md:-translate-y-1/2 md:items-center md:justify-center"
+        className={
+          persistVisibleOnMd
+            ? 'w-full'
+            : 'w-full md:pointer-events-auto md:absolute md:inset-x-0 md:top-0 md:z-[5] md:flex md:min-h-11 md:-translate-y-1/2 md:items-center md:justify-center'
+        }
         style={pad}
       >
         <button
           type="button"
           title={title}
           onClick={() => onInsertBranchAt(parentId, insertIndex)}
-          className="flex w-full min-h-10 touch-manipulation items-center justify-center gap-1.5 rounded-lg border border-dashed border-[var(--border-color)]/50 bg-[var(--bg-secondary)]/25 px-2 text-[11px] font-semibold text-[var(--text-muted)] opacity-90 transition-all duration-150 ease-out hover:border-orange-500/45 hover:bg-orange-500/10 hover:text-orange-600 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 dark:hover:text-orange-400 md:h-0 md:min-h-0 md:overflow-hidden md:border-transparent md:bg-transparent md:opacity-0 md:shadow-none md:pointer-events-none md:ring-0 md:group-hover/ins:pointer-events-auto md:group-hover/ins:h-auto md:group-hover/ins:min-h-10 md:group-hover/ins:overflow-visible md:group-hover/ins:border-[var(--border-color)]/50 md:group-hover/ins:bg-[var(--bg-secondary)]/25 md:group-hover/ins:opacity-100 md:group-focus-within/ins:pointer-events-auto md:group-focus-within/ins:h-auto md:group-focus-within/ins:min-h-10 md:group-focus-within/ins:overflow-visible md:group-focus-within/ins:border-[var(--border-color)]/50 md:group-focus-within/ins:bg-[var(--bg-secondary)]/25 md:group-focus-within/ins:opacity-100 md:focus-visible:pointer-events-auto md:focus-visible:h-auto md:focus-visible:min-h-10 md:focus-visible:overflow-visible md:focus-visible:border-[var(--border-color)]/50 md:focus-visible:bg-[var(--bg-secondary)]/25 md:focus-visible:opacity-100"
+          className={
+            persistVisibleOnMd
+              ? 'flex w-full min-h-10 touch-manipulation items-center justify-center gap-1.5 rounded-lg border border-dashed border-[var(--border-color)]/50 bg-[var(--bg-secondary)]/25 px-2 text-[11px] font-semibold text-[var(--text-muted)] opacity-90 transition-all duration-150 ease-out hover:border-orange-500/45 hover:bg-orange-500/10 hover:text-orange-600 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 dark:hover:text-orange-400'
+              : 'flex w-full min-h-10 touch-manipulation items-center justify-center gap-1.5 rounded-lg border border-dashed border-[var(--border-color)]/50 bg-[var(--bg-secondary)]/25 px-2 text-[11px] font-semibold text-[var(--text-muted)] opacity-90 transition-all duration-150 ease-out hover:border-orange-500/45 hover:bg-orange-500/10 hover:text-orange-600 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 dark:hover:text-orange-400 md:h-0 md:min-h-0 md:overflow-hidden md:border-transparent md:bg-transparent md:opacity-0 md:shadow-none md:pointer-events-none md:ring-0 md:group-hover/ins:pointer-events-auto md:group-hover/ins:h-auto md:group-hover/ins:min-h-10 md:group-hover/ins:overflow-visible md:group-hover/ins:border-[var(--border-color)]/50 md:group-hover/ins:bg-[var(--bg-secondary)]/25 md:group-hover/ins:opacity-100 md:group-focus-within/ins:pointer-events-auto md:group-focus-within/ins:h-auto md:group-focus-within/ins:min-h-10 md:group-focus-within/ins:overflow-visible md:group-focus-within/ins:border-[var(--border-color)]/50 md:group-focus-within/ins:bg-[var(--bg-secondary)]/25 md:group-focus-within/ins:opacity-100 md:focus-visible:pointer-events-auto md:focus-visible:h-auto md:focus-visible:min-h-10 md:focus-visible:overflow-visible md:focus-visible:border-[var(--border-color)]/50 md:focus-visible:bg-[var(--bg-secondary)]/25 md:focus-visible:opacity-100'
+          }
         >
           <Plus size={14} className="shrink-0 opacity-90" aria-hidden />
           <span>{label}</span>
@@ -1267,8 +1282,12 @@ function PathBranchRow({
   onBranchRowFocus: (id: string) => void;
   onVisibleToRolesChange: (id: string, roles: PathOutlineAudienceRole[]) => void;
 }) {
-  const hasChildren = b.kind !== 'divider' && b.children.length > 0;
-  const isCollapsed = hasChildren && !expandedBranchIds.has(b.id);
+  /** Divider rows cannot nest branches (see path mindmap rules). */
+  const canNestBranches = b.kind !== 'divider';
+  const hasNestedRows = b.children.length > 0;
+  const isCollapsed = hasNestedRows && !expandedBranchIds.has(b.id);
+  /** Show nested list + insert slots when empty (first sub-branch) or when expanded with children. */
+  const showNestedBranchList = canNestBranches && (!hasNestedRows || !isCollapsed);
 
   const chevronSize = depth === 0 ? 16 : 14;
 
@@ -1297,7 +1316,7 @@ function PathBranchRow({
 
   const branchBadgeGroup = (
     <div className="flex shrink-0 items-center gap-1">
-      {hasChildren ? (
+      {hasNestedRows ? (
         <button
           type="button"
           onClick={() => onToggleCollapse(b.id)}
@@ -1542,7 +1561,7 @@ function PathBranchRow({
           </div>
         </div>
       )}
-      {hasChildren && !isCollapsed ? (
+      {showNestedBranchList ? (
         <div
           className={`col-span-full min-w-0 ${
             depth === 0
@@ -1603,7 +1622,6 @@ function PathBranchTreeList({
   onBranchRowFocus: (id: string) => void;
   onVisibleToRolesChange: (id: string, roles: PathOutlineAudienceRole[]) => void;
 }) {
-  if (nodes.length === 0) return null;
   const insKey = parentId ?? 'root';
   const list = (
     <ul
@@ -1620,6 +1638,7 @@ function PathBranchTreeList({
           insertIndex={0}
           depth={depth}
           onInsertBranchAt={onInsertBranchAt}
+          persistVisibleOnMd={nodes.length === 0}
         />
       </Fragment>
       {nodes.map((b, i) => (

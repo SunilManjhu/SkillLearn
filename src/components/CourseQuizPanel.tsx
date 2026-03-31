@@ -934,7 +934,35 @@ export function CourseQuizPanel({
       ) : null}
 
       <div className="mt-1 flex flex-col gap-2 sm:mt-0 sm:flex-row sm:flex-wrap">
-        {!allPassed && nonPassingSubmitCount >= 2 ? (
+        {allPassed ? (
+          <>
+            <button
+              type="button"
+              onClick={onGoToNextLesson}
+              className="inline-flex min-h-11 min-w-[44px] w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-3 text-sm font-bold text-white hover:bg-orange-600 sm:w-auto sm:px-8"
+            >
+              Next Lesson
+              <ChevronRight className="h-5 w-5 shrink-0" aria-hidden />
+            </button>
+            {restoredFromStorage && submitted ? (
+              <button
+                type="button"
+                onClick={handleTakeQuizAgain}
+                className="inline-flex min-h-11 min-w-[44px] w-full items-center justify-center rounded-xl border border-[var(--border-color)] px-4 py-3 text-sm font-bold text-[var(--text-primary)] hover:bg-[var(--hover-bg)] sm:w-auto sm:px-8"
+              >
+                Take quiz again
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleRetake}
+                className="inline-flex min-h-11 min-w-[44px] w-full items-center justify-center rounded-xl border border-[var(--border-color)] px-4 py-3 text-sm font-bold text-[var(--text-primary)] hover:bg-[var(--hover-bg)] sm:w-auto sm:px-8"
+              >
+                Start over
+              </button>
+            )}
+          </>
+        ) : !allPassed && nonPassingSubmitCount >= 2 ? (
           usedNextLessonBypass ? (
             <button
               type="button"
@@ -949,7 +977,7 @@ export function CourseQuizPanel({
               onClick={handleNextLessonAfterFailures}
               className="inline-flex min-h-11 min-w-[44px] w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-3 text-sm font-bold text-white hover:bg-orange-600 sm:w-auto sm:px-8"
             >
-              Next lesson
+              Next Lesson
               <ChevronRight className="h-5 w-5 shrink-0" aria-hidden />
             </button>
           )
