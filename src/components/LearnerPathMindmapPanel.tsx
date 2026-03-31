@@ -1,9 +1,13 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { LayoutGrid, Loader2 } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ChevronDown, LayoutGrid, Loader2 } from 'lucide-react';
 import type { Course } from '../data/courses';
-import { filterOutlineBranchesForViewer, type MindmapTreeNode } from '../data/pathMindmap';
+import {
+  filterOutlineBranchesForViewer,
+  filterPathCourseIdsBySavedMindmap,
+  type MindmapTreeNode,
+} from '../data/pathMindmap';
+import { normalizeExternalHref } from '../utils/externalUrl';
 import { buildPathCourseRowLayoutBlocks } from '../utils/pathCourseOutlineGroups';
-import { fetchPathMindmapFromFirestore } from '../utils/pathMindmapFirestore';
 import { LearnerPathCourseRowList } from './LearnerPathCourseRowList';
 import { PathMindmapOutline } from './PathMindmapOutline';
 
@@ -22,6 +26,9 @@ export type LearnerPathMindmapPanelProps = {
   suppressPathHeader?: boolean;
   /** Ordered `courseIds` — themed flat rows; section titles and section dividers come from the mindmap when available. */
   pathCourseIds?: readonly string[];
+  /** Same `pathMindmap` children as in Firestore — parent loads once (catalog filter + outline). */
+  mindmapOutlineChildren: MindmapTreeNode[] | null;
+  mindmapOutlineLoading: boolean;
 };
 
 export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = ({
@@ -35,25 +42,37 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
   viewerIsAdmin = false,
   suppressPathHeader = false,
   pathCourseIds = [],
+  mindmapOutlineChildren: branches,
+  mindmapOutlineLoading: loading,
 }) => {
-  const [loading, setLoading] = useState(true);
-  const [branches, setBranches] = useState<MindmapTreeNode[] | null>(null);
   const [storageProgressTick, setStorageProgressTick] = useState(0);
+  /** Which top-level block is open; `null` = all collapsed (accordion). */
+  const [expandedPathBlockKey, setExpandedPathBlockKey] = useState<string | null>(null);
 
   const filteredBranchesForViewer = useMemo(
     () => (branches === null ? [] : filterOutlineBranchesForViewer(branches, viewerIsAdmin)),
     [branches, viewerIsAdmin]
   );
 
+  const pathCourseIdsForLayout = useMemo(
+    () => filterPathCourseIdsBySavedMindmap(pathCourseIds, branches),
+    [pathCourseIds, branches]
+  );
+
   const courseRowBlocks = useMemo(() => {
-    if (pathCourseIds.length === 0) return null;
-    return buildPathCourseRowLayoutBlocks(pathCourseIds, filteredBranchesForViewer);
-  }, [pathCourseIds, filteredBranchesForViewer]);
+    if (pathCourseIdsForLayout.length === 0) return null;
+    const blocks = buildPathCourseRowLayoutBlocks(
+      pathCourseIdsForLayout,
+      filteredBranchesForViewer,
+      branches ?? undefined
+    );
+    return blocks.length > 0 ? blocks : null;
+  }, [pathCourseIdsForLayout, filteredBranchesForViewer, branches]);
 
   /** Full mindmap outline only when the path has no `courseIds` (lessons, links, course-only outline). */
   const useOutlineLayout =
     !loading && branches !== null && pathCourseIds.length === 0 && filteredBranchesForViewer.length > 0;
-  const useCourseRowLayout = !loading && branches !== null && pathCourseIds.length > 0;
+  const useCourseRowLayout = !loading && branches !== null && pathCourseIdsForLayout.length > 0;
 
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
@@ -72,24 +91,23 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
 
   const outlineProgressVersion = progressSnapshotVersion + storageProgressTick;
 
+  const pathSectionBlockKey = useCallback(
+    (blockIndex: number, sectionLabel: string) => `${pathId}-b${blockIndex}-${sectionLabel || 'tail'}`,
+    [pathId]
+  );
+
   useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setBranches(null);
-    void (async () => {
-      const doc = await fetchPathMindmapFromFirestore(pathId);
-      if (cancelled) return;
-      if (!doc || doc.root.children.length === 0) {
-        setBranches([]);
-      } else {
-        setBranches(doc.root.children);
-      }
-      setLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
+    setExpandedPathBlockKey(null);
   }, [pathId]);
+
+  const isPathSectionExpanded = useCallback(
+    (key: string) => expandedPathBlockKey === key,
+    [expandedPathBlockKey]
+  );
+
+  const togglePathSectionBlock = useCallback((key: string) => {
+    setExpandedPathBlockKey((current) => (current === key ? null : key));
+  }, []);
 
   const handleOpenCourseFromRow = (course: Course) => {
     onOpenCourse(course.id);
@@ -145,46 +163,110 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
         </div>
       ) : useCourseRowLayout && courseRowBlocks ? (
         <div className="min-w-0 space-y-0">
-          {courseRowBlocks.map((block, bIdx) => (
-            <div
-              key={`path-block-${bIdx}-${block.sectionLabel || 'sec'}-${
-                block.segments[0]?.type === 'courses'
-                  ? block.segments[0].courseIds[0]
-                  : (block.segments[0]?.type === 'divider' ? block.segments[0].id : bIdx)
-              }`}
-              className={bIdx > 0 ? 'mt-6 min-w-0' : 'min-w-0'}
-            >
-              {block.sectionLabel ? (
-                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
-                  {block.sectionLabel}
-                </h3>
-              ) : null}
-              <div className="min-w-0 space-y-0">
-                {block.segments.map((seg, sIdx) =>
-                  seg.type === 'divider' ? (
-                    <div
-                      key={seg.id}
-                      className="min-w-0 border-t border-[var(--border-color)]/60 pt-2.5 mt-2 first:mt-0 first:border-t-0 first:pt-0"
-                      role="presentation"
-                    >
-                      <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] [overflow-wrap:anywhere]">
-                        {seg.label}
-                      </p>
-                    </div>
-                  ) : (
-                    <LearnerPathCourseRowList
-                      key={`${bIdx}-lpcr-${sIdx}-${seg.courseIds.join('-')}`}
-                      courseIds={seg.courseIds}
-                      catalogCourses={catalogCourses}
-                      progressUserId={progressUserId}
-                      progressSnapshotVersion={outlineProgressVersion}
-                      onOpenCourse={handleOpenCourseFromRow}
-                    />
-                  )
-                )}
+          {courseRowBlocks.map((block, bIdx) => {
+            const blockKey = pathSectionBlockKey(bIdx, block.sectionLabel);
+            const panelId = `path-course-panel-${pathId}-${bIdx}`;
+            const expanded = isPathSectionExpanded(blockKey);
+            const heading =
+              block.sectionLabel.trim() ||
+              (courseRowBlocks.length > 1 ? 'Other courses' : 'Courses');
+            return (
+              <div
+                key={`path-block-${bIdx}-${block.sectionLabel || 'sec'}-${
+                  block.segments[0]?.type === 'courses'
+                    ? block.segments[0].courseIds[0]
+                    : block.segments[0]?.type === 'divider' ||
+                        block.segments[0]?.type === 'label' ||
+                        block.segments[0]?.type === 'link'
+                      ? block.segments[0].id
+                      : bIdx
+                }`}
+                className={bIdx > 0 ? 'mt-6 min-w-0' : 'min-w-0'}
+              >
+                <div className="mb-2 min-w-0">
+                  <button
+                    type="button"
+                    id={`${panelId}-trigger`}
+                    aria-expanded={expanded}
+                    aria-controls={panelId}
+                    onClick={() => togglePathSectionBlock(blockKey)}
+                    className="flex w-full min-w-0 items-start gap-2 rounded-lg py-1 pl-0.5 pr-1 text-left transition-colors hover:bg-[var(--hover-bg)]/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 sm:items-center sm:gap-2.5 sm:pl-1"
+                  >
+                    <span className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center self-start text-[var(--text-muted)] sm:min-h-11 sm:min-w-11">
+                      <ChevronDown
+                        size={20}
+                        className={`shrink-0 transition-transform duration-200 ${expanded ? 'rotate-0' : '-rotate-90'}`}
+                        aria-hidden
+                      />
+                    </span>
+                    <h3 className="min-w-0 flex-1 pt-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)] sm:pt-2">
+                      {heading}
+                    </h3>
+                  </button>
+                </div>
+                <div
+                  id={panelId}
+                  role="region"
+                  aria-labelledby={`${panelId}-trigger`}
+                  hidden={!expanded}
+                  className="min-w-0 space-y-0"
+                >
+                  {block.segments.map((seg, sIdx) =>
+                    seg.type === 'divider' ? (
+                      <div
+                        key={seg.id}
+                        className="min-w-0 border-t border-[var(--border-color)]/60 pt-2.5 mt-2 first:mt-0 first:border-t-0 first:pt-0"
+                        role="presentation"
+                      >
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] [overflow-wrap:anywhere]">
+                          {seg.label}
+                        </p>
+                      </div>
+                    ) : seg.type === 'label' ? (
+                      <div
+                        key={seg.id}
+                        className="min-w-0 pt-3 first:pt-0"
+                        role="presentation"
+                      >
+                        <p className="text-sm font-semibold leading-snug text-[var(--text-primary)] [overflow-wrap:anywhere]">
+                          {seg.label}
+                        </p>
+                      </div>
+                    ) : seg.type === 'link' ? (
+                      <div key={seg.id} className="min-w-0 pt-3 first:pt-0" role="presentation">
+                        {(() => {
+                          const safeHref = normalizeExternalHref(seg.href);
+                          return safeHref ? (
+                            <a
+                              href={safeHref}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-block text-base font-semibold leading-snug text-violet-600 underline-offset-2 hover:underline dark:text-violet-400 [overflow-wrap:anywhere]"
+                            >
+                              {seg.label}
+                            </a>
+                          ) : (
+                            <p className="text-sm font-semibold text-[var(--text-primary)] [overflow-wrap:anywhere]">
+                              {seg.label}
+                            </p>
+                          );
+                        })()}
+                      </div>
+                    ) : (
+                      <LearnerPathCourseRowList
+                        key={`${bIdx}-lpcr-${sIdx}-${seg.courseIds.join('-')}`}
+                        courseIds={seg.courseIds}
+                        catalogCourses={catalogCourses}
+                        progressUserId={progressUserId}
+                        progressSnapshotVersion={outlineProgressVersion}
+                        onOpenCourse={handleOpenCourseFromRow}
+                      />
+                    )
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : branches === null ? null : useOutlineLayout ? (
         <PathMindmapOutline

@@ -8,7 +8,9 @@ import { LearnerPathMindmapPanel } from './components/LearnerPathMindmapPanel';
 import { CourseLibraryCategoryFilter } from './components/CourseLibraryCategoryFilter';
 import { ProfilePage } from './components/ProfilePage';
 import { Certificate } from './components/Certificate';
+import { filterPathCourseIdsBySavedMindmap } from './data/pathMindmap';
 import { useBodyScrollLock } from './hooks/useBodyScrollLock';
+import { usePathMindmapOutlineChildren } from './hooks/usePathMindmapOutlineChildren';
 import { useDialogKeyboard } from './hooks/useDialogKeyboard';
 import { ContactForm } from './components/ContactForm';
 import { DemoLearningAgent } from './components/DemoLearningAgent';
@@ -445,6 +447,8 @@ export default function App() {
         : learningPaths.find((p) => p.id === selectedLearningPathId) ?? null,
     [learningPaths, selectedLearningPathId]
   );
+  const { loading: pathMindmapOutlineLoading, children: pathMindmapOutlineChildren } =
+    usePathMindmapOutlineChildren(selectedLearningPathId);
   const [libraryFilters, setLibraryFilters] = useState<LibraryFilterState>({
     categoryTags: [],
     skillTags: [],
@@ -1426,9 +1430,13 @@ export default function App() {
   );
 
   const filteredCourses = catalogCourses.filter((course) => {
-    const pathCourseIds =
+    const rawPathCourseIds =
       selectedLearningPathId != null
         ? learningPaths.find((p) => p.id === selectedLearningPathId)?.courseIds
+        : null;
+    const pathCourseIds =
+      rawPathCourseIds != null
+        ? filterPathCourseIdsBySavedMindmap(rawPathCourseIds, pathMindmapOutlineChildren)
         : null;
     const matchesPath =
       selectedLearningPathId == null ||
@@ -2213,8 +2221,8 @@ export default function App() {
                     </p>
                     {pathUnknown ? (
                       <p className="mt-2 text-sm font-medium text-amber-600 dark:text-amber-400">
-                        This path ID is not in the published catalog. Check Firestore or pick a path from the Paths
-                        menu.
+                        We couldn’t find this learning path. It may have been renamed, removed, or the link may be
+                        outdated. Choose another path from the menu, or browse the full catalog.
                       </p>
                     ) : null}
                   </div>
@@ -2241,6 +2249,8 @@ export default function App() {
               progressSnapshotVersion={pathProgressSnapshot + remoteProfileDataVersion}
               viewerIsAdmin={isAdminUser}
               suppressPathHeader
+              mindmapOutlineChildren={pathMindmapOutlineChildren}
+              mindmapOutlineLoading={pathMindmapOutlineLoading}
               pathCourseIds={activeLearningPath?.courseIds ?? []}
               onOpenCourse={(courseId) => {
                 const c = catalogCourses.find((x) => x.id === courseId);

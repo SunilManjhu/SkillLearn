@@ -181,7 +181,7 @@ export function normalizeMindmapNode(raw: unknown): MindmapTreeNode | null {
   } else if (o.kind === 'link' && typeof o.externalUrl === 'string' && o.externalUrl.trim().length > 0) {
     node = { ...base, kind: 'link', externalUrl: o.externalUrl.trim() };
   } else {
-    node = base;
+    node = { ...base, kind: 'label' };
   }
   node = mergeVisibleToRoles(node, o);
   if (o.locked === true) {
@@ -209,4 +209,32 @@ export function mindmapDocumentWithCenterChildren(children: MindmapTreeNode[]): 
       children,
     },
   });
+}
+
+/** All course ids referenced in a saved path mindmap (membership for learner vs stale `learningPaths.courseIds`). */
+export function collectCourseIdsFromMindmapTree(nodes: MindmapTreeNode[]): Set<string> {
+  const out = new Set<string>();
+  const walk = (ns: MindmapTreeNode[]) => {
+    for (const n of ns) {
+      if (n.kind === 'course' && n.courseId) out.add(n.courseId);
+      if (n.kind === 'lesson' && n.courseId) out.add(n.courseId);
+      if (n.children.length > 0) walk(n.children);
+    }
+  };
+  walk(nodes);
+  return out;
+}
+
+/**
+ * Align Firestore `courseIds` with the saved outline: drops ids removed from the mindmap but left in `courseIds`
+ * (older saves merged instead of replacing). `mindmapOutlineChildren === null` = not loaded yet — keep `pathCourseIds`.
+ */
+export function filterPathCourseIdsBySavedMindmap(
+  pathCourseIds: readonly string[],
+  mindmapOutlineChildren: MindmapTreeNode[] | null
+): string[] {
+  if (pathCourseIds.length === 0) return [];
+  if (mindmapOutlineChildren === null || mindmapOutlineChildren.length === 0) return [...pathCourseIds];
+  const inMindmap = collectCourseIdsFromMindmapTree(mindmapOutlineChildren);
+  return pathCourseIds.filter((id) => inMindmap.has(id));
 }

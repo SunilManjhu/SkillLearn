@@ -698,6 +698,9 @@ function OutlineNode({
     const sectionHasUsefulContent =
       catalogCourseCount > 0 || externalLinkCountInSection > 0;
     const canExpandSection = hasExpandableContent && sectionHasUsefulContent;
+    /** Non-expandable sections stay fully visible; expandable ones use accordion (default collapsed). */
+    const showSectionBody =
+      !hasExpandableContent || !canExpandSection || expanded;
     const courseCountLabel =
       showNoCoursesInSectionUx
         ? null
@@ -721,18 +724,16 @@ function OutlineNode({
           <div
             className={`flex min-w-0 max-w-full items-start gap-1 sm:items-center sm:gap-1.5${
               canExpandSection
-                ? outlineCompactMobile
-                  ? ' py-0.5 pr-0'
-                  : ' cursor-pointer rounded-lg py-1 pl-0.5 pr-1 transition-colors hover:bg-[var(--hover-bg)]/80 sm:pl-1 sm:pr-1.5'
+                ? ' cursor-pointer rounded-lg py-1 pl-0.5 pr-1 transition-colors hover:bg-[var(--hover-bg)]/80 sm:pl-1 sm:pr-1.5'
                 : ' py-1'
             }`}
             onClick={
-              canExpandSection && !outlineCompactMobile
+              canExpandSection
                 ? (e) => handleSectionHeaderClick(e, canExpandSection, node.id, toggleSection)
                 : undefined
             }
           >
-            <div className="hidden md:contents">
+            <div className="flex shrink-0 items-start self-start md:contents">
               {canExpandSection ? (
                 <button
                   type="button"
@@ -861,7 +862,7 @@ function OutlineNode({
             </span>
           ) : null}
         </h3>
-        {expanded || !hasExpandableContent ? (
+        {showSectionBody ? (
           <>
             <ActionChips
               node={node}
@@ -875,7 +876,7 @@ function OutlineNode({
                 id={panelId}
                 role="list"
                 aria-labelledby={`path-section-title-${node.id}`}
-                hidden={!expanded}
+                hidden={!showSectionBody}
                 className="mt-2 min-w-0 max-w-full list-none space-y-2 border-0 bg-transparent p-0 ring-0 md:ml-8 md:mt-1.5 md:space-y-1 md:rounded-xl md:border md:border-[var(--border-color)]/60 md:bg-[var(--bg-primary)]/25 md:py-1 md:pl-7 md:pr-5 md:ring-1 md:ring-[var(--border-color)]/25"
               >
                 {node.children.map((ch) => (
@@ -1163,32 +1164,23 @@ export const PathMindmapOutline: React.FC<PathMindmapOutlineProps> = ({
     [branchesForViewer]
   );
 
+  /** Only `true` means expanded; default is collapsed (accordion: at most one open). */
   const isSectionExpanded = useCallback(
-    (sectionId: string) => outlineCompactMobile || sectionExpanded[sectionId] !== false,
-    [outlineCompactMobile, sectionExpanded]
+    (sectionId: string) => sectionExpanded[sectionId] === true,
+    [sectionExpanded]
   );
 
   const toggleSection = useCallback(
     (sectionId: string) => {
-      if (outlineCompactMobile) return;
-      let openedThisSection = false;
       setSectionExpanded((prev) => {
-        const wasOpen = prev[sectionId] !== false;
-        if (wasOpen) {
-          return { ...prev, [sectionId]: false };
+        if (prev[sectionId] === true) {
+          return {};
         }
-        openedThisSection = true;
-        const next: Record<string, boolean> = {};
-        for (const b of branchesForViewer) {
-          next[b.id] = b.id === sectionId;
-        }
-        return next;
+        return { [sectionId]: true };
       });
-      if (openedThisSection) {
-        setBranchExpanded({});
-      }
+      setBranchExpanded({});
     },
-    [branchesForViewer, outlineCompactMobile]
+    []
   );
 
   const isBranchExpanded = useCallback(

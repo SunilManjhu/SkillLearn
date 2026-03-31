@@ -14,6 +14,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Copy,
   GraduationCap,
   Link2,
   Loader2,
@@ -67,7 +68,7 @@ function arrayMove<T>(list: T[], from: number, to: number): T[] {
   return next;
 }
 
-/** Tree node for path outline — synced to `pathMindmap` on save. Top-level nodes are sections; children are a flat list (no nesting). */
+/** Tree node for path outline — synced to `pathMindmap` on save. Two levels only: top-level sections and sub-rows under each section (sub-rows cannot nest further). */
 type PathBranchNode =
   | {
       id: string;
@@ -188,11 +189,12 @@ function collectCourseIdsFromTree(nodes: PathBranchNode[]): string[] {
 }
 
 function mergeCourseIdsFromBranches(draft: LearningPath, roots: PathBranchNode[]): string[] {
-  const merged = [...draft.courseIds];
-  for (const cid of collectCourseIdsFromTree(roots)) {
-    if (!merged.includes(cid)) merged.push(cid);
+  const fromTree = collectCourseIdsFromTree(roots);
+  // Branch tree is authoritative: do not union with draft.courseIds or removed courses stay in Firestore forever.
+  if (roots.length > 0) {
+    return fromTree;
   }
-  return merged;
+  return [...draft.courseIds];
 }
 
 function addChildAtParent(
@@ -200,6 +202,9 @@ function addChildAtParent(
   parentId: string | null,
   child: PathBranchNode
 ): PathBranchNode[] {
+  if (parentId !== null && !parentAllowsChildRows(nodes, parentId)) {
+    return nodes;
+  }
   if (parentId === null) {
     return [...nodes, child];
   }
@@ -217,6 +222,9 @@ function insertChildAtParent(
   insertIndex: number,
   child: PathBranchNode
 ): PathBranchNode[] {
+  if (parentId !== null && !parentAllowsChildRows(nodes, parentId)) {
+    return nodes;
+  }
   if (parentId === null) {
     const next = [...nodes];
     const i = Math.max(0, Math.min(insertIndex, next.length));
@@ -367,6 +375,379 @@ function findParentIdOfBranch(roots: PathBranchNode[], targetId: string): string
     if (inner !== null) return inner;
   }
   return null;
+}
+
+/** Depth from root: top-level = 0, sub-branch under a section = 1. */
+function findDepthOfBranchId(roots: PathBranchNode[], targetId: string): number | null {
+  function walk(nodes: PathBranchNode[], d: number): number | null {
+    for (const n of nodes) {
+      if (n.id === targetId) return d;
+      const inner = walk(n.children, d + 1);
+      if (inner !== null) return inner;
+    }
+    return null;
+  }
+  return walk(roots, 0);
+}
+
+/** Only top-level rows may have child rows (two levels total: section → sub-branch). */
+function parentAllowsChildRows(roots: PathBranchNode[], parentId: string | null): boolean {
+  if (parentId === null) return true;
+  return findDepthOfBranchId(roots, parentId) === 0;
+}
+
+/** Reassign every node id in a subtree (new IDs for Firestore). */
+function remapBranchSubtreeIds(node: PathBranchNode): PathBranchNode {
+  const walk = (n: PathBranchNode): PathBranchNode => {
+    const id = newMindmapNodeId();
+    if (n.kind === 'divider') {
+      return { ...n, id, children: [] };
+    }
+    return { ...n, id, children: n.children.map(walk) };
+  };
+  return walk(node);
+}
+
+/** New ids for every node in a saved outline (duplicate whole path). */
+function remapPathBranchForest(roots: PathBranchNode[]): PathBranchNode[] {
+  return roots.map((n) => remapBranchSubtreeIds(deepClone(n)));
+}
+
+/** If true, the duplicate can only sit in the top-level list (otherwise nested rows would exceed two levels). */
+function duplicateSubtreeRequiresTopLevelOnly(node: PathBranchNode): boolean {
+  return node.children.length > 0;
+}
+
+function countSubtreeRows(node: PathBranchNode): number {
+  return 1 + node.children.reduce((sum, c) => sum + countSubtreeRows(c), 0);
+}
+
+/** Top-level rows that can accept child outline rows (dividers cannot). */
+function topLevelParentsForDuplicate(roots: PathBranchNode[]): PathBranchNode[] {
+  return roots.filter((r) => r.kind !== 'divider');
+}
+
+function insertSlotLabel(
+  siblings: PathBranchNode[],
+  insertIndex: number,
+  publishedList: Course[]
+): string {
+  if (siblings.length === 0) return 'First position';
+  if (insertIndex <= 0) {
+    return `Before “${branchNodeDisplayLabel(siblings[0], publishedList)}”`;
+  }
+  if (insertIndex >= siblings.length) {
+    const last = siblings[siblings.length - 1];
+    return `After “${branchNodeDisplayLabel(last, publishedList)}”`;
+  }
+  const prev = siblings[insertIndex - 1];
+  const next = siblings[insertIndex];
+  return `Between “${branchNodeDisplayLabel(prev, publishedList)}” and “${branchNodeDisplayLabel(next, publishedList)}”`;
+}
+
+/** Label / link / divider rows can get a distinct title on duplicate; course & lesson titles come from the catalog. */
+function duplicateRootHasEditableTitle(root: PathBranchNode): boolean {
+  return root.kind === 'label' || root.kind === 'divider' || root.kind === 'link';
+}
+
+function duplicateRootEditableTitleBase(root: PathBranchNode, publishedList: Course[]): string {
+  if (root.kind === 'label' || root.kind === 'divider' || root.kind === 'link') {
+    const t = root.label.trim();
+    if (t.length > 0) return t;
+  }
+  return branchNodeDisplayLabel(root, publishedList).trim() || 'Untitled';
+}
+
+function applyCopyNameToBranchRoot(
+  root: PathBranchNode,
+  nameInput: string,
+  publishedList: Course[]
+): PathBranchNode {
+  if (root.kind === 'course' || root.kind === 'lesson') {
+    return root;
+  }
+  const trimmed = nameInput.trim();
+  const base = duplicateRootEditableTitleBase(root, publishedList);
+  const finalLabel = trimmed.length > 0 ? trimmed : `${base} (copy)`;
+  if (root.kind === 'label') {
+    return { ...root, label: finalLabel };
+  }
+  if (root.kind === 'divider') {
+    return { ...root, label: finalLabel };
+  }
+  if (root.kind === 'link') {
+    return { ...root, label: finalLabel };
+  }
+  return root;
+}
+
+function PlaceDuplicateBranchModal({
+  open,
+  onClose,
+  branch,
+  roots,
+  publishedList,
+  defaultTopParentId,
+  onCommit,
+}: {
+  open: boolean;
+  onClose: () => void;
+  branch: PathBranchNode;
+  roots: PathBranchNode[];
+  publishedList: Course[];
+  /** When duplicating a nested row, prefer its current top-level section as the first dropdown. */
+  defaultTopParentId: string | null;
+  onCommit: (parentId: string | null, insertIndex: number, namedBranch: PathBranchNode) => void;
+}) {
+  const topLevelOnly = duplicateSubtreeRequiresTopLevelOnly(branch);
+  const [parentId, setParentId] = useState<string | null>(null);
+  const [insertIndex, setInsertIndex] = useState(0);
+  const [copyNameInput, setCopyNameInput] = useState('');
+
+  const rootsRef = useRef(roots);
+  rootsRef.current = roots;
+
+  const parentOptions = useMemo(() => {
+    const opts: { id: string | null; label: string }[] = [{ id: null, label: 'Top of outline' }];
+    if (topLevelOnly) return opts;
+    for (const r of topLevelParentsForDuplicate(roots)) {
+      if (!parentAllowsChildRows(roots, r.id)) continue;
+      opts.push({
+        id: r.id,
+        label: branchNodeDisplayLabel(r, publishedList),
+      });
+    }
+    return opts;
+  }, [roots, publishedList, topLevelOnly]);
+
+  const effectiveParentId = topLevelOnly ? null : parentId;
+
+  const siblings = useMemo(() => {
+    if (effectiveParentId === null) return roots;
+    const p = findBranchNode(roots, effectiveParentId);
+    return p?.children ?? [];
+  }, [roots, effectiveParentId]);
+
+  /** Only when the dialog opens or the duplicate source changes — not on every outline edit (avoids resetting Top parent and showing stale sibling labels). */
+  useEffect(() => {
+    if (!open) return;
+    if (topLevelOnly) {
+      setParentId(null);
+      return;
+    }
+    const r = rootsRef.current;
+    const validDefault =
+      defaultTopParentId != null &&
+      findBranchNode(r, defaultTopParentId) != null &&
+      findDepthOfBranchId(r, defaultTopParentId) === 0 &&
+      parentAllowsChildRows(r, defaultTopParentId) &&
+      findBranchNode(r, defaultTopParentId)!.kind !== 'divider';
+    setParentId(validDefault ? defaultTopParentId : null);
+  }, [open, branch.id, topLevelOnly, defaultTopParentId]);
+
+  /** If the selected top parent row disappears (e.g. tree reload), clear it. Do not reset to default on every rename. */
+  useEffect(() => {
+    if (!open || topLevelOnly) return;
+    setParentId((prev) => {
+      if (prev == null) return null;
+      const r = rootsRef.current;
+      const n = findBranchNode(r, prev);
+      const valid =
+        n != null &&
+        findDepthOfBranchId(r, prev) === 0 &&
+        parentAllowsChildRows(r, prev) &&
+        n.kind !== 'divider';
+      return valid ? prev : null;
+    });
+  }, [roots, open, topLevelOnly]);
+
+  useEffect(() => {
+    if (!open) return;
+    setInsertIndex(siblings.length);
+  }, [open, effectiveParentId, siblings.length]);
+
+  useEffect(() => {
+    if (!open) return;
+    setCopyNameInput('');
+  }, [open, branch.id]);
+
+  const parentSelectKey = useMemo(
+    () => parentOptions.map((o) => `${o.id ?? 'root'}:${o.label}`).join('|'),
+    [parentOptions]
+  );
+
+  /** Remount selects when sibling titles change so option text never stays stale (browser/React edge cases). */
+  const positionSelectKey = useMemo(
+    () =>
+      siblings.map((n) => `${n.id}:${branchNodeDisplayLabel(n, publishedList)}`).join('|'),
+    [siblings, publishedList]
+  );
+
+  const copyNameDefaultPreview = useMemo(
+    () => duplicateRootEditableTitleBase(branch, publishedList) + ' (copy)',
+    [branch, publishedList]
+  );
+
+  const showCopyNameField = duplicateRootHasEditableTitle(branch);
+
+  useDialogKeyboard({ open, onClose });
+
+  if (!open) return null;
+
+  const summary = branchNodeDisplayLabel(branch, publishedList);
+  const totalRows = countSubtreeRows(branch);
+  const canCommit = effectiveParentId === null || findBranchNode(roots, effectiveParentId) != null;
+  const subtreeHint =
+    effectiveParentId === null
+      ? 'Order among top-level rows.'
+      : (() => {
+          const p = findBranchNode(roots, effectiveParentId);
+          return p
+            ? `Order among rows inside “${branchNodeDisplayLabel(p, publishedList)}”.`
+            : '';
+        })();
+
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="place-duplicate-branch-title"
+        className="flex max-h-[min(90dvh,560px)] w-full max-w-lg flex-col rounded-t-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl sm:rounded-2xl"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-color)] px-4 py-3">
+          <h2
+            id="place-duplicate-branch-title"
+            className="min-w-0 flex-1 text-center text-base font-bold text-[var(--text-primary)] sm:text-lg"
+          >
+            Place copy
+          </h2>
+          <button
+            type="button"
+            className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg text-sm font-semibold text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
+          <p className="mb-3 text-xs leading-relaxed text-[var(--text-muted)]">
+            Duplicating <strong className="text-[var(--text-secondary)]">{summary}</strong>
+            {totalRows > 1 ? (
+              <>
+                {' '}
+                ({totalRows} rows including nested)
+              </>
+            ) : null}
+            . Choose where the new copy should appear.
+          </p>
+          {topLevelOnly ? (
+            <p className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-[var(--text-secondary)]">
+              This branch has nested rows, so it can only be placed in the <strong>top-level</strong> outline (two levels
+              max: section → sub-rows).
+            </p>
+          ) : null}
+
+          {showCopyNameField ? (
+            <div className="mb-3">
+              <label className="block text-xs font-semibold text-[var(--text-secondary)]" htmlFor="place-dup-copy-name">
+                Copy name
+              </label>
+              <p id="place-dup-copy-name-hint" className="mt-1 text-[11px] leading-snug text-[var(--text-muted)]">
+                Optional. Leave blank to use <strong className="text-[var(--text-secondary)]">{copyNameDefaultPreview}</strong>.
+              </p>
+              <input
+                id="place-dup-copy-name"
+                type="text"
+                value={copyNameInput}
+                onChange={(e) => setCopyNameInput(e.target.value)}
+                placeholder={copyNameDefaultPreview}
+                aria-describedby="place-dup-copy-name-hint"
+                className="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+                autoComplete="off"
+              />
+            </div>
+          ) : (
+            <p className="mb-3 text-[11px] leading-snug text-[var(--text-muted)]">
+              Course and lesson rows keep the catalog title; only the outline position changes.
+            </p>
+          )}
+
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-semibold text-[var(--text-secondary)]" htmlFor="place-dup-parent">
+                Top parent
+              </label>
+              <p id="place-dup-parent-hint" className="mt-1 text-[11px] leading-snug text-[var(--text-muted)]">
+                Top-level outline row that will contain the copy, or the main list.
+              </p>
+              <select
+                key={parentSelectKey}
+                id="place-dup-parent"
+                aria-describedby="place-dup-parent-hint"
+                className="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                value={effectiveParentId ?? ''}
+                disabled={topLevelOnly}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setParentId(v === '' ? null : v);
+                }}
+              >
+                {parentOptions.map((o) => (
+                  <option key={o.id ?? 'root'} value={o.id ?? ''}>
+                    {o.id === null ? o.label : `Section: ${o.label}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-[var(--text-secondary)]" htmlFor="place-dup-index">
+                Within subtree
+              </label>
+              <p id="place-dup-subtree-hint" className="mt-1 text-[11px] leading-snug text-[var(--text-muted)]">
+                {subtreeHint}
+              </p>
+              <select
+                key={positionSelectKey}
+                id="place-dup-index"
+                aria-describedby="place-dup-subtree-hint"
+                className="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                value={Math.min(insertIndex, siblings.length)}
+                onChange={(e) => setInsertIndex(Number(e.target.value))}
+              >
+                {Array.from({ length: siblings.length + 1 }, (_, i) => (
+                  <option key={i} value={i}>
+                    {insertSlotLabel(siblings, i, publishedList)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            disabled={!canCommit}
+            onClick={() => {
+              const named = applyCopyNameToBranchRoot(branch, copyNameInput, publishedList);
+              onCommit(effectiveParentId, Math.min(insertIndex, siblings.length), named);
+            }}
+            className="mt-5 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-40"
+          >
+            Place copy
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /** Children kept when changing type; dividers always flatten to none. */
@@ -1258,6 +1639,7 @@ function PathBranchRow({
   onToggleCollapse,
   onInsertBranchAt,
   onRemove,
+  onCopyBranch,
   onMove,
   onLabelChange,
   onLinkBranchChange,
@@ -1275,6 +1657,7 @@ function PathBranchRow({
   onToggleCollapse: (id: string) => void;
   onInsertBranchAt: (parentId: string | null, insertIndex: number) => void;
   onRemove: (id: string) => void;
+  onCopyBranch: (id: string) => void;
   onMove: (id: string, delta: -1 | 1, scrollAnchor?: HTMLElement | null) => void;
   onLabelChange: (id: string, label: string) => void;
   onLinkBranchChange: (id: string, patch: { label?: string; href?: string }) => void;
@@ -1282,10 +1665,11 @@ function PathBranchRow({
   onBranchRowFocus: (id: string) => void;
   onVisibleToRolesChange: (id: string, roles: PathOutlineAudienceRole[]) => void;
 }) {
-  /** Divider rows cannot nest branches (see path mindmap rules). */
-  const canNestBranches = b.kind !== 'divider';
+  /** Only top-level rows (sections) may hold sub-branches; depth-1 rows are leaves—no sub-sub-branches. */
+  const canNestBranches = b.kind !== 'divider' && depth === 0;
   const hasNestedRows = b.children.length > 0;
-  const isCollapsed = hasNestedRows && !expandedBranchIds.has(b.id);
+  const hasExpandableNested = canNestBranches && hasNestedRows;
+  const isCollapsed = hasExpandableNested && !expandedBranchIds.has(b.id);
   /** Show nested list + insert slots when empty (first sub-branch) or when expanded with children. */
   const showNestedBranchList = canNestBranches && (!hasNestedRows || !isCollapsed);
 
@@ -1316,7 +1700,7 @@ function PathBranchRow({
 
   const branchBadgeGroup = (
     <div className="flex shrink-0 items-center gap-1">
-      {hasNestedRows ? (
+      {hasExpandableNested ? (
         <button
           type="button"
           onClick={() => onToggleCollapse(b.id)}
@@ -1503,6 +1887,18 @@ function PathBranchRow({
       </button>
       <button
         type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onCopyBranch(b.id);
+        }}
+        className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-[var(--hover-bg)] hover:text-orange-500"
+        aria-label="Duplicate this branch — choose where to place the copy"
+        title="Duplicate branch"
+      >
+        <Copy size={16} aria-hidden />
+      </button>
+      <button
+        type="button"
         onClick={() => onRemove(b.id)}
         className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg text-red-400 hover:bg-red-500/10"
         aria-label="Remove branch and nested items"
@@ -1578,6 +1974,7 @@ function PathBranchRow({
             onToggleCollapse={onToggleCollapse}
             onInsertBranchAt={onInsertBranchAt}
             onRemove={onRemove}
+            onCopyBranch={onCopyBranch}
             onMove={onMove}
             onLabelChange={onLabelChange}
             onLinkBranchChange={onLinkBranchChange}
@@ -1600,6 +1997,7 @@ function PathBranchTreeList({
   onToggleCollapse,
   onInsertBranchAt,
   onRemove,
+  onCopyBranch,
   onMove,
   onLabelChange,
   onLinkBranchChange,
@@ -1615,6 +2013,7 @@ function PathBranchTreeList({
   onToggleCollapse: (id: string) => void;
   onInsertBranchAt: (parentId: string | null, insertIndex: number) => void;
   onRemove: (id: string) => void;
+  onCopyBranch: (id: string) => void;
   onMove: (id: string, delta: -1 | 1, scrollAnchor?: HTMLElement | null) => void;
   onLabelChange: (id: string, label: string) => void;
   onLinkBranchChange: (id: string, patch: { label?: string; href?: string }) => void;
@@ -1653,6 +2052,7 @@ function PathBranchTreeList({
             onToggleCollapse={onToggleCollapse}
             onInsertBranchAt={onInsertBranchAt}
             onRemove={onRemove}
+            onCopyBranch={onCopyBranch}
             onMove={onMove}
             onLabelChange={onLabelChange}
             onLinkBranchChange={onLinkBranchChange}
@@ -1732,7 +2132,8 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
         insertIndex?: number;
         preset?: 'label' | 'course' | 'link' | 'divider';
       }
-    | { kind: 'changeType'; nodeId: string };
+    | { kind: 'changeType'; nodeId: string }
+    | { kind: 'duplicatePlace'; branch: PathBranchNode; sourceParentId: string | null };
   const [branchModal, setBranchModal] = useState<BranchModalState>({ kind: 'closed' });
   /** Branch rows with children are collapsed unless their id is in this set. Siblings accordion (only one expanded among same-parent children at any depth). */
   const [expandedBranchIds, setExpandedBranchIds] = useState<Set<string>>(() => new Set());
@@ -1741,7 +2142,8 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     | { kind: 'pickNewPath' }
     | { kind: 'switchPath'; targetId: string }
     | { kind: 'discardDraft' }
-    | { kind: 'deletePublished' };
+    | { kind: 'deletePublished' }
+    | { kind: 'duplicatePath' };
 
   const [pathConfirmDialog, setPathConfirmDialog] = useState<PathConfirmKind | null>(null);
 
@@ -1768,6 +2170,34 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     },
     [pathBranchTree]
   );
+
+  const handleRemoveBranch = useCallback(
+    (id: string) => {
+      const before = deepClone(pathBranchTreeRef.current);
+      const removed = findBranchNode(before, id);
+      const raw = removed ? branchNodeDisplayLabel(removed, publishedList) : 'Branch';
+      const label = raw.length > 72 ? `${raw.slice(0, 70)}…` : raw;
+      setPathBranchTree((roots) => removeNodeById(roots, id));
+      showActionToast(`“${label}” removed.`, {
+        variant: 'neutral',
+        undo: () => setPathBranchTree(before),
+        undoLabel: 'Undo',
+      });
+    },
+    [publishedList, showActionToast]
+  );
+
+  const handleDuplicateBranch = useCallback((id: string) => {
+    const roots = pathBranchTreeRef.current;
+    const node = findBranchNode(roots, id);
+    if (!node) {
+      showActionToast('Could not find that branch to duplicate.', 'danger');
+      return;
+    }
+    const sourceParentId = findParentIdOfBranch(roots, id);
+    const remapped = remapBranchSubtreeIds(deepClone(node));
+    setBranchModal({ kind: 'duplicatePlace', branch: remapped, sourceParentId });
+  }, [showActionToast]);
 
   /** Branch ↑/↓: one pure move + flushSync (avoids Strict Mode double functional setState). */
   const moveBranchAmongSiblings = useCallback(
@@ -1993,6 +2423,58 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     [pathDirty, pathSelector, applyPickNewPath]
   );
 
+  const performPathDuplicate = useCallback(
+    (sourcePath: LearningPath, sourceTree: PathBranchNode[]) => {
+      if (!paths.some((p) => p.id === sourcePath.id)) {
+        showActionToast('Path not found. Reload the list and try again.', 'danger');
+        return;
+      }
+      const reserveIds = pathSelector === '__new__' && pathDraft?.id ? [pathDraft.id] : [];
+      const newId = firstAvailableStructuredLearningPathId(paths, reserveIds);
+      const t = sourcePath.title.trim();
+      const newPath: LearningPath = {
+        ...deepClone(sourcePath),
+        id: newId,
+        title: t.endsWith(' (copy)') ? t : `${t} (copy)`,
+        courseIds: [...sourcePath.courseIds],
+      };
+      const newTree = remapPathBranchForest(sourceTree);
+      setShowPathCourseRequiredHint(false);
+      setPathBranchTree(newTree);
+      setPathBranchTreeBaselineJson(JSON.stringify(newTree));
+      setBranchModal({ kind: 'closed' });
+      setPathTitleFocusKey((k) => k + 1);
+      setPathSelector('__new__');
+      setPathDraft(newPath);
+      setPathBaselineJson(JSON.stringify(newPath));
+      setExpandedBranchIds(new Set());
+      showActionToast(
+        'Copy loaded as a new draft — new path id. Adjust the title if needed, then Save.'
+      );
+    },
+    [paths, pathSelector, pathDraft?.id, showActionToast]
+  );
+
+  const requestDuplicatePathOrConfirm = useCallback(() => {
+    if (!pathSelector || pathSelector === '__new__') {
+      showActionToast('Select a saved path in the list, then duplicate.', 'danger');
+      return;
+    }
+    if (!paths.some((p) => p.id === pathSelector)) {
+      showActionToast('Path not found. Reload the list and try again.', 'danger');
+      return;
+    }
+    if (pathDirty) {
+      setPathConfirmDialog({ kind: 'duplicatePath' });
+      return;
+    }
+    if (!pathDraft || pathDraft.id !== pathSelector) {
+      showActionToast('Path not loaded.', 'danger');
+      return;
+    }
+    performPathDuplicate(pathDraft, pathBranchTree);
+  }, [pathSelector, pathDirty, pathDraft, pathBranchTree, paths, performPathDuplicate, showActionToast]);
+
   const closePathConfirmDialog = useCallback(() => setPathConfirmDialog(null), []);
 
   const confirmPathDialogPrimary = useCallback(() => {
@@ -2035,8 +2517,40 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
           showActionToast('Delete failed.', 'danger');
         }
       })();
+      return;
     }
-  }, [pathConfirmDialog, pathDraft, applyPickNewPath, refreshPaths, onCatalogChanged, showActionToast]);
+    if (d.kind === 'duplicatePath') {
+      if (!pathBaselineJson || !pathBranchTreeBaselineJson) {
+        showActionToast('Could not restore saved path.', 'danger');
+        return;
+      }
+      let sourceDraft: LearningPath;
+      let sourceTree: PathBranchNode[];
+      try {
+        sourceDraft = JSON.parse(pathBaselineJson) as LearningPath;
+        sourceTree = JSON.parse(pathBranchTreeBaselineJson) as PathBranchNode[];
+      } catch {
+        showActionToast('Could not restore saved path.', 'danger');
+        return;
+      }
+      if (!paths.some((p) => p.id === sourceDraft.id)) {
+        showActionToast('Path not found. Reload the list and try again.', 'danger');
+        return;
+      }
+      performPathDuplicate(sourceDraft, sourceTree);
+    }
+  }, [
+    pathConfirmDialog,
+    pathDraft,
+    applyPickNewPath,
+    refreshPaths,
+    onCatalogChanged,
+    showActionToast,
+    pathBaselineJson,
+    pathBranchTreeBaselineJson,
+    paths,
+    performPathDuplicate,
+  ]);
 
   const pathConfirmCopy = useMemo(() => {
     if (!pathConfirmDialog) return null;
@@ -2069,6 +2583,12 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
             ? `Delete "${pathDraft.title}"? This cannot be undone.`
             : 'This cannot be undone.',
           primary: 'Delete path',
+        };
+      case 'duplicatePath':
+        return {
+          title: 'Leave without saving?',
+          body: 'Duplicate uses the last saved version of this path. Unsaved changes will be discarded.',
+          primary: 'Discard and duplicate',
         };
       default:
         return null;
@@ -2214,27 +2734,45 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
               </li>
               <li>Use published courses in the outline—add or publish them in the Catalog tab first.</li>
             </AdminLabelInfoTip>
-            <select
-              id="admin-learning-path-select"
-              value={pathSelector}
-              onChange={(e) => pickPath(e.target.value)}
-              disabled={pathsLoading}
-              className="box-border min-h-11 min-w-0 w-full touch-manipulation rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-[42px] sm:text-sm"
-            >
-              <option value="" disabled>
-                Choose a path…
-              </option>
-              {!pathsLoading && (
-                <>
-                  <option value="__new__">+ Create new path</option>
-                  {sortedPaths.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.title || p.id} ({p.id})
-                    </option>
-                  ))}
-                </>
-              )}
-            </select>
+            <div className="flex min-w-0 items-stretch gap-2">
+              <select
+                id="admin-learning-path-select"
+                value={pathSelector}
+                onChange={(e) => pickPath(e.target.value)}
+                disabled={pathsLoading}
+                className="box-border min-h-11 min-w-0 flex-1 touch-manipulation rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-[42px] sm:text-sm"
+              >
+                <option value="" disabled>
+                  Choose a path…
+                </option>
+                {!pathsLoading && (
+                  <>
+                    <option value="__new__">+ Create new path</option>
+                    {sortedPaths.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.title || p.id} ({p.id})
+                      </option>
+                    ))}
+                  </>
+                )}
+              </select>
+              {pathSelector !== '__new__' && pathSelector !== '' ? (
+                <button
+                  type="button"
+                  disabled={
+                    pathsLoading ||
+                    !pathSelector ||
+                    !paths.some((p) => p.id === pathSelector)
+                  }
+                  onClick={requestDuplicatePathOrConfirm}
+                  title="Clone the selected path into a new draft with a new path id"
+                  aria-label="Duplicate path as new draft"
+                  className="inline-flex shrink-0 items-center justify-center rounded-lg border border-[var(--border-color)] px-2.5 min-h-[42px] min-w-[42px] hover:bg-[var(--hover-bg)] disabled:pointer-events-none disabled:opacity-40"
+                >
+                  <Copy size={18} aria-hidden />
+                </button>
+              ) : null}
+            </div>
           </div>
           <div className="grid min-w-0 grid-cols-2 gap-2 md:contents">
             <div className="flex min-w-0 flex-col gap-1">
@@ -2500,7 +3038,8 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                       onInsertBranchAt={(pid, insertIndex) =>
                         setBranchModal({ kind: 'add', parentId: pid, insertIndex })
                       }
-                      onRemove={(id) => setPathBranchTree((roots) => removeNodeById(roots, id))}
+                      onRemove={handleRemoveBranch}
+                      onCopyBranch={handleDuplicateBranch}
                       onMove={moveBranchAmongSiblings}
                       onLabelChange={(id, label) =>
                         setPathBranchTree((roots) =>
@@ -2543,7 +3082,10 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
           ) : null}
 
           <AddPathBranchModal
-            open={branchModal.kind !== 'closed' && (branchModal.kind !== 'changeType' || changeTypeSource != null)}
+            open={
+              branchModal.kind === 'add' ||
+              (branchModal.kind === 'changeType' && changeTypeSource != null)
+            }
             onClose={() => setBranchModal({ kind: 'closed' })}
             catalogCourses={publishedList}
             contextHint={branchModalContextHint}
@@ -2575,6 +3117,38 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
               }
             }}
           />
+
+          {branchModal.kind === 'duplicatePlace' ? (
+            <PlaceDuplicateBranchModal
+              open
+              branch={branchModal.branch}
+              roots={pathBranchTree}
+              publishedList={publishedList}
+              defaultTopParentId={branchModal.sourceParentId}
+              onClose={() => setBranchModal({ kind: 'closed' })}
+              onCommit={(parentId, insertIndex, namedBranch) => {
+                const br = namedBranch;
+                const roots = pathBranchTreeRef.current;
+                if (duplicateSubtreeRequiresTopLevelOnly(br) && parentId !== null) {
+                  showActionToast('This copy must stay at the top level.', 'danger');
+                  return;
+                }
+                const next = insertChildAtParent(roots, parentId, insertIndex, br);
+                if (findBranchNode(next, br.id) == null) {
+                  showActionToast('Could not place the copy.', 'danger');
+                  return;
+                }
+                setPathBranchTree(next);
+                if (parentId != null) {
+                  setExpandedBranchIds((prev) => accordionExpandBranchRow(prev, next, parentId));
+                } else {
+                  setExpandedBranchIds((prev) => accordionExpandBranchRow(prev, next, br.id));
+                }
+                setBranchModal({ kind: 'closed' });
+                showActionToast('Branch duplicated.');
+              }}
+            />
+          ) : null}
         </div>
       ) : null}
 
@@ -2616,7 +3190,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                     onClick={closePathConfirmDialog}
                     className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-5 py-3 text-sm font-bold text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)] sm:w-auto"
                   >
-                    Keep editing
+                    Cancel
                   </button>
                   <button
                     type="button"
