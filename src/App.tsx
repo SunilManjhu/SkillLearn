@@ -423,6 +423,10 @@ export default function App() {
   const { siteNotificationsEnabled } = useNotificationsSiteEnabled();
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(initialRoute.selectedCourse);
   const [initialLesson, setInitialLesson] = useState<Lesson | undefined>(initialRoute.initialLesson);
+  /** Current lesson id for player URLs (`#/course/.../player/.../lessonId`); reload restores this lesson. */
+  const [playerLessonIdForUrl, setPlayerLessonIdForUrl] = useState<string | null>(() =>
+    initialRoute.view === 'player' && initialRoute.initialLesson?.id ? initialRoute.initialLesson.id : null
+  );
   const [adminTab, setAdminTab] = useState<AdminHistoryTab>(() => initialRoute.adminTab);
   /** One-shot sub-tab when opening Admin → Moderation from a navbar notification. */
   const [pendingModerationSubTab, setPendingModerationSubTab] = useState<
@@ -551,9 +555,12 @@ export default function App() {
 
   const buildHistoryPayload = useCallback((): AppHistoryPayload => {
     const p: AppHistoryPayload = { v: 1, view: currentView as AppHistoryPayload['view'] };
-    /* Player hash is always `#/course/<id>/player` (no lesson segment); lesson lives in state + CoursePlayer. */
     if (currentView === 'overview' || currentView === 'player') {
       p.courseId = selectedCourse?.id ?? deferredCourseRoute?.courseId ?? null;
+    }
+    if (currentView === 'player') {
+      const lid = playerLessonIdForUrl ?? initialLesson?.id ?? null;
+      if (lid) p.lessonId = lid;
     }
     if (currentView === 'certificate' && certificateData) {
       p.certificate = { ...certificateData };
@@ -565,7 +572,16 @@ export default function App() {
       p.learningPathId = selectedLearningPathId;
     }
     return p;
-  }, [currentView, selectedCourse?.id, deferredCourseRoute, certificateData, adminTab, selectedLearningPathId]);
+  }, [
+    currentView,
+    selectedCourse?.id,
+    deferredCourseRoute,
+    certificateData,
+    adminTab,
+    selectedLearningPathId,
+    playerLessonIdForUrl,
+    initialLesson?.id,
+  ]);
 
   const applyHistoryPayload = useCallback(
     (raw: AppHistoryPayload) => {
@@ -587,6 +603,7 @@ export default function App() {
         setCertificateData(null);
         setSelectedCourse(null);
         setInitialLesson(undefined);
+        setPlayerLessonIdForUrl(null);
         setSelectedLearningPathId(null);
         setCurrentView('catalog');
         window.history.replaceState(
@@ -620,20 +637,25 @@ export default function App() {
         setSelectedCourse(c);
         if (view === 'overview') {
           setInitialLesson(undefined);
+          setPlayerLessonIdForUrl(null);
         } else if (view === 'player' && c) {
           if (resolved.lessonId) {
             setInitialLesson(findLessonById(c, resolved.lessonId) ?? undefined);
+            setPlayerLessonIdForUrl(resolved.lessonId);
           } else {
             const uid = readCachedAuthProfile()?.uid ?? null;
             const resume = getResumeOrStartLesson(c, loadLessonProgressMap(c.id, uid));
             setInitialLesson(resume ?? undefined);
+            setPlayerLessonIdForUrl(resume?.id ?? null);
           }
         } else {
           setInitialLesson(undefined);
+          setPlayerLessonIdForUrl(null);
         }
       } else {
         setSelectedCourse(null);
         setInitialLesson(undefined);
+        setPlayerLessonIdForUrl(null);
       }
 
       if (view === 'admin') {
@@ -724,6 +746,18 @@ export default function App() {
 
     const url = buildHistoryUrl(payload);
     const state = { [APP_HISTORY_KEY]: payload };
+
+    /** Same player session, different lesson: replace so Back still returns to overview (not one step per lesson). */
+    const playerOnlyLessonChanged =
+      prev?.view === 'player' &&
+      payload.view === 'player' &&
+      (prev.courseId ?? null) === (payload.courseId ?? null) &&
+      (prev.learningPathId ?? null) === (payload.learningPathId ?? null) &&
+      (prev.lessonId ?? null) !== (payload.lessonId ?? null);
+    if (playerOnlyLessonChanged) {
+      window.history.replaceState(state, '', url);
+      return;
+    }
 
     if (historyActionRef.current === 'replace') {
       historyActionRef.current = 'push';
@@ -836,10 +870,12 @@ export default function App() {
     if (resolved.view === 'player') {
       if (resolved.lessonId) {
         setInitialLesson(findLessonById(fresh, resolved.lessonId) ?? undefined);
+        setPlayerLessonIdForUrl(resolved.lessonId);
       } else {
         const uid = user?.uid ?? readCachedAuthProfile()?.uid ?? null;
         const resume = getResumeOrStartLesson(fresh, loadLessonProgressMap(fresh.id, uid));
         setInitialLesson(resume ?? undefined);
+        setPlayerLessonIdForUrl(resume?.id ?? null);
       }
     } else if (resolved.view === 'overview') {
       setInitialLesson(undefined);
@@ -856,10 +892,12 @@ export default function App() {
       if (deferredCourseRoute.view === 'player') {
         if (deferredCourseRoute.lessonId) {
           setInitialLesson(findLessonById(fresh, deferredCourseRoute.lessonId) ?? undefined);
+          setPlayerLessonIdForUrl(deferredCourseRoute.lessonId);
         } else {
           const uid = user?.uid ?? readCachedAuthProfile()?.uid ?? null;
           const resume = getResumeOrStartLesson(fresh, loadLessonProgressMap(fresh.id, uid));
           setInitialLesson(resume ?? undefined);
+          setPlayerLessonIdForUrl(resume?.id ?? null);
         }
       } else {
         setInitialLesson(undefined);
@@ -1277,7 +1315,9 @@ export default function App() {
       const explicit = payload.initialLessonId ? findLessonById(course, payload.initialLessonId) : undefined;
       const uid = auth.currentUser?.uid ?? null;
       const resume = getResumeOrStartLesson(course, loadLessonProgressMap(course.id, uid));
-      setInitialLesson(explicit ?? resume ?? undefined);
+      const lesson = explicit ?? resume ?? undefined;
+      setInitialLesson(lesson);
+      setPlayerLessonIdForUrl(lesson?.id ?? null);
       setCurrentView('player');
       scrollDocumentToTop();
       return;
@@ -1712,6 +1752,7 @@ export default function App() {
           }
         }
       }
+      setPlayerLessonIdForUrl(lesson?.id ?? null);
       setInitialLesson(lesson);
       setCurrentView('player');
     },
@@ -1742,6 +1783,17 @@ export default function App() {
     runModerationInboxSyncRef.current?.();
   }, [user?.uid]);
 
+  /** Drop player lesson id from URL state when leaving the player (history sync uses buildHistoryPayload). */
+  useEffect(() => {
+    if (currentView !== 'player') {
+      setPlayerLessonIdForUrl(null);
+    }
+  }, [currentView]);
+
+  const handlePlayerActiveLessonIdChange = useCallback((lessonId: string) => {
+    setPlayerLessonIdForUrl(lessonId);
+  }, []);
+
   const handleNotificationAction = useCallback(
     (n: NavbarNotification) => {
       if (n.kind === 'certificate') {
@@ -1770,6 +1822,7 @@ export default function App() {
         setSelectedCourse(course);
         const lesson = n.lessonId ? findLessonById(course, n.lessonId) : undefined;
         if (lesson) {
+          setPlayerLessonIdForUrl(lesson.id);
           setInitialLesson(lesson);
           setOverviewContentDeepLink(null);
           setCurrentView('player');
@@ -1847,6 +1900,7 @@ export default function App() {
         console.error('Course completion side effects failed:', e);
       } finally {
         historyActionRef.current = 'replace';
+        setPlayerLessonIdForUrl(null);
         setCurrentView('overview');
         scrollDocumentToTop();
       }
@@ -2353,6 +2407,7 @@ export default function App() {
                     buildHistoryUrl(overviewPayload)
                   );
                 }
+                setPlayerLessonIdForUrl(lesson.id);
                 setInitialLesson(lesson);
                 setCurrentView('player');
                 scrollDocumentToTop();
@@ -2740,6 +2795,7 @@ export default function App() {
                   key={`${selectedCourseResolved.id}:${courseCurriculumSignature(selectedCourseResolved)}`}
                   course={selectedCourseResolved}
                   initialLesson={initialLesson}
+                  onActiveLessonIdChange={handlePlayerActiveLessonIdChange}
                   onCourseFinished={handleCoursePlayerFinished}
                   user={user}
                   onLogin={handleLogin}

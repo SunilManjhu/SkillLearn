@@ -98,6 +98,8 @@ interface CoursePlayerProps {
   user: User | null;
   onLogin: () => Promise<void>;
   initialLesson?: Lesson;
+  /** Notifies App when the active lesson changes (sidebar / next) so the URL can include the lesson id for reload. */
+  onActiveLessonIdChange?: (lessonId: string) => void;
   /** Profile overlay on top of the player (App): pause while true, resume when cleared if playback was interrupted. */
   pauseForAppNavOverlay?: boolean;
   /** App hides nav + full-bleed video while true (playback without top nav). */
@@ -112,6 +114,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   user,
   onLogin,
   initialLesson,
+  onActiveLessonIdChange,
   pauseForAppNavOverlay = false,
   immersiveLayout = false,
   onImmersivePlaybackChange,
@@ -1342,6 +1345,10 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
 
   const startUnpauseFrostLingerRef = useRef(startUnpauseFrostLinger);
   startUnpauseFrostLingerRef.current = startUnpauseFrostLinger;
+
+  useEffect(() => {
+    onActiveLessonIdChange?.(currentLesson.id);
+  }, [currentLesson.id, onActiveLessonIdChange]);
 
   /**
    * When App changes `initialLesson` (navigation / auth return), follow it.
