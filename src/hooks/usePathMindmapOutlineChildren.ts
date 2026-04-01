@@ -6,6 +6,11 @@ import { fetchPathMindmapFromFirestore } from '../utils/pathMindmapFirestore';
 export type PathMindmapOutlineOptions = {
   /** When the path id is in this set, load from `creatorLearningPaths` (signed-in creator draft). */
   creatorDraftPathIds?: ReadonlySet<string> | null;
+  /**
+   * When published and creator draft share the same path id, set true to load the creator doc.
+   * If omitted, falls back to `creatorDraftPathIds?.has(pathId)` for backwards compatibility.
+   */
+  useCreatorDraftMindmap?: boolean;
 };
 
 /**
@@ -22,6 +27,7 @@ export function usePathMindmapOutlineChildren(
   const [loading, setLoading] = useState(false);
   const [children, setChildren] = useState<MindmapTreeNode[] | null>(null);
   const draftSet = options?.creatorDraftPathIds;
+  const explicitDraft = options?.useCreatorDraftMindmap;
 
   useEffect(() => {
     if (!pathId) {
@@ -29,7 +35,9 @@ export function usePathMindmapOutlineChildren(
       setChildren(null);
       return;
     }
-    const fromCreator = draftSet?.has(pathId) === true;
+    const fromCreator =
+      explicitDraft === true ||
+      (explicitDraft !== false && explicitDraft === undefined && draftSet?.has(pathId) === true);
     let cancelled = false;
     setLoading(true);
     setChildren(null);
@@ -43,7 +51,7 @@ export function usePathMindmapOutlineChildren(
     return () => {
       cancelled = true;
     };
-  }, [pathId, draftSet]);
+  }, [pathId, draftSet, explicitDraft]);
 
   return { loading, children };
 }

@@ -10,10 +10,15 @@ export interface CourseCardProps {
   isFocused?: boolean;
   /** Creator draft shown only to the author in Browse Catalog until published. */
   showPrivateDraftBadge?: boolean;
+  /** Overrides default “Draft · only you” when `showPrivateDraftBadge` (e.g. admin creator preview). */
+  draftBadgeLabel?: string;
 }
 
 export const CourseCard = forwardRef<HTMLDivElement, CourseCardProps>(
-  ({ course, onClick, tabIndex = 0, onKeyDown, isFocused, showPrivateDraftBadge = false }, ref) => {
+  (
+    { course, onClick, tabIndex = 0, onKeyDown, isFocused, showPrivateDraftBadge = false, draftBadgeLabel },
+    ref
+  ) => {
     const handleKeyDown: React.KeyboardEventHandler<HTMLDivElement> = (e) => {
       onKeyDown?.(e);
       if (e.key === 'Enter' || e.key === ' ') {
@@ -72,7 +77,7 @@ export const CourseCard = forwardRef<HTMLDivElement, CourseCardProps>(
           </h3>
           {showPrivateDraftBadge ? (
             <span className="inline-flex w-fit rounded-md border border-orange-500/35 bg-orange-500/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-orange-500">
-              Draft · only you
+              {draftBadgeLabel ?? 'Draft · only you'}
             </span>
           ) : null}
           <p className="text-sm text-[var(--text-secondary)]">{course.author}</p>

@@ -39,16 +39,17 @@ import {
   type PathOutlineAudienceRole,
 } from '../../data/pathMindmap';
 import type { LearningPath } from '../../data/learningPaths';
-import { newCreatorLearningPathFirestoreId } from '../../utils/creatorLearningPathIds';
-import { firstAvailableStructuredLearningPathId } from '../../utils/learningPathStructuredIds';
+import { firstAvailableStructuredLearningPathIdFromDocIds } from '../../utils/learningPathStructuredIds';
 import {
   deleteLearningPath,
+  listLearningPathDocumentIds,
   loadLearningPathsFromFirestore,
   saveLearningPath,
 } from '../../utils/learningPathsFirestore';
 import {
   deleteCreatorLearningPath,
   fetchCreatorPathMindmapFromFirestore,
+  listCreatorLearningPathDocumentIdsForOwner,
   loadCreatorLearningPathsForOwner,
   saveCreatorLearningPath,
   saveCreatorPathMindmapToFirestore,
@@ -2254,6 +2255,22 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     return list;
   }, [pathPersistence]);
 
+  /** Union Firestore doc ids + in-memory list so allocation skips every occupied id (incl. unparsable docs) and survives a failed list request. Creators also reserve ids used in published `learningPaths` so doc ids never collide across collections. */
+  const pathDocumentIdsForAllocation = useCallback(async (): Promise<string[]> => {
+    let fromServer: string[];
+    if (pathPersistence?.kind === 'creator') {
+      const [creatorIds, publishedIds] = await Promise.all([
+        listCreatorLearningPathDocumentIdsForOwner(pathPersistence.ownerUid),
+        listLearningPathDocumentIds(),
+      ]);
+      fromServer = [...creatorIds, ...publishedIds];
+    } else {
+      fromServer = await listLearningPathDocumentIds();
+    }
+    const fromState = paths.map((p) => p.id);
+    return [...new Set([...fromServer, ...fromState])];
+  }, [pathPersistence, paths]);
+
   useImperativeHandle(
     ref,
     () => ({
@@ -2409,11 +2426,10 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     [pathBranchTree, publishedList]
   );
 
-  const applyPickNewPath = useCallback(() => {
+  const applyPickNewPath = useCallback(async () => {
     const reserveIds = pathSelector === '__new__' && pathDraft?.id ? [pathDraft.id] : [];
-    const newId = isCreatorPaths
-      ? newCreatorLearningPathFirestoreId()
-      : firstAvailableStructuredLearningPathId(paths, reserveIds);
+    const docIds = await pathDocumentIdsForAllocation();
+    const newId = firstAvailableStructuredLearningPathIdFromDocIds(docIds, reserveIds);
     const fresh: LearningPath = { id: newId, title: '', courseIds: [] };
     setShowPathCourseRequiredHint(false);
     setPathBranchTree([]);
@@ -2423,7 +2439,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     setPathSelector('__new__');
     setPathDraft(fresh);
     setPathBaselineJson(JSON.stringify(fresh));
-  }, [pathSelector, pathDraft, paths, isCreatorPaths]);
+  }, [pathSelector, pathDraft, pathDocumentIdsForAllocation]);
 
   const pickPath = useCallback(
     (id: string) => {
@@ -2434,7 +2450,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
           setPathConfirmDialog({ kind: 'pickNewPath' });
           return;
         }
-        applyPickNewPath();
+        void applyPickNewPath();
         return;
       }
 
@@ -2448,15 +2464,14 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
   );
 
   const performPathDuplicate = useCallback(
-    (sourcePath: LearningPath, sourceTree: PathBranchNode[]) => {
+    async (sourcePath: LearningPath, sourceTree: PathBranchNode[]) => {
       if (!paths.some((p) => p.id === sourcePath.id)) {
         showActionToast('Path not found. Reload the list and try again.', 'danger');
         return;
       }
       const reserveIds = pathSelector === '__new__' && pathDraft?.id ? [pathDraft.id] : [];
-      const newId = isCreatorPaths
-        ? newCreatorLearningPathFirestoreId()
-        : firstAvailableStructuredLearningPathId(paths, reserveIds);
+      const docIds = await pathDocumentIdsForAllocation();
+      const newId = firstAvailableStructuredLearningPathIdFromDocIds(docIds, reserveIds);
       const t = sourcePath.title.trim();
       const newPath: LearningPath = {
         ...deepClone(sourcePath),
@@ -2478,7 +2493,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
         'Copy loaded as a new draft — new path id. Adjust the title if needed, then Save.'
       );
     },
-    [paths, pathSelector, pathDraft?.id, showActionToast, isCreatorPaths]
+    [paths, pathSelector, pathDraft?.id, showActionToast, pathDocumentIdsForAllocation]
   );
 
   const requestDuplicatePathOrConfirm = useCallback(() => {
@@ -2498,7 +2513,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
       showActionToast('Path not loaded.', 'danger');
       return;
     }
-    performPathDuplicate(pathDraft, pathBranchTree);
+    void performPathDuplicate(pathDraft, pathBranchTree);
   }, [pathSelector, pathDirty, pathDraft, pathBranchTree, paths, performPathDuplicate, showActionToast]);
 
   const closePathConfirmDialog = useCallback(() => setPathConfirmDialog(null), []);
@@ -2509,7 +2524,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     setPathConfirmDialog(null);
 
     if (d.kind === 'pickNewPath') {
-      applyPickNewPath();
+      void applyPickNewPath();
       return;
     }
     if (d.kind === 'switchPath') {
@@ -2566,7 +2581,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
         showActionToast('Path not found. Reload the list and try again.', 'danger');
         return;
       }
-      performPathDuplicate(sourceDraft, sourceTree);
+      void performPathDuplicate(sourceDraft, sourceTree);
     }
   }, [
     pathConfirmDialog,

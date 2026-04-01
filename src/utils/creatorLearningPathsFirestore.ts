@@ -17,6 +17,19 @@ import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { docToLearningPath, pathToFirestorePayload } from './learningPathsFirestore';
 import { PATH_MINDMAP_FIELD } from './pathMindmapFirestore';
 
+/** Document ids for this owner (includes docs that fail `docToLearningPath`). */
+export async function listCreatorLearningPathDocumentIdsForOwner(ownerUid: string): Promise<string[]> {
+  try {
+    const snap = await getDocs(
+      query(collection(db, 'creatorLearningPaths'), where('ownerUid', '==', ownerUid))
+    );
+    return snap.docs.map((d) => d.id);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'creatorLearningPaths');
+    return [];
+  }
+}
+
 export async function loadCreatorLearningPathsForOwner(ownerUid: string): Promise<LearningPath[]> {
   try {
     const snap = await getDocs(

@@ -1,5 +1,6 @@
 import type { Course } from '../data/courses';
 import type { LearningPath } from '../data/learningPaths';
+import type { CatalogLearningPathRow } from './learnerCatalogMerge';
 
 const CREATOR_KEY_PREFIX = 'skilllearn:resolvedCreatorCatalog:v1:';
 const MERGED_PATHS_KEY = 'skilllearn:lastMergedCatalogPaths:v1';
@@ -40,6 +41,25 @@ function validatePathsJson(data: unknown): data is LearningPath[] {
   return true;
 }
 
+/** Session merged navbar paths: LearningPath + optional `fromCreatorDraft` (legacy rows omit it → published). */
+function validateMergedCatalogPathRowsJson(data: unknown): data is CatalogLearningPathRow[] {
+  if (!Array.isArray(data)) return false;
+  for (const item of data) {
+    if (!item || typeof item !== 'object') return false;
+    const p = item as Record<string, unknown>;
+    if (typeof p.id !== 'string' || typeof p.title !== 'string' || !Array.isArray(p.courseIds)) return false;
+    if (p.fromCreatorDraft !== undefined && typeof p.fromCreatorDraft !== 'boolean') return false;
+    for (const cid of p.courseIds) {
+      if (typeof cid !== 'string') return false;
+    }
+  }
+  return true;
+}
+
+function normalizeCatalogPathRow(p: CatalogLearningPathRow): CatalogLearningPathRow {
+  return { ...p, fromCreatorDraft: p.fromCreatorDraft === true };
+}
+
 function readCreatorBundleFromSession(ownerUid: string): CreatorCatalogBundle | null {
   if (typeof sessionStorage === 'undefined') return null;
   try {
@@ -77,7 +97,7 @@ export function writeResolvedCreatorCatalog(
   }
 }
 
-type MergedPathsStored = { uid: string | null; paths: LearningPath[] };
+type MergedPathsStored = { uid: string | null; paths: CatalogLearningPathRow[] };
 
 function readMergedPathsPayload(): MergedPathsStored | null {
   if (typeof sessionStorage === 'undefined') return null;
@@ -88,9 +108,12 @@ function readMergedPathsPayload(): MergedPathsStored | null {
     if (!parsed || typeof parsed !== 'object') return null;
     const o = parsed as Record<string, unknown>;
     if (o.uid !== null && typeof o.uid !== 'string') return null;
-    if (!validatePathsJson(o.paths)) return null;
+    if (!validateMergedCatalogPathRowsJson(o.paths)) return null;
     const uidStored: string | null = typeof o.uid === 'string' ? o.uid : null;
-    return { uid: uidStored, paths: o.paths };
+    return {
+      uid: uidStored,
+      paths: o.paths.map(normalizeCatalogPathRow),
+    };
   } catch {
     return null;
   }
@@ -100,14 +123,14 @@ function readMergedPathsPayload(): MergedPathsStored | null {
  * Last merged navbar paths for this identity (signed-out → `null` uid).
  * Mismatch if account changed without a full reload of initial state.
  */
-export function peekMergedCatalogLearningPaths(expectedUid: string | null): LearningPath[] | null {
+export function peekMergedCatalogLearningPaths(expectedUid: string | null): CatalogLearningPathRow[] | null {
   const m = readMergedPathsPayload();
   if (!m) return null;
   if (m.uid !== expectedUid) return null;
   return m.paths;
 }
 
-export function writeMergedCatalogLearningPaths(uid: string | null, paths: LearningPath[]): void {
+export function writeMergedCatalogLearningPaths(uid: string | null, paths: CatalogLearningPathRow[]): void {
   if (typeof sessionStorage === 'undefined') return;
   try {
     sessionStorage.setItem(MERGED_PATHS_KEY, JSON.stringify({ uid, paths }));

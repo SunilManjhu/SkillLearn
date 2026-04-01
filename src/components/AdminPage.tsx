@@ -4,6 +4,7 @@ import { Shield, Send, BookOpen, Flag, Users, X, Sparkles, Megaphone, Library } 
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { useDialogKeyboard } from '../hooks/useDialogKeyboard';
 import type { Course } from '../data/courses';
+import type { LearningPath } from '../data/learningPaths';
 import type { AdminHistoryTab } from '../utils/appHistory';
 import { createBroadcastAlert, type BroadcastAlertType } from '../utils/alertsFirestore';
 import { AdminCourseCatalogSection } from './admin/AdminCourseCatalogSection';
@@ -33,6 +34,10 @@ interface AdminPageProps {
   /** Same bell mute preference as Profile → Smart Hub (per signed-in account). */
   alertsMuted?: boolean;
   onAlertsMutedChange?: (muted: boolean) => void;
+  /** Creators tab: open another user’s private course in learner overview. */
+  onAdminPreviewCreatorCourse?: (ownerUid: string, course: Course) => void;
+  /** Creators tab: open another user’s private path in Browse Catalog. */
+  onAdminPreviewCreatorPath?: (ownerUid: string, path: LearningPath) => void;
 }
 
 const ALERT_TYPES: { value: BroadcastAlertType; label: string }[] = [
@@ -59,6 +64,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   onUnsavedWorkChange,
   alertsMuted = false,
   onAlertsMutedChange,
+  onAdminPreviewCreatorCourse,
+  onAdminPreviewCreatorPath,
 }) => {
   const [type, setType] = useState<BroadcastAlertType>('course_update');
   const [courseId, setCourseId] = useState(courses[0]?.id ?? '');
@@ -529,7 +536,12 @@ export const AdminPage: React.FC<AdminPageProps> = ({
           />
         )}
         {tab === 'roles' && <AdminUserRolesSection currentAdminUid={currentAdminUid} />}
-        {tab === 'creators' && <AdminCreatorInventorySection />}
+        {tab === 'creators' && (
+          <AdminCreatorInventorySection
+            onPreviewCreatorCourse={onAdminPreviewCreatorCourse}
+            onPreviewCreatorPath={onAdminPreviewCreatorPath}
+          />
+        )}
 
         <AnimatePresence>
           {navigationGuardOpen && (

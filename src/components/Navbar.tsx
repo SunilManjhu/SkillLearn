@@ -40,12 +40,17 @@ interface NavbarProps {
   catalogActiveCategoryTags?: readonly string[];
   /** Active Course Library skill filters. */
   catalogActiveSkillTags?: readonly string[];
-  /** Titles and ids from Firestore `learningPaths` (same as admin Path builder). */
-  learningPaths?: ReadonlyArray<{ id: string; title: string }>;
-  /** Path ids that are creator-only drafts (shown only to the signed-in author in the catalog). */
+  /** Catalog paths (published + creator drafts); same `id` may appear twice with different `fromCreatorDraft`. */
+  learningPaths?: ReadonlyArray<{
+    id: string;
+    title: string;
+    fromCreatorDraft?: boolean;
+    adminPreviewOwnerUid?: string;
+  }>;
+  /** Path ids that have a creator draft doc (used when `fromCreatorDraft` is omitted on a row). */
   privatePathIds?: ReadonlySet<string>;
-  /** Path document id from `learningPaths`. */
-  onPathSelect: (pathId: string) => void;
+  /** Second arg: creator draft row; third: admin inventory preview owner uid when set. */
+  onPathSelect: (pathId: string, fromCreatorDraft?: boolean, adminPreviewOwnerUid?: string) => void;
   onSkillSelect: (skill: string) => void;
   theme: 'dark' | 'light';
   onThemeToggle: () => void;
@@ -131,13 +136,25 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   const getItems = () => {
-    if (openDropdown === 'paths') return learningPaths.map((p) => p.id);
+    if (openDropdown === 'paths') return learningPaths.map((_, i) => `__path_${i}`);
     if (openDropdown === 'skills') return skillItems;
     return [];
   };
 
   const handleItemSelect = (item: string) => {
-    if (openDropdown === 'paths') onPathSelect(item);
+    if (openDropdown === 'paths') {
+      const m = /^__path_(\d+)$/.exec(item);
+      if (m) {
+        const path = learningPaths[Number(m[1])];
+        if (path) {
+          onPathSelect(
+            path.id,
+            path.fromCreatorDraft === true,
+            path.adminPreviewOwnerUid
+          );
+        }
+      }
+    }
     if (openDropdown === 'skills') onSkillSelect(item);
     setOpenDropdown(null);
     setFocusedItemIndex(-1);
@@ -361,14 +378,19 @@ export const Navbar: React.FC<NavbarProps> = ({
                 ) : (
                   learningPaths.map((path, index) => (
                     <button
-                      key={path.id}
+                      key={`${path.id}:${path.fromCreatorDraft ? 'd' : 'p'}:${path.adminPreviewOwnerUid ?? ''}`}
                       type="button"
-                      onClick={() => handleItemSelect(path.id)}
+                      onClick={() => handleItemSelect(`__path_${index}`)}
                       onMouseEnter={() => setFocusedItemIndex(index)}
                       className={`w-full text-left px-4 py-2 transition-colors focus:outline-none ${focusedItemIndex === index ? 'bg-[var(--hover-bg)] text-orange-500' : 'hover:bg-[var(--hover-bg)] hover:text-orange-500'}`}
                     >
                       {path.title || path.id}
-                      {privatePathIds.has(path.id) ? (
+                      {path.adminPreviewOwnerUid ? (
+                        <span className="ml-1 text-[10px] font-semibold uppercase tracking-wide text-orange-500">
+                          · Creator preview
+                        </span>
+                      ) : path.fromCreatorDraft === true ||
+                        (path.fromCreatorDraft !== false && privatePathIds.has(path.id)) ? (
                         <span className="ml-1 text-[10px] font-semibold uppercase tracking-wide text-orange-500">
                           · Draft
                         </span>
@@ -819,19 +841,28 @@ export const Navbar: React.FC<NavbarProps> = ({
                     {learningPaths.length === 0 ? (
                       <p className="px-6 py-2.5 text-sm text-[var(--text-muted)]">No Learning Paths yet</p>
                     ) : (
-                      learningPaths.map((path) => (
+                      learningPaths.map((path, index) => (
                         <button
-                          key={path.id}
+                          key={`${path.id}:${path.fromCreatorDraft ? 'd' : 'p'}:${path.adminPreviewOwnerUid ?? ''}`}
                           type="button"
                           className="w-full px-6 py-2.5 text-left text-sm hover:bg-[var(--hover-bg)] hover:text-orange-500"
                           onClick={() => {
-                            onPathSelect(path.id);
+                            onPathSelect(
+                              path.id,
+                              path.fromCreatorDraft === true,
+                              path.adminPreviewOwnerUid
+                            );
                             setMobileMenuOpen(false);
                             setMobileNavExpand(null);
                           }}
                         >
                           {path.title || path.id}
-                          {privatePathIds.has(path.id) ? (
+                          {path.adminPreviewOwnerUid ? (
+                            <span className="ml-1 text-[10px] font-semibold uppercase text-orange-500">
+                              · Creator preview
+                            </span>
+                          ) : path.fromCreatorDraft === true ||
+                            (path.fromCreatorDraft !== false && privatePathIds.has(path.id)) ? (
                             <span className="ml-1 text-[10px] font-semibold uppercase text-orange-500">· Draft</span>
                           ) : null}
                         </button>

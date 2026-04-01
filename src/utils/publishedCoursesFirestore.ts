@@ -203,6 +203,17 @@ export function docToCourse(id: string, data: Record<string, unknown>): Course |
   return normalizeCourseTaxonomy(course);
 }
 
+/** All document ids in `publishedCourses` (includes docs that fail `docToCourse`). */
+export async function listPublishedCourseDocumentIds(): Promise<string[]> {
+  try {
+    const snap = await getDocs(collection(db, 'publishedCourses'));
+    return snap.docs.map((d) => d.id);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'publishedCourses');
+    return [];
+  }
+}
+
 /** Loads all documents from `publishedCourses`. Returns [] on error or empty collection. */
 export async function loadPublishedCoursesFromFirestore(): Promise<Course[]> {
   try {

@@ -42,18 +42,21 @@ import {
 } from '../../data/courses';
 import {
   STRUCTURED_COURSE_ID_RE,
+  firstAvailableStructuredCourseIdFromDocIds,
   isStructuredCourseId,
   remapStructuredCourseModuleLessonIdsByOrder,
 } from '../../utils/courseStructuredIds';
 import { validateCourseDraft, validateLessonQuiz } from '../../utils/courseDraftValidation';
 import { lessonWebHref } from '../../utils/lessonContent';
 import {
+  listPublishedCourseDocumentIds,
   loadPublishedCoursesFromFirestore,
   savePublishedCourse,
   deletePublishedCourse,
 } from '../../utils/publishedCoursesFirestore';
 import {
   deleteCreatorCourse,
+  listCreatorCourseDocumentIdsForOwner,
   loadCreatorCoursesForOwner,
   saveCreatorCourse,
 } from '../../utils/creatorCoursesFirestore';
@@ -101,25 +104,6 @@ function deepClone<T>(x: T): T {
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-const CN_INDEX_RE = /^C([1-9]\d*)$/;
-
-/** Smallest C{n} (n >= 1) not used by any published id matching C[1-9]…, nor any extra reserved id string. */
-function firstAvailableStructuredCourseId(
-  publishedList: Course[],
-  extraReservedIds: string[] = []
-): string {
-  const used = new Set<number>();
-  const bump = (cid: string) => {
-    const m = CN_INDEX_RE.exec(cid);
-    if (m) used.add(parseInt(m[1], 10));
-  };
-  for (const c of publishedList) bump(c.id);
-  for (const id of extraReservedIds) bump(id);
-  let n = 1;
-  while (used.has(n)) n += 1;
-  return `C${n}`;
 }
 
 /** Legacy: next module id m{n} from existing m1, m2, … */
@@ -833,6 +817,20 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     [publishedList]
   );
 
+  /** Union Firestore course doc ids + in-memory list so new C{n} skips every occupied id. Creators also reserve published `publishedCourses` ids. */
+  const courseDocumentIdsForAllocation = useCallback(async (): Promise<string[]> => {
+    const fromState = publishedList.map((c) => c.id);
+    if (catalogPersistence?.kind === 'creator') {
+      const [creatorIds, publishedIds] = await Promise.all([
+        listCreatorCourseDocumentIdsForOwner(catalogPersistence.ownerUid),
+        listPublishedCourseDocumentIds(),
+      ]);
+      return [...new Set([...creatorIds, ...publishedIds, ...fromState])];
+    }
+    const publishedIds = await listPublishedCourseDocumentIds();
+    return [...new Set([...publishedIds, ...fromState])];
+  }, [catalogPersistence, publishedList]);
+
   /** First time draft appears (e.g. initial load) without baseline yet. */
   useEffect(() => {
     if (!draft || baselineJson !== null) return;
@@ -840,12 +838,16 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   }, [draft, baselineJson]);
 
   const applyPickCourse = useCallback(
-    (id: string) => {
+    async (id: string) => {
       if (id === '') return;
       setSelector(id);
       if (id === '__new__') {
         pendingFocusCourseTitleRef.current = true;
-        const fresh = emptyCourse(firstAvailableStructuredCourseId(publishedList));
+        const reserveIds =
+          selector === '__new__' && draft && STRUCTURED_COURSE_ID_RE.test(draft.id) ? [draft.id] : [];
+        const docIds = await courseDocumentIdsForAllocation();
+        const newId = firstAvailableStructuredCourseIdFromDocIds(docIds, reserveIds);
+        const fresh = emptyCourse(newId);
         const keyed = ensureCourseLessonRowKeys(fresh);
         setDraft(keyed);
         setBaselineJson(draftJsonForBaseline(keyed));
@@ -862,7 +864,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         setBaselineJson(null);
       }
     },
-    [publishedList]
+    [publishedList, selector, draft, courseDocumentIdsForAllocation]
   );
 
   const updateDraft = (patch: Partial<Course>) => {
@@ -1512,7 +1514,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       setCourseLeaveDialog({ kind: 'select', nextId: id });
       return;
     }
-    applyPickCourse(id);
+    void applyPickCourse(id);
   };
 
   const handleSave = async () => {
@@ -1570,7 +1572,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     }
   };
 
-  const duplicatePublishedAsDraft = () => {
+  const duplicatePublishedAsDraft = async () => {
     if (!selector || selector === '__new__') {
       showActionToast('Select an existing published course in the list, then duplicate.', 'danger');
       return;
@@ -1583,7 +1585,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     }
     const reserveDraftCn =
       selector === '__new__' && draft && STRUCTURED_COURSE_ID_RE.test(draft.id) ? [draft.id] : [];
-    const newId = firstAvailableStructuredCourseId(publishedList, reserveDraftCn);
+    const docIds = await courseDocumentIdsForAllocation();
+    const newId = firstAvailableStructuredCourseIdFromDocIds(docIds, reserveDraftCn);
     const copy = remapCourseToStructuredIds(deepClone(fromEditor), newId);
     const t = fromEditor.title.trim();
     copy.title = t.endsWith(' (copy)') ? t : `${t} (copy)`;
@@ -1599,7 +1602,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
   const requestDuplicateOrConfirm = () => {
     if (!isDirty) {
-      duplicatePublishedAsDraft();
+      void duplicatePublishedAsDraft();
       return;
     }
     setCourseLeaveDialog({ kind: 'duplicate' });
@@ -1621,9 +1624,9 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       }
     }
     if (pending.kind === 'select') {
-      applyPickCourse(pending.nextId);
+      void applyPickCourse(pending.nextId);
     } else {
-      duplicatePublishedAsDraft();
+      void duplicatePublishedAsDraft();
     }
   };
 

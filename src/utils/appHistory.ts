@@ -49,6 +49,18 @@ export interface AppHistoryPayload {
   adminTab?: AdminHistoryTab | null;
   /** Firestore learning path id when catalog is scoped to a path (shareable / survives reload). */
   learningPathId?: string | null;
+  /**
+   * When published and creator draft share the same path id, history state disambiguates which
+   * row is active (hash URL has no draft bit; default = published).
+   */
+  learningPathFromCreatorDraft?: boolean | null;
+  /** Admin inventory: previewing another creator’s `creatorLearningPaths` doc (same id as own draft possible). */
+  learningPathAdminPreviewOwnerUid?: string | null;
+  /**
+   * Admin “Open overview” preview of another creator’s draft: disambiguates `#/course/:id/overview`
+   * when a published course shares the same `courseId`.
+   */
+  adminPreviewCourseOwnerUid?: string | null;
 }
 
 const SIMPLE_VIEWS: AppHistoryView[] = [
@@ -73,7 +85,15 @@ function isSimpleView(s: string): s is AppHistoryView {
 
 /** Hash path only, e.g. `#/catalog` */
 export function payloadToHash(payload: AppHistoryPayload): string {
-  const { view, courseId, lessonId, certificate: _c, adminTab, learningPathId } = payload;
+  const {
+    view,
+    courseId,
+    lessonId,
+    certificate: _c,
+    adminTab,
+    learningPathId,
+    adminPreviewCourseOwnerUid,
+  } = payload;
 
   if (view === 'home') return '#/';
   if (view === 'catalog') {
@@ -84,14 +104,21 @@ export function payloadToHash(payload: AppHistoryPayload): string {
   }
 
   if (view === 'overview' && courseId) {
-    const base = `#/course/${encodeURIComponent(courseId)}/overview`;
+    const preview =
+      adminPreviewCourseOwnerUid && adminPreviewCourseOwnerUid.length > 0
+        ? `/preview/${encodeURIComponent(adminPreviewCourseOwnerUid)}`
+        : '';
+    let out = `#/course/${encodeURIComponent(courseId)}/overview${preview}`;
     if (learningPathId && learningPathId.length > 0) {
-      return `${base}/path/${encodeURIComponent(learningPathId)}`;
+      out += `/path/${encodeURIComponent(learningPathId)}`;
     }
-    return base;
+    return out;
   }
   if (view === 'player' && courseId) {
-    const base = `#/course/${encodeURIComponent(courseId)}/player`;
+    let base = `#/course/${encodeURIComponent(courseId)}/player`;
+    if (adminPreviewCourseOwnerUid && adminPreviewCourseOwnerUid.length > 0) {
+      base += `/preview/${encodeURIComponent(adminPreviewCourseOwnerUid)}`;
+    }
     if (learningPathId && learningPathId.length > 0) {
       const withPath = `${base}/path/${encodeURIComponent(learningPathId)}`;
       if (lessonId) return `${withPath}/${encodeURIComponent(lessonId)}`;
@@ -147,33 +174,60 @@ export function parseHashToPayload(hash: string): AppHistoryPayload | null {
     const courseId = decodeURIComponent(segments[1]!);
     const mode = segments[2];
     if (mode === 'overview') {
-      if (segments.length === 3) {
-        return { v: 1, view: 'overview', courseId };
+      let idx = 3;
+      let adminPreviewCourseOwnerUid: string | undefined;
+      if (segments[idx] === 'preview' && segments[idx + 1]) {
+        adminPreviewCourseOwnerUid = decodeURIComponent(segments[idx + 1]!);
+        idx += 2;
       }
-      if (segments.length === 5 && segments[3] === 'path') {
-        const pid = decodeURIComponent(segments[4]!);
+      const base: AppHistoryPayload = {
+        v: 1,
+        view: 'overview',
+        courseId,
+        ...(adminPreviewCourseOwnerUid ? { adminPreviewCourseOwnerUid } : {}),
+      };
+      if (segments.length === idx) {
+        return base;
+      }
+      if (segments.length >= idx + 2 && segments[idx] === 'path') {
+        const pid = decodeURIComponent(segments[idx + 1]!);
         if (pid.length > 0) {
-          return { v: 1, view: 'overview', courseId, learningPathId: pid };
+          return { ...base, learningPathId: pid };
         }
       }
+      return base;
     }
     if (mode === 'player') {
-      if (segments.length === 3) {
-        return { v: 1, view: 'player', courseId };
+      let i = 3;
+      let adminPreviewCourseOwnerUid: string | undefined;
+      if (segments[i] === 'preview' && segments[i + 1]) {
+        adminPreviewCourseOwnerUid = decodeURIComponent(segments[i + 1]!);
+        i += 2;
       }
-      if (segments.length >= 5 && segments[3] === 'path') {
-        const pathId = decodeURIComponent(segments[4]!);
+      const withPreview = (): AppHistoryPayload => ({
+        v: 1,
+        view: 'player',
+        courseId,
+        ...(adminPreviewCourseOwnerUid ? { adminPreviewCourseOwnerUid } : {}),
+      });
+      if (segments.length === i) {
+        return withPreview();
+      }
+      if (segments[i] === 'path' && segments[i + 1]) {
+        const pathId = decodeURIComponent(segments[i + 1]!);
+        i += 2;
         if (pathId.length > 0) {
-          const out: AppHistoryPayload = { v: 1, view: 'player', courseId, learningPathId: pathId };
-          if (segments.length >= 6) {
-            out.lessonId = decodeURIComponent(segments[5]!);
+          const out: AppHistoryPayload = { ...withPreview(), learningPathId: pathId };
+          if (segments.length > i) {
+            out.lessonId = decodeURIComponent(segments[i]!);
           }
           return out;
         }
       }
-      if (segments.length === 4) {
-        return { v: 1, view: 'player', courseId, lessonId: decodeURIComponent(segments[3]!) };
+      if (segments.length === i + 1) {
+        return { ...withPreview(), lessonId: decodeURIComponent(segments[i]!) };
       }
+      return withPreview();
     }
   }
 
@@ -226,6 +280,13 @@ export function mergeHashAndHistoryStatePayload(
   if (merged.learningPathId == null && fromState.learningPathId != null) {
     merged.learningPathId = fromState.learningPathId;
   }
+  if (
+    (merged.adminPreviewCourseOwnerUid == null || merged.adminPreviewCourseOwnerUid === '') &&
+    fromState?.adminPreviewCourseOwnerUid != null &&
+    String(fromState.adminPreviewCourseOwnerUid).length > 0
+  ) {
+    merged.adminPreviewCourseOwnerUid = fromState.adminPreviewCourseOwnerUid;
+  }
   return merged;
 }
 
@@ -245,13 +306,32 @@ export function shouldPushCourseOverviewBeforePlayer(
   if (hashPayload.view !== 'overview') return true;
   if (hashPayload.courseId !== overviewPayload.courseId) return true;
   if ((hashPayload.learningPathId ?? null) !== (overviewPayload.learningPathId ?? null)) return true;
+  if (
+    (hashPayload.learningPathFromCreatorDraft === true) !==
+    (overviewPayload.learningPathFromCreatorDraft === true)
+  ) {
+    return true;
+  }
+  if (
+    (hashPayload.learningPathAdminPreviewOwnerUid ?? null) !==
+    (overviewPayload.learningPathAdminPreviewOwnerUid ?? null)
+  ) {
+    return true;
+  }
+  if ((hashPayload.adminPreviewCourseOwnerUid ?? null) !== (overviewPayload.adminPreviewCourseOwnerUid ?? null))
+    return true;
 
   if (historyStatePayload != null) {
     const s = historyStatePayload;
     const stackIsThisOverview =
       s.view === 'overview' &&
       s.courseId === overviewPayload.courseId &&
-      (s.learningPathId ?? null) === (overviewPayload.learningPathId ?? null);
+      (s.learningPathId ?? null) === (overviewPayload.learningPathId ?? null) &&
+      (s.learningPathFromCreatorDraft === true) ===
+        (overviewPayload.learningPathFromCreatorDraft === true) &&
+      (s.learningPathAdminPreviewOwnerUid ?? null) ===
+        (overviewPayload.learningPathAdminPreviewOwnerUid ?? null) &&
+      (s.adminPreviewCourseOwnerUid ?? null) === (overviewPayload.adminPreviewCourseOwnerUid ?? null);
     if (!stackIsThisOverview) return true;
   } else {
     // Hash can show overview while the stack top has no payload (initial visit, or entry without our key).
@@ -328,6 +408,9 @@ export function historyPayloadsEqual(a: AppHistoryPayload | null, b: AppHistoryP
     if ((a.adminTab ?? 'alerts') !== (b.adminTab ?? 'alerts')) return false;
   }
   if ((a.learningPathId ?? null) !== (b.learningPathId ?? null)) return false;
+  if ((a.learningPathFromCreatorDraft === true) !== (b.learningPathFromCreatorDraft === true)) return false;
+  if ((a.learningPathAdminPreviewOwnerUid ?? null) !== (b.learningPathAdminPreviewOwnerUid ?? null)) return false;
+  if ((a.adminPreviewCourseOwnerUid ?? null) !== (b.adminPreviewCourseOwnerUid ?? null)) return false;
   return true;
 }
 

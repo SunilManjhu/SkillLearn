@@ -3,6 +3,19 @@ import type { Course } from '../data/courses';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { courseToFirestorePayload, docToCourse } from './publishedCoursesFirestore';
 
+/** Document ids for this owner (includes docs that fail `docToCourse`). */
+export async function listCreatorCourseDocumentIdsForOwner(ownerUid: string): Promise<string[]> {
+  try {
+    const snap = await getDocs(
+      query(collection(db, 'creatorCourses'), where('ownerUid', '==', ownerUid))
+    );
+    return snap.docs.map((d) => d.id);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'creatorCourses');
+    return [];
+  }
+}
+
 export async function loadCreatorCoursesForOwner(ownerUid: string): Promise<Course[]> {
   try {
     const snap = await getDocs(
