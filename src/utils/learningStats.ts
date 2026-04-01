@@ -1,11 +1,10 @@
 import type { Course } from '../data/courses';
-import { STATIC_CATALOG_FALLBACK } from '../data/courses';
 import { isCourseComplete, loadLessonProgressMap } from './courseProgress';
 import { loadCompletionTimestamps } from './courseCompletionLog';
 
 export function computeLearningStats(
   userId: string | null | undefined,
-  courses: Course[] = STATIC_CATALOG_FALLBACK
+  courses: Course[] = []
 ): {
   completedCourses: number;
   completedCourseIds: string[];
@@ -49,7 +48,7 @@ export function computeLearningStats(
 /** Per-course status for catalog courses (completed vs in-progress vs not started). */
 export function computeCourseEnrollmentCounts(
   userId: string | null | undefined,
-  courses: Course[] = STATIC_CATALOG_FALLBACK
+  courses: Course[] = []
 ): { completed: number; inProgress: number; notStarted: number } {
   let completed = 0;
   let inProgress = 0;

@@ -17,7 +17,7 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
   const [subscriptionKey, setSubscriptionKey] = useState(0);
   const { showActionToast, actionToast } = useAdminActionToast();
   const [search, setSearch] = useState('');
-  const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'user'>('all');
+  const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'creator' | 'user'>('all');
   const [savingUserId, setSavingUserId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -40,6 +40,7 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
   const filteredRows = useMemo(() => {
     let list = rows;
     if (roleFilter === 'admin') list = list.filter((r) => r.role === 'admin');
+    else if (roleFilter === 'creator') list = list.filter((r) => r.role === 'creator');
     else if (roleFilter === 'user') list = list.filter((r) => r.role === 'user');
     const q = search.trim().toLowerCase();
     if (!q) return list;
@@ -59,12 +60,14 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
 
   const roleStats = useMemo(() => {
     let admins = 0;
-    let nonAdmins = 0;
+    let creators = 0;
+    let users = 0;
     for (const r of rows) {
       if (r.role === 'admin') admins += 1;
-      else nonAdmins += 1;
+      else if (r.role === 'creator') creators += 1;
+      else users += 1;
     }
-    return { total: rows.length, admins, nonAdmins };
+    return { total: rows.length, admins, creators, users };
   }, [rows]);
 
   const soleAdminSelfDemoteMsg =
@@ -114,7 +117,8 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
             >
               <li>
                 <code className="font-mono text-[0.7rem] text-orange-500/90 sm:text-xs">users</code> docs: role{' '}
-                <code className="text-orange-500/90">admin</code> or <code className="text-orange-500/90">user</code>.
+                <code className="text-orange-500/90">admin</code>, <code className="text-orange-500/90">creator</code>, or{' '}
+                <code className="text-orange-500/90">user</code>.
               </li>
               <li>Live updates.</li>
               <li>Keep at least one admin.</li>
@@ -164,8 +168,15 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
           ·
         </span>
         <span className="text-[var(--text-muted)]">
-          Non-admins{' '}
-          <strong className="tabular-nums text-[var(--text-primary)]">{loading ? '—' : roleStats.nonAdmins}</strong>
+          Creators{' '}
+          <strong className="tabular-nums text-[var(--text-primary)]">{loading ? '—' : roleStats.creators}</strong>
+        </span>
+        <span className="text-[var(--border-color)]" aria-hidden>
+          ·
+        </span>
+        <span className="text-[var(--text-muted)]">
+          Learners{' '}
+          <strong className="tabular-nums text-[var(--text-primary)]">{loading ? '—' : roleStats.users}</strong>
         </span>
       </div>
 
@@ -175,7 +186,8 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
             [
               { id: 'all' as const, label: 'All accounts' },
               { id: 'admin' as const, label: 'Admins' },
-              { id: 'user' as const, label: 'Non-admins' },
+              { id: 'creator' as const, label: 'Creators' },
+              { id: 'user' as const, label: 'Learners' },
             ] as const
           ).map(({ id, label }) => (
             <button
@@ -250,6 +262,7 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
                     className="min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm disabled:opacity-60"
                   >
                     <option value="user">user</option>
+                    <option value="creator">creator</option>
                     <option value="admin">admin</option>
                   </select>
                 </div>
@@ -312,6 +325,7 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
                         className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-1.5 text-sm disabled:opacity-60"
                       >
                         <option value="user">user</option>
+                        <option value="creator">creator</option>
                         <option value="admin">admin</option>
                       </select>
                     </td>

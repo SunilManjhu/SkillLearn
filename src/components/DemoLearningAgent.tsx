@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useDialogKeyboard } from '../hooks/useDialogKeyboard';
 import { Type } from '@google/genai';
 import { Sparkles, X, Loader2, ChevronRight, Trash2 } from 'lucide-react';
-import { STATIC_CATALOG_FALLBACK, type Course } from '../data/courses';
+import type { Course } from '../data/courses';
 import { parseAssistantReplyJson } from '../utils/parseAssistantReply';
 import { formatGenaiError } from '../utils/formatGenaiError';
 import { useLearnerGeminiEnabled } from '../hooks/useLearnerGeminiEnabled';
@@ -52,7 +52,7 @@ interface DemoLearningAgentProps {
   courses?: Course[];
 }
 
-export function DemoLearningAgent({ onOpenCourse, courses = STATIC_CATALOG_FALLBACK }: DemoLearningAgentProps) {
+export function DemoLearningAgent({ onOpenCourse, courses = [] }: DemoLearningAgentProps) {
   const [open, setOpen] = useState(false);
   const [goal, setGoal] = useState('');
   const [loading, setLoading] = useState(false);

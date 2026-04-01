@@ -27,7 +27,7 @@ function parseCourseIds(raw: unknown): string[] | null {
   return out;
 }
 
-function docToLearningPath(id: string, data: Record<string, unknown>): LearningPath | null {
+export function docToLearningPath(id: string, data: Record<string, unknown>): LearningPath | null {
   if (typeof data.title !== 'string' || data.title.length === 0 || data.title.length > MAX_TITLE) {
     return null;
   }

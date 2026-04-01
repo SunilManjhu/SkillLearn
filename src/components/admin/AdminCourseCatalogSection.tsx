@@ -24,7 +24,11 @@ import {
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { useDialogKeyboard } from '../../hooks/useDialogKeyboard';
 import { useAdminActionToast } from './useAdminActionToast';
-import { PathBuilderSection, type PathBuilderSectionHandle } from './PathBuilderSection';
+import {
+  PathBuilderSection,
+  type PathBuilderSectionHandle,
+  type PathPersistenceMode,
+} from './PathBuilderSection';
 import { AdminCatalogCategoriesPanel } from './AdminCatalogCategoriesPanel';
 import { AdminCatalogCategoryPresetsPanel } from './AdminCatalogCategoryPresetsPanel';
 import { AdminCatalogSkillPresetsPanel } from './AdminCatalogSkillPresetsPanel';
@@ -48,6 +52,11 @@ import {
   savePublishedCourse,
   deletePublishedCourse,
 } from '../../utils/publishedCoursesFirestore';
+import {
+  deleteCreatorCourse,
+  loadCreatorCoursesForOwner,
+  saveCreatorCourse,
+} from '../../utils/creatorCoursesFirestore';
 import {
   addCatalogCategoryExtra,
   CATALOG_CATEGORY_EXTRAS_CHANGED,
@@ -336,6 +345,10 @@ interface AdminCourseCatalogSectionProps {
   onDraftDirtyChange?: (dirty: boolean) => void;
   /** True while the learning path builder has unsaved edits (navigation guard + sub-tab switch). */
   onPathsDirtyChange?: (dirty: boolean) => void;
+  /** Default: live `publishedCourses` / `learningPaths`. Creator: private collections for `ownerUid`. */
+  catalogPersistence?: PathPersistenceMode;
+  /** Overrides the section heading (creator portal). */
+  catalogSectionTitle?: string;
 }
 
 interface RequiredFieldTarget {
@@ -381,7 +394,10 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   onCatalogChanged,
   onDraftDirtyChange,
   onPathsDirtyChange,
+  catalogPersistence,
+  catalogSectionTitle,
 }) => {
+  const isCreatorCatalog = catalogPersistence?.kind === 'creator';
   const [publishedList, setPublishedList] = useState<Course[]>([]);
   /** '' = none selected; avoids loading Firestore until the user opens the Course dropdown. */
   const [selector, setSelector] = useState<string>('');
@@ -699,11 +715,14 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
   const refreshList = useCallback(async (): Promise<Course[]> => {
     setListLoading(true);
-    const list = await loadPublishedCoursesFromFirestore();
+    const list =
+      catalogPersistence?.kind === 'creator'
+        ? await loadCreatorCoursesForOwner(catalogPersistence.ownerUid)
+        : await loadPublishedCoursesFromFirestore();
     setPublishedList(list);
     setListLoading(false);
     return list;
-  }, []);
+  }, [catalogPersistence]);
 
   const openCourseCatalogOnce = useCallback(() => {
     if (catalogRequestedRef.current) return;
@@ -711,6 +730,19 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     setCatalogRequested(true);
     void refreshList();
   }, [refreshList]);
+
+  useEffect(() => {
+    if (isCreatorCatalog) {
+      if (
+        contentCatalogSubTab === 'taxonomy' ||
+        contentCatalogSubTab === 'categories' ||
+        contentCatalogSubTab === 'presets' ||
+        contentCatalogSubTab === 'skillPresets'
+      ) {
+        setContentCatalogSubTab('catalog');
+      }
+    }
+  }, [isCreatorCatalog, contentCatalogSubTab]);
 
   useEffect(() => {
     if (contentCatalogSubTab !== 'paths') return;
@@ -1512,16 +1544,21 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       return;
     }
     setBusy(true);
-    const ok = await savePublishedCourse(normalized);
+    const ok =
+      catalogPersistence?.kind === 'creator'
+        ? await saveCreatorCourse(normalized, catalogPersistence.ownerUid)
+        : await savePublishedCourse(normalized);
     setBusy(false);
     if (ok) {
       setShowValidationHints(false);
       setDraft(ensureCourseLessonRowKeys(normalized));
-      for (const cat of normalized.categories) {
-        if (cat.trim()) addCatalogCategoryExtra(cat.trim());
-      }
-      for (const sk of normalized.skills) {
-        if (sk.trim()) addCatalogSkillExtra(sk.trim());
+      if (!isCreatorCatalog) {
+        for (const cat of normalized.categories) {
+          if (cat.trim()) addCatalogCategoryExtra(cat.trim());
+        }
+        for (const sk of normalized.skills) {
+          if (sk.trim()) addCatalogSkillExtra(sk.trim());
+        }
       }
       showActionToast('Course saved.');
       await refreshList();
@@ -1604,7 +1641,10 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     const courseId = draft.id;
     setDeleteDialogOpen(false);
     setBusy(true);
-    const ok = await deletePublishedCourse(courseId);
+    const ok =
+      catalogPersistence?.kind === 'creator'
+        ? await deleteCreatorCourse(courseId)
+        : await deletePublishedCourse(courseId);
     setBusy(false);
     if (ok) {
       await refreshList();
@@ -1616,7 +1656,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     } else {
       showActionToast('Delete failed.', 'danger');
     }
-  }, [draft, refreshList, onCatalogChanged, showActionToast]);
+  }, [draft, refreshList, onCatalogChanged, showActionToast, catalogPersistence]);
 
   useBodyScrollLock(
     deleteDialogOpen ||
@@ -1640,6 +1680,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const requestContentCatalogSubTab = useCallback(
     (next: ContentCatalogSubTab) => {
       if (next === contentCatalogSubTab) return;
+      if (isCreatorCatalog && next !== 'catalog' && next !== 'paths') return;
 
       if (contentCatalogSubTab === 'paths') {
         if (next === 'catalog') {
@@ -1819,7 +1860,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         }
       }
     },
-    [contentCatalogSubTab, isDirty]
+    [contentCatalogSubTab, isDirty, isCreatorCatalog]
   );
 
   const closeSubTabSwitchConfirm = useCallback(() => setSubTabSwitchConfirmOpen(false), []);
@@ -1965,7 +2006,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="flex min-w-0 items-center gap-2 text-lg font-bold">
           <BookOpen size={20} className="shrink-0 text-orange-500" />
-          <span className="min-w-0">Course catalog</span>
+          <span className="min-w-0">{catalogSectionTitle ?? 'Course catalog'}</span>
         </h2>
         {/* Keep a stable slot so the title row does not jump when switching tabs */}
         <div className="flex shrink-0 items-center justify-end">
@@ -2061,6 +2102,20 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         </div>
       </div>
 
+      {isCreatorCatalog && (
+        <p
+          className="rounded-xl border border-orange-500/25 bg-orange-500/[0.07] px-3 py-2.5 text-xs leading-relaxed text-[var(--text-secondary)] sm:text-sm"
+          role="note"
+        >
+          <span className="font-semibold text-[var(--text-primary)]">Finding your work:</span> switch to{' '}
+          <strong className="text-[var(--text-primary)]">Catalog</strong> to create or edit courses, and to{' '}
+          <strong className="text-[var(--text-primary)]">Paths</strong> to edit learning paths. Use{' '}
+          <strong className="text-[var(--text-primary)]">Reload list</strong> if something you saved does not
+          appear here. After saving, your drafts show in <strong className="text-[var(--text-primary)]">Browse Catalog</strong>{' '}
+          for your account only (Draft label) until an admin publishes them for all learners.
+        </p>
+      )}
+
       <div className="-mx-1 flex min-h-11 flex-wrap items-center gap-2 border-b border-[var(--border-color)] px-1 pb-2">
         <button
           type="button"
@@ -2084,16 +2139,18 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             <Route size={15} aria-hidden />
             Paths
           </button>
-          <button
-            type="button"
-            onClick={() => requestContentCatalogSubTab('taxonomy')}
-            className={`inline-flex min-h-11 touch-manipulation shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold active:opacity-90 ${
-              contentCatalogSubTab === 'taxonomy' ? 'bg-orange-500/20 text-orange-500' : 'text-[var(--text-secondary)]'
-            }`}
-          >
-            <Tags size={15} aria-hidden />
-            Categories &amp; Skills
-          </button>
+          {!isCreatorCatalog && (
+            <button
+              type="button"
+              onClick={() => requestContentCatalogSubTab('taxonomy')}
+              className={`inline-flex min-h-11 touch-manipulation shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold active:opacity-90 ${
+                contentCatalogSubTab === 'taxonomy' ? 'bg-orange-500/20 text-orange-500' : 'text-[var(--text-secondary)]'
+              }`}
+            >
+              <Tags size={15} aria-hidden />
+              Categories &amp; Skills
+            </button>
+          )}
         </div>
       </div>
 
@@ -2151,7 +2208,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   }
                 >
                   <ul className="list-disc space-y-1.5 pl-4 text-[var(--text-muted)] marker:text-orange-500/70 sm:space-y-1">
-                    <li>Saves go to the live catalog (Firestore).</li>
+                    <li>
+                      {isCreatorCatalog
+                        ? 'Saves go to your private courses (Firestore) — only you and admins can see them.'
+                        : 'Saves go to the live catalog (Firestore).'}
+                    </li>
                     <li>
                       Open <strong className="font-semibold text-[var(--text-secondary)]">Course</strong> once to load
                       titles.
@@ -3502,7 +3563,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             setCategoryPresetsState(next.categories);
             setSkillPresetsState(next.skills);
           }}
-          onSaveCourse={(c) => savePublishedCourse(c)}
+          onSaveCourse={(c) =>
+            catalogPersistence?.kind === 'creator'
+              ? saveCreatorCourse(c, catalogPersistence.ownerUid)
+              : savePublishedCourse(c)
+          }
           onRefreshList={refreshList}
           onCatalogChanged={onCatalogChanged}
           showActionToast={showActionToast}
@@ -3522,6 +3587,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           onCatalogChanged={onCatalogChanged}
           onPathsDirtyChange={setPathBuilderDirty}
           onPathsLoadingChange={setPathsListLoading}
+          pathPersistence={catalogPersistence}
         />
       </div>
 

@@ -116,6 +116,12 @@ Alphabetical. Each module is **pure logic, Firestore I/O, or cross-cutting helpe
 - **Primary exports:** `STRUCTURED_COURSE_ID_RE`, `isStructuredCourseId`, `remapStructuredCourseModuleLessonIdsByOrder`.
 - **Used by:** Admin catalog, publish layer.
 
+## `src/utils/creatorCatalogSession.ts`
+
+- **Role:** **Session + in-memory cache** for signed-in **creator/admin browse preview**: last **draft courses and draft paths** per `ownerUid`, and last **merged** `LearningPath[]` for the navbar keyed by Firebase `uid` (signed-out → `null`). Prevents draft rows and paths from appearing only after a second Firestore round while published data hydrates from `peekResolvedCatalogCourses`. See [`../access-control-roadmap.md`](../access-control-roadmap.md) §8 — do not regress the two-phase paint + write pattern.
+- **Primary exports:** `peekResolvedCreatorCatalog`, `writeResolvedCreatorCatalog`, `peekMergedCatalogLearningPaths`, `writeMergedCatalogLearningPaths`, `CreatorCatalogBundle`.
+- **Used by:** `App.tsx` (catalog `useEffect`, initial state, `fetchCatalogSnapshot`).
+
 ## `src/utils/courseTaxonomy.ts`
 
 - **Role:** Library **filters**: levels, category/skill tags, `courseMatchesLibraryFilters`, toggle helpers, normalization on courses.
@@ -238,7 +244,7 @@ Alphabetical. Each module is **pure logic, Firestore I/O, or cross-cutting helpe
 
 ## `src/utils/publishedCoursesFirestore.ts`
 
-- **Role:** **Published catalog**: peek session cache, resolve merged static+Firestore courses, save/delete course, Firestore payload shape.
+- **Role:** **Published catalog**: peek `sessionStorage` cache, resolve Firestore `publishedCourses` (no bundled fallback), save/delete course, Firestore payload shape. Pairs with **`creatorCatalogSession.ts`** for creator preview hydration — see [`../access-control-roadmap.md`](../access-control-roadmap.md) §8.
 - **Primary exports:** `peekResolvedCatalogCourses`, `resolveCatalogCourses`, `loadPublishedCoursesFromFirestore`, `savePublishedCourse`, `deletePublishedCourse`, `courseToFirestorePayload`.
 - **Used by:** `App.tsx`, admin catalog.
 

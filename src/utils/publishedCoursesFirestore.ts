@@ -9,7 +9,6 @@ import {
 import type { Course, Lesson, Module, QuizDefinition, QuizQuestion } from '../data/courses';
 import { MAX_QUIZ_CHOICES, MAX_QUIZ_QUESTIONS } from '../data/courses';
 import { coerceQuizIndex } from './quizCoercion';
-import { STATIC_CATALOG_FALLBACK } from '../data/courses';
 import { dedupeLabelsPreserveOrder, isCourseLevel, normalizeCourseTaxonomy } from './courseTaxonomy';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 
@@ -27,7 +26,8 @@ function readCatalogFromSession(): Course[] | null {
     const raw = sessionStorage.getItem(RESOLVED_CATALOG_SESSION_KEY);
     if (!raw) return null;
     const data = JSON.parse(raw) as unknown;
-    if (!Array.isArray(data) || data.length === 0) return null;
+    if (!Array.isArray(data)) return null;
+    if (data.length === 0) return [];
     for (const item of data) {
       if (!item || typeof item !== 'object') return null;
       const c = item as Record<string, unknown>;
@@ -53,7 +53,7 @@ function writeCatalogToSession(courses: Course[]): void {
   }
 }
 
-/** For catalog `useState` initializer: memory (Strict remount) then session (full refresh) then caller falls back to static. */
+/** For catalog `useState` initializer: memory (Strict remount) then session (full refresh); caller may fall back to `[]`. */
 export function peekResolvedCatalogCourses(): Course[] | null {
   if (lastResolvedCatalog) return lastResolvedCatalog;
   return readCatalogFromSession();
@@ -147,7 +147,7 @@ function parseModule(raw: unknown): Module | null {
   return { id: o.id, title: o.title, lessons };
 }
 
-function docToCourse(id: string, data: Record<string, unknown>): Course | null {
+export function docToCourse(id: string, data: Record<string, unknown>): Course | null {
   if (
     typeof data.title !== 'string' ||
     typeof data.author !== 'string' ||
@@ -222,7 +222,7 @@ export async function loadPublishedCoursesFromFirestore(): Promise<Course[]> {
 
 export async function resolveCatalogCourses(): Promise<Course[]> {
   const remote = await loadPublishedCoursesFromFirestore();
-  const result = remote.length > 0 ? remote : STATIC_CATALOG_FALLBACK;
+  const result = remote;
   lastResolvedCatalog = result;
   writeCatalogToSession(result);
   return result;

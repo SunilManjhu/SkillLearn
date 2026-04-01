@@ -19,7 +19,8 @@ export type AppHistoryView =
   | 'signup'
   | 'profile'
   | 'certificate'
-  | 'admin';
+  | 'admin'
+  | 'creator';
 
 export interface CertificateHistorySnapshot {
   courseId: string;
@@ -30,7 +31,14 @@ export interface CertificateHistorySnapshot {
 }
 
 /** Admin portal sub-routes (Content tab uses internal id `catalog`; Roles tab uses `roles`). */
-export type AdminHistoryTab = 'alerts' | 'ai' | 'catalog' | 'marketing' | 'moderation' | 'roles';
+export type AdminHistoryTab =
+  | 'alerts'
+  | 'ai'
+  | 'catalog'
+  | 'marketing'
+  | 'moderation'
+  | 'roles'
+  | 'creators';
 
 export interface AppHistoryPayload {
   v: 1;
@@ -56,6 +64,7 @@ const SIMPLE_VIEWS: AppHistoryView[] = [
   'signup',
   'profile',
   'admin',
+  'creator',
 ];
 
 function isSimpleView(s: string): s is AppHistoryView {
@@ -101,8 +110,11 @@ export function payloadToHash(payload: AppHistoryPayload): string {
     if (tab === 'catalog') return '#/admin/content';
     if (tab === 'marketing') return '#/admin/marketing';
     if (tab === 'moderation') return '#/admin/moderation';
+    if (tab === 'creators') return '#/admin/creators';
     return '#/admin/roles';
   }
+
+  if (view === 'creator') return '#/creator';
 
   if (isSimpleView(view)) return `#/${view}`;
   return '#/';
@@ -183,7 +195,12 @@ export function parseHashToPayload(hash: string): AppHistoryPayload | null {
     else if (sub === 'alerts') adminTab = 'alerts';
     else if (sub === 'ai' || sub === 'models' || sub === 'gemini') adminTab = 'ai';
     else if (sub === 'marketing' || sub === 'ads' || sub === 'hero') adminTab = 'marketing';
+    else if (sub === 'creators') adminTab = 'creators';
     return { v: 1, view: 'admin', adminTab };
+  }
+
+  if (head === 'creator' && segments.length === 1) {
+    return { v: 1, view: 'creator' };
   }
 
   if (segments.length === 1 && isSimpleView(head)) {
