@@ -97,9 +97,10 @@ service cloud.firestore {
     // from the client (wrong DB in Console, token shape, etc.), this still allows known admins.
     function isAdmin() {
       return isAuthenticated() && (
+        // Known admin UIDs first — avoids touching email when token.email is null (email.lower() would fail).
+        request.auth.uid == "Uz4Ctf9ThuV7BumSU8T8xAe1qt42" ||
         hasAdminRole() ||
-        (request.auth.token.email.lower() == "ranveer.singh.blr@gmail.com" && request.auth.token.email_verified == true) ||
-        request.auth.uid == "Uz4Ctf9ThuV7BumSU8T8xAe1qt42"
+        (request.auth.token.email is string && request.auth.token.email.lower() == "ranveer.singh.blr@gmail.com" && request.auth.token.email_verified == true)
       );
     }
 
@@ -199,6 +200,53 @@ service cloud.firestore {
              data.submittedAt is timestamp;
     }
 
+    function validQuizAttemptQuestionEntry(e) {
+      return e is map &&
+             e.keys().hasAll(['questionId', 'type', 'score']) &&
+             e.keys().hasOnly(['questionId', 'type', 'score', 'correct', 'chosenIndex', 'aiFeedback']) &&
+             e.questionId is string && e.questionId.size() > 0 && e.questionId.size() < 200 &&
+             e.type in ['mcq', 'freeform'] &&
+             e.score is number && e.score >= 0 && e.score <= 100 &&
+             (!('correct' in e) || e.correct is bool) &&
+             (!('chosenIndex' in e) || (e.chosenIndex is int && e.chosenIndex >= 0 && e.chosenIndex < 64)) &&
+             (!('aiFeedback' in e) || (e.aiFeedback is string && e.aiFeedback.size() < 8000));
+    }
+
+    function validQuizAttemptPerQuestionList(q) {
+      return q is list && q.size() > 0 && q.size() <= 20 &&
+             (q.size() < 1 || validQuizAttemptQuestionEntry(q[0])) &&
+             (q.size() < 2 || validQuizAttemptQuestionEntry(q[1])) &&
+             (q.size() < 3 || validQuizAttemptQuestionEntry(q[2])) &&
+             (q.size() < 4 || validQuizAttemptQuestionEntry(q[3])) &&
+             (q.size() < 5 || validQuizAttemptQuestionEntry(q[4])) &&
+             (q.size() < 6 || validQuizAttemptQuestionEntry(q[5])) &&
+             (q.size() < 7 || validQuizAttemptQuestionEntry(q[6])) &&
+             (q.size() < 8 || validQuizAttemptQuestionEntry(q[7])) &&
+             (q.size() < 9 || validQuizAttemptQuestionEntry(q[8])) &&
+             (q.size() < 10 || validQuizAttemptQuestionEntry(q[9])) &&
+             (q.size() < 11 || validQuizAttemptQuestionEntry(q[10])) &&
+             (q.size() < 12 || validQuizAttemptQuestionEntry(q[11])) &&
+             (q.size() < 13 || validQuizAttemptQuestionEntry(q[12])) &&
+             (q.size() < 14 || validQuizAttemptQuestionEntry(q[13])) &&
+             (q.size() < 15 || validQuizAttemptQuestionEntry(q[14])) &&
+             (q.size() < 16 || validQuizAttemptQuestionEntry(q[15])) &&
+             (q.size() < 17 || validQuizAttemptQuestionEntry(q[16])) &&
+             (q.size() < 18 || validQuizAttemptQuestionEntry(q[17])) &&
+             (q.size() < 19 || validQuizAttemptQuestionEntry(q[18])) &&
+             (q.size() < 20 || validQuizAttemptQuestionEntry(q[19]));
+    }
+
+    function isValidQuizAttempt(data) {
+      return hasRequiredFields(['userId', 'courseId', 'lessonId', 'submittedAt', 'overallScore', 'perQuestion']) &&
+             hasOnlyAllowedFields(['userId', 'courseId', 'lessonId', 'submittedAt', 'overallScore', 'perQuestion']) &&
+             data.userId == request.auth.uid &&
+             data.courseId is string && data.courseId.size() > 0 && data.courseId.size() < 200 &&
+             data.lessonId is string && data.lessonId.size() > 0 && data.lessonId.size() < 200 &&
+             data.submittedAt is timestamp &&
+             data.overallScore is number && data.overallScore >= 0 && data.overallScore <= 100 &&
+             validQuizAttemptPerQuestionList(data.perQuestion);
+    }
+
     function contactSenderEmailMatchesToken(data) {
       return (request.auth.token.email is string && request.auth.token.email.size() > 0)
         ? (data.senderEmail is string && data.senderEmail == request.auth.token.email)
@@ -279,6 +327,12 @@ service cloud.firestore {
       );
       allow create, update: if isAuthenticated() && isValidCourseRating(request.resource.data);
       allow delete: if isAuthenticated() && isOwner(resource.data.userId);
+    }
+
+    match /quizAttempts/{attemptId} {
+      allow read: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
+      allow create: if isAuthenticated() && isValidQuizAttempt(request.resource.data);
+      allow update, delete: if false;
     }
 
     match /users/{userId} {
@@ -377,15 +431,16 @@ service cloud.firestore {
     }
 
     function isValidPublishedCourseWrite(data) {
-      return data.keys().hasAll(['title', 'author', 'thumbnail', 'description', 'level', 'duration', 'rating', 'category', 'modules']) &&
+      return data.keys().hasAll(['title', 'author', 'thumbnail', 'description', 'level', 'duration', 'rating', 'categories', 'skills', 'modules']) &&
         data.title is string && data.title.size() > 0 && data.title.size() < 500 &&
         data.author is string && data.author.size() > 0 && data.author.size() < 200 &&
         data.thumbnail is string && data.thumbnail.size() > 0 && data.thumbnail.size() < 2000 &&
         data.description is string && data.description.size() < 20000 &&
-        data.level in ['Beginner', 'Intermediate', 'Advanced'] &&
+        data.level in ['Beginner', 'Intermediate', 'Advanced', 'Proficient'] &&
         data.duration is string && data.duration.size() < 100 &&
         data.rating is number && data.rating >= 0 && data.rating <= 5 &&
-        data.category is string && data.category.size() > 0 && data.category.size() < 200 &&
+        data.categories is list && data.categories.size() > 0 && data.categories.size() <= 40 &&
+        data.skills is list && data.skills.size() <= 40 &&
         data.modules is list &&
         (!('authorBio' in data) || (data.authorBio is string && data.authorBio.size() < 20000)) &&
         (!('updatedAt' in data) || data.updatedAt is timestamp);
@@ -396,13 +451,219 @@ service cloud.firestore {
         data.title is string && data.title.size() > 0 && data.title.size() < 500 &&
         data.courseIds is list && data.courseIds.size() <= 100 &&
         (!('description' in data) || (data.description is string && data.description.size() < 20000)) &&
-        (!('updatedAt' in data) || data.updatedAt is timestamp);
+        (!('updatedAt' in data) || data.updatedAt is timestamp) &&
+        (!('pathMindmap' in data) || data.pathMindmap is map);
     }
 
     match /learningPaths/{pathId} {
       allow read: if true;
       allow create, update: if isAdmin() && isValidLearningPathWrite(request.resource.data);
       allow delete: if isAdmin();
+    }
+
+    function isValidCatalogCategoryPresetsWrite(data) {
+      return data.keys().hasAll(['mainPills', 'moreTopics']) &&
+        data.mainPills is list && data.mainPills.size() > 0 && data.mainPills.size() <= 40 &&
+        data.moreTopics is list && data.moreTopics.size() <= 40 &&
+        (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    match /siteSettings/catalogCategoryPresets {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidCatalogCategoryPresetsWrite(request.resource.data);
+      allow delete: if false;
+    }
+
+    function isValidCatalogSkillPresetsWrite(data) {
+      return data.keys().hasAll(['mainPills', 'moreSkills']) &&
+        data.mainPills is list && data.mainPills.size() > 0 && data.mainPills.size() <= 40 &&
+        data.moreSkills is list && data.moreSkills.size() <= 40 &&
+        (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    match /siteSettings/catalogSkillPresets {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidCatalogSkillPresetsWrite(request.resource.data);
+      allow delete: if false;
+    }
+
+    // Ordered Gemini model ids + per-model on/off for in-app AI. Falls back to build env when doc missing.
+    // No recursion (Firestore rules disallow it): each index j is bool or past end of list (flags.size() <= j).
+    function geminiEnabledFlagsAllBool(flags) {
+      return (flags.size() <= 0 || flags[0] is bool) &&
+        (flags.size() <= 1 || flags[1] is bool) &&
+        (flags.size() <= 2 || flags[2] is bool) &&
+        (flags.size() <= 3 || flags[3] is bool) &&
+        (flags.size() <= 4 || flags[4] is bool) &&
+        (flags.size() <= 5 || flags[5] is bool) &&
+        (flags.size() <= 6 || flags[6] is bool) &&
+        (flags.size() <= 7 || flags[7] is bool) &&
+        (flags.size() <= 8 || flags[8] is bool) &&
+        (flags.size() <= 9 || flags[9] is bool) &&
+        (flags.size() <= 10 || flags[10] is bool) &&
+        (flags.size() <= 11 || flags[11] is bool) &&
+        (flags.size() <= 12 || flags[12] is bool) &&
+        (flags.size() <= 13 || flags[13] is bool) &&
+        (flags.size() <= 14 || flags[14] is bool) &&
+        (flags.size() <= 15 || flags[15] is bool) &&
+        (flags.size() <= 16 || flags[16] is bool) &&
+        (flags.size() <= 17 || flags[17] is bool) &&
+        (flags.size() <= 18 || flags[18] is bool) &&
+        (flags.size() <= 19 || flags[19] is bool);
+    }
+
+    function isValidGeminiAiModelsWrite(data) {
+      return data.keys().hasAll(['modelIds', 'updatedAt', 'enabledFlags']) &&
+        data.keys().hasOnly(['modelIds', 'updatedAt', 'enabledFlags']) &&
+        data.modelIds is list && data.modelIds.size() >= 1 && data.modelIds.size() <= 20 &&
+        data.enabledFlags is list && data.enabledFlags.size() == data.modelIds.size() &&
+        geminiEnabledFlagsAllBool(data.enabledFlags) &&
+        data.updatedAt is timestamp;
+    }
+
+    match /siteSettings/geminiAiModels {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidGeminiAiModelsWrite(request.resource.data);
+      allow delete: if false;
+    }
+
+    function isValidSiteBooleanToggleWrite(data) {
+      return data.keys().hasAll(['enabled', 'updatedAt']) &&
+        data.keys().hasOnly(['enabled', 'updatedAt']) &&
+        data.enabled is bool &&
+        data.updatedAt is timestamp;
+    }
+
+    match /siteSettings/learningAssistant {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidSiteBooleanToggleWrite(request.resource.data);
+      allow delete: if false;
+    }
+
+    match /siteSettings/learnerAiModels {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidSiteBooleanToggleWrite(request.resource.data);
+      allow delete: if false;
+    }
+
+    match /siteSettings/notifications {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidSiteBooleanToggleWrite(request.resource.data);
+      allow delete: if false;
+    }
+
+    // JS client numbers are often stored as float; accept int or float with same bounds.
+    function heroPhoneDurationSeconds(n) {
+      return (n is int || n is float) && n >= 0 && n <= 120;
+    }
+
+    function heroPhoneMaxHeightPct(n) {
+      return (n is int || n is float) && n >= 20 && n <= 100;
+    }
+
+    function validHeroPhoneTextBlock(b) {
+      return b is map && b.kind == 'text' &&
+        b.keys().hasAll(['kind', 'content']) &&
+        b.keys().hasOnly(['kind', 'content', 'style']) &&
+        b.content is string && b.content.size() > 0 && b.content.size() <= 2000 &&
+        (!('style' in b) || b.style in ['headline', 'body', 'caption']);
+    }
+
+    function validHeroPhoneImageBlock(b) {
+      return b is map && b.kind == 'image' &&
+        b.keys().hasAll(['kind', 'url', 'fit']) &&
+        b.keys().hasOnly(['kind', 'url', 'fit', 'maxHeightPct', 'overlayHeadline', 'overlayBody']) &&
+        b.url is string && isValidUrl(b.url) && b.url.size() < 2000 &&
+        b.fit in ['cover', 'contain', 'fill'] &&
+        (!('maxHeightPct' in b) || heroPhoneMaxHeightPct(b.maxHeightPct)) &&
+        (!('overlayHeadline' in b) || (b.overlayHeadline is string && b.overlayHeadline.size() > 0 && b.overlayHeadline.size() < 200)) &&
+        (!('overlayBody' in b) || (b.overlayBody is string && b.overlayBody.size() < 600));
+    }
+
+    function validHeroPhoneBlock(b) {
+      return validHeroPhoneTextBlock(b) || validHeroPhoneImageBlock(b);
+    }
+
+    function validHeroPhoneBlocksList(q) {
+      return q is list && q.size() >= 1 && q.size() <= 10 &&
+        (q.size() < 1 || validHeroPhoneBlock(q[0])) &&
+        (q.size() < 2 || validHeroPhoneBlock(q[1])) &&
+        (q.size() < 3 || validHeroPhoneBlock(q[2])) &&
+        (q.size() < 4 || validHeroPhoneBlock(q[3])) &&
+        (q.size() < 5 || validHeroPhoneBlock(q[4])) &&
+        (q.size() < 6 || validHeroPhoneBlock(q[5])) &&
+        (q.size() < 7 || validHeroPhoneBlock(q[6])) &&
+        (q.size() < 8 || validHeroPhoneBlock(q[7])) &&
+        (q.size() < 9 || validHeroPhoneBlock(q[8])) &&
+        (q.size() < 10 || validHeroPhoneBlock(q[9]));
+    }
+
+    function heroPhoneSlideLinksValid(s) {
+      return (!('label' in s) || (s.label is string && s.label.size() < 80)) &&
+        (!('linkUrl' in s) || (s.linkUrl is string && isValidUrl(s.linkUrl) && s.linkUrl.size() < 2000)) &&
+        (!('linkLabel' in s) || ('linkUrl' in s)) &&
+        (!('linkLabel' in s) || (s.linkLabel is string && s.linkLabel.size() > 0 && s.linkLabel.size() < 48));
+    }
+
+    function isValidHeroPhoneAdSlideLegacy(s) {
+      return s is map &&
+        s.keys().hasAll(['id', 'headline', 'body', 'gradientPreset']) &&
+        s.keys().hasOnly([
+          'id', 'headline', 'body', 'label', 'gradientPreset',
+          'imageUrl', 'linkUrl', 'linkLabel'
+        ]) &&
+        !('blocks' in s) &&
+        s.id is string && s.id.size() > 0 && s.id.size() < 120 &&
+        s.headline is string && s.headline.size() > 0 && s.headline.size() < 200 &&
+        s.body is string && s.body.size() > 0 && s.body.size() < 1200 &&
+        s.gradientPreset in ['sky_indigo', 'violet_fuchsia', 'emerald_teal', 'rose_orange', 'amber_stone', 'cyan_blue'] &&
+        (!('imageUrl' in s) || (s.imageUrl is string && isValidUrl(s.imageUrl) && s.imageUrl.size() < 2000)) &&
+        heroPhoneSlideLinksValid(s);
+    }
+
+    function isValidHeroPhoneAdSlideBlocks(s) {
+      return s is map &&
+        s.keys().hasAll(['id', 'gradientPreset', 'blocks']) &&
+        s.keys().hasOnly(['id', 'gradientPreset', 'blocks', 'label', 'linkUrl', 'linkLabel', 'slideDurationSec', 'enabled']) &&
+        s.id is string && s.id.size() > 0 && s.id.size() < 120 &&
+        s.gradientPreset in ['sky_indigo', 'violet_fuchsia', 'emerald_teal', 'rose_orange', 'amber_stone', 'cyan_blue'] &&
+        validHeroPhoneBlocksList(s.blocks) &&
+        heroPhoneSlideLinksValid(s) &&
+        (!('slideDurationSec' in s) || heroPhoneDurationSeconds(s.slideDurationSec)) &&
+        (!('enabled' in s) || s.enabled is bool);
+    }
+
+    function isValidHeroPhoneAdSlide(s) {
+      return isValidHeroPhoneAdSlideLegacy(s) || isValidHeroPhoneAdSlideBlocks(s);
+    }
+
+    function validHeroPhoneAdsSlidesList(q) {
+      return q is list && q.size() >= 1 && q.size() <= 8 &&
+        (q.size() < 1 || isValidHeroPhoneAdSlide(q[0])) &&
+        (q.size() < 2 || isValidHeroPhoneAdSlide(q[1])) &&
+        (q.size() < 3 || isValidHeroPhoneAdSlide(q[2])) &&
+        (q.size() < 4 || isValidHeroPhoneAdSlide(q[3])) &&
+        (q.size() < 5 || isValidHeroPhoneAdSlide(q[4])) &&
+        (q.size() < 6 || isValidHeroPhoneAdSlide(q[5])) &&
+        (q.size() < 7 || isValidHeroPhoneAdSlide(q[6])) &&
+        (q.size() < 8 || isValidHeroPhoneAdSlide(q[7]));
+    }
+
+    // Top-level shape only; deep slide/block validation was rejecting valid client payloads. Client + app validate content.
+    // Do not require updatedAt in hasAll() (serverTimestamp sentinel is unreliable in rules). Do not validate updatedAt's
+    // value — sentinels can fail == request.time and is timestamp; admin-only write is still gated by isAdmin().
+    function isValidHeroPhoneAdsWrite(data) {
+      return data.keys().hasAll(['enabled', 'slides']) &&
+        data.keys().hasOnly(['enabled', 'slides', 'updatedAt', 'defaultSlideDurationSec']) &&
+        data.enabled is bool &&
+        data.slides is list && data.slides.size() >= 1 && data.slides.size() <= 8 &&
+        (!('defaultSlideDurationSec' in data) || heroPhoneDurationSeconds(data.defaultSlideDurationSec));
+    }
+
+    match /siteSettings/heroPhoneAds {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidHeroPhoneAdsWrite(request.resource.data);
+      allow delete: if false;
     }
 
     match /publishedCourses/{courseId} {

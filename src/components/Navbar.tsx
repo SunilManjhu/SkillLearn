@@ -1,11 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
-import { Search, Menu, User, Bell, ChevronDown, X, LogOut, Moon, Sun, BellRing, LogIn, Shield } from 'lucide-react';
+import { Menu, User, Bell, ChevronDown, X, LogOut, Moon, Sun, BellRing, LogIn, Shield } from 'lucide-react';
 import { User as FirebaseUser } from '../firebase';
 import type { AuthProfileSnapshot } from '../utils/authProfileCache';
-import { allPresetCatalogCategories } from '../utils/catalogCategoryPresets';
-
 export interface NavbarNotification {
   id: string;
   message: string;
@@ -13,7 +11,7 @@ export interface NavbarNotification {
   time: string;
   kind?: 'certificate' | 'broadcast' | 'generic';
   actionView?: 'home' | 'catalog' | 'contact' | 'profile' | 'admin';
-  adminTab?: 'alerts' | 'catalog' | 'moderation' | 'roles';
+  adminTab?: 'alerts' | 'ai' | 'catalog' | 'marketing' | 'moderation' | 'roles';
   /** When opening Admin → Moderation, which inbox sub-tab to show. */
   adminModerationSubTab?: 'reports' | 'suggestions' | 'contact';
   actionLabel?: string;
@@ -26,15 +24,22 @@ export interface NavbarNotification {
 interface NavbarProps {
   onNavigate: (view: 'home' | 'catalog' | 'contact' | 'profile' | 'admin', clear?: boolean) => void;
   activeView: string;
-  searchQuery: string;
-  onSearchChange: (query: string) => void;
+  /** Course Library filter control (catalog list only); replaces the old navbar search field. */
+  catalogNavFilter?: React.ReactNode;
   onCategorySelect: (category: string) => void;
+  /** Course Library category names (main pills + “More”), same order as filters; excludes “All”. */
+  catalogBrowseCategories: readonly string[];
+  /** Skill tags for Browse → Skills (presets + extras + from published courses). */
+  catalogBrowseSkills: readonly string[];
+  /** Active Course Library category filters (for menu/dropdown selected state and toggling). */
+  catalogActiveCategoryTags?: readonly string[];
+  /** Active Course Library skill filters. */
+  catalogActiveSkillTags?: readonly string[];
   /** Titles and ids from Firestore `learningPaths` (same as admin Path builder). */
   learningPaths?: ReadonlyArray<{ id: string; title: string }>;
   /** Path document id from `learningPaths`. */
   onPathSelect: (pathId: string) => void;
   onSkillSelect: (skill: string) => void;
-  onClearFilters: () => void;
   theme: 'dark' | 'light';
   onThemeToggle: () => void;
   /** False until Firebase has reported initial auth state (avoids flashing "Login" when the user is already signed in). */
@@ -61,13 +66,15 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({ 
   onNavigate, 
   activeView,
-  searchQuery, 
-  onSearchChange, 
+  catalogNavFilter,
   onCategorySelect,
+  catalogBrowseCategories,
+  catalogBrowseSkills,
+  catalogActiveCategoryTags = [],
+  catalogActiveSkillTags = [],
   learningPaths = [],
   onPathSelect,
   onSkillSelect,
-  onClearFilters,
   theme,
   onThemeToggle,
   isAuthReady,
@@ -83,38 +90,42 @@ export const Navbar: React.FC<NavbarProps> = ({
   isAdmin = false,
   immersiveHidden = false,
 }) => {
-  const [openDropdown, setOpenDropdown] = useState<'browse' | 'paths' | 'skills' | 'profile' | 'notifications' | null>(null);
-  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [openDropdown, setOpenDropdown] = useState<'paths' | 'skills' | 'profile' | 'notifications' | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [mobileNavExpand, setMobileNavExpand] = useState<'browse' | 'paths' | 'skills' | null>(null);
+  const [mobileNavExpand, setMobileNavExpand] = useState<'paths' | 'skills' | null>(null);
   const [focusedItemIndex, setFocusedItemIndex] = useState(-1);
   const [focusedNavIndex, setFocusedNavIndex] = useState(0);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
   const notificationRef = useRef<HTMLDivElement>(null);
-  const mobileSearchPanelRef = useRef<HTMLDivElement>(null);
-  const mobileSearchToggleRef = useRef<HTMLButtonElement>(null);
-  const mobileSearchInputRef = useRef<HTMLInputElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const mobileMenuToggleRef = useRef<HTMLButtonElement>(null);
   const navItemsRef = useRef<(HTMLButtonElement | null)[]>([]);
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
-  useBodyScrollLock(mobileMenuOpen || mobileSearchOpen);
+  useEffect(() => {
+    if (activeView !== 'catalog' || typeof window === 'undefined') return;
+    if (!window.matchMedia('(max-width: 767px)').matches) return;
+    setOpenDropdown((d) => (d === 'notifications' ? null : d));
+  }, [activeView]);
 
-  const browseItems = allPresetCatalogCategories();
-  const skillItems = ['React', 'TypeScript', 'Node.js', 'Python', 'Docker', 'Kubernetes', 'AWS'];
+  useBodyScrollLock(mobileMenuOpen);
+
+  const skillItems = catalogBrowseSkills;
+
+  const tagIsActive = (active: readonly string[], item: string) => {
+    const k = item.trim().toLowerCase();
+    return active.some((t) => t.trim().toLowerCase() === k);
+  };
 
   const getItems = () => {
-    if (openDropdown === 'browse') return browseItems;
     if (openDropdown === 'paths') return learningPaths.map((p) => p.id);
     if (openDropdown === 'skills') return skillItems;
     return [];
   };
 
   const handleItemSelect = (item: string) => {
-    if (openDropdown === 'browse') onCategorySelect(item);
     if (openDropdown === 'paths') onPathSelect(item);
     if (openDropdown === 'skills') onSkillSelect(item);
     setOpenDropdown(null);
@@ -125,7 +136,6 @@ export const Navbar: React.FC<NavbarProps> = ({
     const closeMenusFromVideoInteraction = () => {
       setMobileMenuOpen(false);
       setMobileNavExpand(null);
-      setMobileSearchOpen(false);
       setOpenDropdown(null);
       setFocusedItemIndex(-1);
     };
@@ -150,15 +160,6 @@ export const Navbar: React.FC<NavbarProps> = ({
         setFocusedItemIndex(-1);
       }
       if (
-        mobileSearchOpen &&
-        mobileSearchPanelRef.current &&
-        !mobileSearchPanelRef.current.contains(target) &&
-        mobileSearchToggleRef.current &&
-        !mobileSearchToggleRef.current.contains(target)
-      ) {
-        setMobileSearchOpen(false);
-      }
-      if (
         mobileMenuOpen &&
         mobileMenuRef.current &&
         !mobileMenuRef.current.contains(target) &&
@@ -170,7 +171,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [mobileSearchOpen, mobileMenuOpen]);
+  }, [mobileMenuOpen]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -187,20 +188,10 @@ export const Navbar: React.FC<NavbarProps> = ({
         setMobileNavExpand(null);
         return;
       }
-      if (mobileSearchOpen) {
-        e.preventDefault();
-        setMobileSearchOpen(false);
-      }
     };
     document.addEventListener('keydown', onKey, true);
     return () => document.removeEventListener('keydown', onKey, true);
-  }, [openDropdown, mobileMenuOpen, mobileSearchOpen]);
-
-  useEffect(() => {
-    if (!mobileSearchOpen) return;
-    const id = requestAnimationFrame(() => mobileSearchInputRef.current?.focus());
-    return () => cancelAnimationFrame(id);
-  }, [mobileSearchOpen]);
+  }, [openDropdown, mobileMenuOpen]);
 
   /** Move focus into the page when the drawer opens so Esc reaches document (e.g. after YouTube iframe had focus). */
   useEffect(() => {
@@ -210,15 +201,6 @@ export const Navbar: React.FC<NavbarProps> = ({
     });
     return () => cancelAnimationFrame(id);
   }, [mobileMenuOpen]);
-
-  useEffect(() => {
-    const mq = window.matchMedia('(min-width: 1024px)');
-    const onChange = () => {
-      if (mq.matches) setMobileSearchOpen(false);
-    };
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, []);
 
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 768px)');
@@ -253,7 +235,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     setNotifications([]);
   };
 
-  const handleTopLevelKeyDown = (e: React.KeyboardEvent, index: number, type?: 'browse' | 'paths' | 'skills' | 'profile' | 'notifications') => {
+  const handleTopLevelKeyDown = (e: React.KeyboardEvent, index: number, type?: 'paths' | 'skills' | 'profile' | 'notifications') => {
     // If dropdown is open, handle vertical navigation
     if (openDropdown === type && type) {
       const items = getItems();
@@ -308,8 +290,8 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <>
-    <nav className="fixed top-0 left-0 right-0 h-16 bg-[var(--bg-secondary)] border-b border-[var(--border-color)] flex items-center justify-between px-6 z-50 transition-colors duration-300 overflow-visible">
-      <div className="flex items-center gap-8">
+    <nav className="fixed top-0 left-0 right-0 z-50 flex min-h-16 items-center justify-between gap-2 overflow-visible border-b border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 transition-colors duration-300 sm:gap-3 sm:px-4 md:px-6">
+      <div className="flex min-w-0 flex-1 items-center gap-2 md:gap-6 lg:gap-8">
         <button 
           ref={el => navItemsRef.current[0] = el}
           onKeyDown={(e) => handleTopLevelKeyDown(e, 0)}
@@ -321,41 +303,30 @@ export const Navbar: React.FC<NavbarProps> = ({
           <span className={`text-xl font-bold tracking-tighter hidden sm:block transition-colors ${activeView === 'home' ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>SKILLSTREAM</span>
         </button>
         
-        <div className="hidden md:flex items-center gap-6 text-sm font-medium text-[var(--text-secondary)]" ref={dropdownRef}>
-          {/* Browse Dropdown */}
-          <div className="relative">
-            <button 
-              type="button"
-              ref={el => navItemsRef.current[1] = el}
-              onKeyDown={(e) => handleTopLevelKeyDown(e, 1, 'browse')}
-              onClick={() => {
-                setOpenDropdown(openDropdown === 'browse' ? null : 'browse');
-                setFocusedItemIndex(-1);
-              }}
-              tabIndex={focusedNavIndex === 1 ? 0 : -1}
-              className={`hover:text-[var(--text-primary)] transition-colors flex items-center gap-1 h-16 focus:outline-none focus:text-[var(--text-primary)] ${activeView === 'catalog' ? 'text-orange-500 border-b-2 border-orange-500' : 'text-[var(--text-secondary)]'}`}
-            >
-              Browse <ChevronDown size={14} className={`${openDropdown === 'browse' ? 'rotate-180' : ''} transition-transform`} />
-            </button>
-            {openDropdown === 'browse' && (
-              <div 
-                className="absolute top-full left-0 w-56 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-b-lg shadow-xl py-2 z-50"
-              >
-                {browseItems.map((item, index) => (
-                  <button
-                    key={item}
-                    onClick={() => handleItemSelect(item)}
-                    onMouseEnter={() => setFocusedItemIndex(index)}
-                    className={`w-full text-left px-4 py-2 transition-colors focus:outline-none ${focusedItemIndex === index ? 'bg-[var(--hover-bg)] text-orange-500' : 'hover:bg-[var(--hover-bg)] hover:text-orange-500'}`}
-                  >
-                    {item}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+        <div
+          className={`hidden items-center gap-6 text-sm font-medium text-[var(--text-secondary)] ${
+            activeView === 'catalog' ? 'lg:flex' : 'md:flex'
+          }`}
+          ref={dropdownRef}
+        >
+          <button
+            type="button"
+            ref={(el) => {
+              navItemsRef.current[1] = el;
+            }}
+            onKeyDown={(e) => handleTopLevelKeyDown(e, 1)}
+            onClick={() => {
+              setOpenDropdown(null);
+              setFocusedItemIndex(-1);
+              onNavigate('catalog');
+            }}
+            tabIndex={focusedNavIndex === 1 ? 0 : -1}
+            className={`h-16 transition-colors hover:text-[var(--text-primary)] focus:text-[var(--text-primary)] focus:outline-none ${activeView === 'catalog' ? 'border-b-2 border-orange-500 text-orange-500' : 'text-[var(--text-secondary)]'}`}
+          >
+            Browse Catalog
+          </button>
 
-          {/* Paths Dropdown */}
+          {/* Learning Paths dropdown */}
           <div className="relative">
             <button 
               ref={el => navItemsRef.current[2] = el}
@@ -367,14 +338,15 @@ export const Navbar: React.FC<NavbarProps> = ({
               tabIndex={focusedNavIndex === 2 ? 0 : -1}
               className="hover:text-[var(--text-primary)] transition-colors flex items-center gap-1 h-16 focus:outline-none focus:text-[var(--text-primary)]"
             >
-              Paths <ChevronDown size={14} className={`${openDropdown === 'paths' ? 'rotate-180' : ''} transition-transform`} />
+              Learning Paths{' '}
+              <ChevronDown size={14} className={`${openDropdown === 'paths' ? 'rotate-180' : ''} transition-transform`} />
             </button>
             {openDropdown === 'paths' && (
               <div 
                 className="absolute top-full left-0 w-56 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-b-lg shadow-xl py-2 z-50"
               >
                 {learningPaths.length === 0 ? (
-                  <p className="px-4 py-2 text-sm text-[var(--text-muted)]">No learning paths yet</p>
+                  <p className="px-4 py-2 text-sm text-[var(--text-muted)]">No Learning Paths yet</p>
                 ) : (
                   learningPaths.map((path, index) => (
                     <button
@@ -410,23 +382,32 @@ export const Navbar: React.FC<NavbarProps> = ({
               <div 
                 className="absolute top-full left-0 w-56 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-b-lg shadow-xl py-2 z-50"
               >
-                {skillItems.map((item, index) => (
-                  <button
-                    key={item}
-                    onClick={() => handleItemSelect(item)}
-                    onMouseEnter={() => setFocusedItemIndex(index)}
-                    className={`w-full text-left px-4 py-2 transition-colors focus:outline-none ${focusedItemIndex === index ? 'bg-[var(--hover-bg)] text-orange-500' : 'hover:bg-[var(--hover-bg)] hover:text-orange-500'}`}
-                  >
-                    {item}
-                  </button>
-                ))}
+                {skillItems.map((item, index) => {
+                  const selected = tagIsActive(catalogActiveSkillTags, item);
+                  return (
+                    <button
+                      key={item}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => handleItemSelect(item)}
+                      onMouseEnter={() => setFocusedItemIndex(index)}
+                      className={`w-full min-h-10 text-left px-4 py-2 transition-colors focus:outline-none ${selected ? 'bg-orange-500/15 font-medium text-orange-500' : ''} ${focusedItemIndex === index ? 'bg-[var(--hover-bg)] text-orange-500' : 'hover:bg-[var(--hover-bg)] hover:text-orange-500'}`}
+                    >
+                      {item}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
 
           <button 
             ref={el => navItemsRef.current[4] = el}
-            onClick={() => onNavigate('contact')}
+            onClick={() => {
+              setOpenDropdown(null);
+              setFocusedItemIndex(-1);
+              onNavigate('contact');
+            }}
             onKeyDown={(e) => handleTopLevelKeyDown(e, 4)}
             tabIndex={focusedNavIndex === 4 ? 0 : -1}
             className={`hover:text-[var(--text-primary)] transition-colors h-16 focus:outline-none focus:text-[var(--text-primary)] ${activeView === 'contact' ? 'text-orange-500 border-b-2 border-orange-500' : 'text-[var(--text-secondary)]'}`}
@@ -434,87 +415,13 @@ export const Navbar: React.FC<NavbarProps> = ({
             Contact Us
           </button>
         </div>
+
+        {catalogNavFilter ? (
+          <div className="min-w-0 flex-1 py-1">{catalogNavFilter}</div>
+        ) : null}
       </div>
 
-      <div className="flex-1 max-w-xl px-8 hidden lg:block">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" size={18} />
-          <input 
-            type="text" 
-            placeholder="What do you want to learn?"
-            value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
-            className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-md py-2 pl-10 pr-10 text-sm text-[var(--text-primary)] focus:outline-none focus:border-orange-500/50 transition-colors"
-          />
-          {searchQuery && (
-            <button 
-              type="button"
-              onClick={onClearFilters}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-            >
-              <X size={16} />
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div
-        id="mobile-search-panel"
-        ref={mobileSearchPanelRef}
-        className={`lg:hidden fixed top-16 left-0 right-0 z-40 border-b border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 shadow-lg ${mobileSearchOpen ? 'block' : 'hidden'}`}
-        role="search"
-      >
-        <div className="relative max-w-xl mx-auto">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" size={18} />
-          <input
-            ref={mobileSearchInputRef}
-            type="search"
-            enterKeyHint="search"
-            placeholder="What do you want to learn?"
-            value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                e.preventDefault();
-                setMobileSearchOpen(false);
-              }
-            }}
-            className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-md py-2.5 pl-10 pr-10 text-sm text-[var(--text-primary)] focus:outline-none focus:border-orange-500/50 transition-colors"
-            aria-label="Search courses"
-          />
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => {
-                onClearFilters();
-                setMobileSearchOpen(false);
-              }}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-              aria-label="Clear search"
-            >
-              <X size={16} />
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="flex items-center gap-4">
-        <button
-          ref={mobileSearchToggleRef}
-          type="button"
-          className="p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] lg:hidden"
-          onClick={() => {
-            setMobileSearchOpen((open) => !open);
-            setMobileMenuOpen(false);
-            setOpenDropdown(null);
-          }}
-          aria-expanded={mobileSearchOpen}
-          aria-controls="mobile-search-panel"
-          aria-label={mobileSearchOpen ? 'Close search' : 'Open search'}
-        >
-          {mobileSearchOpen ? <X size={20} /> : <Search size={20} />}
-        </button>
-
+      <div className="flex shrink-0 items-center gap-2 sm:gap-4">
         <button
           type="button"
           onClick={() => {
@@ -522,15 +429,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             setMobileMenuOpen(false);
             onThemeToggle();
           }}
-          className="rounded-lg p-2 text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-orange-500/50"
+          className="hidden rounded-lg p-2 text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-orange-500/50 md:inline-flex md:items-center md:justify-center"
           aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
           title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
         >
           {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
         </button>
 
-        {/* Notifications */}
-        <div className="relative" ref={notificationRef}>
+        {/* Notifications — hidden on small screens while browsing catalog so the filter bar has room. */}
+        <div
+          className={`relative ${activeView === 'catalog' ? 'max-md:hidden' : ''}`}
+          ref={notificationRef}
+        >
           <button 
             type="button"
             onClick={() => {
@@ -623,8 +533,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           )}
         </div>
 
-        {/* User Profile / Login — loading uses same footprint as avatar to avoid shifting search/notifications. */}
-        <div className="relative flex h-10 shrink-0 items-center" ref={profileRef}>
+        {/* User Profile / Login — top bar from md up; mobile uses hamburger account section. */}
+        <div className="relative hidden h-10 shrink-0 items-center md:flex" ref={profileRef}>
           {user ? (
             <>
               <button 
@@ -728,10 +638,11 @@ export const Navbar: React.FC<NavbarProps> = ({
         <button
           ref={mobileMenuToggleRef}
           type="button"
-          className="p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] md:hidden"
+          className={`p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] ${
+            activeView === 'catalog' ? 'lg:hidden' : 'md:hidden'
+          }`}
           onClick={() => {
             setMobileMenuOpen((open) => !open);
-            setMobileSearchOpen(false);
             setOpenDropdown(null);
           }}
           aria-expanded={mobileMenuOpen}
@@ -746,7 +657,9 @@ export const Navbar: React.FC<NavbarProps> = ({
         <>
           <button
             type="button"
-            className="fixed inset-0 top-16 z-[45] bg-black/50 md:hidden"
+            className={`fixed inset-0 top-16 z-[45] bg-black/50 ${
+              activeView === 'catalog' ? 'lg:hidden' : 'md:hidden'
+            }`}
             aria-label="Close menu"
             onClick={() => {
               setMobileMenuOpen(false);
@@ -757,7 +670,9 @@ export const Navbar: React.FC<NavbarProps> = ({
             id="mobile-nav-drawer"
             ref={mobileMenuRef}
             tabIndex={-1}
-            className="fixed bottom-0 left-0 top-16 z-[46] flex w-full max-w-sm flex-col overflow-y-auto overscroll-contain border-r border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-xl outline-none focus:outline-none md:hidden"
+            className={`fixed bottom-0 left-0 top-16 z-[46] flex w-full max-w-sm flex-col overflow-y-auto overscroll-contain border-r border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-xl outline-none focus:outline-none ${
+              activeView === 'catalog' ? 'lg:hidden' : 'md:hidden'
+            }`}
             role="dialog"
             aria-modal="true"
             aria-label="Main navigation"
@@ -768,7 +683,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="border-b border-[var(--border-color)] px-2 py-2">
               <button
                 type="button"
-                className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-[var(--text-primary)] hover:bg-[var(--hover-bg)]"
+                className="flex w-full min-h-11 items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-[var(--text-primary)] hover:bg-[var(--hover-bg)] touch-manipulation"
                 onClick={() => onThemeToggle()}
                 aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
               >
@@ -776,46 +691,76 @@ export const Navbar: React.FC<NavbarProps> = ({
                 {theme === 'dark' ? 'Light mode' : 'Dark mode'}
               </button>
             </div>
+            <div className="border-b border-[var(--border-color)] px-2 py-2">
+              {user ? (
+                <div className="flex flex-col gap-0.5">
+                  <button
+                    type="button"
+                    className="flex w-full min-h-11 items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-[var(--text-primary)] hover:bg-[var(--hover-bg)] touch-manipulation"
+                    onClick={() => {
+                      onNavigate('profile');
+                      setMobileMenuOpen(false);
+                      setMobileNavExpand(null);
+                    }}
+                  >
+                    <User size={18} className="shrink-0 text-[var(--text-secondary)]" aria-hidden />
+                    Profile
+                  </button>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      className="flex w-full min-h-11 items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-orange-500 hover:bg-orange-500/10 touch-manipulation"
+                      onClick={() => {
+                        onNavigate('admin');
+                        setMobileMenuOpen(false);
+                        setMobileNavExpand(null);
+                      }}
+                    >
+                      <Shield size={18} className="shrink-0" aria-hidden />
+                      Admin
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="flex w-full min-h-11 items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-red-400 hover:bg-red-500/10 touch-manipulation"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      setMobileNavExpand(null);
+                      onLogout();
+                    }}
+                  >
+                    <LogOut size={18} className="shrink-0" aria-hidden />
+                    Logout
+                  </button>
+                </div>
+              ) : !isAuthReady ? (
+                <p className="px-3 py-2 text-xs text-[var(--text-muted)]">Checking account…</p>
+              ) : (
+                <button
+                  type="button"
+                  className="flex w-full min-h-11 items-center gap-2 rounded-lg bg-orange-500 px-3 py-2.5 text-left text-sm font-bold text-white hover:bg-orange-600 touch-manipulation"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    onLogin();
+                  }}
+                >
+                  <LogIn size={18} className="shrink-0" aria-hidden />
+                  Login
+                </button>
+              )}
+            </div>
             <div className="flex flex-col py-2 text-sm font-medium text-[var(--text-secondary)]">
               <button
                 type="button"
                 className={`px-4 py-3 text-left transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] ${activeView === 'catalog' ? 'text-orange-500' : ''}`}
                 onClick={() => {
-                  onNavigate('catalog', false);
+                  /* Default shouldClear=true matches desktop Browse Catalog: clears learning path + library filters. */
+                  onNavigate('catalog');
                   setMobileMenuOpen(false);
                 }}
               >
-                Browse catalog
+                Browse Catalog
               </button>
-              <div className="border-t border-[var(--border-color)]">
-                <button
-                  type="button"
-                  className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-[var(--hover-bg)]"
-                  onClick={() => setMobileNavExpand((e) => (e === 'browse' ? null : 'browse'))}
-                  aria-expanded={mobileNavExpand === 'browse'}
-                >
-                  <span>Categories</span>
-                  <ChevronDown size={16} className={`shrink-0 transition-transform ${mobileNavExpand === 'browse' ? 'rotate-180' : ''}`} />
-                </button>
-                {mobileNavExpand === 'browse' && (
-                  <div className="border-t border-[var(--border-color)] bg-[var(--bg-primary)]/30 pb-2">
-                    {browseItems.map((item) => (
-                      <button
-                        key={item}
-                        type="button"
-                        className="w-full px-6 py-2.5 text-left text-sm hover:bg-[var(--hover-bg)] hover:text-orange-500"
-                        onClick={() => {
-                          onCategorySelect(item);
-                          setMobileMenuOpen(false);
-                          setMobileNavExpand(null);
-                        }}
-                      >
-                        {item}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
               <div className="border-t border-[var(--border-color)]">
                 <button
                   type="button"
@@ -823,13 +768,13 @@ export const Navbar: React.FC<NavbarProps> = ({
                   onClick={() => setMobileNavExpand((e) => (e === 'paths' ? null : 'paths'))}
                   aria-expanded={mobileNavExpand === 'paths'}
                 >
-                  <span>Paths</span>
+                  <span>Learning Paths</span>
                   <ChevronDown size={16} className={`shrink-0 transition-transform ${mobileNavExpand === 'paths' ? 'rotate-180' : ''}`} />
                 </button>
                 {mobileNavExpand === 'paths' && (
                   <div className="border-t border-[var(--border-color)] bg-[var(--bg-primary)]/30 pb-2">
                     {learningPaths.length === 0 ? (
-                      <p className="px-6 py-2.5 text-sm text-[var(--text-muted)]">No learning paths yet</p>
+                      <p className="px-6 py-2.5 text-sm text-[var(--text-muted)]">No Learning Paths yet</p>
                     ) : (
                       learningPaths.map((path) => (
                         <button
@@ -861,41 +806,32 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
                 {mobileNavExpand === 'skills' && (
                   <div className="border-t border-[var(--border-color)] bg-[var(--bg-primary)]/30 pb-2">
-                    {skillItems.map((item) => (
-                      <button
-                        key={item}
-                        type="button"
-                        className="w-full px-6 py-2.5 text-left text-sm hover:bg-[var(--hover-bg)] hover:text-orange-500"
-                        onClick={() => {
-                          onSkillSelect(item);
-                          setMobileMenuOpen(false);
-                          setMobileNavExpand(null);
-                        }}
-                      >
-                        {item}
-                      </button>
-                    ))}
+                    {skillItems.map((item) => {
+                      const selected = tagIsActive(catalogActiveSkillTags, item);
+                      return (
+                        <button
+                          key={item}
+                          type="button"
+                          aria-pressed={selected}
+                          className={`w-full min-h-11 px-6 py-2.5 text-left text-sm transition-colors ${selected ? 'bg-orange-500/15 font-medium text-orange-500' : 'hover:bg-[var(--hover-bg)] hover:text-orange-500'}`}
+                          onClick={() => {
+                            onSkillSelect(item);
+                          }}
+                        >
+                          {item}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
-              {isAdmin && user && (
-                <button
-                  type="button"
-                  className="border-t border-[var(--border-color)] px-4 py-3 text-left text-orange-500 transition-colors hover:bg-orange-500/10"
-                  onClick={() => {
-                    onNavigate('admin');
-                    setMobileMenuOpen(false);
-                  }}
-                >
-                  Admin
-                </button>
-              )}
               <button
                 type="button"
                 className={`border-t border-[var(--border-color)] px-4 py-3 text-left transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] ${activeView === 'contact' ? 'text-orange-500' : ''}`}
                 onClick={() => {
                   onNavigate('contact');
                   setMobileMenuOpen(false);
+                  setMobileNavExpand(null);
                 }}
               >
                 Contact Us

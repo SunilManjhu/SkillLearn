@@ -1,25 +1,48 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   BookOpen,
   Copy,
+  Info,
   Loader2,
   Plus,
   Route,
   Save,
+  SlidersHorizontal,
+  Tags,
   Trash2,
   RefreshCw,
+  Sparkles,
   X,
+  ArrowDown,
+  ArrowUp,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
 } from 'lucide-react';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { useDialogKeyboard } from '../../hooks/useDialogKeyboard';
 import { useAdminActionToast } from './useAdminActionToast';
 import { PathBuilderSection, type PathBuilderSectionHandle } from './PathBuilderSection';
-import type { Course, Lesson, Module } from '../../data/courses';
-import { STRUCTURED_COURSE_ID_RE, isStructuredCourseId } from '../../utils/courseStructuredIds';
-import { validateCourseDraft } from '../../utils/courseDraftValidation';
+import { AdminCatalogCategoriesPanel } from './AdminCatalogCategoriesPanel';
+import { AdminCatalogCategoryPresetsPanel } from './AdminCatalogCategoryPresetsPanel';
+import { AdminCatalogSkillPresetsPanel } from './AdminCatalogSkillPresetsPanel';
+import { AdminCatalogTaxonomyPanel } from './AdminCatalogTaxonomyPanel';
+import type { Course, Lesson, Module, QuizQuestion, QuizQuestionMcq } from '../../data/courses';
+import {
+  MAX_QUIZ_CHOICES,
+  MAX_QUIZ_QUESTIONS,
+  createDefaultFreeformQuestion,
+  createDefaultMcqQuestion,
+} from '../../data/courses';
+import {
+  STRUCTURED_COURSE_ID_RE,
+  isStructuredCourseId,
+  remapStructuredCourseModuleLessonIdsByOrder,
+} from '../../utils/courseStructuredIds';
+import { validateCourseDraft, validateLessonQuiz } from '../../utils/courseDraftValidation';
+import { lessonWebHref } from '../../utils/lessonContent';
 import {
   loadPublishedCoursesFromFirestore,
   savePublishedCourse,
@@ -31,9 +54,37 @@ import {
   readCatalogCategoryExtras,
 } from '../../utils/catalogCategoryExtras';
 import {
-  allPresetCatalogCategories,
-  defaultNewCourseCategory,
+  addCatalogSkillExtra,
+  CATALOG_SKILL_EXTRAS_CHANGED,
+  readCatalogSkillExtras,
+} from '../../utils/catalogSkillExtras';
+import {
+  CATALOG_SKILL_PRESETS_CHANGED,
+  DEFAULT_CATALOG_SKILL_PRESETS,
+  normalizeCatalogSkillPresets,
+  type CatalogSkillPresetsState,
+} from '../../utils/catalogSkillPresetsState';
+import { loadCatalogSkillPresets } from '../../utils/catalogSkillPresetsFirestore';
+import {
+  allPresetCatalogCategoriesFromState,
+  CATALOG_CATEGORY_PRESETS_CHANGED,
+  DEFAULT_CATALOG_CATEGORY_PRESETS,
+  defaultNewCourseCategoryFromState,
+  getCachedCatalogCategoryPresets,
+  normalizeCatalogCategoryPresets,
+  type CatalogCategoryPresetsState,
 } from '../../utils/catalogCategoryPresets';
+import { loadCatalogCategoryPresets } from '../../utils/catalogCategoryPresetsFirestore';
+import { dedupeLabelsPreserveOrder, normalizeCourseTaxonomy } from '../../utils/courseTaxonomy';
+import { getGeminiApiKey } from '../../utils/geminiClient';
+import { resolveMcqCorrectIndex } from '../../utils/geminiQuiz';
+import {
+  applyReorderViewportScrollAndFocus,
+  escapeSelectorAttrValue,
+  queryElementInScopeOrDocument,
+  REORDER_DATA_ATTR_SELECTORS,
+} from '../../utils/reorderScrollViewport';
+import { scrollDisclosureRowToTop } from '../../utils/scrollDisclosureRowToTop';
 
 function deepClone<T>(x: T): T {
   return JSON.parse(JSON.stringify(x)) as T;
@@ -144,7 +195,8 @@ function emptyCourse(docId: string): Course {
     level: 'Beginner',
     duration: '1h',
     rating: 4.5,
-    category: defaultNewCourseCategory(),
+    categories: [defaultNewCourseCategoryFromState(getCachedCatalogCategoryPresets())],
+    skills: [],
     modules: [
       {
         id: mid,
@@ -185,8 +237,93 @@ function remapCourseToStructuredIds(course: Course, newCourseId: string): Course
   };
 }
 
-/** Sub-tabs inside Course catalog: course entries vs learning paths. */
-type ContentCatalogSubTab = 'catalog' | 'paths';
+/** Ephemeral UI key for stable lesson row identity while reordering (not persisted). */
+type LessonWithAdminKey = Lesson & { __adminRowKey?: string };
+
+function stripAdminLessonRowKeys(course: Course): Course {
+  return {
+    ...course,
+    modules: course.modules.map((m) => ({
+      ...m,
+      lessons: m.lessons.map((les) => {
+        const { __adminRowKey: _, ...rest } = les as LessonWithAdminKey;
+        return rest as Lesson;
+      }),
+    })),
+  };
+}
+
+function ensureCourseLessonRowKeys(course: Course): Course {
+  return {
+    ...course,
+    modules: course.modules.map((m) => ({
+      ...m,
+      lessons: m.lessons.map((les) => {
+        const x = les as LessonWithAdminKey;
+        if (x.__adminRowKey) return x;
+        return { ...les, __adminRowKey: crypto.randomUUID() };
+      }),
+    })),
+  };
+}
+
+function draftJsonForBaseline(course: Course): string {
+  return JSON.stringify(stripAdminLessonRowKeys(course));
+}
+
+function lessonRowDomKey(lesson: Lesson, mi: number, li: number): string {
+  return (lesson as LessonWithAdminKey).__adminRowKey ?? `lesson-${mi}-${li}`;
+}
+
+function findLessonIndexByDomKey(mod: Module, mi: number, rowKey: string): number {
+  return mod.lessons.findIndex((l, li) => lessonRowDomKey(l, mi, li) === rowKey);
+}
+
+/** Pure, single evaluation — avoids React Strict Mode double-invoking functional setDraft (two swaps in dev). */
+function computeLessonSwapDraft(
+  d: Course,
+  mi: number,
+  lessonRowKey: string,
+  delta: -1 | 1
+): { next: Course; pair: { li: number; ni: number } } | null {
+  const m = d.modules[mi];
+  if (!m) return null;
+  const li = findLessonIndexByDomKey(m, mi, lessonRowKey);
+  if (li < 0) return null;
+  const ni = li + delta;
+  if (ni < 0 || ni >= m.lessons.length) return null;
+  const modules = d.modules.map((mm, i) => {
+    if (i !== mi) return mm;
+    const lessons = [...mm.lessons];
+    [lessons[li], lessons[ni]] = [lessons[ni]!, lessons[li]!];
+    return { ...mm, lessons };
+  });
+  let next: Course = { ...d, modules };
+  if (isStructuredCourseId(next.id)) {
+    next = remapStructuredCourseModuleLessonIdsByOrder(next);
+  }
+  return { next, pair: { li, ni } };
+}
+
+/** Pure module swap — same rationale as {@link computeLessonSwapDraft}. */
+function computeModuleSwapDraft(
+  d: Course,
+  mi: number,
+  delta: -1 | 1
+): { next: Course; pair: { a: number; b: number } } | null {
+  const ni = mi + delta;
+  if (ni < 0 || ni >= d.modules.length) return null;
+  const modules = [...d.modules];
+  [modules[mi], modules[ni]] = [modules[ni]!, modules[mi]!];
+  let next: Course = { ...d, modules };
+  if (isStructuredCourseId(next.id)) {
+    next = remapStructuredCourseModuleLessonIdsByOrder(next);
+  }
+  return { next, pair: { a: mi, b: ni } };
+}
+
+/** Sub-tabs inside Course catalog: course entries, learning paths, category management. */
+type ContentCatalogSubTab = 'catalog' | 'paths' | 'taxonomy' | 'categories' | 'presets' | 'skillPresets';
 
 /** Pending navigation while the course draft has unsaved edits. */
 type CourseLeaveDialog =
@@ -210,6 +347,36 @@ interface RequiredFieldTarget {
   lessonKeys?: string[];
 }
 
+/** Matches Tailwind `sm` breakpoint (640px); tips use fixed + measured top below this width. */
+const TIPS_NARROW_MAX_PX = 639;
+
+function useTipsNarrowViewport(): boolean {
+  const [narrow, setNarrow] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth <= TIPS_NARROW_MAX_PX : false
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${TIPS_NARROW_MAX_PX}px)`);
+    const fn = () => setNarrow(mq.matches);
+    fn();
+    mq.addEventListener('change', fn);
+    return () => mq.removeEventListener('change', fn);
+  }, []);
+  return narrow;
+}
+
+/** Fixed-position `top` (viewport px): strictly below the anchor — never overlaps the tab/button. User scrolls manually if the panel extends off-screen. */
+function readFixedTipTopBelowAnchor(anchorEl: HTMLElement, gapPx = 8): number {
+  return anchorEl.getBoundingClientRect().bottom + gapPx;
+}
+
+/** Narrow-only: `top` + CSS var for `max-h` so the panel shrink-wraps content up to remaining viewport. */
+function narrowAdminTipPanelStyle(topPx: number): React.CSSProperties {
+  return {
+    top: topPx,
+    ['--admin-tip-top' as string]: `${topPx}px`,
+  };
+}
+
 export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps> = ({
   onCatalogChanged,
   onDraftDirtyChange,
@@ -219,6 +386,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   /** '' = none selected; avoids loading Firestore until the user opens the Course dropdown. */
   const [selector, setSelector] = useState<string>('');
   const [draft, setDraft] = useState<Course | null>(null);
+  const draftRef = useRef<Course | null>(null);
+  draftRef.current = draft;
   const [busy, setBusy] = useState(false);
   const [listLoading, setListLoading] = useState(false);
   /** True after first focus on Course select or explicit Reload list — then options include New Course + published. */
@@ -238,6 +407,23 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const pendingOpenNewLessonKeyRef = useRef<string | null>(null);
   /** On failed save, scroll/focus the first invalid required field once it is rendered. */
   const pendingScrollTargetIdRef = useRef<string | null>(null);
+  /** After lesson reorder: restore viewport Y of the control + focus (mouse stays on same arrow). */
+  const pendingLessonReorderFocusRef = useRef<{
+    lessonKey: string;
+    control: 'up' | 'down';
+    beforeTop: number;
+  } | null>(null);
+  /** Bumps after lesson reorder so layout/focus runs once, not on every draft edit. */
+  const [lessonReorderLayoutTick, setLessonReorderLayoutTick] = useState(0);
+  /** After module reorder: restore viewport Y of the control + focus. */
+  const pendingModuleReorderFocusRef = useRef<{
+    targetMiAfter: number;
+    control: 'up' | 'down';
+    beforeTop: number;
+  } | null>(null);
+  const [moduleReorderLayoutTick, setModuleReorderLayoutTick] = useState(0);
+  const courseCatalogEditorRef = useRef<HTMLDivElement | null>(null);
+  const courseDetailsDisclosureRef = useRef<HTMLDivElement | null>(null);
   /** After choosing New Course (or equivalent), focus Course title once details are expanded. */
   const pendingFocusCourseTitleRef = useRef(false);
   /** Avoid collapsing the editor when selector moves from __new__ to draft.id after first save (draft id unchanged). */
@@ -246,8 +432,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     draftId: undefined,
   });
   const { showActionToast, actionToast } = useAdminActionToast();
-  /** Re-read category option list when extras change in localStorage (same tab). */
+  /** Per quiz question: AI “check MCQ key” in flight. */
+  const [mcqAiKeyBusy, setMcqAiKeyBusy] = useState<Record<string, boolean>>({});
+  /** Re-read category / skill option lists when extras change in localStorage (same tab). */
   const [categoryOptionsVersion, setCategoryOptionsVersion] = useState(0);
+  const [skillOptionsVersion, setSkillOptionsVersion] = useState(0);
 
   const [contentCatalogSubTab, setContentCatalogSubTab] = useState<ContentCatalogSubTab>('catalog');
   const [subTabSwitchConfirmOpen, setSubTabSwitchConfirmOpen] = useState(false);
@@ -256,17 +445,223 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const [pathBuilderResetKey, setPathBuilderResetKey] = useState(0);
   const pathBuilderRef = useRef<PathBuilderSectionHandle | null>(null);
   const [pathsListLoading, setPathsListLoading] = useState(false);
+  const [categoryPresetsState, setCategoryPresetsState] = useState<CatalogCategoryPresetsState>(() =>
+    normalizeCatalogCategoryPresets(DEFAULT_CATALOG_CATEGORY_PRESETS)
+  );
+  const [skillPresetsState, setSkillPresetsState] = useState<CatalogSkillPresetsState>(() =>
+    normalizeCatalogSkillPresets(DEFAULT_CATALOG_SKILL_PRESETS)
+  );
 
-  /** Full list for the Category dropdown (presets, saved extras, categories from published courses). */
+  const tipsNarrowViewport = useTipsNarrowViewport();
+  const catalogTipsWrapRef = useRef<HTMLSpanElement | null>(null);
+  const catalogTipBtnRef = useRef<HTMLButtonElement | null>(null);
+  const modulesTipsWrapRef = useRef<HTMLSpanElement | null>(null);
+  const modulesTipBtnRef = useRef<HTMLButtonElement | null>(null);
+  const categoriesTipsWrapRef = useRef<HTMLSpanElement | null>(null);
+  const categoriesTipBtnRef = useRef<HTMLButtonElement | null>(null);
+  const [catalogTipsOpen, setCatalogTipsOpen] = useState(false);
+  const [modulesTipsOpen, setModulesTipsOpen] = useState(false);
+  const [categoriesTipsOpen, setCategoriesTipsOpen] = useState(false);
+  /** Narrow-only: fixed `top` for the catalog tips panel (anchor = info button). */
+  const [catalogTipFixedTop, setCatalogTipFixedTop] = useState(-1);
+  const [modulesTipFixedTop, setModulesTipFixedTop] = useState(-1);
+  const [categoriesTipFixedTop, setCategoriesTipFixedTop] = useState(-1);
+
+  const syncCatalogTipTop = useCallback(() => {
+    if (!tipsNarrowViewport || !catalogTipsOpen || !catalogTipBtnRef.current) return;
+    setCatalogTipFixedTop(readFixedTipTopBelowAnchor(catalogTipBtnRef.current));
+  }, [tipsNarrowViewport, catalogTipsOpen]);
+
+  const syncModulesTipTop = useCallback(() => {
+    if (!tipsNarrowViewport || !modulesTipsOpen || !modulesTipBtnRef.current) return;
+    setModulesTipFixedTop(readFixedTipTopBelowAnchor(modulesTipBtnRef.current));
+  }, [tipsNarrowViewport, modulesTipsOpen]);
+
+  const syncCategoriesTipTop = useCallback(() => {
+    if (!tipsNarrowViewport || !categoriesTipsOpen || !categoriesTipBtnRef.current) return;
+    setCategoriesTipFixedTop(readFixedTipTopBelowAnchor(categoriesTipBtnRef.current));
+  }, [tipsNarrowViewport, categoriesTipsOpen]);
+
+  useLayoutEffect(() => {
+    if (!catalogTipsOpen) {
+      setCatalogTipFixedTop(-1);
+      return;
+    }
+    if (!tipsNarrowViewport || !catalogTipBtnRef.current) {
+      setCatalogTipFixedTop(-1);
+      return;
+    }
+    setCatalogTipFixedTop(readFixedTipTopBelowAnchor(catalogTipBtnRef.current));
+  }, [catalogTipsOpen, tipsNarrowViewport]);
+
+  useLayoutEffect(() => {
+    if (!modulesTipsOpen) {
+      setModulesTipFixedTop(-1);
+      return;
+    }
+    if (!tipsNarrowViewport || !modulesTipBtnRef.current) {
+      setModulesTipFixedTop(-1);
+      return;
+    }
+    setModulesTipFixedTop(readFixedTipTopBelowAnchor(modulesTipBtnRef.current));
+  }, [modulesTipsOpen, tipsNarrowViewport]);
+
+  useLayoutEffect(() => {
+    if (!categoriesTipsOpen) {
+      setCategoriesTipFixedTop(-1);
+      return;
+    }
+    if (!tipsNarrowViewport || !categoriesTipBtnRef.current) {
+      setCategoriesTipFixedTop(-1);
+      return;
+    }
+    setCategoriesTipFixedTop(readFixedTipTopBelowAnchor(categoriesTipBtnRef.current));
+  }, [categoriesTipsOpen, tipsNarrowViewport]);
+
+  useEffect(() => {
+    if (!tipsNarrowViewport) {
+      setCatalogTipFixedTop(-1);
+      setModulesTipFixedTop(-1);
+      setCategoriesTipFixedTop(-1);
+    }
+  }, [tipsNarrowViewport]);
+
+  useEffect(() => {
+    if (contentCatalogSubTab !== 'catalog') setCatalogTipsOpen(false);
+  }, [contentCatalogSubTab]);
+
+  useEffect(() => {
+    if (!draft) {
+      setModulesTipsOpen(false);
+      setCategoriesTipsOpen(false);
+    }
+  }, [draft]);
+
+  useEffect(() => {
+    if (!courseDetailsOpen) setCategoriesTipsOpen(false);
+  }, [courseDetailsOpen]);
+
+  useEffect(() => {
+    if (!catalogTipsOpen) return;
+    const onDoc = (e: PointerEvent) => {
+      const t = e.target;
+      if (!(t instanceof Node)) return;
+      if (catalogTipsWrapRef.current?.contains(t)) return;
+      setCatalogTipsOpen(false);
+    };
+    document.addEventListener('pointerdown', onDoc, true);
+    return () => document.removeEventListener('pointerdown', onDoc, true);
+  }, [catalogTipsOpen]);
+
+  useEffect(() => {
+    if (!modulesTipsOpen) return;
+    const onDoc = (e: PointerEvent) => {
+      const t = e.target;
+      if (!(t instanceof Node)) return;
+      if (modulesTipsWrapRef.current?.contains(t)) return;
+      setModulesTipsOpen(false);
+    };
+    document.addEventListener('pointerdown', onDoc, true);
+    return () => document.removeEventListener('pointerdown', onDoc, true);
+  }, [modulesTipsOpen]);
+
+  useEffect(() => {
+    if (!categoriesTipsOpen) return;
+    const onDoc = (e: PointerEvent) => {
+      const t = e.target;
+      if (!(t instanceof Node)) return;
+      if (categoriesTipsWrapRef.current?.contains(t)) return;
+      setCategoriesTipsOpen(false);
+    };
+    document.addEventListener('pointerdown', onDoc, true);
+    return () => document.removeEventListener('pointerdown', onDoc, true);
+  }, [categoriesTipsOpen]);
+
+  useEffect(() => {
+    if (!catalogTipsOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setCatalogTipsOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [catalogTipsOpen]);
+
+  useEffect(() => {
+    if (!modulesTipsOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setModulesTipsOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [modulesTipsOpen]);
+
+  useEffect(() => {
+    if (!categoriesTipsOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setCategoriesTipsOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [categoriesTipsOpen]);
+
+  useEffect(() => {
+    if (!tipsNarrowViewport || !catalogTipsOpen || catalogTipFixedTop < 0) return;
+    const onMove = () => syncCatalogTipTop();
+    window.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
+    return () => {
+      window.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
+    };
+  }, [tipsNarrowViewport, catalogTipsOpen, catalogTipFixedTop, syncCatalogTipTop]);
+
+  useEffect(() => {
+    if (!tipsNarrowViewport || !modulesTipsOpen || modulesTipFixedTop < 0) return;
+    const onMove = () => syncModulesTipTop();
+    window.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
+    return () => {
+      window.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
+    };
+  }, [tipsNarrowViewport, modulesTipsOpen, modulesTipFixedTop, syncModulesTipTop]);
+
+  useEffect(() => {
+    if (!tipsNarrowViewport || !categoriesTipsOpen || categoriesTipFixedTop < 0) return;
+    const onMove = () => syncCategoriesTipTop();
+    window.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
+    return () => {
+      window.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
+    };
+  }, [tipsNarrowViewport, categoriesTipsOpen, categoriesTipFixedTop, syncCategoriesTipTop]);
+
+  /** Full list for adding categories (presets, saved extras, labels from published courses). */
   const categorySelectOptions = useMemo(() => {
-    const s = new Set<string>(allPresetCatalogCategories());
+    const s = new Set<string>(allPresetCatalogCategoriesFromState(categoryPresetsState));
     for (const c of readCatalogCategoryExtras()) s.add(c);
     for (const co of publishedList) {
-      const cat = co.category?.trim();
-      if (cat) s.add(cat);
+      for (const cat of co.categories ?? []) {
+        const t = cat?.trim();
+        if (t) s.add(t);
+      }
     }
     return [...s].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-  }, [publishedList, categoryOptionsVersion]);
+  }, [publishedList, categoryOptionsVersion, categoryPresetsState]);
+
+  /** Full list for adding skills (presets, saved extras, labels from published courses). */
+  const skillSelectOptions = useMemo(() => {
+    const s = new Set<string>([...skillPresetsState.mainPills, ...skillPresetsState.moreSkills]);
+    for (const x of readCatalogSkillExtras()) s.add(x);
+    for (const co of publishedList) {
+      for (const sk of co.skills ?? []) {
+        const t = sk?.trim();
+        if (t) s.add(t);
+      }
+    }
+    return [...s].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  }, [publishedList, skillOptionsVersion, skillPresetsState]);
 
   useEffect(() => {
     const h = () => setCategoryOptionsVersion((v) => v + 1);
@@ -274,19 +669,33 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     return () => window.removeEventListener(CATALOG_CATEGORY_EXTRAS_CHANGED, h);
   }, []);
 
-  const categorySelectValue = useMemo(() => {
-    if (!draft) return '__custom__';
-    const matched = categorySelectOptions.find(
-      (o) => o.toLowerCase() === draft.category.trim().toLowerCase()
-    );
-    return matched ?? '__custom__';
+  useEffect(() => {
+    const h = () => setSkillOptionsVersion((v) => v + 1);
+    window.addEventListener(CATALOG_SKILL_EXTRAS_CHANGED, h);
+    return () => window.removeEventListener(CATALOG_SKILL_EXTRAS_CHANGED, h);
+  }, []);
+
+  const registerDraftTaxonomyExtras = () => {
+    if (!draft) return;
+    for (const c of draft.categories) {
+      if (c.trim()) addCatalogCategoryExtra(c.trim());
+    }
+    for (const s of draft.skills) {
+      if (s.trim()) addCatalogSkillExtra(s.trim());
+    }
+  };
+
+  const categoriesNotOnDraft = useMemo(() => {
+    if (!draft) return categorySelectOptions;
+    const set = new Set(draft.categories.map((c) => c.trim().toLowerCase()));
+    return categorySelectOptions.filter((o) => !set.has(o.toLowerCase()));
   }, [draft, categorySelectOptions]);
 
-  const registerDraftCategoryForFilters = () => {
-    if (!draft) return;
-    const t = draft.category.trim();
-    if (t) addCatalogCategoryExtra(t);
-  };
+  const skillsNotOnDraft = useMemo(() => {
+    if (!draft) return skillSelectOptions;
+    const set = new Set(draft.skills.map((s) => s.trim().toLowerCase()));
+    return skillSelectOptions.filter((o) => !set.has(o.toLowerCase()));
+  }, [draft, skillSelectOptions]);
 
   const refreshList = useCallback(async (): Promise<Course[]> => {
     setListLoading(true);
@@ -309,6 +718,80 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     void refreshList();
   }, [contentCatalogSubTab, openCourseCatalogOnce, refreshList]);
 
+  useEffect(() => {
+    if (contentCatalogSubTab !== 'categories') return;
+    catalogRequestedRef.current = true;
+    setCatalogRequested(true);
+    void refreshList();
+  }, [contentCatalogSubTab, refreshList]);
+
+  useEffect(() => {
+    if (contentCatalogSubTab !== 'presets') return;
+    catalogRequestedRef.current = true;
+    setCatalogRequested(true);
+    void loadCatalogCategoryPresets().then(setCategoryPresetsState);
+  }, [contentCatalogSubTab]);
+
+  useEffect(() => {
+    if (contentCatalogSubTab !== 'taxonomy') return;
+    catalogRequestedRef.current = true;
+    setCatalogRequested(true);
+    void refreshList();
+    void loadCatalogCategoryPresets().then(setCategoryPresetsState);
+    void loadCatalogSkillPresets().then(setSkillPresetsState);
+  }, [contentCatalogSubTab, refreshList]);
+
+  useEffect(() => {
+    if (contentCatalogSubTab !== 'skillPresets') return;
+    catalogRequestedRef.current = true;
+    setCatalogRequested(true);
+    void loadCatalogSkillPresets().then(setSkillPresetsState);
+  }, [contentCatalogSubTab]);
+
+  useEffect(() => {
+    if (!catalogRequested) return;
+    void loadCatalogCategoryPresets().then(setCategoryPresetsState);
+  }, [catalogRequested]);
+
+  useEffect(() => {
+    if (!catalogRequested) return;
+    void loadCatalogSkillPresets().then(setSkillPresetsState);
+  }, [catalogRequested]);
+
+  useEffect(() => {
+    const h = () => void loadCatalogCategoryPresets().then(setCategoryPresetsState);
+    window.addEventListener(CATALOG_CATEGORY_PRESETS_CHANGED, h);
+    return () => window.removeEventListener(CATALOG_CATEGORY_PRESETS_CHANGED, h);
+  }, []);
+
+  useEffect(() => {
+    const h = () => void loadCatalogSkillPresets().then(setSkillPresetsState);
+    window.addEventListener(CATALOG_SKILL_PRESETS_CHANGED, h);
+    return () => window.removeEventListener(CATALOG_SKILL_PRESETS_CHANGED, h);
+  }, []);
+
+  const onCategoryRenamedGlobally = useCallback((fromLower: string, newExact: string) => {
+    setDraft((d) => {
+      if (!d) return d;
+      const next = d.categories.map((c) => (c.trim().toLowerCase() === fromLower ? newExact : c));
+      if (next.every((c, i) => c === d.categories[i])) return d;
+      return { ...d, categories: dedupeLabelsPreserveOrder(next) };
+    });
+    setBaselineJson((prev) => {
+      if (prev === null) return prev;
+      try {
+        const b = JSON.parse(prev) as Course;
+        const next = (b.categories ?? []).map((c) =>
+          c.trim().toLowerCase() === fromLower ? newExact : c
+        );
+        if (next.every((c, i) => c === (b.categories ?? [])[i])) return prev;
+        return JSON.stringify({ ...b, categories: dedupeLabelsPreserveOrder(next) });
+      } catch {
+        return prev;
+      }
+    });
+  }, []);
+
   const sortedCatalogCourses = useMemo(
     () =>
       [...publishedList].sort((a, b) => {
@@ -321,7 +804,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   /** First time draft appears (e.g. initial load) without baseline yet. */
   useEffect(() => {
     if (!draft || baselineJson !== null) return;
-    setBaselineJson(JSON.stringify(draft));
+    setBaselineJson(draftJsonForBaseline(draft));
   }, [draft, baselineJson]);
 
   const applyPickCourse = useCallback(
@@ -331,15 +814,17 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       if (id === '__new__') {
         pendingFocusCourseTitleRef.current = true;
         const fresh = emptyCourse(firstAvailableStructuredCourseId(publishedList));
-        setDraft(fresh);
-        setBaselineJson(JSON.stringify(fresh));
+        const keyed = ensureCourseLessonRowKeys(fresh);
+        setDraft(keyed);
+        setBaselineJson(draftJsonForBaseline(keyed));
         return;
       }
       const c = publishedList.find((x) => x.id === id);
       if (c) {
-        const clone = deepClone(c);
-        setDraft(clone);
-        setBaselineJson(JSON.stringify(clone));
+        const clone = normalizeCourseTaxonomy(deepClone(c));
+        const keyed = ensureCourseLessonRowKeys(clone);
+        setDraft(keyed);
+        setBaselineJson(draftJsonForBaseline(keyed));
       } else {
         setDraft(null);
         setBaselineJson(null);
@@ -351,6 +836,46 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const updateDraft = (patch: Partial<Course>) => {
     setDraft((d) => (d ? { ...d, ...patch } : null));
   };
+
+  const addDraftCategory = useCallback(
+    (raw: string) => {
+      const t = raw.trim();
+      if (!t) return;
+      const canonical = categorySelectOptions.find((o) => o.toLowerCase() === t.toLowerCase()) ?? t;
+      setDraft((d) => {
+        if (!d) return d;
+        if (d.categories.some((c) => c.toLowerCase() === canonical.toLowerCase())) return d;
+        return { ...d, categories: [...d.categories, canonical] };
+      });
+      addCatalogCategoryExtra(canonical);
+    },
+    [categorySelectOptions]
+  );
+
+  const removeDraftCategory = useCallback((label: string) => {
+    const low = label.toLowerCase();
+    setDraft((d) => (d ? { ...d, categories: d.categories.filter((c) => c.toLowerCase() !== low) } : d));
+  }, []);
+
+  const addDraftSkill = useCallback(
+    (raw: string) => {
+      const t = raw.trim();
+      if (!t) return;
+      const canonical = skillSelectOptions.find((o) => o.toLowerCase() === t.toLowerCase()) ?? t;
+      setDraft((d) => {
+        if (!d) return d;
+        if (d.skills.some((s) => s.toLowerCase() === canonical.toLowerCase())) return d;
+        return { ...d, skills: [...d.skills, canonical] };
+      });
+      addCatalogSkillExtra(canonical);
+    },
+    [skillSelectOptions]
+  );
+
+  const removeDraftSkill = useCallback((label: string) => {
+    const low = label.toLowerCase();
+    setDraft((d) => (d ? { ...d, skills: d.skills.filter((s) => s.toLowerCase() !== low) } : d));
+  }, []);
 
   const updateModule = (mi: number, patch: Partial<Module>) => {
     setDraft((d) => {
@@ -367,6 +892,135 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       const modules = d.modules.map((m, i) => {
         if (i !== mi) return m;
         const lessons = m.lessons.map((lesson, j) => (j === li ? { ...lesson, ...patch } : lesson));
+        return { ...m, lessons };
+      });
+      return { ...d, modules };
+    });
+  };
+
+  const mapQuizQuestion = (mi: number, li: number, qi: number, updater: (q: QuizQuestion) => QuizQuestion) => {
+    setDraft((d) => {
+      if (!d) return null;
+      const modules = d.modules.map((m, i) => {
+        if (i !== mi) return m;
+        const lessons = m.lessons.map((lesson, j) => {
+          if (j !== li) return lesson;
+          const qs = [...(lesson.quiz?.questions ?? [])];
+          if (!qs[qi]) return lesson;
+          qs[qi] = updater(qs[qi]);
+          return { ...lesson, quiz: { questions: qs } };
+        });
+        return { ...m, lessons };
+      });
+      return { ...d, modules };
+    });
+  };
+
+  const suggestMcqCorrectWithAi = async (mi: number, li: number, qi: number, qq: QuizQuestionMcq) => {
+    const busyKey = `${mi}-${li}-${qi}`;
+    const apiKey = getGeminiApiKey();
+    if (!apiKey) {
+      showActionToast('Set GEMINI_API_KEY in .env to check MCQ keys with AI.', 'danger');
+      return;
+    }
+    const slots: { adminIndex: number; text: string }[] = [];
+    for (let i = 0; i < qq.choices.length; i += 1) {
+      const t = typeof qq.choices[i] === 'string' ? qq.choices[i].trim() : '';
+      if (t) slots.push({ adminIndex: i, text: t });
+    }
+    if (slots.length < 2) {
+      showActionToast('Add at least two non-empty choices before running AI check.', 'danger');
+      return;
+    }
+    if (!qq.prompt.trim()) {
+      showActionToast('Add a question prompt before running AI check.', 'danger');
+      return;
+    }
+    setMcqAiKeyBusy((p) => ({ ...p, [busyKey]: true }));
+    try {
+      const res = await resolveMcqCorrectIndex({
+        apiKey,
+        questionPrompt: qq.prompt.trim(),
+        choices: slots.map((s) => s.text),
+      });
+      if (!res.ok) {
+        showActionToast(res.error, 'danger');
+        return;
+      }
+      const chosen = slots[res.correctIndex];
+      if (!chosen) {
+        showActionToast('AI returned an invalid option index.', 'danger');
+        return;
+      }
+      if (chosen.adminIndex === qq.correctIndex) {
+        showActionToast('AI agrees with the marked correct answer.', 'success');
+        return;
+      }
+      mapQuizQuestion(mi, li, qi, (prev) =>
+        prev.type === 'mcq' ? { ...prev, correctIndex: chosen.adminIndex } : prev
+      );
+      const label = chosen.text.length > 48 ? `${chosen.text.slice(0, 48)}…` : chosen.text;
+      showActionToast(`Marked correct updated to: ${label}. Save the course to publish.`, 'success');
+    } finally {
+      setMcqAiKeyBusy((p) => {
+        const next = { ...p };
+        delete next[busyKey];
+        return next;
+      });
+    }
+  };
+
+  const addQuizQuestion = (mi: number, li: number, kind: 'mcq' | 'freeform') => {
+    setDraft((d) => {
+      if (!d) return null;
+      const modules = d.modules.map((m, i) => {
+        if (i !== mi) return m;
+        const lessons = m.lessons.map((lesson, j) => {
+          if (j !== li) return lesson;
+          const qs = [...(lesson.quiz?.questions ?? [])];
+          if (qs.length >= MAX_QUIZ_QUESTIONS) return lesson;
+          const next = kind === 'mcq' ? createDefaultMcqQuestion() : createDefaultFreeformQuestion();
+          return { ...lesson, quiz: { questions: [...qs, next] } };
+        });
+        return { ...m, lessons };
+      });
+      return { ...d, modules };
+    });
+  };
+
+  const removeQuizQuestion = (mi: number, li: number, qi: number) => {
+    setDraft((d) => {
+      if (!d) return null;
+      const modules = d.modules.map((m, i) => {
+        if (i !== mi) return m;
+        const lessons = m.lessons.map((lesson, j) => {
+          if (j !== li) return lesson;
+          const qs = [...(lesson.quiz?.questions ?? [])];
+          if (qs.length <= 1) return lesson;
+          qs.splice(qi, 1);
+          return { ...lesson, quiz: { questions: qs } };
+        });
+        return { ...m, lessons };
+      });
+      return { ...d, modules };
+    });
+  };
+
+  const moveQuizQuestion = (mi: number, li: number, qi: number, delta: number) => {
+    setDraft((d) => {
+      if (!d) return null;
+      const modules = d.modules.map((m, i) => {
+        if (i !== mi) return m;
+        const lessons = m.lessons.map((lesson, j) => {
+          if (j !== li) return lesson;
+          const qs = [...(lesson.quiz?.questions ?? [])];
+          const ni = qi + delta;
+          if (ni < 0 || ni >= qs.length) return lesson;
+          const t = qs[qi]!;
+          qs[qi] = qs[ni]!;
+          qs[ni] = t;
+          return { ...lesson, quiz: { questions: qs } };
+        });
         return { ...m, lessons };
       });
       return { ...d, modules };
@@ -394,7 +1048,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 id: lid,
                 title: '',
                 videoUrl: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
-              },
+                __adminRowKey: crypto.randomUUID(),
+              } as LessonWithAdminKey,
             ],
           },
         ],
@@ -428,7 +1083,12 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           ...m,
           lessons: [
             ...m.lessons,
-            { id: lid, title: '', videoUrl: 'https://www.youtube.com/watch?v=jNQXAC9IVRw' },
+            {
+              id: lid,
+              title: '',
+              videoUrl: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
+              __adminRowKey: crypto.randomUUID(),
+            } as LessonWithAdminKey,
           ],
         };
       });
@@ -452,6 +1112,174 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     showActionToast('Lesson deleted.');
   };
 
+  const remapOpenLessonsAfterModuleSwap = (
+    prev: Record<string, boolean>,
+    a: number,
+    b: number
+  ): Record<string, boolean> => {
+    const next: Record<string, boolean> = {};
+    for (const [k, v] of Object.entries(prev)) {
+      if (!v) continue;
+      const colon = k.indexOf(':');
+      if (colon < 0) continue;
+      const mi = Number(k.slice(0, colon));
+      const rest = k.slice(colon + 1);
+      if (!Number.isInteger(mi)) continue;
+      let nmi = mi;
+      if (mi === a) nmi = b;
+      else if (mi === b) nmi = a;
+      next[`${nmi}:${rest}`] = true;
+    }
+    return next;
+  };
+
+  const moveModule = (
+    mi: number,
+    delta: -1 | 1,
+    scrollAnchor?: HTMLElement | null
+  ) => {
+    const d0 = draftRef.current;
+    if (!d0) return;
+    const computed = computeModuleSwapDraft(d0, mi, delta);
+    if (!computed) return;
+
+    if (scrollAnchor) {
+      const ctrl = scrollAnchor.getAttribute('data-module-reorder');
+      const ni = mi + delta;
+      pendingModuleReorderFocusRef.current = {
+        targetMiAfter: ni,
+        control: ctrl === 'down' ? 'down' : 'up',
+        beforeTop: scrollAnchor.getBoundingClientRect().top,
+      };
+    }
+
+    const { a, b } = computed.pair;
+    flushSync(() => setDraft(computed.next));
+
+    setOpenModules((prev) => {
+      const oa = prev[a];
+      const ob = prev[b];
+      if (!oa && !ob) return prev;
+      const next: Record<number, boolean> = { ...prev };
+      delete next[a];
+      delete next[b];
+      if (oa) next[b] = true;
+      if (ob) next[a] = true;
+      return next;
+    });
+    setOpenLessons((prev) => remapOpenLessonsAfterModuleSwap(prev, a, b));
+
+    setModuleReorderLayoutTick((t) => t + 1);
+  };
+
+  const moveLesson = (
+    mi: number,
+    lessonRowKey: string,
+    delta: -1 | 1,
+    scrollAnchor?: HTMLElement | null
+  ) => {
+    if (!lessonRowKey.trim()) return;
+
+    if (scrollAnchor) {
+      const ctrl = scrollAnchor.getAttribute('data-lesson-reorder');
+      pendingLessonReorderFocusRef.current = {
+        lessonKey: lessonRowKey,
+        control: ctrl === 'down' ? 'down' : 'up',
+        beforeTop: scrollAnchor.getBoundingClientRect().top,
+      };
+    }
+
+    const d0 = draftRef.current;
+    if (!d0) return;
+    const computed = computeLessonSwapDraft(d0, mi, lessonRowKey, delta);
+    if (!computed) return;
+
+    flushSync(() => setDraft(computed.next));
+
+    const pair = computed.pair;
+    if (pair) {
+      const k1 = `${mi}:${pair.li}`;
+      const k2 = `${mi}:${pair.ni}`;
+      setOpenLessons((prev) => {
+        const o1 = prev[k1];
+        const o2 = prev[k2];
+        if (!o1 && !o2) return prev;
+        const next = { ...prev };
+        delete next[k1];
+        delete next[k2];
+        if (o1) next[k2] = true;
+        if (o2) next[k1] = true;
+        return next;
+      });
+    }
+
+    setLessonReorderLayoutTick((t) => t + 1);
+  };
+
+  useLayoutEffect(() => {
+    const job = pendingLessonReorderFocusRef.current;
+    if (!job) return;
+    pendingLessonReorderFocusRef.current = null;
+    const sel = `[data-admin-lesson-row="${escapeSelectorAttrValue(job.lessonKey)}"]`;
+    const row = queryElementInScopeOrDocument(courseCatalogEditorRef.current, sel);
+    applyReorderViewportScrollAndFocus(row, job, REORDER_DATA_ATTR_SELECTORS.lesson);
+  }, [lessonReorderLayoutTick]);
+
+  useLayoutEffect(() => {
+    const job = pendingModuleReorderFocusRef.current;
+    if (!job) return;
+    pendingModuleReorderFocusRef.current = null;
+    const sel = `[data-admin-module-index="${job.targetMiAfter}"]`;
+    const row = queryElementInScopeOrDocument(courseCatalogEditorRef.current, sel);
+    applyReorderViewportScrollAndFocus(row, job, REORDER_DATA_ATTR_SELECTORS.module);
+  }, [moduleReorderLayoutTick]);
+
+  const moveLessonToModule = (mi: number, li: number, targetMi: number) => {
+    if (targetMi === mi) return;
+    let opened: { targetMi: number; newLi: number } | null = null;
+    setDraft((d) => {
+      if (!d) return null;
+      if (targetMi < 0 || targetMi >= d.modules.length) return d;
+      const source = d.modules[mi];
+      if (!source || source.lessons.length <= 1 || !source.lessons[li]) return d;
+
+      const moved = { ...source.lessons[li]! };
+      const modulesWithout = d.modules.map((m, i) => {
+        if (i !== mi) return m;
+        return { ...m, lessons: m.lessons.filter((_, j) => j !== li) };
+      });
+
+      let lessonToInsert = moved;
+      if (!isStructuredCourseId(d.id)) {
+        const tempCourse: Course = { ...d, modules: modulesWithout };
+        lessonToInsert = { ...moved, id: nextLessonIdLegacy(tempCourse) };
+      }
+
+      const finalModules = modulesWithout.map((m, i) => {
+        if (i !== targetMi) return m;
+        return { ...m, lessons: [...m.lessons, lessonToInsert] };
+      });
+
+      let next: Course = { ...d, modules: finalModules };
+      if (isStructuredCourseId(next.id)) {
+        next = remapStructuredCourseModuleLessonIdsByOrder(next);
+      }
+      const newLi = next.modules[targetMi]!.lessons.length - 1;
+      opened = { targetMi, newLi };
+      return next;
+    });
+    if (!opened) {
+      showActionToast(
+        'Could not move lesson. Add another lesson to this module first—each module must keep at least one.',
+        'danger'
+      );
+      return;
+    }
+    setOpenModules({ [opened.targetMi]: true });
+    setOpenLessons({ [`${opened.targetMi}:${opened.newLi}`]: true });
+    showActionToast('Lesson moved to the other module.');
+  };
+
   const toggleModuleOpen = (mi: number) => {
     setOpenModules((prev) => {
       const nextOpen = !prev[mi];
@@ -473,10 +1301,45 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     });
   };
 
+  const catalogDisclosureLessonKey = useMemo(() => {
+    const k = Object.keys(openLessons).find((key) => openLessons[key]);
+    return k ?? null;
+  }, [openLessons]);
+
+  const catalogDisclosureModuleMi = useMemo(() => {
+    const e = Object.entries(openModules).find(([, v]) => v);
+    if (!e) return null;
+    const mi = Number(e[0]);
+    return Number.isInteger(mi) ? mi : null;
+  }, [openModules]);
+
+  /** Align expanded course details / module / lesson block to top of viewport (catalog has no inner scroll shell). */
+  useLayoutEffect(() => {
+    const root = courseCatalogEditorRef.current;
+    if (!root) return;
+    let el: HTMLElement | null = null;
+    if (catalogDisclosureLessonKey) {
+      const parts = catalogDisclosureLessonKey.split(':');
+      const mi = Number(parts[0]);
+      const li = Number(parts[1]);
+      if (Number.isInteger(mi) && Number.isInteger(li)) {
+        el = root.querySelector(`[data-lesson-mi="${mi}"][data-lesson-li="${li}"]`);
+      }
+    } else if (catalogDisclosureModuleMi != null) {
+      el = root.querySelector(`[data-admin-module-index="${catalogDisclosureModuleMi}"]`);
+    } else if (courseDetailsOpen) {
+      el = courseDetailsDisclosureRef.current;
+    }
+    scrollDisclosureRowToTop(null, el);
+  }, [catalogDisclosureLessonKey, catalogDisclosureModuleMi, courseDetailsOpen]);
+
   const getFirstRequiredFieldTarget = (c: Course): RequiredFieldTarget | null => {
     if (!c.title.trim()) return { targetId: 'admin-course-title', scope: 'course', moduleIndex: 0 };
     if (!c.author.trim()) return { targetId: 'admin-course-author', scope: 'course', moduleIndex: 0 };
     if (!c.thumbnail.trim()) return { targetId: 'admin-course-thumbnail', scope: 'course', moduleIndex: 0 };
+    if (!c.categories?.length || !c.categories.some((x) => x.trim())) {
+      return { targetId: 'admin-course-categories', scope: 'course', moduleIndex: 0 };
+    }
     if (!c.modules.length) return { targetId: 'admin-course-title', scope: 'course', moduleIndex: 0 };
     for (let mi = 0; mi < c.modules.length; mi += 1) {
       const m = c.modules[mi];
@@ -524,7 +1387,25 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             lessonKeys: openKeys,
           };
         }
-        if (!l.videoUrl.trim() || !l.videoUrl.startsWith('http')) {
+        if (l.contentKind === 'web') {
+          if (!lessonWebHref(l)) {
+            return {
+              targetId: `admin-lesson-web-url-${mi}-${li}`,
+              scope: 'module',
+              moduleIndex: mi,
+              lessonKeys: openKeys,
+            };
+          }
+        } else if (l.contentKind === 'quiz') {
+          if (validateLessonQuiz(l, mi, li)) {
+            return {
+              targetId: `admin-quiz-block-${mi}-${li}`,
+              scope: 'module',
+              moduleIndex: mi,
+              lessonKeys: openKeys,
+            };
+          }
+        } else if (!l.videoUrl.trim() || !l.videoUrl.startsWith('http')) {
           return {
             targetId: `admin-lesson-url-${mi}-${li}`,
             scope: 'module',
@@ -546,16 +1427,20 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       courseAuthor: false,
       courseThumbnail: false,
       courseRating: false,
+      courseCategories: false,
       moduleId: new Set<number>(),
       moduleTitle: new Set<number>(),
       lessonId: new Set<string>(),
       lessonTitle: new Set<string>(),
       videoUrl: new Set<string>(),
+      lessonWebUrl: new Set<string>(),
+      lessonQuiz: new Set<string>(),
     };
     if (!draft) return out;
     if (!draft.title.trim()) out.courseTitle = true;
     if (!draft.author.trim()) out.courseAuthor = true;
     if (!draft.thumbnail.trim()) out.courseThumbnail = true;
+    if (!draft.categories?.length || !draft.categories.some((x) => x.trim())) out.courseCategories = true;
     if (draft.rating < 0 || draft.rating > 5) out.courseRating = true;
     for (let mi = 0; mi < draft.modules.length; mi += 1) {
       const m = draft.modules[mi];
@@ -566,7 +1451,13 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         const key = `${mi}:${li}`;
         if (!l.id.trim()) out.lessonId.add(key);
         if (!l.title.trim()) out.lessonTitle.add(key);
-        if (!l.videoUrl.trim() || !l.videoUrl.startsWith('http')) out.videoUrl.add(key);
+        if (l.contentKind === 'web') {
+          if (!lessonWebHref(l)) out.lessonWebUrl.add(key);
+        } else if (l.contentKind === 'quiz') {
+          if (validateLessonQuiz(l, mi, li)) out.lessonQuiz.add(key);
+        } else if (!l.videoUrl.trim() || !l.videoUrl.startsWith('http')) {
+          out.videoUrl.add(key);
+        }
       }
     }
     return out;
@@ -575,7 +1466,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const isDirty =
     !!draft &&
     baselineJson !== null &&
-    JSON.stringify(draft) !== baselineJson;
+    draftJsonForBaseline(draft) !== baselineJson;
 
   useEffect(() => {
     onDraftDirtyChange?.(isDirty);
@@ -594,14 +1485,15 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
   const handleSave = async () => {
     if (!draft) return;
-    if (baselineJson !== null && JSON.stringify(draft) === baselineJson) {
+    if (baselineJson !== null && draftJsonForBaseline(draft) === baselineJson) {
       showActionToast('No changes to save.', 'neutral');
       return;
     }
-    const err = validateCourseDraft(draft);
+    const normalized = normalizeCourseTaxonomy(stripAdminLessonRowKeys(draft));
+    const err = validateCourseDraft(normalized);
     if (err) {
       setShowValidationHints(true);
-      const target = getFirstRequiredFieldTarget(draft);
+      const target = getFirstRequiredFieldTarget(normalized);
       if (target) {
         if (target.scope === 'course') {
           setCourseDetailsOpen(true);
@@ -620,16 +1512,22 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       return;
     }
     setBusy(true);
-    const ok = await savePublishedCourse(draft);
+    const ok = await savePublishedCourse(normalized);
     setBusy(false);
     if (ok) {
       setShowValidationHints(false);
-      if (draft.category.trim()) addCatalogCategoryExtra(draft.category.trim());
+      setDraft(ensureCourseLessonRowKeys(normalized));
+      for (const cat of normalized.categories) {
+        if (cat.trim()) addCatalogCategoryExtra(cat.trim());
+      }
+      for (const sk of normalized.skills) {
+        if (sk.trim()) addCatalogSkillExtra(sk.trim());
+      }
       showActionToast('Course saved.');
       await refreshList();
       await onCatalogChanged();
-      setSelector(draft.id);
-      setBaselineJson(JSON.stringify(draft));
+      setSelector(normalized.id);
+      setBaselineJson(JSON.stringify(normalized));
     } else {
       showActionToast('Save failed (check console / rules).', 'danger');
     }
@@ -654,8 +1552,9 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     copy.title = t.endsWith(' (copy)') ? t : `${t} (copy)`;
     pendingFocusCourseTitleRef.current = true;
     setSelector('__new__');
-    setDraft(copy);
-    setBaselineJson(JSON.stringify(copy));
+    const keyed = ensureCourseLessonRowKeys(copy);
+    setDraft(keyed);
+    setBaselineJson(draftJsonForBaseline(keyed));
     showActionToast(
       'Copy loaded as a new draft — IDs use C{n}M{m}L{l}. Adjust title if needed, then Save.'
     );
@@ -678,7 +1577,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     if (draft && baselineJson !== null) {
       try {
         const restored = JSON.parse(baselineJson) as Course;
-        setDraft(deepClone(restored));
+        setDraft(ensureCourseLessonRowKeys(deepClone(restored)));
       } catch {
         showActionToast('Could not restore draft.', 'danger');
         return;
@@ -728,6 +1627,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
   /** Ref updated by PathBuilder via onPathsDirtyChange — read before opening catalog tab confirm. */
   const pathBuilderDirtyRef = useRef(false);
+  const courseDiscardTargetRef = useRef<'paths' | 'taxonomy' | 'categories' | 'catalog' | 'presets'>('paths');
+  const pathDiscardTargetRef = useRef<'catalog' | 'taxonomy' | 'categories' | 'presets'>('catalog');
   const setPathBuilderDirty = useCallback(
     (dirty: boolean) => {
       pathBuilderDirtyRef.current = dirty;
@@ -738,51 +1639,219 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
   const requestContentCatalogSubTab = useCallback(
     (next: ContentCatalogSubTab) => {
-      if (next === 'catalog') {
-        if (pathBuilderDirtyRef.current) {
-          setPathSubTabSwitchConfirmOpen(true);
+      if (next === contentCatalogSubTab) return;
+
+      if (contentCatalogSubTab === 'paths') {
+        if (next === 'catalog') {
+          if (pathBuilderDirtyRef.current) {
+            pathDiscardTargetRef.current = 'catalog';
+            setPathSubTabSwitchConfirmOpen(true);
+            return;
+          }
+          setContentCatalogSubTab('catalog');
           return;
         }
-        setContentCatalogSubTab('catalog');
+        if (next === 'taxonomy' || next === 'categories' || next === 'presets' || next === 'skillPresets') {
+          if (pathBuilderDirtyRef.current) {
+            pathDiscardTargetRef.current = next;
+            setPathSubTabSwitchConfirmOpen(true);
+            return;
+          }
+          setContentCatalogSubTab(next);
+          return;
+        }
         return;
       }
-      if (!isDirty) {
-        setContentCatalogSubTab('paths');
+
+      if (contentCatalogSubTab === 'catalog') {
+        if (next === 'paths') {
+          if (!isDirty) {
+            setContentCatalogSubTab('paths');
+            return;
+          }
+          courseDiscardTargetRef.current = 'paths';
+          setSubTabSwitchConfirmOpen(true);
+          return;
+        }
+        if (next === 'taxonomy' || next === 'categories' || next === 'presets' || next === 'skillPresets') {
+          if (!isDirty) {
+            setContentCatalogSubTab(next);
+            return;
+          }
+          courseDiscardTargetRef.current = next;
+          setSubTabSwitchConfirmOpen(true);
+          return;
+        }
         return;
       }
-      setSubTabSwitchConfirmOpen(true);
+
+      if (contentCatalogSubTab === 'taxonomy') {
+        if (next === 'catalog') {
+          if (!isDirty) {
+            setContentCatalogSubTab('catalog');
+            return;
+          }
+          courseDiscardTargetRef.current = 'catalog';
+          setSubTabSwitchConfirmOpen(true);
+          return;
+        }
+        if (next === 'paths') {
+          if (!isDirty) {
+            setContentCatalogSubTab('paths');
+            return;
+          }
+          courseDiscardTargetRef.current = 'paths';
+          setSubTabSwitchConfirmOpen(true);
+          return;
+        }
+        if (next === 'categories') {
+          setContentCatalogSubTab('categories');
+          return;
+        }
+        if (next === 'presets') {
+          setContentCatalogSubTab('presets');
+          return;
+        }
+        if (next === 'skillPresets') {
+          setContentCatalogSubTab('skillPresets');
+          return;
+        }
+        return;
+      }
+
+      if (contentCatalogSubTab === 'categories') {
+        if (next === 'catalog') {
+          if (!isDirty) {
+            setContentCatalogSubTab('catalog');
+            return;
+          }
+          courseDiscardTargetRef.current = 'catalog';
+          setSubTabSwitchConfirmOpen(true);
+          return;
+        }
+        if (next === 'paths') {
+          if (!isDirty) {
+            setContentCatalogSubTab('paths');
+            return;
+          }
+          courseDiscardTargetRef.current = 'paths';
+          setSubTabSwitchConfirmOpen(true);
+          return;
+        }
+        if (next === 'presets') {
+          setContentCatalogSubTab('presets');
+          return;
+        }
+        if (next === 'skillPresets') {
+          setContentCatalogSubTab('skillPresets');
+          return;
+        }
+        if (next === 'taxonomy') {
+          setContentCatalogSubTab('taxonomy');
+          return;
+        }
+        return;
+      }
+
+      if (contentCatalogSubTab === 'presets') {
+        if (next === 'catalog') {
+          if (!isDirty) {
+            setContentCatalogSubTab('catalog');
+            return;
+          }
+          courseDiscardTargetRef.current = 'catalog';
+          setSubTabSwitchConfirmOpen(true);
+          return;
+        }
+        if (next === 'paths') {
+          if (!isDirty) {
+            setContentCatalogSubTab('paths');
+            return;
+          }
+          courseDiscardTargetRef.current = 'paths';
+          setSubTabSwitchConfirmOpen(true);
+          return;
+        }
+        if (next === 'categories') {
+          setContentCatalogSubTab('categories');
+          return;
+        }
+        if (next === 'taxonomy') {
+          setContentCatalogSubTab('taxonomy');
+          return;
+        }
+        if (next === 'skillPresets') {
+          setContentCatalogSubTab('skillPresets');
+          return;
+        }
+      }
+
+      if (contentCatalogSubTab === 'skillPresets') {
+        if (next === 'catalog') {
+          if (!isDirty) {
+            setContentCatalogSubTab('catalog');
+            return;
+          }
+          courseDiscardTargetRef.current = 'catalog';
+          setSubTabSwitchConfirmOpen(true);
+          return;
+        }
+        if (next === 'paths') {
+          if (!isDirty) {
+            setContentCatalogSubTab('paths');
+            return;
+          }
+          courseDiscardTargetRef.current = 'paths';
+          setSubTabSwitchConfirmOpen(true);
+          return;
+        }
+        if (next === 'categories') {
+          setContentCatalogSubTab('categories');
+          return;
+        }
+        if (next === 'taxonomy') {
+          setContentCatalogSubTab('taxonomy');
+          return;
+        }
+        if (next === 'presets') {
+          setContentCatalogSubTab('presets');
+          return;
+        }
+      }
     },
-    [isDirty]
+    [contentCatalogSubTab, isDirty]
   );
 
   const closeSubTabSwitchConfirm = useCallback(() => setSubTabSwitchConfirmOpen(false), []);
 
-  const confirmSwitchToPathsTab = useCallback(() => {
+  const confirmDiscardCourseDraftAndSwitch = useCallback(() => {
     if (draft && baselineJson !== null) {
       try {
         const restored = JSON.parse(baselineJson) as Course;
-        setDraft(deepClone(restored));
+        setDraft(ensureCourseLessonRowKeys(deepClone(restored)));
       } catch {
         showActionToast('Could not restore draft.', 'danger');
         return;
       }
     }
-    setContentCatalogSubTab('paths');
+    setContentCatalogSubTab(courseDiscardTargetRef.current);
     setSubTabSwitchConfirmOpen(false);
   }, [draft, baselineJson, showActionToast]);
 
   const closePathSubTabSwitchConfirm = useCallback(() => setPathSubTabSwitchConfirmOpen(false), []);
 
-  const confirmSwitchToCatalogFromPathsTab = useCallback(() => {
+  const confirmDiscardPathBuilderAndSwitch = useCallback(() => {
     setPathBuilderResetKey((k) => k + 1);
+    pathBuilderDirtyRef.current = false;
+    onPathsDirtyChange?.(false);
     setPathSubTabSwitchConfirmOpen(false);
-    setContentCatalogSubTab('catalog');
-  }, []);
+    setContentCatalogSubTab(pathDiscardTargetRef.current);
+  }, [onPathsDirtyChange]);
 
   useDialogKeyboard({
     open: subTabSwitchConfirmOpen,
     onClose: closeSubTabSwitchConfirm,
-    onPrimaryAction: confirmSwitchToPathsTab,
+    onPrimaryAction: confirmDiscardCourseDraftAndSwitch,
   });
 
   useDialogKeyboard({
@@ -794,7 +1863,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   useDialogKeyboard({
     open: pathSubTabSwitchConfirmOpen,
     onClose: closePathSubTabSwitchConfirm,
-    onPrimaryAction: confirmSwitchToCatalogFromPathsTab,
+    onPrimaryAction: confirmDiscardPathBuilderAndSwitch,
   });
 
   useDialogKeyboard({
@@ -907,10 +1976,31 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 ? listLoading
                 : contentCatalogSubTab === 'paths'
                   ? listLoading || pathsListLoading
-                  : true
+                : contentCatalogSubTab === 'taxonomy' ||
+                    contentCatalogSubTab === 'categories' ||
+                    contentCatalogSubTab === 'presets' ||
+                    contentCatalogSubTab === 'skillPresets'
+                    ? listLoading
+                    : true
             }
-            tabIndex={contentCatalogSubTab === 'catalog' || contentCatalogSubTab === 'paths' ? undefined : -1}
-            aria-hidden={contentCatalogSubTab !== 'catalog' && contentCatalogSubTab !== 'paths'}
+            tabIndex={
+              contentCatalogSubTab === 'catalog' ||
+              contentCatalogSubTab === 'paths' ||
+              contentCatalogSubTab === 'taxonomy' ||
+              contentCatalogSubTab === 'categories' ||
+              contentCatalogSubTab === 'presets' ||
+              contentCatalogSubTab === 'skillPresets'
+                ? undefined
+                : -1
+            }
+            aria-hidden={
+              contentCatalogSubTab !== 'catalog' &&
+              contentCatalogSubTab !== 'paths' &&
+              contentCatalogSubTab !== 'taxonomy' &&
+              contentCatalogSubTab !== 'categories' &&
+              contentCatalogSubTab !== 'presets' &&
+              contentCatalogSubTab !== 'skillPresets'
+            }
             onClick={() => {
               if (contentCatalogSubTab === 'catalog') {
                 catalogRequestedRef.current = true;
@@ -921,10 +2011,32 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               if (contentCatalogSubTab === 'paths') {
                 void refreshList();
                 void pathBuilderRef.current?.reloadPaths();
+                return;
+              }
+              if (contentCatalogSubTab === 'taxonomy') {
+                void refreshList();
+                return;
+              }
+              if (contentCatalogSubTab === 'categories') {
+                void refreshList();
+                return;
+              }
+              if (contentCatalogSubTab === 'presets') {
+                void refreshList();
+                void loadCatalogCategoryPresets().then(setCategoryPresetsState);
+                return;
+              }
+              if (contentCatalogSubTab === 'skillPresets') {
+                void refreshList();
+                return;
               }
             }}
-            className={`inline-flex min-h-10 items-center gap-2 rounded-lg border border-[var(--border-color)] px-3 py-2 text-xs font-semibold hover:bg-[var(--hover-bg)] disabled:opacity-50 ${
-              contentCatalogSubTab !== 'catalog' && contentCatalogSubTab !== 'paths'
+            className={`inline-flex min-h-11 touch-manipulation items-center gap-2 rounded-lg border border-[var(--border-color)] px-3 py-2 text-sm font-semibold hover:bg-[var(--hover-bg)] active:opacity-90 disabled:opacity-50 sm:text-xs ${
+              contentCatalogSubTab !== 'catalog' &&
+              contentCatalogSubTab !== 'paths' &&
+              contentCatalogSubTab !== 'taxonomy' &&
+              contentCatalogSubTab !== 'categories' &&
+              contentCatalogSubTab !== 'presets'
                 ? 'invisible pointer-events-none'
                 : ''
             }`}
@@ -933,7 +2045,12 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               size={14}
               className={
                 (contentCatalogSubTab === 'catalog' && listLoading) ||
-                (contentCatalogSubTab === 'paths' && (listLoading || pathsListLoading))
+              (contentCatalogSubTab === 'paths' && (listLoading || pathsListLoading)) ||
+              (contentCatalogSubTab === 'taxonomy' && listLoading) ||
+                ((contentCatalogSubTab === 'categories' ||
+                  contentCatalogSubTab === 'presets' ||
+                  contentCatalogSubTab === 'skillPresets') &&
+                  listLoading)
                   ? 'animate-spin'
                   : ''
               }
@@ -944,65 +2061,114 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         </div>
       </div>
 
-      <div className="-mx-1 flex min-h-[2.75rem] gap-2 overflow-x-auto overflow-y-hidden overscroll-x-contain border-b border-[var(--border-color)] px-1 pb-2 [scrollbar-width:none] sm:flex-wrap sm:overflow-visible [&::-webkit-scrollbar]:hidden">
+      <div className="-mx-1 flex min-h-11 flex-wrap items-center gap-2 border-b border-[var(--border-color)] px-1 pb-2">
         <button
           type="button"
           onClick={() => requestContentCatalogSubTab('catalog')}
-          className={`inline-flex min-h-10 shrink-0 items-center rounded-lg px-3 py-2 text-sm font-semibold ${
+          className={`inline-flex min-h-11 touch-manipulation shrink-0 items-center rounded-lg px-3 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 active:opacity-90 ${
             contentCatalogSubTab === 'catalog' ? 'bg-orange-500/20 text-orange-500' : 'text-[var(--text-secondary)]'
           }`}
+          aria-current={contentCatalogSubTab === 'catalog' ? 'page' : undefined}
         >
           Catalog
         </button>
-        <button
-          type="button"
-          onClick={() => requestContentCatalogSubTab('paths')}
-          className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold ${
-            contentCatalogSubTab === 'paths' ? 'bg-orange-500/20 text-orange-500' : 'text-[var(--text-secondary)]'
-          }`}
-        >
-          <Route size={14} aria-hidden />
-          Learning paths
-        </button>
+        <div className="flex min-h-11 min-w-0 flex-1 gap-2 overflow-x-auto overflow-y-visible overscroll-x-contain pb-0.5 [scrollbar-width:none] [-webkit-overflow-scrolling:touch] sm:flex-wrap sm:overflow-visible sm:pb-0 [&::-webkit-scrollbar]:hidden">
+          <button
+            type="button"
+            onClick={() => requestContentCatalogSubTab('paths')}
+            aria-current={contentCatalogSubTab === 'paths' ? 'page' : undefined}
+            className={`inline-flex min-h-11 touch-manipulation shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold active:opacity-90 ${
+              contentCatalogSubTab === 'paths' ? 'bg-orange-500/20 text-orange-500' : 'text-[var(--text-secondary)]'
+            }`}
+          >
+            <Route size={15} aria-hidden />
+            Paths
+          </button>
+          <button
+            type="button"
+            onClick={() => requestContentCatalogSubTab('taxonomy')}
+            className={`inline-flex min-h-11 touch-manipulation shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold active:opacity-90 ${
+              contentCatalogSubTab === 'taxonomy' ? 'bg-orange-500/20 text-orange-500' : 'text-[var(--text-secondary)]'
+            }`}
+          >
+            <Tags size={15} aria-hidden />
+            Categories &amp; Skills
+          </button>
+        </div>
       </div>
-
-      {contentCatalogSubTab === 'paths' && (
-        <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-          Saved paths appear in the learner <strong className="text-[var(--text-secondary)]">Paths</strong> menu and
-          filter the course library. Published courses only can be added—use the{' '}
-          <strong className="text-[var(--text-secondary)]">Catalog</strong> tab first if the list is empty (
-          <strong className="text-[var(--text-secondary)]">Catalog bootstrap</strong> on Alerts when needed). Choose{' '}
-          <strong className="text-[var(--text-secondary)]">New path</strong> in the list for a fresh path (smallest unused{' '}
-          <code className="text-orange-500/90">P1</code>, <code className="text-orange-500/90">P2</code>, …) or an
-          existing path (sorted A–Z). Drag to reorder courses; expand a course to reorder modules and lessons—
-          <strong className="text-[var(--text-secondary)]">Save path</strong> stores the path;{' '}
-          <strong className="text-[var(--text-secondary)]">Save course structure</strong> updates the published
-          course document like the catalog editor.
-        </p>
-      )}
 
       {contentCatalogSubTab === 'catalog' && (
         <>
-      <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-        Saved changes appear in the live course catalog for learners. If the list is empty, use{' '}
-        <strong className="text-[var(--text-secondary)]">Catalog bootstrap</strong> on the Alerts tab first.
-        Open <strong className="text-[var(--text-secondary)]">Course</strong> once to load the list.
-        Pick <strong className="text-[var(--text-secondary)]">New Course</strong> for a fresh draft (smallest unused{' '}
-        <code className="text-orange-500/90">C1</code>, <code className="text-orange-500/90">C2</code>, …) or an existing
-        course (sorted A–Z). Modules <code className="text-orange-500/90">C1M1</code>; lessons{' '}
-        <code className="text-orange-500/90">C1M1L1</code>.
-      </p>
-
-      <div className="space-y-4">
+      <div ref={courseCatalogEditorRef} className="space-y-4">
         <div className="space-y-3">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3 md:items-start md:gap-x-3 md:gap-y-3">
+        <div className="min-w-0 overflow-x-auto overflow-y-visible [-webkit-overflow-scrolling:touch] pb-0.5">
+        <div className="grid w-full min-w-[720px] grid-cols-[minmax(0,1.5fr)_minmax(0,0.85fr)_minmax(0,0.85fr)_auto] items-start gap-x-3 gap-y-3">
           <div className="flex min-w-0 flex-col gap-1">
-            <label
-              htmlFor="admin-catalog-course-select"
-              className="text-xs font-semibold text-[var(--text-secondary)]"
-            >
-              Course
-            </label>
+            <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+              <label
+                htmlFor="admin-catalog-course-select"
+                className="text-xs font-semibold leading-none text-[var(--text-secondary)]"
+              >
+                Course
+              </label>
+              <span ref={catalogTipsWrapRef} className="relative inline-flex shrink-0 items-center gap-1">
+                <button
+                  ref={catalogTipBtnRef}
+                  type="button"
+                  onClick={() => setCatalogTipsOpen((o) => !o)}
+                  aria-expanded={catalogTipsOpen}
+                  aria-controls="admin-catalog-editor-notes"
+                  aria-label={catalogTipsOpen ? 'Close course field tips' : 'Open course field tips'}
+                  className={`inline-flex size-6 shrink-0 touch-manipulation items-center justify-center rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 active:opacity-90 ${
+                    catalogTipsOpen ? 'border-orange-500/50 text-orange-500' : ''
+                  }`}
+                >
+                  <Info size={14} className="text-orange-500/90" aria-hidden />
+                </button>
+                <div
+                  id="admin-catalog-editor-notes"
+                  role="region"
+                  aria-label="Course field tips"
+                  tabIndex={catalogTipsOpen && tipsNarrowViewport && catalogTipFixedTop >= 0 ? -1 : undefined}
+                  onPointerDown={
+                    catalogTipsOpen && tipsNarrowViewport && catalogTipFixedTop >= 0
+                      ? (e) => (e.currentTarget as HTMLElement).focus({ preventScroll: true })
+                      : undefined
+                  }
+                  className={
+                    !catalogTipsOpen
+                      ? 'hidden'
+                      : tipsNarrowViewport
+                        ? catalogTipFixedTop >= 0
+                          ? 'fixed z-[120] left-3 right-3 w-auto max-w-none translate-x-0 overflow-y-auto overflow-x-hidden overscroll-y-contain [-webkit-overflow-scrolling:touch] touch-pan-y max-h-[calc(100dvh-var(--admin-tip-top)-env(safe-area-inset-bottom,0px)-0.75rem)] rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-3.5 text-left text-sm leading-relaxed text-[var(--text-primary)] shadow-xl pointer-events-auto outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40'
+                          : 'hidden'
+                        : 'absolute left-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] max-w-sm rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-3 text-left text-xs leading-snug text-[var(--text-primary)] shadow-lg pointer-events-auto'
+                  }
+                  style={
+                    catalogTipsOpen && tipsNarrowViewport && catalogTipFixedTop >= 0
+                      ? narrowAdminTipPanelStyle(catalogTipFixedTop)
+                      : undefined
+                  }
+                >
+                  <ul className="list-disc space-y-1.5 pl-4 text-[var(--text-muted)] marker:text-orange-500/70 sm:space-y-1">
+                    <li>Saves go to the live catalog (Firestore).</li>
+                    <li>
+                      Open <strong className="font-semibold text-[var(--text-secondary)]">Course</strong> once to load
+                      titles.
+                    </li>
+                    <li>
+                      <strong className="font-semibold text-[var(--text-secondary)]">New Course</strong>: next id{' '}
+                      <code className="text-orange-500/90">C1</code>, <code className="text-orange-500/90">C2</code>…;
+                      list A–Z.
+                    </li>
+                    <li>
+                      Ids: modules <code className="text-orange-500/90">C1M1</code>, lessons{' '}
+                      <code className="text-orange-500/90">C1M1L1</code>.
+                    </li>
+                  </ul>
+                </div>
+              </span>
+            </div>
             <div className="flex min-w-0 items-stretch gap-2">
             <select
               id="admin-catalog-course-select"
@@ -1010,7 +2176,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               onFocus={openCourseCatalogOnce}
               onMouseDown={openCourseCatalogOnce}
               onChange={onCourseSelectChange}
-              className="box-border min-h-[42px] min-w-0 flex-1 rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
+              className="box-border min-h-11 min-w-0 flex-1 touch-manipulation rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] sm:text-sm"
             >
               <option value="" disabled>
                 {!catalogRequested
@@ -1048,79 +2214,108 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             )}
             </div>
           </div>
-          <div className="flex min-w-0 flex-col gap-1">
-            <span className="text-xs font-semibold text-[var(--text-secondary)]">Document ID</span>
-            <div
-              className="box-border flex min-h-[42px] w-full min-w-0 items-center rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm font-mono text-[var(--text-primary)]"
-              aria-live="polite"
-            >
-              {draft ? (
-                <span className="truncate text-orange-500/90">{draft.id}</span>
-              ) : (
-                <span className="text-[var(--text-muted)]">—</span>
-              )}
+          <div className="contents min-w-0">
+            <div className="flex min-w-0 flex-col gap-1">
+              <div className="flex min-h-6 min-w-0 items-center">
+                <span className="text-xs font-semibold leading-none text-[var(--text-secondary)]">
+                  Document ID
+                </span>
+              </div>
+              <div
+                className="box-border flex min-h-[42px] w-full min-w-0 items-center rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm font-mono text-[var(--text-primary)] md:px-3"
+                aria-live="polite"
+              >
+                {draft ? (
+                  <span className="truncate text-orange-500/90">{draft.id}</span>
+                ) : (
+                  <span className="text-[var(--text-muted)]">—</span>
+                )}
+              </div>
+            </div>
+            <div className="flex min-w-0 flex-col gap-1">
+              <div className="flex min-h-6 min-w-0 items-center">
+                <label
+                  htmlFor="admin-catalog-course-level"
+                  className="text-xs font-semibold leading-none text-[var(--text-secondary)]"
+                >
+                  Level
+                </label>
+              </div>
+              <select
+                id="admin-catalog-course-level"
+                value={draft?.level ?? ''}
+                disabled={!draft}
+                onChange={(e) =>
+                  draft && updateDraft({ level: e.target.value as Course['level'] })
+                }
+                className="box-border w-full min-w-0 min-h-[42px] rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50 md:px-3"
+              >
+                {!draft && (
+                  <option value="" disabled>
+                    —
+                  </option>
+                )}
+                <option value="Beginner">Beginner</option>
+                <option value="Intermediate">Intermediate</option>
+                <option value="Advanced">Advanced</option>
+                <option value="Proficient">Proficient</option>
+              </select>
             </div>
           </div>
-          <div className="flex min-w-0 flex-col gap-1">
-            <label
-              htmlFor="admin-catalog-course-level"
-              className="text-xs font-semibold text-[var(--text-secondary)]"
-            >
-              Level
-            </label>
-            <select
-              id="admin-catalog-course-level"
-              value={draft?.level ?? ''}
-              disabled={!draft}
-              onChange={(e) =>
-                draft && updateDraft({ level: e.target.value as Course['level'] })
-              }
-              className="box-border w-full min-h-[42px] rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {!draft && (
-                <option value="" disabled>
-                  —
-                </option>
-              )}
-              <option value="Beginner">Beginner</option>
-              <option value="Intermediate">Intermediate</option>
-              <option value="Advanced">Advanced</option>
-            </select>
-          </div>
-        </div>
 
-        {draft && (
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 w-full flex-col gap-1 md:w-auto md:max-w-full">
+          <div className="flex min-h-6 min-w-0 items-center">
+            <span className="text-xs font-semibold leading-none text-[var(--text-secondary)] max-md:sr-only">
+              Actions
+            </span>
+          </div>
+          <div className="flex flex-nowrap items-center gap-2 overflow-x-auto pb-0.5 [-webkit-overflow-scrolling:touch]">
             <button
               type="button"
               disabled={busy || !draft || (baselineJson !== null && !isDirty)}
               onClick={() => void handleSave()}
               aria-busy={busy}
-              className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-orange-500 px-5 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-40"
+              aria-label={busy ? 'Saving…' : 'Save course to catalog'}
+              className="inline-flex min-h-11 shrink-0 touch-manipulation items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-40 sm:px-5"
             >
               {busy ? (
                 <Loader2 size={18} className="shrink-0 animate-spin" aria-hidden />
               ) : (
                 <Save size={18} className="shrink-0" aria-hidden />
               )}
-              Save changes
+              Save
             </button>
             <button
               type="button"
-              disabled={busy || !publishedList.some((c) => c.id === draft.id)}
+              disabled={busy || !draft || !publishedList.some((c) => c.id === draft.id)}
               onClick={openDeleteDialog}
-              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-red-500/40 px-5 py-2 text-sm font-bold text-red-400 hover:bg-red-500/10 disabled:opacity-40"
+              aria-label="Delete course from catalog"
+              className="inline-flex min-h-11 shrink-0 touch-manipulation items-center justify-center gap-2 rounded-xl border border-red-500/40 px-4 py-2 text-sm font-bold text-red-400 hover:bg-red-500/10 disabled:opacity-40 sm:px-5"
             >
-              <Trash2 size={18} aria-hidden />
-              Delete published
+              <Trash2 size={18} className="shrink-0" aria-hidden />
+              Delete
             </button>
           </div>
-        )}
+          {draft && isDirty ? (
+            <p className="text-xs font-medium text-amber-800 dark:text-amber-200" role="status">
+              Unsaved changes
+            </p>
+          ) : draft && !isDirty && selector !== '__new__' ? (
+            <p className="text-xs text-[var(--text-muted)]" role="status">
+              All changes saved
+            </p>
+          ) : null}
+        </div>
+        </div>
+        </div>
         </div>
 
         {draft && (
           <div className="space-y-4">
-          <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/20">
+          <div
+            ref={courseDetailsDisclosureRef}
+            className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/20"
+          >
             <button
               type="button"
               onClick={() => setCourseDetailsOpen((v) => !v)}
@@ -1164,38 +2359,212 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 }`}
               />
             </label>
-            <label className="block space-y-1 sm:col-span-2">
-              <span className="text-xs font-semibold text-[var(--text-secondary)]">Category</span>
-              <select
-                value={categorySelectValue}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (v === '__custom__') updateDraft({ category: '' });
-                  else updateDraft({ category: v });
-                }}
-                onBlur={registerDraftCategoryForFilters}
-                className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm"
-              >
-                {categorySelectOptions.map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
-                  </option>
-                ))}
-                <option value="__custom__">Other (type a custom category)…</option>
-              </select>
-              {categorySelectValue === '__custom__' && (
-                <input
-                  value={draft.category}
-                  onChange={(e) => updateDraft({ category: e.target.value })}
-                  onBlur={registerDraftCategoryForFilters}
-                  placeholder="Type a new category name…"
-                  className="mt-2 w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm"
-                />
-              )}
-              <p className="text-[11px] text-[var(--text-muted)] mt-1 leading-relaxed">
-                All preset and known categories appear in the list. Pick <strong className="text-[var(--text-secondary)]">Other</strong> to type a new name; it is added to Course Library filters when you leave the custom field or save.
-              </p>
-            </label>
+            <div
+              id="admin-course-categories"
+              aria-labelledby="admin-course-categories-label"
+              className={`space-y-2 sm:col-span-2 ${showValidationHints && fieldErrors.courseCategories ? 'rounded-lg ring-2 ring-red-500/60 p-2 -m-2' : ''}`}
+            >
+              <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+                <span
+                  id="admin-course-categories-label"
+                  className="text-xs font-semibold leading-none text-[var(--text-secondary)]"
+                >
+                  Categories
+                </span>
+                <span ref={categoriesTipsWrapRef} className="relative inline-flex shrink-0 items-center gap-1">
+                  <button
+                    ref={categoriesTipBtnRef}
+                    type="button"
+                    onClick={() => setCategoriesTipsOpen((o) => !o)}
+                    aria-expanded={categoriesTipsOpen}
+                    aria-controls="admin-course-categories-tips"
+                    aria-label={
+                      categoriesTipsOpen ? 'Close categories field tips' : 'Open categories field tips'
+                    }
+                    className={`inline-flex size-6 shrink-0 touch-manipulation items-center justify-center rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 active:opacity-90 ${
+                      categoriesTipsOpen ? 'border-orange-500/50 text-orange-500' : ''
+                    }`}
+                  >
+                    <Info size={14} className="text-orange-500/90" aria-hidden />
+                  </button>
+                  <div
+                    id="admin-course-categories-tips"
+                    role="region"
+                    aria-label="Categories field tips"
+                    tabIndex={
+                      categoriesTipsOpen && tipsNarrowViewport && categoriesTipFixedTop >= 0
+                        ? -1
+                        : undefined
+                    }
+                    onPointerDown={
+                      categoriesTipsOpen && tipsNarrowViewport && categoriesTipFixedTop >= 0
+                        ? (e) => (e.currentTarget as HTMLElement).focus({ preventScroll: true })
+                        : undefined
+                    }
+                    className={
+                      !categoriesTipsOpen
+                        ? 'hidden'
+                        : tipsNarrowViewport
+                          ? categoriesTipFixedTop >= 0
+                            ? 'fixed z-[120] left-3 right-3 w-auto max-w-none translate-x-0 overflow-y-auto overflow-x-hidden overscroll-y-contain [-webkit-overflow-scrolling:touch] touch-pan-y max-h-[calc(100dvh-var(--admin-tip-top)-env(safe-area-inset-bottom,0px)-0.75rem)] rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-3.5 text-left text-sm leading-relaxed text-[var(--text-primary)] shadow-xl pointer-events-auto outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40'
+                            : 'hidden'
+                          : 'absolute left-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] max-w-sm rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-3 text-left text-xs leading-snug text-[var(--text-primary)] shadow-lg pointer-events-auto'
+                    }
+                    style={
+                      categoriesTipsOpen && tipsNarrowViewport && categoriesTipFixedTop >= 0
+                        ? narrowAdminTipPanelStyle(categoriesTipFixedTop)
+                        : undefined
+                    }
+                  >
+                    <ul className="list-disc space-y-1.5 pl-4 text-[var(--text-muted)] marker:text-orange-500/70 sm:space-y-1">
+                      <li>At least one category required.</li>
+                      <li>Custom categories appear in library filters after save or when you leave these fields.</li>
+                    </ul>
+                  </div>
+                </span>
+              </div>
+              <div className="flex min-h-10 flex-wrap gap-2">
+                {draft.categories.length === 0 ? (
+                  <span className="text-xs text-[var(--text-muted)]">Add at least one category.</span>
+                ) : (
+                  draft.categories.map((cat) => (
+                    <span
+                      key={cat}
+                      className="inline-flex max-w-full items-center gap-1 rounded-lg border border-[var(--border-color)] bg-[var(--hover-bg)] px-2 py-1 text-xs font-medium text-[var(--text-primary)]"
+                    >
+                      <span className="truncate">{cat}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeDraftCategory(cat)}
+                        className="shrink-0 rounded p-0.5 text-[var(--text-muted)] hover:bg-[var(--bg-primary)] hover:text-[var(--text-primary)] min-h-8 min-w-8 inline-flex items-center justify-center"
+                        aria-label={`Remove category ${cat}`}
+                      >
+                        <X size={14} aria-hidden />
+                      </button>
+                    </span>
+                  ))
+                )}
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v) addDraftCategory(v);
+                    e.target.value = '';
+                  }}
+                  onBlur={registerDraftTaxonomyExtras}
+                  className="w-full min-h-11 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm sm:max-w-xs"
+                  aria-label="Add category from list"
+                >
+                  <option value="">Add category from list…</option>
+                  {categoriesNotOnDraft.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+                <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center">
+                  <input
+                    placeholder="Custom category…"
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter') return;
+                      e.preventDefault();
+                      const el = e.currentTarget;
+                      addDraftCategory(el.value);
+                      el.value = '';
+                    }}
+                    onBlur={registerDraftTaxonomyExtras}
+                    className="w-full min-h-11 min-w-0 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      const prev = e.currentTarget.previousElementSibling;
+                      if (prev instanceof HTMLInputElement) {
+                        addDraftCategory(prev.value);
+                        prev.value = '';
+                      }
+                    }}
+                    className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg border border-[var(--border-color)] px-3 text-xs font-bold text-orange-500 hover:bg-[var(--hover-bg)]"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <span className="text-xs font-semibold text-[var(--text-secondary)]">Skills</span>
+              <div className="flex min-h-10 flex-wrap gap-2">
+                {draft.skills.length === 0 ? (
+                  <span className="text-xs text-[var(--text-muted)]">Optional — add skill tags for learners and filters.</span>
+                ) : (
+                  draft.skills.map((sk) => (
+                    <span
+                      key={sk}
+                      className="inline-flex max-w-full items-center gap-1 rounded-lg border border-[var(--border-color)] bg-[var(--hover-bg)] px-2 py-1 text-xs font-medium text-[var(--text-primary)]"
+                    >
+                      <span className="truncate">{sk}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeDraftSkill(sk)}
+                        className="shrink-0 rounded p-0.5 text-[var(--text-muted)] hover:bg-[var(--bg-primary)] hover:text-[var(--text-primary)] min-h-8 min-w-8 inline-flex items-center justify-center"
+                        aria-label={`Remove skill ${sk}`}
+                      >
+                        <X size={14} aria-hidden />
+                      </button>
+                    </span>
+                  ))
+                )}
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v) addDraftSkill(v);
+                    e.target.value = '';
+                  }}
+                  onBlur={registerDraftTaxonomyExtras}
+                  className="w-full min-h-11 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm sm:max-w-xs"
+                  aria-label="Add skill from list"
+                >
+                  <option value="">Add skill from list…</option>
+                  {skillsNotOnDraft.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+                <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center">
+                  <input
+                    placeholder="Custom skill…"
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter') return;
+                      e.preventDefault();
+                      const el = e.currentTarget;
+                      addDraftSkill(el.value);
+                      el.value = '';
+                    }}
+                    onBlur={registerDraftTaxonomyExtras}
+                    className="w-full min-h-11 min-w-0 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      const prev = e.currentTarget.previousElementSibling;
+                      if (prev instanceof HTMLInputElement) {
+                        addDraftSkill(prev.value);
+                        prev.value = '';
+                      }
+                    }}
+                    className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg border border-[var(--border-color)] px-3 text-xs font-bold text-orange-500 hover:bg-[var(--hover-bg)]"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+            </div>
             <div className="sm:col-span-2 flex flex-col gap-3 lg:flex-row lg:items-end lg:gap-x-3">
               <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
                 <label className="inline-flex w-max max-w-full flex-col gap-1">
@@ -1265,62 +2634,164 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             )}
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-2.5 sm:space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <h3 className="text-sm font-bold text-[var(--text-primary)]">Modules and lessons</h3>
-                <p className="text-xs text-[var(--text-muted)] mt-1 max-w-xl">
-                  Each module is a group of lessons. Stable ids are used for learner progress and deep links; titles are
-                  what learners see.
-                </p>
+              <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+                <h3 className="text-xs font-semibold text-[var(--text-secondary)]">Modules and lessons</h3>
+                <span ref={modulesTipsWrapRef} className="relative inline-flex shrink-0 items-center gap-1">
+                  <button
+                    ref={modulesTipBtnRef}
+                    type="button"
+                    onClick={() => setModulesTipsOpen((o) => !o)}
+                    aria-expanded={modulesTipsOpen}
+                    aria-controls="admin-modules-lessons-tips"
+                    aria-label={modulesTipsOpen ? 'Close modules and lessons tips' : 'Open modules and lessons tips'}
+                    className={`inline-flex size-6 shrink-0 touch-manipulation items-center justify-center rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 active:opacity-90 ${
+                      modulesTipsOpen ? 'border-orange-500/50 text-orange-500' : ''
+                    }`}
+                  >
+                    <Info size={14} className="text-orange-500/90" aria-hidden />
+                  </button>
+                  <div
+                    id="admin-modules-lessons-tips"
+                    role="region"
+                    aria-label="Modules and lessons tips"
+                    tabIndex={modulesTipsOpen && tipsNarrowViewport && modulesTipFixedTop >= 0 ? -1 : undefined}
+                    onPointerDown={
+                      modulesTipsOpen && tipsNarrowViewport && modulesTipFixedTop >= 0
+                        ? (e) => (e.currentTarget as HTMLElement).focus({ preventScroll: true })
+                        : undefined
+                    }
+                    className={
+                      !modulesTipsOpen
+                        ? 'hidden'
+                        : tipsNarrowViewport
+                          ? modulesTipFixedTop >= 0
+                            ? 'fixed z-[120] left-3 right-3 w-auto max-w-none translate-x-0 overflow-y-auto overflow-x-hidden overscroll-y-contain [-webkit-overflow-scrolling:touch] touch-pan-y max-h-[calc(100dvh-var(--admin-tip-top)-env(safe-area-inset-bottom,0px)-0.75rem)] rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-3.5 text-left text-sm leading-relaxed text-[var(--text-primary)] shadow-xl pointer-events-auto outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40'
+                            : 'hidden'
+                          : 'absolute left-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] max-w-sm rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-3 text-left text-xs leading-snug text-[var(--text-primary)] shadow-lg pointer-events-auto'
+                    }
+                    style={
+                      modulesTipsOpen && tipsNarrowViewport && modulesTipFixedTop >= 0
+                        ? narrowAdminTipPanelStyle(modulesTipFixedTop)
+                        : undefined
+                    }
+                  >
+                    <ul className="list-disc space-y-1.5 pl-4 text-[var(--text-muted)] marker:text-orange-500/70 sm:space-y-1">
+                      <li>Modules group lessons.</li>
+                      <li>Reorder: row ↑/↓, or Arrow keys when a reorder control is focused.</li>
+                      <li>
+                        <strong className="font-semibold text-[var(--text-secondary)]">Move to module…</strong>: if it’s
+                        the only lesson in that module, add another lesson there first.
+                      </li>
+                      <li>
+                        Structured ids (<code className="text-orange-500/90">C1</code>…): ids renumber when you reorder.
+                      </li>
+                    </ul>
+                  </div>
+                </span>
               </div>
               <button
                 type="button"
                 onClick={addModule}
-                className="inline-flex items-center gap-1 text-xs font-bold text-orange-500 hover:text-orange-400"
+                className="inline-flex min-h-11 touch-manipulation items-center gap-1.5 rounded-lg px-2.5 text-sm font-bold text-orange-500 hover:bg-orange-500/10 hover:text-orange-400 active:opacity-90 sm:text-xs"
               >
-                <Plus size={14} /> Add module
+                <Plus size={16} className="shrink-0" aria-hidden /> Add module
               </button>
             </div>
 
             {draft.modules.map((mod, mi) => (
               <div
                 key={`module-slot-${mi}`}
-                className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/30 p-4 space-y-4"
+                data-admin-module-index={mi}
+                className="space-y-2.5 border-b border-[var(--border-color)]/40 pb-4 last:border-b-0 last:pb-0 sm:space-y-4 sm:pb-5"
               >
-                <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--border-color)] pb-3">
-                  <div className="min-w-0">
-                    <button
-                      type="button"
-                      onClick={() => toggleModuleOpen(mi)}
-                      className="inline-flex items-center gap-1.5 text-left"
-                      aria-expanded={!!openModules[mi]}
-                    >
+                <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--border-color)]/40 pb-2 sm:pb-3">
+                  <button
+                    type="button"
+                    onClick={() => toggleModuleOpen(mi)}
+                    className="flex min-h-11 min-w-0 flex-1 items-start gap-1.5 rounded-lg py-0.5 text-left hover:bg-[var(--hover-bg)]/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 sm:gap-2 sm:py-1"
+                    aria-expanded={!!openModules[mi]}
+                    aria-label={`Module ${mi + 1}: ${mod.id.trim() || 'no id'} - ${mod.title.trim() || 'Untitled module'}. ${openModules[mi] ? 'Collapse' : 'Expand'} module`}
+                  >
+                    <span className="mt-0.5 shrink-0" aria-hidden>
                       {openModules[mi] ? (
                         <ChevronDown size={14} className="text-[var(--text-secondary)]" />
                       ) : (
                         <ChevronRight size={14} className="text-[var(--text-secondary)]" />
                       )}
-                      <h4 className="text-sm font-bold text-[var(--text-primary)]">Module {mi + 1}</h4>
-                    </button>
-                    <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                      Stable id (e.g. C1M1) and display name for this section of the course.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => removeModule(mi)}
-                    disabled={draft.modules.length <= 1}
-                    className="p-2 text-red-400 hover:bg-red-500/10 rounded-lg disabled:opacity-30 shrink-0"
-                    aria-label="Remove module"
-                  >
-                    <Trash2 size={16} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block min-w-0 truncate text-sm font-bold text-[var(--text-primary)]">
+                        <span className="font-mono text-orange-500/90">{mod.id.trim() || '—'}</span>
+                        <span> - {mod.title.trim() || 'Untitled module'}</span>
+                      </span>
+                      <span className="mt-0.5 block text-[11px] font-medium text-[var(--text-muted)] sm:text-xs sm:font-normal">
+                        Module {mi + 1}
+                      </span>
+                    </span>
                   </button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      data-module-reorder="up"
+                      onClick={(e) => moveModule(mi, -1, e.currentTarget)}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+                        if (e.altKey || e.ctrlKey || e.metaKey) return;
+                        const n = draftRef.current?.modules.length ?? 0;
+                        e.preventDefault();
+                        if (e.key === 'ArrowUp' && mi > 0) {
+                          moveModule(mi, -1, e.currentTarget);
+                        }
+                        if (e.key === 'ArrowDown' && mi < n - 1) {
+                          moveModule(mi, 1, e.currentTarget);
+                        }
+                      }}
+                      disabled={mi === 0}
+                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-30"
+                      aria-label="Move module up"
+                    >
+                      <ArrowUp size={18} aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      data-module-reorder="down"
+                      onClick={(e) => moveModule(mi, 1, e.currentTarget)}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+                        if (e.altKey || e.ctrlKey || e.metaKey) return;
+                        const n = draftRef.current?.modules.length ?? 0;
+                        e.preventDefault();
+                        if (e.key === 'ArrowUp' && mi > 0) {
+                          moveModule(mi, -1, e.currentTarget);
+                        }
+                        if (e.key === 'ArrowDown' && mi < n - 1) {
+                          moveModule(mi, 1, e.currentTarget);
+                        }
+                      }}
+                      disabled={mi >= draft.modules.length - 1}
+                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-30"
+                      aria-label="Move module down"
+                    >
+                      <ArrowDown size={18} aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeModule(mi)}
+                      disabled={draft.modules.length <= 1}
+                      className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg p-2 text-red-400 hover:bg-red-500/10 disabled:opacity-30"
+                      aria-label="Remove module"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
                 </div>
 
                 {openModules[mi] && (
                 <>
-                <div className="flex flex-row flex-wrap items-end gap-x-3 gap-y-2">
+                <div className="mt-1 space-y-2.5 border-l border-[var(--border-color)]/50 pl-3 sm:mt-2 sm:space-y-4 sm:pl-4">
+                <div className="flex flex-row flex-wrap items-end gap-x-2 gap-y-2 sm:gap-x-3">
                   <label className="flex min-w-0 flex-[1_1_11rem] max-w-full flex-col gap-1 sm:max-w-[16rem]">
                     <span className="whitespace-nowrap text-xs font-semibold text-[var(--text-secondary)]">
                       Module ID
@@ -1329,7 +2800,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       id={`admin-module-id-${mi}`}
                       value={mod.id}
                       onChange={(e) => updateModule(mi, { id: e.target.value })}
-                      className={`box-border w-full min-w-0 rounded-lg border bg-[var(--bg-primary)] px-3 py-2 font-mono text-sm ${
+                      className={`box-border w-full min-w-0 rounded-lg border bg-[var(--bg-primary)] px-2.5 py-1.5 font-mono text-sm sm:px-3 sm:py-2 ${
                         showValidationHints && fieldErrors.moduleId.has(mi)
                           ? 'border-red-500'
                           : 'border-[var(--border-color)]'
@@ -1351,7 +2822,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       id={`admin-module-title-${mi}`}
                       value={mod.title}
                       onChange={(e) => updateModule(mi, { title: e.target.value })}
-                      className={`w-full text-sm bg-[var(--bg-primary)] border rounded-lg px-3 py-2 ${
+                      className={`w-full text-sm bg-[var(--bg-primary)] border rounded-lg px-2.5 py-1.5 sm:px-3 sm:py-2 ${
                         showValidationHints && fieldErrors.moduleTitle.has(mi)
                           ? 'border-red-500'
                           : 'border-[var(--border-color)]'
@@ -1370,31 +2841,160 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   </label>
                 </div>
 
-                <div className="space-y-3 pl-2 sm:pl-3 border-l-2 border-orange-500/30">
-                  <p className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide">
+                <div className="space-y-2 border-l border-[var(--border-color)]/40 pl-2 sm:space-y-3 sm:pl-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-secondary)] sm:text-xs">
                     Lessons in this module
                   </p>
-                  {mod.lessons.map((lesson, li) => (
+                  <div className="divide-y divide-[var(--border-color)]/40">
+                  {mod.lessons.map((lesson, li) => {
+                    const lessonRowKey = lessonRowDomKey(lesson, mi, li);
+                    return (
                     <div
-                      key={`lesson-slot-${mi}-${li}`}
-                      className="rounded-lg bg-[var(--bg-secondary)]/80 p-4 space-y-3 border border-[var(--border-color)]/60"
+                      key={lessonRowKey}
+                      data-admin-lesson-row={lessonRowKey}
+                      data-lesson-mi={mi}
+                      data-lesson-li={li}
+                      className="space-y-2 py-3 first:pt-0 sm:space-y-3 sm:py-4 sm:first:pt-1"
                     >
-                      <button
-                        type="button"
-                        onClick={() => toggleLessonOpen(mi, li)}
-                        className="inline-flex items-center gap-1.5 text-left"
-                        aria-expanded={!!openLessons[`${mi}:${li}`]}
-                      >
-                        {openLessons[`${mi}:${li}`] ? (
-                          <ChevronDown size={14} className="text-[var(--text-secondary)]" />
-                        ) : (
-                          <ChevronRight size={14} className="text-[var(--text-secondary)]" />
-                        )}
-                        <p className="text-xs font-bold text-[var(--text-primary)]">Lesson {li + 1}</p>
-                      </button>
+                      <div className="flex w-full min-w-0 items-center gap-1.5 sm:gap-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleLessonOpen(mi, li)}
+                          className="flex min-h-11 min-w-0 flex-1 items-start gap-1.5 rounded-lg py-0.5 text-left -mx-0.5 px-0.5 hover:bg-[var(--bg-primary)]/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 sm:gap-2 sm:py-1 sm:-mx-1 sm:px-1"
+                          aria-expanded={!!openLessons[`${mi}:${li}`]}
+                          aria-label={`Lesson ${li + 1}: ${lesson.id.trim() || 'no id'} - ${lesson.title.trim() || 'Untitled lesson'}. ${openLessons[`${mi}:${li}`] ? 'Collapse' : 'Expand'} lesson`}
+                        >
+                          <span className="mt-0.5 shrink-0" aria-hidden>
+                            {openLessons[`${mi}:${li}`] ? (
+                              <ChevronDown size={14} className="text-[var(--text-secondary)]" />
+                            ) : (
+                              <ChevronRight size={14} className="text-[var(--text-secondary)]" />
+                            )}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block min-w-0 truncate text-sm font-bold text-[var(--text-primary)]">
+                              <span className="font-mono text-orange-500/90">{lesson.id.trim() || '—'}</span>
+                              <span> - {lesson.title.trim() || 'Untitled lesson'}</span>
+                            </span>
+                            <span className="mt-0.5 block text-[11px] font-medium text-[var(--text-muted)] sm:text-xs sm:font-normal">
+                              Lesson {li + 1}
+                            </span>
+                          </span>
+                        </button>
+                        <div className="flex shrink-0 flex-col gap-0.5 sm:flex-row sm:gap-1">
+                          <button
+                            type="button"
+                            data-lesson-reorder="up"
+                            onClick={(e) => {
+                              const row = e.currentTarget.closest<HTMLElement>('[data-admin-lesson-row]');
+                              if (!row) return;
+                              const key = row.getAttribute('data-admin-lesson-row');
+                              const mIdx = Number(row.dataset.lessonMi);
+                              if (!key || !Number.isInteger(mIdx)) return;
+                              moveLesson(mIdx, key, -1, e.currentTarget);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+                              if (e.altKey || e.ctrlKey || e.metaKey) return;
+                              const row = e.currentTarget.closest<HTMLElement>('[data-admin-lesson-row]');
+                              if (!row) return;
+                              const key = row.getAttribute('data-admin-lesson-row');
+                              const mIdx = Number(row.dataset.lessonMi);
+                              if (!key || !Number.isInteger(mIdx)) return;
+                              const modNow = draftRef.current?.modules[mIdx];
+                              if (!modNow) return;
+                              const curLi = findLessonIndexByDomKey(modNow, mIdx, key);
+                              if (curLi < 0) return;
+                              e.preventDefault();
+                              if (e.key === 'ArrowUp' && curLi > 0) {
+                                moveLesson(mIdx, key, -1, e.currentTarget);
+                              }
+                              if (e.key === 'ArrowDown' && curLi < modNow.lessons.length - 1) {
+                                moveLesson(mIdx, key, 1, e.currentTarget);
+                              }
+                            }}
+                            disabled={li === 0}
+                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]/40 disabled:opacity-30"
+                            aria-label="Move lesson up"
+                          >
+                            <ArrowUp size={18} aria-hidden />
+                          </button>
+                          <button
+                            type="button"
+                            data-lesson-reorder="down"
+                            onClick={(e) => {
+                              const row = e.currentTarget.closest<HTMLElement>('[data-admin-lesson-row]');
+                              if (!row) return;
+                              const key = row.getAttribute('data-admin-lesson-row');
+                              const mIdx = Number(row.dataset.lessonMi);
+                              if (!key || !Number.isInteger(mIdx)) return;
+                              moveLesson(mIdx, key, 1, e.currentTarget);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+                              if (e.altKey || e.ctrlKey || e.metaKey) return;
+                              const row = e.currentTarget.closest<HTMLElement>('[data-admin-lesson-row]');
+                              if (!row) return;
+                              const key = row.getAttribute('data-admin-lesson-row');
+                              const mIdx = Number(row.dataset.lessonMi);
+                              if (!key || !Number.isInteger(mIdx)) return;
+                              const modNow = draftRef.current?.modules[mIdx];
+                              if (!modNow) return;
+                              const curLi = findLessonIndexByDomKey(modNow, mIdx, key);
+                              if (curLi < 0) return;
+                              e.preventDefault();
+                              if (e.key === 'ArrowUp' && curLi > 0) {
+                                moveLesson(mIdx, key, -1, e.currentTarget);
+                              }
+                              if (e.key === 'ArrowDown' && curLi < modNow.lessons.length - 1) {
+                                moveLesson(mIdx, key, 1, e.currentTarget);
+                              }
+                            }}
+                            disabled={li >= mod.lessons.length - 1}
+                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]/40 disabled:opacity-30"
+                            aria-label="Move lesson down"
+                          >
+                            <ArrowDown size={18} aria-hidden />
+                          </button>
+                        </div>
+                      </div>
+                      {draft.modules.length > 1 && (
+                        <div className="space-y-1 pt-0.5 sm:pt-1">
+                          <label className="block min-w-0">
+                            <span className="sr-only">Move lesson to another module</span>
+                            <select
+                              value=""
+                              disabled={mod.lessons.length <= 1}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                if (!v) return;
+                                const t = Number(v);
+                                if (Number.isInteger(t)) moveLessonToModule(mi, li, t);
+                                e.target.value = '';
+                              }}
+                              className="box-border min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2.5 py-1.5 text-sm text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40 sm:px-3 sm:py-2"
+                              aria-label="Move lesson to another module"
+                            >
+                              <option value="">Move to module…</option>
+                              {draft.modules.map((tm, mj) =>
+                                mj === mi ? null : (
+                                  <option key={mj} value={String(mj)}>
+                                    Module {mj + 1}: {tm.id.trim() || '—'} - {tm.title.trim() || 'Untitled module'}
+                                  </option>
+                                )
+                              )}
+                            </select>
+                          </label>
+                          {mod.lessons.length <= 1 ? (
+                            <p className="text-[11px] leading-snug text-[var(--text-muted)]">
+                              Add another lesson here first—each module must keep at least one.
+                            </p>
+                          ) : null}
+                        </div>
+                      )}
                       {openLessons[`${mi}:${li}`] && (
                         <>
-                      <div className="flex flex-row flex-wrap items-end gap-x-3 gap-y-2">
+                      <div className="flex flex-row flex-wrap items-end gap-x-2 gap-y-2 sm:gap-x-3">
                         <label className="flex min-w-0 flex-[1_1_11rem] max-w-full flex-col gap-1 sm:max-w-[16rem]">
                           <span className="whitespace-nowrap text-xs font-semibold text-[var(--text-secondary)]">
                             Lesson ID
@@ -1403,7 +3003,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             id={`admin-lesson-id-${mi}-${li}`}
                             value={lesson.id}
                             onChange={(e) => updateLesson(mi, li, { id: e.target.value })}
-                            className={`box-border w-full min-w-0 rounded-lg border bg-[var(--bg-primary)] px-3 py-2 font-mono text-sm ${
+                            className={`box-border w-full min-w-0 rounded-lg border bg-[var(--bg-primary)] px-2.5 py-1.5 font-mono text-sm sm:px-3 sm:py-2 ${
                               showValidationHints && fieldErrors.lessonId.has(`${mi}:${li}`)
                                 ? 'border-red-500'
                                 : 'border-[var(--border-color)]'
@@ -1425,7 +3025,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             id={`admin-lesson-title-${mi}-${li}`}
                             value={lesson.title}
                             onChange={(e) => updateLesson(mi, li, { title: e.target.value })}
-                            className={`w-full text-sm bg-[var(--bg-primary)] border rounded-lg px-3 py-2 ${
+                            className={`w-full text-sm bg-[var(--bg-primary)] border rounded-lg px-2.5 py-1.5 sm:px-3 sm:py-2 ${
                               showValidationHints && fieldErrors.lessonTitle.has(`${mi}:${li}`)
                                 ? 'border-red-500'
                                 : 'border-[var(--border-color)]'
@@ -1443,35 +3043,387 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           </span>
                         </label>
                       </div>
-                      <label className="block space-y-1">
-                        <span className="text-xs font-semibold text-[var(--text-secondary)]">Video URL</span>
-                        <input
-                          id={`admin-lesson-url-${mi}-${li}`}
-                          value={lesson.videoUrl}
-                          onChange={(e) => updateLesson(mi, li, { videoUrl: e.target.value })}
-                          className={`w-full text-sm font-mono bg-[var(--bg-primary)] border rounded-lg px-3 py-2 ${
-                            showValidationHints && fieldErrors.videoUrl.has(`${mi}:${li}`)
+                      <div className="space-y-1.5 border-t border-[var(--border-color)]/60 pt-2 sm:space-y-2 sm:pt-3">
+                        <span className="text-xs font-semibold text-[var(--text-secondary)]">Lesson content</span>
+                        <div
+                          className="flex flex-wrap gap-x-3 gap-y-2 sm:gap-4"
+                          role="radiogroup"
+                          aria-label="Lesson content type"
+                        >
+                          <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-[var(--text-primary)] sm:gap-2 sm:text-sm">
+                            <input
+                              type="radio"
+                              name={`admin-lesson-kind-${mi}-${li}`}
+                              checked={lesson.contentKind !== 'web' && lesson.contentKind !== 'quiz'}
+                              onChange={() =>
+                                updateLesson(mi, li, {
+                                  contentKind: undefined,
+                                  webUrl: undefined,
+                                  quiz: undefined,
+                                  videoUrl: lesson.videoUrl?.trim()
+                                    ? lesson.videoUrl
+                                    : 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
+                                })
+                              }
+                              className="h-4 w-4 shrink-0 border-[var(--border-color)] text-orange-500"
+                            />
+                            Video
+                          </label>
+                          <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-[var(--text-primary)] sm:gap-2 sm:text-sm">
+                            <input
+                              type="radio"
+                              name={`admin-lesson-kind-${mi}-${li}`}
+                              checked={lesson.contentKind === 'web'}
+                              onChange={() =>
+                                updateLesson(mi, li, {
+                                  contentKind: 'web',
+                                  webUrl: lesson.webUrl ?? '',
+                                  videoUrl: '',
+                                  quiz: undefined,
+                                })
+                              }
+                              className="h-4 w-4 shrink-0 border-[var(--border-color)] text-orange-500"
+                            />
+                            External page
+                          </label>
+                          <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-[var(--text-primary)] sm:gap-2 sm:text-sm">
+                            <input
+                              type="radio"
+                              name={`admin-lesson-kind-${mi}-${li}`}
+                              checked={lesson.contentKind === 'quiz'}
+                              onChange={() =>
+                                updateLesson(mi, li, {
+                                  contentKind: 'quiz',
+                                  webUrl: undefined,
+                                  videoUrl: '',
+                                  quiz: {
+                                    questions:
+                                      lesson.quiz?.questions?.length && lesson.contentKind === 'quiz'
+                                        ? lesson.quiz.questions
+                                        : [createDefaultMcqQuestion()],
+                                  },
+                                })
+                              }
+                              className="h-4 w-4 shrink-0 border-[var(--border-color)] text-orange-500"
+                            />
+                            Quiz
+                          </label>
+                        </div>
+                        <p className="text-[11px] leading-snug text-[var(--text-muted)]">
+                          Video uses the embedded player. External page opens in a new tab. Quiz: multiple-choice and
+                          open-ended questions with AI grading in the player.
+                        </p>
+                      </div>
+                      {lesson.contentKind === 'web' ? (
+                        <label className="block space-y-1">
+                          <span className="text-xs font-semibold text-[var(--text-secondary)]">Page URL</span>
+                          <input
+                            id={`admin-lesson-web-url-${mi}-${li}`}
+                            type="url"
+                            inputMode="url"
+                            value={lesson.webUrl ?? ''}
+                            onChange={(e) => updateLesson(mi, li, { webUrl: e.target.value })}
+                            className={`w-full text-sm font-mono bg-[var(--bg-primary)] border rounded-lg px-2.5 py-1.5 sm:px-3 sm:py-2 ${
+                              showValidationHints && fieldErrors.lessonWebUrl.has(`${mi}:${li}`)
+                                ? 'border-red-500'
+                                : 'border-[var(--border-color)]'
+                            }`}
+                            placeholder="https://example.com/article or example.com/path"
+                          />
+                          <span
+                            className={`min-h-[16px] text-[11px] ${
+                              showValidationHints && fieldErrors.lessonWebUrl.has(`${mi}:${li}`)
+                                ? 'text-red-400'
+                                : 'text-transparent'
+                            }`}
+                          >
+                            Enter a valid https URL or domain.
+                          </span>
+                        </label>
+                      ) : lesson.contentKind === 'quiz' ? (
+                        <div
+                          id={`admin-quiz-block-${mi}-${li}`}
+                          className={`space-y-2 rounded-lg border p-2 sm:space-y-4 sm:p-3 ${
+                            showValidationHints && fieldErrors.lessonQuiz.has(`${mi}:${li}`)
                               ? 'border-red-500'
                               : 'border-[var(--border-color)]'
                           }`}
-                          placeholder="https://www.youtube.com/watch?v=…"
-                        />
-                        <span
-                          className={`min-h-[16px] text-[11px] ${
-                            showValidationHints && fieldErrors.videoUrl.has(`${mi}:${li}`)
-                              ? 'text-red-400'
-                              : 'text-transparent'
-                          }`}
                         >
-                          Video URL is required and must start with http.
-                        </span>
-                      </label>
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-xs font-semibold text-[var(--text-secondary)]">Quiz questions</span>
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => addQuizQuestion(mi, li, 'mcq')}
+                                disabled={(lesson.quiz?.questions.length ?? 0) >= MAX_QUIZ_QUESTIONS}
+                                className="text-xs font-bold text-orange-500 hover:text-orange-400 disabled:opacity-40"
+                              >
+                                + Multiple choice
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => addQuizQuestion(mi, li, 'freeform')}
+                                disabled={(lesson.quiz?.questions.length ?? 0) >= MAX_QUIZ_QUESTIONS}
+                                className="text-xs font-bold text-orange-500 hover:text-orange-400 disabled:opacity-40"
+                              >
+                                + Open-ended
+                              </button>
+                            </div>
+                          </div>
+                          {(lesson.quiz?.questions ?? []).map((qq, qi) => (
+                            <div
+                              key={qq.id}
+                              className="space-y-2 rounded-lg border border-[var(--border-color)]/80 bg-[var(--bg-primary)] p-2 sm:space-y-3 sm:p-3"
+                            >
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="text-xs font-bold text-[var(--text-muted)]">Question {qi + 1}</span>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    aria-label="Move question up"
+                                    onClick={() => moveQuizQuestion(mi, li, qi, -1)}
+                                    disabled={qi === 0}
+                                    className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--hover-bg)] disabled:opacity-30"
+                                  >
+                                    <ChevronUp className="h-4 w-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    aria-label="Move question down"
+                                    onClick={() => moveQuizQuestion(mi, li, qi, 1)}
+                                    disabled={qi >= (lesson.quiz?.questions.length ?? 0) - 1}
+                                    className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--hover-bg)] disabled:opacity-30"
+                                  >
+                                    <ChevronDown className="h-4 w-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeQuizQuestion(mi, li, qi)}
+                                    disabled={(lesson.quiz?.questions.length ?? 0) <= 1}
+                                    className="ml-1 text-xs font-semibold text-red-400 hover:underline disabled:opacity-30"
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                              </div>
+                              <label className="block space-y-1">
+                                <span className="text-xs font-semibold text-[var(--text-secondary)]">Question ID</span>
+                                <input
+                                  value={qq.id}
+                                  onChange={(e) =>
+                                    mapQuizQuestion(mi, li, qi, (prev) => ({ ...prev, id: e.target.value }))
+                                  }
+                                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2 py-1.5 font-mono text-xs"
+                                />
+                              </label>
+                              <div className="flex flex-wrap gap-3 text-xs">
+                                <label className="inline-flex cursor-pointer items-center gap-2">
+                                  <input
+                                    type="radio"
+                                    name={`qq-type-${mi}-${li}-${qi}`}
+                                    checked={qq.type === 'mcq'}
+                                    onChange={() =>
+                                      mapQuizQuestion(mi, li, qi, (prev) => ({
+                                        ...createDefaultMcqQuestion(),
+                                        id: prev.id,
+                                        prompt: prev.prompt,
+                                      }))
+                                    }
+                                    className="h-3.5 w-3.5 text-orange-500"
+                                  />
+                                  Multiple choice
+                                </label>
+                                <label className="inline-flex cursor-pointer items-center gap-2">
+                                  <input
+                                    type="radio"
+                                    name={`qq-type-${mi}-${li}-${qi}`}
+                                    checked={qq.type === 'freeform'}
+                                    onChange={() =>
+                                      mapQuizQuestion(mi, li, qi, (prev) => ({
+                                        ...createDefaultFreeformQuestion(),
+                                        id: prev.id,
+                                        prompt: prev.prompt,
+                                      }))
+                                    }
+                                    className="h-3.5 w-3.5 text-orange-500"
+                                  />
+                                  Open-ended
+                                </label>
+                              </div>
+                              <label className="block space-y-1">
+                                <span className="text-xs font-semibold text-[var(--text-secondary)]">Prompt</span>
+                                <textarea
+                                  id={`admin-quiz-prompt-${mi}-${li}-${qi}`}
+                                  value={qq.prompt}
+                                  onChange={(e) =>
+                                    mapQuizQuestion(mi, li, qi, (prev) => ({ ...prev, prompt: e.target.value }))
+                                  }
+                                  rows={2}
+                                  className="w-full resize-y rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2 py-1.5 text-sm"
+                                />
+                              </label>
+                              {qq.type === 'mcq' ? (
+                                <div className="space-y-2">
+                                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                                    <span className="text-xs font-semibold text-[var(--text-secondary)]">Choices</span>
+                                    <div className="flex w-full min-w-0 flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
+                                      <button
+                                        type="button"
+                                        disabled={!!mcqAiKeyBusy[`${mi}-${li}-${qi}`]}
+                                        onClick={() => void suggestMcqCorrectWithAi(mi, li, qi, qq)}
+                                        className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center gap-1.5 rounded-lg border border-orange-500/40 bg-orange-500/10 px-3 py-2.5 text-xs font-bold text-orange-600 transition-colors hover:bg-orange-500/15 disabled:opacity-50 sm:w-auto dark:text-orange-300"
+                                      >
+                                        {mcqAiKeyBusy[`${mi}-${li}-${qi}`] ? (
+                                          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden />
+                                        ) : (
+                                          <Sparkles className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                                        )}
+                                        Check key with AI
+                                      </button>
+                                      <span className="min-w-0 max-w-full text-[11px] leading-snug text-[var(--text-muted)] sm:max-w-[20rem]">
+                                        Fixes wrong marked answers (same model as learner grading). Empty choice rows are
+                                        skipped, matching the published quiz.
+                                      </span>
+                                    </div>
+                                  </div>
+                                  {qq.choices.map((ch, ci) => (
+                                    <div key={ci} className="flex flex-wrap items-center gap-2">
+                                      <input
+                                        type="radio"
+                                        name={`qq-correct-${mi}-${li}-${qi}`}
+                                        checked={qq.correctIndex === ci}
+                                        onChange={() =>
+                                          mapQuizQuestion(mi, li, qi, (prev) =>
+                                            prev.type === 'mcq' ? { ...prev, correctIndex: ci } : prev
+                                          )
+                                        }
+                                        className="h-4 w-4 shrink-0 text-orange-500"
+                                        title="Correct answer"
+                                      />
+                                      <input
+                                        value={ch}
+                                        onChange={(e) =>
+                                          mapQuizQuestion(mi, li, qi, (prev) => {
+                                            if (prev.type !== 'mcq') return prev;
+                                            const next = [...prev.choices];
+                                            next[ci] = e.target.value;
+                                            let correctIndex = prev.correctIndex;
+                                            if (correctIndex >= next.length) correctIndex = next.length - 1;
+                                            return { ...prev, choices: next, correctIndex };
+                                          })
+                                        }
+                                        className="min-w-0 flex-1 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2 py-1 text-sm"
+                                        placeholder={`Choice ${ci + 1}`}
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          mapQuizQuestion(mi, li, qi, (prev) => {
+                                            if (prev.type !== 'mcq') return prev;
+                                            if (prev.choices.length <= 2) return prev;
+                                            const next = prev.choices.filter((_, i) => i !== ci);
+                                            let correctIndex = prev.correctIndex;
+                                            if (ci === correctIndex) correctIndex = 0;
+                                            else if (ci < correctIndex) correctIndex -= 1;
+                                            if (correctIndex >= next.length) correctIndex = next.length - 1;
+                                            return { ...prev, choices: next, correctIndex };
+                                          })
+                                        }
+                                        disabled={qq.choices.length <= 2}
+                                        className="text-xs text-red-400 hover:underline disabled:opacity-30"
+                                      >
+                                        Remove
+                                      </button>
+                                    </div>
+                                  ))}
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      mapQuizQuestion(mi, li, qi, (prev) => {
+                                        if (prev.type !== 'mcq') return prev;
+                                        if (prev.choices.length >= MAX_QUIZ_CHOICES) return prev;
+                                        return { ...prev, choices: [...prev.choices, ''] };
+                                      })
+                                    }
+                                    disabled={qq.choices.length >= MAX_QUIZ_CHOICES}
+                                    className="text-xs font-bold text-orange-500 hover:text-orange-400 disabled:opacity-40"
+                                  >
+                                    + Add choice
+                                  </button>
+                                </div>
+                              ) : (
+                                <>
+                                  <label className="block space-y-1">
+                                    <span className="text-xs font-semibold text-[var(--text-secondary)]">
+                                      Grading rubric (for AI; not shown in hint tutor)
+                                    </span>
+                                    <textarea
+                                      value={qq.rubric ?? ''}
+                                      onChange={(e) =>
+                                        mapQuizQuestion(mi, li, qi, (prev) =>
+                                          prev.type === 'freeform'
+                                            ? { ...prev, rubric: e.target.value }
+                                            : prev
+                                        )
+                                      }
+                                      rows={3}
+                                      className="w-full resize-y rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2 py-1.5 text-sm"
+                                      placeholder="What a strong answer should include…"
+                                    />
+                                  </label>
+                                  <label className="block space-y-1">
+                                    <span className="text-xs font-semibold text-[var(--text-secondary)]">
+                                      Hint context (optional, for hint tutor only)
+                                    </span>
+                                    <textarea
+                                      value={qq.hintContext ?? ''}
+                                      onChange={(e) =>
+                                        mapQuizQuestion(mi, li, qi, (prev) =>
+                                          prev.type === 'freeform'
+                                            ? { ...prev, hintContext: e.target.value }
+                                            : prev
+                                        )
+                                      }
+                                      rows={2}
+                                      className="w-full resize-y rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2 py-1.5 text-sm"
+                                    />
+                                  </label>
+                                </>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <label className="block space-y-1">
+                          <span className="text-xs font-semibold text-[var(--text-secondary)]">Video URL</span>
+                          <input
+                            id={`admin-lesson-url-${mi}-${li}`}
+                            value={lesson.videoUrl}
+                            onChange={(e) => updateLesson(mi, li, { videoUrl: e.target.value })}
+                            className={`w-full text-sm font-mono bg-[var(--bg-primary)] border rounded-lg px-2.5 py-1.5 sm:px-3 sm:py-2 ${
+                              showValidationHints && fieldErrors.videoUrl.has(`${mi}:${li}`)
+                                ? 'border-red-500'
+                                : 'border-[var(--border-color)]'
+                            }`}
+                            placeholder="https://www.youtube.com/watch?v=…"
+                          />
+                          <span
+                            className={`min-h-[16px] text-[11px] ${
+                              showValidationHints && fieldErrors.videoUrl.has(`${mi}:${li}`)
+                                ? 'text-red-400'
+                                : 'text-transparent'
+                            }`}
+                          >
+                            Video URL is required and must start with http.
+                          </span>
+                        </label>
+                      )}
                       <label className="block space-y-1">
                         <span className="text-xs font-semibold text-[var(--text-secondary)]">Duration label (optional)</span>
                         <input
                           value={lesson.duration ?? ''}
                           onChange={(e) => updateLesson(mi, li, { duration: e.target.value || undefined })}
-                          className="w-full text-sm bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2"
+                          className="w-full text-sm bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-2.5 py-1.5 sm:px-3 sm:py-2"
                           placeholder="Shown next to the lesson title when set"
                         />
                       </label>
@@ -1481,7 +3433,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           value={lesson.about ?? ''}
                           onChange={(e) => updateLesson(mi, li, { about: e.target.value || undefined })}
                           rows={2}
-                          className="w-full text-sm bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 resize-y"
+                          className="w-full text-sm bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-2.5 py-1.5 resize-y sm:px-3 sm:py-2"
                           placeholder="Short description under the player"
                         />
                       </label>
@@ -1498,14 +3450,17 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         </>
                       )}
                     </div>
-                  ))}
+                  );
+                  })}
+                  </div>
                   <button
                     type="button"
                     onClick={() => addLesson(mi)}
-                    className="text-xs font-bold text-orange-500 hover:text-orange-400"
+                    className="min-h-11 touch-manipulation rounded-lg px-1 pt-1 text-left text-xs font-bold text-orange-500 hover:bg-orange-500/5 hover:text-orange-400 sm:min-h-0 sm:px-0 sm:pt-0 sm:hover:bg-transparent"
                   >
                     + Add lesson
                   </button>
+                </div>
                 </div>
                 </>
                 )}
@@ -1518,7 +3473,47 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         </>
       )}
 
-      {contentCatalogSubTab === 'paths' && (
+      {contentCatalogSubTab === 'categories' && (
+        <AdminCatalogCategoriesPanel
+          publishedList={publishedList}
+          onRefreshList={refreshList}
+          onCatalogChanged={onCatalogChanged}
+          showActionToast={showActionToast}
+          onCategoryRenamedGlobally={onCategoryRenamedGlobally}
+          presetCategoriesList={allPresetCatalogCategoriesFromState(categoryPresetsState)}
+          defaultPresetCategory={defaultNewCourseCategoryFromState(categoryPresetsState)}
+        />
+      )}
+
+      {contentCatalogSubTab === 'presets' && (
+        <AdminCatalogCategoryPresetsPanel showActionToast={showActionToast} onCatalogChanged={onCatalogChanged} />
+      )}
+
+      {contentCatalogSubTab === 'skillPresets' && (
+        <AdminCatalogSkillPresetsPanel showActionToast={showActionToast} onCatalogChanged={onCatalogChanged} />
+      )}
+
+      {contentCatalogSubTab === 'taxonomy' && (
+        <AdminCatalogTaxonomyPanel
+          publishedList={publishedList}
+          categoryPresets={categoryPresetsState}
+          skillPresets={skillPresetsState}
+          onPresetsChanged={(next) => {
+            setCategoryPresetsState(next.categories);
+            setSkillPresetsState(next.skills);
+          }}
+          onSaveCourse={(c) => savePublishedCourse(c)}
+          onRefreshList={refreshList}
+          onCatalogChanged={onCatalogChanged}
+          showActionToast={showActionToast}
+        />
+      )}
+
+      {/* Keep mounted while Content is open so paths load in the background on Catalog; avoids remount + Firestore delay every time Paths is selected. */}
+      <div
+        className={contentCatalogSubTab === 'paths' ? 'min-w-0' : 'hidden'}
+        aria-hidden={contentCatalogSubTab !== 'paths'}
+      >
         <PathBuilderSection
           ref={pathBuilderRef}
           key={pathBuilderResetKey}
@@ -1528,7 +3523,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           onPathsDirtyChange={setPathBuilderDirty}
           onPathsLoadingChange={setPathsListLoading}
         />
-      )}
+      </div>
 
       <AnimatePresence>
         {pathSubTabSwitchConfirmOpen && (
@@ -1562,7 +3557,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               </div>
               <div className="space-y-4 p-6">
                 <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
-                  Switching to Catalog will discard unsaved changes to the learning path builder.
+                  Leaving Paths will discard unsaved path or course edits. Save first if you need to keep them.
                 </p>
                 <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                   <button
@@ -1575,7 +3570,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   <button
                     type="button"
                     autoFocus
-                    onClick={confirmSwitchToCatalogFromPathsTab}
+                    onClick={confirmDiscardPathBuilderAndSwitch}
                     className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-orange-600 sm:w-auto"
                   >
                     Discard and switch
@@ -1619,7 +3614,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               </div>
               <div className="space-y-4 p-6">
                 <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
-                  Switching from Catalog to Learning paths will discard unsaved changes to this course.
+                  Switching tabs will discard unsaved changes to this course draft.
                 </p>
                 <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                   <button
@@ -1632,7 +3627,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   <button
                     type="button"
                     autoFocus
-                    onClick={confirmSwitchToPathsTab}
+                    onClick={confirmDiscardCourseDraftAndSwitch}
                     className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-orange-600 sm:w-auto"
                   >
                     Discard and switch

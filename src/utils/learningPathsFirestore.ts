@@ -2,12 +2,14 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   setDoc,
   serverTimestamp,
 } from 'firebase/firestore';
 import type { LearningPath } from '../data/learningPaths';
 import { db, handleFirestoreError, OperationType } from '../firebase';
+import { PATH_MINDMAP_FIELD } from './pathMindmapFirestore';
 
 const MAX_COURSE_IDS = 100;
 const MAX_TITLE = 500;
@@ -68,7 +70,16 @@ export async function loadLearningPathsFromFirestore(): Promise<LearningPath[]> 
 
 export async function saveLearningPath(path: LearningPath): Promise<boolean> {
   try {
-    await setDoc(doc(db, 'learningPaths', path.id), pathToFirestorePayload(path));
+    const ref = doc(db, 'learningPaths', path.id);
+    const payload = { ...pathToFirestorePayload(path) } as Record<string, unknown>;
+    const snap = await getDoc(ref);
+    if (snap.exists()) {
+      const existing = snap.data() as Record<string, unknown>;
+      if (PATH_MINDMAP_FIELD in existing) {
+        payload[PATH_MINDMAP_FIELD] = existing[PATH_MINDMAP_FIELD];
+      }
+    }
+    await setDoc(ref, payload);
     return true;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `learningPaths/${path.id}`);

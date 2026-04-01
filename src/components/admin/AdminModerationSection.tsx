@@ -213,7 +213,7 @@ export const AdminModerationSection: React.FC<AdminModerationSectionProps> = ({
           : 'This will permanently remove the URL suggestion from the inbox.';
 
   return (
-    <div className="space-y-4 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:p-6">
+    <div className="min-w-0 space-y-6 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="flex items-center gap-2 text-lg font-bold">
           <Flag size={20} className="text-orange-500" />

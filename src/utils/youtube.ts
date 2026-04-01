@@ -108,6 +108,51 @@ export function writeYoutubeCaptionsPreference(enabled: boolean): void {
   }
 }
 
+const PLAYER_VOLUME_STORAGE_KEY = 'skilllearn-player-volume';
+const PLAYER_MUTED_STORAGE_KEY = 'skilllearn-player-muted';
+
+const DEFAULT_PLAYER_VOLUME_PCT = 100;
+
+/** Last video volume slider level (0–100), shared by YouTube embed and native `<video>`. */
+export function readPlayerVolumePreference(): number {
+  if (typeof window === 'undefined') return DEFAULT_PLAYER_VOLUME_PCT;
+  try {
+    const raw = window.localStorage.getItem(PLAYER_VOLUME_STORAGE_KEY);
+    if (raw == null) return DEFAULT_PLAYER_VOLUME_PCT;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return DEFAULT_PLAYER_VOLUME_PCT;
+    return Math.max(0, Math.min(100, Math.round(n)));
+  } catch {
+    return DEFAULT_PLAYER_VOLUME_PCT;
+  }
+}
+
+export function writePlayerVolumePreference(volume0to100: number): void {
+  try {
+    const v = Math.max(0, Math.min(100, Math.round(volume0to100)));
+    window.localStorage.setItem(PLAYER_VOLUME_STORAGE_KEY, String(v));
+  } catch {
+    /* ignore */
+  }
+}
+
+export function readPlayerMutedPreference(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.localStorage.getItem(PLAYER_MUTED_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function writePlayerMutedPreference(muted: boolean): void {
+  try {
+    window.localStorage.setItem(PLAYER_MUTED_STORAGE_KEY, muted ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
  * Toggle captions via IFrame API (HTML5 player: `captions` module; Flash-era `cc` is unloaded too).
  * @see https://stackoverflow.com/a/23280344 (undocumented but commonly used)

@@ -1,42 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDialogKeyboard } from '../hooks/useDialogKeyboard';
-import { GoogleGenAI, Type } from '@google/genai';
+import { Type } from '@google/genai';
 import { Sparkles, X, Loader2, ChevronRight, Trash2 } from 'lucide-react';
 import { STATIC_CATALOG_FALLBACK, type Course } from '../data/courses';
 import { parseAssistantReplyJson } from '../utils/parseAssistantReply';
-import { formatGenaiError, isRetryableQuotaError } from '../utils/formatGenaiError';
-
-/** Primary model from env (default gemini-2.5-flash). */
-function getGeminiModelPrimary(): string {
-  const m = process.env.GEMINI_MODEL;
-  return typeof m === 'string' && m.trim().length > 0 ? m.trim() : 'gemini-2.5-flash';
-}
-
-/**
- * Ordered chain: primary first, then comma-separated GEMINI_MODEL_FALLBACK (deduped).
- */
-function getGeminiModelChain(): string[] {
-  const primary = getGeminiModelPrimary();
-  const raw = process.env.GEMINI_MODEL_FALLBACK;
-  const rest =
-    typeof raw === 'string' && raw.trim().length > 0
-      ? raw.split(',').map((s) => s.trim()).filter(Boolean)
-      : [];
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const id of [primary, ...rest]) {
-    if (!seen.has(id)) {
-      seen.add(id);
-      out.push(id);
-    }
-  }
-  return out;
-}
-
-function getApiKey(): string | undefined {
-  const k = process.env.GEMINI_API_KEY;
-  return typeof k === 'string' && k.trim().length > 0 ? k.trim() : undefined;
-}
+import { formatGenaiError } from '../utils/formatGenaiError';
+import { useLearnerGeminiEnabled } from '../hooks/useLearnerGeminiEnabled';
+import { useLearnerAiModelsSiteEnabled } from '../hooks/useLearnerAiModelsSiteEnabled';
+import { generateContentWithModelChain, getGeminiApiKey } from '../utils/geminiClient';
 
 function newId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -96,13 +67,18 @@ export function DemoLearningAgent({ onOpenCourse, courses = STATIC_CATALOG_FALLB
       courses.map((c) => ({
         id: c.id,
         title: c.title,
-        category: c.category,
+        categories: c.categories,
+        skills: c.skills,
         level: c.level,
       })),
     [courses]
   );
 
-  const apiKey = getApiKey();
+  const envGeminiKey = getGeminiApiKey();
+  const { enabled: userLearnerGeminiOn } = useLearnerGeminiEnabled();
+  const { siteLearnerAiModelsEnabled } = useLearnerAiModelsSiteEnabled();
+  const learnerGeminiOn = siteLearnerAiModelsEnabled && userLearnerGeminiOn;
+  const apiKey = learnerGeminiOn ? envGeminiKey : undefined;
   const hasChatContent = messages.length > 0 || loading;
 
   useEffect(() => {
@@ -128,8 +104,6 @@ export function DemoLearningAgent({ onOpenCourse, courses = STATIC_CATALOG_FALLB
     setLoading(true);
 
     try {
-      const ai = new GoogleGenAI({ apiKey });
-      const modelChain = getGeminiModelChain();
       const contents =
         historyText.length > 0
           ? `Conversation so far:\n${historyText}\n\nReply to the latest user message.`
@@ -157,35 +131,12 @@ export function DemoLearningAgent({ onOpenCourse, courses = STATIC_CATALOG_FALLB
         temperature: 0.65,
       };
 
-      let response: Awaited<ReturnType<GoogleGenAI['models']['generateContent']>> | undefined;
-      for (let i = 0; i < modelChain.length; i++) {
-        const model = modelChain[i]!;
-        try {
-          response = await ai.models.generateContent({
-            model,
-            contents,
-            config,
-          });
-          break;
-        } catch (err) {
-          const tryNext = i < modelChain.length - 1 && isRetryableQuotaError(err);
-          if (tryNext) {
-            console.warn(`DemoLearningAgent: ${model} unavailable (quota/rate limit), trying next model…`);
-            continue;
-          }
-          throw err;
-        }
+      const { text, error: genError } = await generateContentWithModelChain(apiKey, contents, config);
+
+      if (genError) {
+        throw genError;
       }
 
-      if (!response) {
-        setMessages((prev) => [
-          ...prev,
-          { id: newId(), role: 'error', content: 'No model responded. Check GEMINI_MODEL / GEMINI_MODEL_FALLBACK.' },
-        ]);
-        return;
-      }
-
-      const text = response.text?.trim();
       if (!text) {
         setMessages((prev) => [
           ...prev,
@@ -249,7 +200,7 @@ export function DemoLearningAgent({ onOpenCourse, courses = STATIC_CATALOG_FALLB
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="fixed bottom-6 right-6 z-[60] flex h-14 w-14 items-center justify-center rounded-full border border-[var(--border-color)] bg-[var(--bg-secondary)] text-orange-500 shadow-lg transition-colors hover:bg-[var(--hover-bg)] focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+        className="fixed z-[60] flex h-14 w-14 touch-manipulation items-center justify-center rounded-full border border-[var(--border-color)] bg-[var(--bg-secondary)] text-orange-500 shadow-lg transition-colors hover:bg-[var(--hover-bg)] focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 bottom-[max(1rem,env(safe-area-inset-bottom,0px))] right-4 sm:bottom-6 sm:right-6"
         aria-expanded={open}
         aria-label={open ? 'Close learning assistant' : 'Open learning assistant'}
       >
@@ -258,7 +209,7 @@ export function DemoLearningAgent({ onOpenCourse, courses = STATIC_CATALOG_FALLB
 
       {open && (
         <div
-          className={`fixed bottom-24 right-6 z-[60] flex w-[min(22rem,calc(100vw-3rem))] flex-col rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-xl max-h-[min(85dvh,32rem)] ${
+          className={`fixed z-[60] flex w-[min(22rem,calc(100vw-2rem))] flex-col rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-xl max-h-[min(85dvh,32rem)] bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] right-4 sm:bottom-24 sm:right-6 sm:w-[min(22rem,calc(100vw-3rem))] ${
             hasChatContent ? 'h-[min(85dvh,32rem)]' : ''
           }`}
           role="dialog"
@@ -283,12 +234,26 @@ export function DemoLearningAgent({ onOpenCourse, courses = STATIC_CATALOG_FALLB
             </div>
           </div>
 
-          {!apiKey && (
+          {!envGeminiKey && (
             <p className="shrink-0 border-b border-[var(--border-color)] px-4 py-3 text-xs text-[var(--text-primary)]">
               Add <code className="rounded bg-[var(--bg-primary)] px-1">GEMINI_API_KEY</code> to{' '}
               <code className="rounded bg-[var(--bg-primary)] px-1">.env</code> (see{' '}
               <code className="rounded bg-[var(--bg-primary)] px-1">.env.example</code>). Keys in the browser are
               for local/demo only; use a backend in production.
+            </p>
+          )}
+
+          {envGeminiKey && !learnerGeminiOn && (
+            <p className="shrink-0 border-b border-[var(--border-color)] px-4 py-3 text-xs leading-relaxed text-[var(--text-primary)]">
+              {siteLearnerAiModelsEnabled ? (
+                <>
+                  Smart Verify is off on this device. Open <strong>Profile</strong> → <strong>Smart Hub</strong> and enable{' '}
+                  <strong>Smart Verify</strong> to use the assistant.
+                </>
+              ) : (
+                <>An administrator has turned off learner AI for everyone. The assistant cannot run until they turn it
+                back on.</>
+              )}
             </p>
           )}
 

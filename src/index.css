@@ -21,6 +21,10 @@ html {
   --border-color: #27272a;
   --border-light: #3f3f46;
   --hover-bg: #1c1c1f;
+  /* Path outline course CTAs (ActionChips): theme-aware borders */
+  --path-review-btn-border: #ffffff;
+  /* “Open course” (not started): dashed neutral edge, readable on dark bg */
+  --path-open-course-border: #a1a1aa;
 }
 
 body.light {
@@ -32,6 +36,8 @@ body.light {
   --border-color: #e4e4e7;
   --border-light: #d4d4d8;
   --hover-bg: #f4f4f5;
+  --path-review-btn-border: #18181b;
+  --path-open-course-border: #52525b;
 }
 
 body {

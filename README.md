@@ -18,3 +18,11 @@ View your app in AI Studio: https://ai.studio/apps/e7845049-4821-43c7-b79a-23149
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+## Documentation (contributors / AI)
+
+- **[docs/README.md](docs/README.md)** — index of internal guides.
+- **[docs/codebase/README.md](docs/codebase/README.md)** — per-file reference for all `src` modules (utils, components, hooks, data) and key config.
+- **[docs/development-and-debugging.md](docs/development-and-debugging.md)** — stack, env vars, project layout, URL/history behavior, Firebase & Gemini debugging, mobile notes, checklists.
+- **[docs/app-shell-app-tsx.md](docs/app-shell-app-tsx.md)** — what [`src/App.tsx`](src/App.tsx) owns: views, history sync, catalog hydration, enrollment, admin/profile/player flows.
+- **[docs/admin-reorder-scroll-viewport.md](docs/admin-reorder-scroll-viewport.md)** — admin arrow reorder, scroll-under-cursor behavior, and [`src/utils/reorderScrollViewport.ts`](src/utils/reorderScrollViewport.ts).
