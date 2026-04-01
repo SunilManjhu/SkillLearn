@@ -39,12 +39,21 @@ import {
   type PathOutlineAudienceRole,
 } from '../../data/pathMindmap';
 import type { LearningPath } from '../../data/learningPaths';
-import { firstAvailableStructuredLearningPathId } from '../../utils/learningPathStructuredIds';
+import { firstAvailableStructuredLearningPathIdFromDocIds } from '../../utils/learningPathStructuredIds';
 import {
   deleteLearningPath,
+  listLearningPathDocumentIds,
   loadLearningPathsFromFirestore,
   saveLearningPath,
 } from '../../utils/learningPathsFirestore';
+import {
+  deleteCreatorLearningPath,
+  fetchCreatorPathMindmapFromFirestore,
+  listCreatorLearningPathDocumentIdsForOwner,
+  loadCreatorLearningPathsForOwner,
+  saveCreatorLearningPath,
+  saveCreatorPathMindmapToFirestore,
+} from '../../utils/creatorLearningPathsFirestore';
 import { fetchPathMindmapFromFirestore, savePathMindmapToFirestore } from '../../utils/pathMindmapFirestore';
 import { normalizeExternalHref } from '../../utils/externalUrl';
 import { AdminLabelInfoTip } from './adminLabelInfoTip';
@@ -2073,6 +2082,10 @@ function PathBranchTreeList({
   return list;
 }
 
+export type PathPersistenceMode =
+  | { kind: 'published' }
+  | { kind: 'creator'; ownerUid: string };
+
 export interface PathBuilderSectionProps {
   publishedList: Course[];
   onRefreshPublishedList: () => Promise<void>;
@@ -2080,6 +2093,8 @@ export interface PathBuilderSectionProps {
   onPathsDirtyChange?: (dirty: boolean) => void;
   /** For parent header: disable Reload while paths are loading. */
   onPathsLoadingChange?: (loading: boolean) => void;
+  /** When set to creator, paths read/write `creatorLearningPaths` for `ownerUid`. */
+  pathPersistence?: PathPersistenceMode;
 }
 
 export interface PathBuilderSectionHandle {
@@ -2094,9 +2109,11 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
       onCatalogChanged,
       onPathsDirtyChange,
       onPathsLoadingChange,
+      pathPersistence,
     },
     ref
   ) {
+  const isCreatorPaths = pathPersistence?.kind === 'creator';
   const { showActionToast, actionToast } = useAdminActionToast();
   const [paths, setPaths] = useState<LearningPath[]>([]);
   const [pathsLoading, setPathsLoading] = useState(true);
@@ -2229,11 +2246,30 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
 
   const refreshPaths = useCallback(async () => {
     setPathsLoading(true);
-    const list = await loadLearningPathsFromFirestore();
+    const list =
+      pathPersistence?.kind === 'creator'
+        ? await loadCreatorLearningPathsForOwner(pathPersistence.ownerUid)
+        : await loadLearningPathsFromFirestore();
     setPaths(list);
     setPathsLoading(false);
     return list;
-  }, []);
+  }, [pathPersistence]);
+
+  /** Union Firestore doc ids + in-memory list so allocation skips every occupied id (incl. unparsable docs) and survives a failed list request. Creators also reserve ids used in published `learningPaths` so doc ids never collide across collections. */
+  const pathDocumentIdsForAllocation = useCallback(async (): Promise<string[]> => {
+    let fromServer: string[];
+    if (pathPersistence?.kind === 'creator') {
+      const [creatorIds, publishedIds] = await Promise.all([
+        listCreatorLearningPathDocumentIdsForOwner(pathPersistence.ownerUid),
+        listLearningPathDocumentIds(),
+      ]);
+      fromServer = [...creatorIds, ...publishedIds];
+    } else {
+      fromServer = await listLearningPathDocumentIds();
+    }
+    const fromState = paths.map((p) => p.id);
+    return [...new Set([...fromServer, ...fromState])];
+  }, [pathPersistence, paths]);
 
   useImperativeHandle(
     ref,
@@ -2260,7 +2296,10 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     let cancelled = false;
     setPathMindmapLoading(true);
     void (async () => {
-      const mm = await fetchPathMindmapFromFirestore(pathSelector);
+      const mm =
+        pathPersistence?.kind === 'creator'
+          ? await fetchCreatorPathMindmapFromFirestore(pathSelector)
+          : await fetchPathMindmapFromFirestore(pathSelector);
       if (cancelled) return;
       const roots = mm?.root.children.map(mindmapNodeToPathBranch) ?? [];
       setPathBranchTree(roots);
@@ -2270,7 +2309,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     return () => {
       cancelled = true;
     };
-  }, [pathSelector]);
+  }, [pathSelector, pathPersistence]);
 
   useEffect(() => {
     setExpandedBranchIds(new Set());
@@ -2387,9 +2426,10 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     [pathBranchTree, publishedList]
   );
 
-  const applyPickNewPath = useCallback(() => {
+  const applyPickNewPath = useCallback(async () => {
     const reserveIds = pathSelector === '__new__' && pathDraft?.id ? [pathDraft.id] : [];
-    const newId = firstAvailableStructuredLearningPathId(paths, reserveIds);
+    const docIds = await pathDocumentIdsForAllocation();
+    const newId = firstAvailableStructuredLearningPathIdFromDocIds(docIds, reserveIds);
     const fresh: LearningPath = { id: newId, title: '', courseIds: [] };
     setShowPathCourseRequiredHint(false);
     setPathBranchTree([]);
@@ -2399,7 +2439,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     setPathSelector('__new__');
     setPathDraft(fresh);
     setPathBaselineJson(JSON.stringify(fresh));
-  }, [pathSelector, pathDraft, paths]);
+  }, [pathSelector, pathDraft, pathDocumentIdsForAllocation]);
 
   const pickPath = useCallback(
     (id: string) => {
@@ -2410,7 +2450,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
           setPathConfirmDialog({ kind: 'pickNewPath' });
           return;
         }
-        applyPickNewPath();
+        void applyPickNewPath();
         return;
       }
 
@@ -2424,13 +2464,14 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
   );
 
   const performPathDuplicate = useCallback(
-    (sourcePath: LearningPath, sourceTree: PathBranchNode[]) => {
+    async (sourcePath: LearningPath, sourceTree: PathBranchNode[]) => {
       if (!paths.some((p) => p.id === sourcePath.id)) {
         showActionToast('Path not found. Reload the list and try again.', 'danger');
         return;
       }
       const reserveIds = pathSelector === '__new__' && pathDraft?.id ? [pathDraft.id] : [];
-      const newId = firstAvailableStructuredLearningPathId(paths, reserveIds);
+      const docIds = await pathDocumentIdsForAllocation();
+      const newId = firstAvailableStructuredLearningPathIdFromDocIds(docIds, reserveIds);
       const t = sourcePath.title.trim();
       const newPath: LearningPath = {
         ...deepClone(sourcePath),
@@ -2452,7 +2493,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
         'Copy loaded as a new draft — new path id. Adjust the title if needed, then Save.'
       );
     },
-    [paths, pathSelector, pathDraft?.id, showActionToast]
+    [paths, pathSelector, pathDraft?.id, showActionToast, pathDocumentIdsForAllocation]
   );
 
   const requestDuplicatePathOrConfirm = useCallback(() => {
@@ -2472,7 +2513,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
       showActionToast('Path not loaded.', 'danger');
       return;
     }
-    performPathDuplicate(pathDraft, pathBranchTree);
+    void performPathDuplicate(pathDraft, pathBranchTree);
   }, [pathSelector, pathDirty, pathDraft, pathBranchTree, paths, performPathDuplicate, showActionToast]);
 
   const closePathConfirmDialog = useCallback(() => setPathConfirmDialog(null), []);
@@ -2483,7 +2524,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     setPathConfirmDialog(null);
 
     if (d.kind === 'pickNewPath') {
-      applyPickNewPath();
+      void applyPickNewPath();
       return;
     }
     if (d.kind === 'switchPath') {
@@ -2504,7 +2545,10 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
       if (!id) return;
       void (async () => {
         setPathBusy(true);
-        const deleted = await deleteLearningPath(id);
+        const deleted =
+          pathPersistence?.kind === 'creator'
+            ? await deleteCreatorLearningPath(id)
+            : await deleteLearningPath(id);
         setPathBusy(false);
         if (deleted) {
           showActionToast('Path deleted.');
@@ -2537,7 +2581,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
         showActionToast('Path not found. Reload the list and try again.', 'danger');
         return;
       }
-      performPathDuplicate(sourceDraft, sourceTree);
+      void performPathDuplicate(sourceDraft, sourceTree);
     }
   }, [
     pathConfirmDialog,
@@ -2550,6 +2594,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     pathBranchTreeBaselineJson,
     paths,
     performPathDuplicate,
+    pathPersistence,
   ]);
 
   const pathConfirmCopy = useMemo(() => {
@@ -2656,7 +2701,12 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     for (const cid of mergedCourseIds) {
       if (!publishedList.some((c) => c.id === cid)) {
         setShowPathCourseRequiredHint(false);
-        showActionToast(`Course "${cid}" is not in the published catalog. Remove it or publish the course first.`, 'danger');
+        showActionToast(
+          isCreatorPaths
+            ? `Course "${cid}" is not in your course list. Add it in the Catalog tab first.`
+            : `Course "${cid}" is not in the published catalog. Remove it or publish the course first.`,
+          'danger'
+        );
         return;
       }
     }
@@ -2664,13 +2714,19 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     const toSave = { ...pathDraft, courseIds: mergedCourseIds };
 
     setPathBusy(true);
-    const ok = await saveLearningPath(toSave);
+    const ok =
+      pathPersistence?.kind === 'creator'
+        ? await saveCreatorLearningPath(toSave, pathPersistence.ownerUid)
+        : await saveLearningPath(toSave);
     setPathBusy(false);
     if (ok) {
       setShowPathCourseRequiredHint(false);
       const nodes = branchTreeToMindmapForest(pathBranchTree, publishedList);
       const doc = mindmapDocumentWithCenterChildren(nodes);
-      const mmOk = await savePathMindmapToFirestore(toSave.id, doc);
+      const mmOk =
+        pathPersistence?.kind === 'creator'
+          ? await saveCreatorPathMindmapToFirestore(toSave.id, doc)
+          : await savePathMindmapToFirestore(toSave.id, doc);
       if (mmOk) {
         setPathBranchTreeBaselineJson(JSON.stringify(pathBranchTree));
         showActionToast('Path and outline saved.');
@@ -2713,6 +2769,16 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     <div className="min-w-0 w-full space-y-4">
       {actionToast}
 
+      {isCreatorPaths && publishedList.length === 0 && (
+        <p
+          className="rounded-xl border border-orange-500/25 bg-orange-500/[0.07] px-3 py-2.5 text-xs leading-relaxed text-[var(--text-secondary)] sm:text-sm"
+          role="status"
+        >
+          You have no courses yet. Open the <strong className="font-semibold text-[var(--text-primary)]">Catalog</strong>{' '}
+          tab, create a course, then return here to add it to a path outline.
+        </p>
+      )}
+
       <div className="space-y-3">
         <div className="flex flex-col gap-3 md:grid md:grid-cols-[minmax(0,1.5fr)_minmax(0,0.85fr)_minmax(0,0.85fr)_auto] md:items-start md:gap-x-3 md:gap-y-3">
           <div className="flex min-w-0 flex-col gap-1">
@@ -2723,16 +2789,31 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
               tipRegionAriaLabel="Path field tips"
               tipSubject="Path"
             >
-              <li>Saves go to the live path and outline (Firestore).</li>
+              <li>
+                {isCreatorPaths
+                  ? 'Saves to your private creator path + outline (Firestore).'
+                  : 'Saves go to the live path and outline (Firestore).'}
+              </li>
               <li>
                 Open <strong className="font-semibold text-[var(--text-secondary)]">Path</strong> once to load titles.
               </li>
+              {isCreatorPaths ? (
+                <li>
+                  <strong className="font-semibold text-[var(--text-secondary)]">Create new path</strong> assigns a
+                  unique id automatically; paths are listed A–Z by title.
+                </li>
+              ) : (
+                <li>
+                  <strong className="font-semibold text-[var(--text-secondary)]">Create new path</strong>: next id{' '}
+                  <code className="text-orange-500/90">P1</code>, <code className="text-orange-500/90">P2</code>…; list
+                  A–Z.
+                </li>
+              )}
               <li>
-                <strong className="font-semibold text-[var(--text-secondary)]">Create new path</strong>: next id{' '}
-                <code className="text-orange-500/90">P1</code>, <code className="text-orange-500/90">P2</code>…; list
-                A–Z.
+                {isCreatorPaths
+                  ? 'Add courses from the Catalog tab to the outline — path rows only offer courses you have created there.'
+                  : 'Use published courses in the outline—add or publish them in the Catalog tab first.'}
               </li>
-              <li>Use published courses in the outline—add or publish them in the Catalog tab first.</li>
             </AdminLabelInfoTip>
             <div className="flex min-w-0 items-stretch gap-2">
               <select

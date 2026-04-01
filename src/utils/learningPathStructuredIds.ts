@@ -22,6 +22,23 @@ function bumpPathIndex(pathId: string, used: Set<number>): void {
 }
 
 /**
+ * Smallest P{n} (n >= 1) not used by any document id / path id matching P[1-9]… or legacy lp[1-9]…,
+ * nor any extra reserved id string. Pass **all Firestore doc ids** in the collection (not only rows
+ * that pass `docToLearningPath`) so allocated ids never collide with existing documents.
+ */
+export function firstAvailableStructuredLearningPathIdFromDocIds(
+  documentIds: readonly string[],
+  extraReservedIds: string[] = []
+): string {
+  const used = new Set<number>();
+  for (const id of documentIds) bumpPathIndex(id, used);
+  for (const id of extraReservedIds) bumpPathIndex(id, used);
+  let n = 1;
+  while (used.has(n)) n += 1;
+  return `P${n}`;
+}
+
+/**
  * Smallest P{n} (n >= 1) not used by any learning path id matching P[1-9]… or legacy lp[1-9]…,
  * nor any extra reserved id string.
  */
@@ -29,10 +46,8 @@ export function firstAvailableStructuredLearningPathId(
   paths: LearningPath[],
   extraReservedIds: string[] = []
 ): string {
-  const used = new Set<number>();
-  for (const p of paths) bumpPathIndex(p.id, used);
-  for (const id of extraReservedIds) bumpPathIndex(id, used);
-  let n = 1;
-  while (used.has(n)) n += 1;
-  return `P${n}`;
+  return firstAvailableStructuredLearningPathIdFromDocIds(
+    paths.map((p) => p.id),
+    extraReservedIds
+  );
 }

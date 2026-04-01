@@ -27,7 +27,7 @@ function parseCourseIds(raw: unknown): string[] | null {
   return out;
 }
 
-function docToLearningPath(id: string, data: Record<string, unknown>): LearningPath | null {
+export function docToLearningPath(id: string, data: Record<string, unknown>): LearningPath | null {
   if (typeof data.title !== 'string' || data.title.length === 0 || data.title.length > MAX_TITLE) {
     return null;
   }
@@ -50,6 +50,17 @@ export function pathToFirestorePayload(path: LearningPath): Record<string, unkno
     ...rest,
     updatedAt: serverTimestamp(),
   };
+}
+
+/** All document ids in `learningPaths` (includes docs that fail `docToLearningPath`). */
+export async function listLearningPathDocumentIds(): Promise<string[]> {
+  try {
+    const snap = await getDocs(collection(db, 'learningPaths'));
+    return snap.docs.map((d) => d.id);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'learningPaths');
+    return [];
+  }
 }
 
 export async function loadLearningPathsFromFirestore(): Promise<LearningPath[]> {

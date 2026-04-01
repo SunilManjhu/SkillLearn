@@ -13,7 +13,7 @@ import {
 import type { User } from 'firebase/auth';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 
-export type UserRole = 'user' | 'admin';
+export type UserRole = 'user' | 'admin' | 'creator';
 
 /**
  * Creates or updates `users/{uid}` without overwriting an existing admin role on merge.
@@ -71,7 +71,9 @@ export async function deleteUserProfileDocument(
 export function parseUserRoleFromUserDoc(snap: DocumentSnapshot): UserRole {
   if (!snap.exists()) return 'user';
   const r = snap.data().role;
-  return r === 'admin' ? 'admin' : 'user';
+  if (r === 'admin') return 'admin';
+  if (r === 'creator') return 'creator';
+  return 'user';
 }
 
 export async function fetchUserRole(uid: string): Promise<UserRole> {

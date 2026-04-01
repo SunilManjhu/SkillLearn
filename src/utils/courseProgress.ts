@@ -1,4 +1,4 @@
-import { Course, Lesson, STATIC_CATALOG_FALLBACK } from '../data/courses';
+import { Course, Lesson } from '../data/courses';
 import { flattenLessons } from './courseLessons';
 import { loadCompletionTimestamps, mergeCompletionTimestampFromRemote } from './courseCompletionLog';
 import { db, handleFirestoreError, isFirestorePermissionDenied, OperationType } from '../firebase';
@@ -53,56 +53,14 @@ export function loadLessonProgressMap(courseId: string, userId?: string | null):
 }
 
 /**
- * When a course is republished with new lesson ids, stored maps still use old keys (e.g. wd-l1).
- * For courses that exist in the bundled fallback, copy progress from stub order → current order by index.
+ * When a course is republished with new lesson ids, progress keys may go stale.
+ * With no bundled catalog stub, callers rely on stable lesson ids from Firestore.
  */
 export function reconcileLessonProgressMap(
-  course: Course,
+  _course: Course,
   map: Record<string, LessonProgress>
 ): { map: Record<string, LessonProgress>; migrated: boolean } {
-  const stub = STATIC_CATALOG_FALLBACK.find((c) => c.id === course.id);
-  if (!stub) return { map, migrated: false };
-
-  const stubFlat = flattenLessons(stub);
-  const currentFlat = flattenLessons(course);
-  if (stubFlat.length === 0 || currentFlat.length === 0) return { map, migrated: false };
-
-  const currentIds = new Set(currentFlat.map((l) => l.id));
-  const next: Record<string, LessonProgress> = { ...map };
-  let migrated = false;
-
-  for (const [legacyId, progress] of Object.entries(map)) {
-    if (currentIds.has(legacyId)) continue;
-    const idx = stubFlat.findIndex((l) => l.id === legacyId);
-    if (idx < 0 || idx >= currentFlat.length) continue;
-    const targetId = currentFlat[idx].id;
-    if (next[targetId] != null) continue;
-    next[targetId] = progress;
-    if (legacyId !== targetId) {
-      delete next[legacyId];
-      migrated = true;
-    }
-  }
-
-  // Second pass: title match when index alignment skipped (e.g. extra lesson shifted indices).
-  for (const [legacyId, progress] of Object.entries(map)) {
-    if (currentIds.has(legacyId)) continue;
-    if (!(legacyId in next)) continue;
-    const stubLesson = stubFlat.find((l) => l.id === legacyId);
-    if (!stubLesson) continue;
-    const twin = currentFlat.find((l) => l.title.trim() === stubLesson.title.trim());
-    if (!twin) continue;
-    if (next[twin.id] != null) {
-      delete next[legacyId];
-      migrated = true;
-      continue;
-    }
-    next[twin.id] = progress;
-    delete next[legacyId];
-    migrated = true;
-  }
-
-  return { map: migrated ? next : map, migrated };
+  return { map, migrated: false };
 }
 
 /**
@@ -404,7 +362,7 @@ function buildSyntheticCompletedLessonMap(
   return out;
 }
 
-export function ensureSyntheticProgressForRecordedCompletions(userId: string, courses: Course[] = STATIC_CATALOG_FALLBACK): void {
+export function ensureSyntheticProgressForRecordedCompletions(userId: string, courses: Course[] = []): void {
   if (typeof localStorage === 'undefined') return;
   const completionTs = loadCompletionTimestamps(userId);
   for (const course of courses) {

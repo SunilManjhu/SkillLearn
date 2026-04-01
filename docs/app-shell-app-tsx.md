@@ -24,14 +24,14 @@
 
 | Concept | Role |
 |---------|------|
-| `catalogCourses` | Resolved published courses (Firestore + static fallback). Loaded once on mount and refreshed via `refreshCatalogCourses` (e.g. after admin saves). |
-| `liveCatalogHydrated` | Becomes true after `resolveCatalogCourses()` finishes. **Overview/player** show a skeleton until hydrated so lesson lists do not “pop in” after a partial bundled catalog. |
+| `catalogCourses` | **`useMemo`** over **`catalogCourseRows`**: published + optional creator draft rows (`mergeOwnerPreviewCourseRows`). Loaded via catalog `useEffect` + `refreshCatalogCourses`; **published** peek uses `peekResolvedCatalogCourses()`; **drafts/paths** use `creatorCatalogSession` so preview users do not see a long empty-then-pop-in gap — see [access-control-roadmap.md](./access-control-roadmap.md) §8. |
+| `liveCatalogHydrated` | True when a session snapshot or first Firestore batch says the catalog is safe to show (published `peek`, creator cache, or live resolve). **Overview/player** use a skeleton until then to avoid partial curriculum. |
 | `selectedCourse` | The course id the user entered overview/player with; may be a stale object reference. |
 | `selectedCourseResolved` | **`useMemo`:** same course id but the **current row from `catalogCourses`**. Always prefer this for `CourseOverview` / `CoursePlayer` so curriculum matches Firestore. |
 | `initialLesson` | Lesson to open in the player; set from deep link, resume logic, notification actions, or “start course” from overview. |
 | `deferredCourseRoute` | If the hash asked for **overview/player** before that `courseId` existed in the first-paint catalog, the shell stores a deferred job and applies it when `catalogCourses` gains the course; if the course never appears after hydration, user is sent to catalog. |
 
-**Cold-load deep links:** `getInitialRouteState` runs once with `peekResolvedCatalogCourses()` or static fallback; it can set `deferredCourseRoute` or fill `player` **lessonId** from resume when the hash has player without lesson.
+**Cold-load deep links:** `getInitialRouteState` runs once with `peekResolvedCatalogCourses() ?? []` (no bundled catalog). Creator/admin initial rows can also hydrate from **`creatorCatalogSession`** when the cached profile uid matches — same §8. The shell can set `deferredCourseRoute` or fill `player` **lessonId** from resume when the hash has player without lesson.
 
 **Learning Paths:** `selectedLearningPathId` scopes the catalog to a path’s `courseIds`. Initialized from hash; cleared if the path document disappears. Naming: user-facing **Learning Path(s)**; code shorthand **LPath** — see [learning-paths-lpaths.md](./learning-paths-lpaths.md).
 

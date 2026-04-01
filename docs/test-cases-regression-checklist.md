@@ -172,7 +172,19 @@ Checklist:
 
 ---
 
-## 8) Suggested additions (add when relevant)
+## 8) Access control (roles, creator isolation)
+
+See [`access-control-roadmap.md`](./access-control-roadmap.md). Quick checks:
+
+- **User** (`role: user`): `#/creator` and `#/admin` redirect to catalog (URL updated); no Creator / Admin nav entries; catalog/player use published data only (no `creatorCourses` reads).
+- **Creator A**: Creator studio lists only courses/paths with `ownerUid == A`; save/delete works; cannot read another creator’s draft by ID (permission error).
+- **Creator B**: Same as A; confirms A’s content never appears in B’s studio list.
+- **Admin**: Admin portal available; **Creators** tab can list another UID’s private inventory (read-only UI); Creator studio edits only **own** `ownerUid` drafts (same as creators).
+- **Signed out**: `#/creator` / `#/admin` do not leave a stale hash (expect catalog + `#/catalog` or home per app behavior).
+
+---
+
+## 9) Suggested additions (add when relevant)
 
 - **Auth**: signed out vs signed in differences, login redirect return state.
 - **Admin guard**: navigating away from Admin with unsaved changes triggers guard.

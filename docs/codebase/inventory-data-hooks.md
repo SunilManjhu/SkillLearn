@@ -2,9 +2,9 @@
 
 ## `src/data/courses.ts`
 
-- **Role:** Canonical **TypeScript types** for courses, modules, lessons, quiz shapes; quiz factory helpers; **`STATIC_CATALOG_FALLBACK`** bundled catalog when Firestore is empty or unavailable.
-- **Primary exports:** `Course`, `Lesson`, `Module`, `QuizDefinition`, quiz question types, limits (`MAX_QUIZ_*`), `newQuizQuestionId`, `createDefaultMcqQuestion`, `createDefaultFreeformQuestion`, `STATIC_CATALOG_FALLBACK`, `COURSES`.
-- **Used by:** Almost all learner and admin UI, Firestore publish layer.
+- **Role:** Canonical **TypeScript types** for courses, modules, lessons, and quiz shapes; quiz limits (`MAX_QUIZ_*`); quiz factory helpers (`newQuizQuestionId`, `createDefaultMcqQuestion`, `createDefaultFreeformQuestion`). **No bundled lessons or catalog:** live courses come from Firestore (`publishedCourses` and creator drafts). `STATIC_CATALOG_FALLBACK` is exported as **`[]`** (empty) for any legacy default; callers use `[]` or `peekResolvedCatalogCourses() ?? []` after load.
+- **Primary exports:** `Course`, `Lesson`, `Module`, `CourseLevel`, `QuizDefinition`, quiz question types, limits, the three quiz helpers above, `STATIC_CATALOG_FALLBACK` (empty array).
+- **Used by:** Almost all learner and admin UI, `publishedCoursesFirestore.ts`, progress/stats helpers. **Creator/admin browse preview** also hydrates draft rows from `creatorCatalogSession.ts` — see [`../access-control-roadmap.md`](../access-control-roadmap.md) §8.
 
 ## `src/data/learningPaths.ts`
 

@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Shield, Send, BookOpen, Flag, Users, X, Sparkles, Megaphone } from 'lucide-react';
+import { Shield, Send, BookOpen, Flag, Users, X, Sparkles, Megaphone, Library } from 'lucide-react';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { useDialogKeyboard } from '../hooks/useDialogKeyboard';
 import type { Course } from '../data/courses';
+import type { LearningPath } from '../data/learningPaths';
 import type { AdminHistoryTab } from '../utils/appHistory';
 import { createBroadcastAlert, type BroadcastAlertType } from '../utils/alertsFirestore';
 import { AdminCourseCatalogSection } from './admin/AdminCourseCatalogSection';
@@ -11,6 +12,7 @@ import { AdminModerationSection } from './admin/AdminModerationSection';
 import { AdminGeminiModelsSection } from './admin/AdminGeminiModelsSection';
 import { AdminAiSiteControlsSection } from './admin/AdminAiSiteControlsSection';
 import { AdminUserRolesSection } from './admin/AdminUserRolesSection';
+import { AdminCreatorInventorySection } from './admin/AdminCreatorInventorySection';
 import { AdminHeroPhoneAdsSection } from './admin/AdminHeroPhoneAdsSection';
 import { AdminLabelInfoTip } from './admin/adminLabelInfoTip';
 import { useAdminActionToast } from './admin/useAdminActionToast';
@@ -32,6 +34,10 @@ interface AdminPageProps {
   /** Same bell mute preference as Profile → Smart Hub (per signed-in account). */
   alertsMuted?: boolean;
   onAlertsMutedChange?: (muted: boolean) => void;
+  /** Creators tab: open another user’s private course in learner overview. */
+  onAdminPreviewCreatorCourse?: (ownerUid: string, course: Course) => void;
+  /** Creators tab: open another user’s private path in Browse Catalog. */
+  onAdminPreviewCreatorPath?: (ownerUid: string, path: LearningPath) => void;
 }
 
 const ALERT_TYPES: { value: BroadcastAlertType; label: string }[] = [
@@ -58,6 +64,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   onUnsavedWorkChange,
   alertsMuted = false,
   onAlertsMutedChange,
+  onAdminPreviewCreatorCourse,
+  onAdminPreviewCreatorPath,
 }) => {
   const [type, setType] = useState<BroadcastAlertType>('course_update');
   const [courseId, setCourseId] = useState(courses[0]?.id ?? '');
@@ -249,7 +257,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
             <div className="min-w-0">
               <h1 className="text-lg font-bold tracking-tight sm:text-xl">Admin portal</h1>
               <p className="mt-0.5 line-clamp-2 text-xs text-[var(--text-secondary)] sm:text-sm sm:line-clamp-none">
-                Alerts, Smart Hub, catalog, marketing, moderation, roles. Not visible to learners.
+                Alerts, Smart Hub, catalog, marketing, moderation, roles, creator inventory. Not visible to learners.
               </p>
             </div>
           </div>
@@ -271,6 +279,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
           {tabBtn('marketing', 'Marketing', <Megaphone size={16} />)}
           {tabBtn('moderation', 'Moderation', <Flag size={16} />)}
           {tabBtn('roles', 'Roles', <Users size={16} />)}
+          {tabBtn('creators', 'Creators', <Library size={16} />)}
         </div>
 
         {tab === 'alerts' && (
@@ -527,6 +536,12 @@ export const AdminPage: React.FC<AdminPageProps> = ({
           />
         )}
         {tab === 'roles' && <AdminUserRolesSection currentAdminUid={currentAdminUid} />}
+        {tab === 'creators' && (
+          <AdminCreatorInventorySection
+            onPreviewCreatorCourse={onAdminPreviewCreatorCourse}
+            onPreviewCreatorPath={onAdminPreviewCreatorPath}
+          />
+        )}
 
         <AnimatePresence>
           {navigationGuardOpen && (
