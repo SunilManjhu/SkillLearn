@@ -1945,6 +1945,10 @@ export default function App() {
     setSelectedLearningPathFromCreatorDraft(false);
     setSelectedLearningPathAdminPreviewOwnerUid(null);
     setAdminCreatorPreviewPathRows([]);
+    setAdminCreatorPreviewRows([]);
+    if (selectedCourseAdminPreviewOwnerUid != null) {
+      clearCourseSelection();
+    }
     setLibraryFilters({ categoryTags: [], skillTags: [], level: null });
     setNavCatalogSkillTag(null);
     setNavCatalogCategoryTag(null);
@@ -2410,6 +2414,10 @@ export default function App() {
     setSelectedLearningPathFromCreatorDraft(false);
     setSelectedLearningPathAdminPreviewOwnerUid(null);
     setAdminCreatorPreviewPathRows([]);
+    setAdminCreatorPreviewRows([]);
+    if (selectedCourseAdminPreviewOwnerUid != null) {
+      clearCourseSelection();
+    }
     setLibraryFilters({ categoryTags: [], skillTags: [], level: null });
     const tags = toggleFilterTag([], category, catalogBrowseCategories);
     setNavCatalogCategoryTag(tags[0] ?? null);
@@ -2422,6 +2430,10 @@ export default function App() {
     fromCreatorDraft?: boolean,
     adminPreviewOwnerUid?: string
   ) => {
+    setAdminCreatorPreviewRows([]);
+    if (selectedCourseAdminPreviewOwnerUid != null) {
+      clearCourseSelection();
+    }
     setSelectedLearningPathId(pathId);
     setSelectedLearningPathFromCreatorDraft(fromCreatorDraft === true);
     setSelectedLearningPathAdminPreviewOwnerUid(adminPreviewOwnerUid?.trim() || null);
@@ -2437,6 +2449,10 @@ export default function App() {
     setSelectedLearningPathFromCreatorDraft(false);
     setSelectedLearningPathAdminPreviewOwnerUid(null);
     setAdminCreatorPreviewPathRows([]);
+    setAdminCreatorPreviewRows([]);
+    if (selectedCourseAdminPreviewOwnerUid != null) {
+      clearCourseSelection();
+    }
     setLibraryFilters({ categoryTags: [], skillTags: [], level: null });
     const tags = toggleFilterTag([], skill, catalogBrowseSkills);
     setNavCatalogSkillTag(tags[0] ?? null);
