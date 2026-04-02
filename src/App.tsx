@@ -260,11 +260,21 @@ type DeferredCourseRoute = {
   courseId: string;
   lessonId?: string;
   adminPreviewCourseOwnerUid?: string;
+  courseFromCreatorDraft?: boolean;
 };
 
-function getInitialRouteState(catalog: Course[] = []): {
+function getInitialCatalogCourseRowsForRoute(): CatalogCourseRow[] {
+  const pub = peekResolvedCatalogCourses() ?? [];
+  const uid = readCachedAuthProfile()?.uid ?? null;
+  const drafts = uid ? peekResolvedCreatorCatalog(uid)?.courses ?? [] : [];
+  return mergeOwnerPreviewCourseRows(pub, drafts);
+}
+
+function getInitialRouteState(courseRows: CatalogCourseRow[] = []): {
   view: View;
   selectedCourse: Course | null;
+  selectedCourseIsCreatorDraft: boolean;
+  selectedCourseAdminPreviewOwnerUid: string | null;
   initialLesson: Lesson | undefined;
   adminTab: AdminHistoryTab;
   deferredCourseRoute: DeferredCourseRoute | null;
@@ -273,6 +283,8 @@ function getInitialRouteState(catalog: Course[] = []): {
     return {
       view: 'home',
       selectedCourse: null,
+      selectedCourseIsCreatorDraft: false,
+      selectedCourseAdminPreviewOwnerUid: null,
       initialLesson: undefined,
       adminTab: 'alerts',
       deferredCourseRoute: null,
@@ -283,6 +295,8 @@ function getInitialRouteState(catalog: Course[] = []): {
     return {
       view: 'home',
       selectedCourse: null,
+      selectedCourseIsCreatorDraft: false,
+      selectedCourseAdminPreviewOwnerUid: null,
       initialLesson: undefined,
       adminTab: 'alerts',
       deferredCourseRoute: null,
@@ -293,6 +307,8 @@ function getInitialRouteState(catalog: Course[] = []): {
     return {
       view: 'home',
       selectedCourse: null,
+      selectedCourseIsCreatorDraft: false,
+      selectedCourseAdminPreviewOwnerUid: null,
       initialLesson: undefined,
       adminTab: 'alerts',
       deferredCourseRoute: null,
@@ -302,11 +318,13 @@ function getInitialRouteState(catalog: Course[] = []): {
   if (
     (parsed.view === 'overview' || parsed.view === 'player') &&
     parsed.courseId &&
-    !catalog.some((x) => x.id === parsed.courseId)
+    !courseRows.some((r) => r.course.id === parsed.courseId)
   ) {
     return {
       view: parsed.view as View,
       selectedCourse: null,
+      selectedCourseIsCreatorDraft: false,
+      selectedCourseAdminPreviewOwnerUid: null,
       initialLesson: undefined,
       adminTab: 'alerts',
       deferredCourseRoute: {
@@ -316,6 +334,7 @@ function getInitialRouteState(catalog: Course[] = []): {
         ...(parsed.adminPreviewCourseOwnerUid
           ? { adminPreviewCourseOwnerUid: parsed.adminPreviewCourseOwnerUid }
           : {}),
+        ...(parsed.courseFromCreatorDraft === true ? { courseFromCreatorDraft: true } : {}),
       },
     };
   }
@@ -325,9 +344,15 @@ function getInitialRouteState(catalog: Course[] = []): {
     parsed.view === 'player' &&
     parsed.courseId &&
     !parsed.lessonId &&
-    catalog.some((x) => x.id === parsed.courseId)
+    courseRows.some((r) => r.course.id === parsed.courseId)
   ) {
-    const c = catalog.find((x) => x.id === parsed.courseId);
+    const row = pickCourseRowForHistoryPayload(
+      courseRows,
+      parsed.courseId,
+      parsed.adminPreviewCourseOwnerUid,
+      parsed.courseFromCreatorDraft
+    );
+    const c = row?.course;
     if (c) {
       const uid = readCachedAuthProfile()?.uid ?? null;
       const resume = getResumeOrStartLesson(c, loadLessonProgressMap(c.id, uid));
@@ -337,15 +362,25 @@ function getInitialRouteState(catalog: Course[] = []): {
     }
   }
 
-  const resolved = resolvePayloadForCourses(routeParsed, catalog, findLessonById);
+  const resolved = resolvePayloadForCourses(routeParsed, courseRows, findLessonById);
 
   if (resolved.view === 'overview' || resolved.view === 'player') {
-    const c = resolved.courseId ? (catalog.find((x) => x.id === resolved.courseId) ?? null) : null;
+    const row = resolved.courseId
+      ? pickCourseRowForHistoryPayload(
+          courseRows,
+          resolved.courseId,
+          resolved.adminPreviewCourseOwnerUid,
+          resolved.courseFromCreatorDraft
+        )
+      : undefined;
+    const c = row?.course ?? null;
     const l = c && resolved.lessonId ? findLessonById(c, resolved.lessonId) : undefined;
     if (c) {
       return {
         view: resolved.view as View,
         selectedCourse: c,
+        selectedCourseIsCreatorDraft: row?.fromCreatorDraft ?? false,
+        selectedCourseAdminPreviewOwnerUid: row?.adminPreviewOwnerUid ?? null,
         initialLesson: l,
         adminTab: 'alerts',
         deferredCourseRoute: null,
@@ -354,6 +389,8 @@ function getInitialRouteState(catalog: Course[] = []): {
     return {
       view: 'catalog',
       selectedCourse: null,
+      selectedCourseIsCreatorDraft: false,
+      selectedCourseAdminPreviewOwnerUid: null,
       initialLesson: undefined,
       adminTab: 'alerts',
       deferredCourseRoute: null,
@@ -364,6 +401,8 @@ function getInitialRouteState(catalog: Course[] = []): {
     return {
       view: 'home',
       selectedCourse: null,
+      selectedCourseIsCreatorDraft: false,
+      selectedCourseAdminPreviewOwnerUid: null,
       initialLesson: undefined,
       adminTab: 'alerts',
       deferredCourseRoute: null,
@@ -376,6 +415,8 @@ function getInitialRouteState(catalog: Course[] = []): {
   return {
     view: resolved.view as View,
     selectedCourse: null,
+    selectedCourseIsCreatorDraft: false,
+    selectedCourseAdminPreviewOwnerUid: null,
     initialLesson: undefined,
     adminTab,
     deferredCourseRoute: null,
@@ -458,9 +499,7 @@ function readGuestWelcomePersistedState(): { read: boolean; dismissed: boolean }
 }
 
 export default function App() {
-  const [initialRoute] = useState(() =>
-    getInitialRouteState(peekResolvedCatalogCourses() ?? [])
-  );
+  const [initialRoute] = useState(() => getInitialRouteState(getInitialCatalogCourseRowsForRoute()));
   const [currentView, setCurrentView] = useState<View>(initialRoute.view);
   /** Course player: hide global nav + full-bleed video while lesson is playing. */
   const [playerImmersiveNav, setPlayerImmersiveNav] = useState(false);
@@ -470,9 +509,13 @@ export default function App() {
   const { siteNotificationsEnabled } = useNotificationsSiteEnabled();
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(initialRoute.selectedCourse);
   /** Disambiguates catalog rows when the same `course.id` appears as published and creator draft. */
-  const [selectedCourseIsCreatorDraft, setSelectedCourseIsCreatorDraft] = useState(false);
+  const [selectedCourseIsCreatorDraft, setSelectedCourseIsCreatorDraft] = useState(
+    () => initialRoute.selectedCourseIsCreatorDraft
+  );
   /** Set when the selected draft row is an admin-injected preview of another creator’s course (`adminPreviewOwnerUid`). */
-  const [selectedCourseAdminPreviewOwnerUid, setSelectedCourseAdminPreviewOwnerUid] = useState<string | null>(null);
+  const [selectedCourseAdminPreviewOwnerUid, setSelectedCourseAdminPreviewOwnerUid] = useState<string | null>(
+    () => initialRoute.selectedCourseAdminPreviewOwnerUid
+  );
   const [initialLesson, setInitialLesson] = useState<Lesson | undefined>(initialRoute.initialLesson);
   /** Current lesson id for player URLs (`#/course/.../player/.../lessonId`); reload restores this lesson. */
   const [playerLessonIdForUrl, setPlayerLessonIdForUrl] = useState<string | null>(() =>
@@ -660,6 +703,19 @@ export default function App() {
    * Prevents treating a brief `isAdminUser === false` as “kick off #/admin”.
    */
   const [adminAccessResolved, setAdminAccessResolved] = useState(false);
+  /**
+   * Learning Paths dropdown: omit creator-studio draft rows for **admin-only** accounts (admins who are not
+   * creators), matching the rule that private creator catalog entries are not surfaced in public browse chrome.
+   * Creators (including admin+creator) still see their drafts; admin inventory “Creator preview” paths stay.
+   */
+  const navbarCatalogPathRows = useMemo(() => {
+    const adminOnlyNoCreatorStudio =
+      adminAccessResolved && isAdminUser && !isCreatorUser;
+    if (!adminOnlyNoCreatorStudio) return combinedCatalogPathRows;
+    return combinedCatalogPathRows.filter(
+      (r) => Boolean(r.adminPreviewOwnerUid?.trim()) || !r.fromCreatorDraft
+    );
+  }, [combinedCatalogPathRows, adminAccessResolved, isAdminUser, isCreatorUser]);
   /** `users` docs with role admin; loaded when signed-in user is admin (for delete-account copy). */
   const [firestoreAdminCount, setFirestoreAdminCount] = useState<number | null>(null);
   /** After opening a broadcast alert: scroll overview curriculum to module/lesson. */
@@ -713,6 +769,11 @@ export default function App() {
       if (selectedCourseAdminPreviewOwnerUid) {
         p.adminPreviewCourseOwnerUid = selectedCourseAdminPreviewOwnerUid;
       }
+      const hasCourseId = Boolean(selectedCourse?.id ?? deferredCourseRoute?.courseId);
+      if (hasCourseId) {
+        p.courseFromCreatorDraft =
+          !selectedCourseAdminPreviewOwnerUid && selectedCourseIsCreatorDraft;
+      }
     }
     if (currentView === 'player') {
       const lid = playerLessonIdForUrl ?? initialLesson?.id ?? null;
@@ -746,11 +807,12 @@ export default function App() {
     playerLessonIdForUrl,
     initialLesson?.id,
     selectedCourseAdminPreviewOwnerUid,
+    selectedCourseIsCreatorDraft,
   ]);
 
   const applyHistoryPayload = useCallback(
     (raw: AppHistoryPayload) => {
-      const resolved = resolvePayloadForCourses(raw, catalogCoursesRef.current, findLessonById);
+      const resolved = resolvePayloadForCourses(raw, catalogCourseRowsRef.current, findLessonById);
       const view = resolved.view as View;
 
       if (currentViewRef.current === 'admin' && view !== 'admin' && adminPortalUnsavedRef.current) {
@@ -804,7 +866,8 @@ export default function App() {
           ? pickCourseRowForHistoryPayload(
               catalogCourseRowsRef.current,
               resolved.courseId,
-              resolved.adminPreviewCourseOwnerUid
+              resolved.adminPreviewCourseOwnerUid,
+              resolved.courseFromCreatorDraft
             )
           : undefined;
         const c = row?.course ?? null;
@@ -881,7 +944,7 @@ export default function App() {
       const fromState = readPayloadFromHistoryState(window.history.state);
       const raw = mergeHashAndHistoryStatePayload(fromHash, fromState);
       if (!raw) return;
-      const resolved = resolvePayloadForCourses(raw, catalogCoursesRef.current, findLessonById);
+      const resolved = resolvePayloadForCourses(raw, catalogCourseRowsRef.current, findLessonById);
       window.history.replaceState({ [APP_HISTORY_KEY]: resolved }, '', buildHistoryUrl(resolved));
       historySkipSyncRef.current = true;
       applyHistoryPayload(raw);
@@ -936,6 +999,7 @@ export default function App() {
       (prev.learningPathFromCreatorDraft === true) === (payload.learningPathFromCreatorDraft === true) &&
       (prev.learningPathAdminPreviewOwnerUid ?? null) === (payload.learningPathAdminPreviewOwnerUid ?? null) &&
       (prev.adminPreviewCourseOwnerUid ?? null) === (payload.adminPreviewCourseOwnerUid ?? null) &&
+      (prev.courseFromCreatorDraft === true) === (payload.courseFromCreatorDraft === true) &&
       (prev.lessonId ?? null) !== (payload.lessonId ?? null);
     if (playerOnlyLessonChanged) {
       window.history.replaceState(state, '', url);
@@ -949,7 +1013,8 @@ export default function App() {
         prev?.view === 'overview' &&
         payload.view === 'player' &&
         (prev.courseId ?? null) === (payload.courseId ?? null) &&
-        (prev.adminPreviewCourseOwnerUid ?? null) === (payload.adminPreviewCourseOwnerUid ?? null);
+        (prev.adminPreviewCourseOwnerUid ?? null) === (payload.adminPreviewCourseOwnerUid ?? null) &&
+        (prev.courseFromCreatorDraft === true) === (payload.courseFromCreatorDraft === true);
       /** Stale `replace` (e.g. after course completion) must not replace catalog/path with overview — that drops the path from the stack. Push overview instead. */
       const pushInsteadOfReplaceForCatalogToOverview =
         prev?.view === 'catalog' && payload.view === 'overview';
@@ -1204,12 +1269,13 @@ export default function App() {
     const fromState = readPayloadFromHistoryState(window.history.state);
     const raw = mergeHashAndHistoryStatePayload(fromHash, fromState);
     if (!raw || (raw.view !== 'overview' && raw.view !== 'player')) return;
-    const resolved = resolvePayloadForCourses(raw, catalogCourses, findLessonById);
+    const resolved = resolvePayloadForCourses(raw, combinedCatalogRows, findLessonById);
     if ((resolved.view !== 'overview' && resolved.view !== 'player') || !resolved.courseId) return;
     const freshRow = pickCourseRowForHistoryPayload(
       combinedCatalogRows,
       resolved.courseId,
-      resolved.adminPreviewCourseOwnerUid
+      resolved.adminPreviewCourseOwnerUid,
+      resolved.courseFromCreatorDraft
     );
     if (!freshRow) return;
     const fresh = freshRow.course;
@@ -1230,7 +1296,7 @@ export default function App() {
       setInitialLesson(undefined);
     }
     /** Deps: catalog/user only — do not depend on `currentView`. After overview→player the URL updates in a later effect; running on view change read a stale hash as "overview" and cleared the active lesson. */
-  }, [catalogCourses, combinedCatalogRows, user?.uid]);
+  }, [combinedCatalogRows, user?.uid]);
 
   /** Apply deep link once the live catalog contains a course that was missing on first paint (cold refresh). */
   useLayoutEffect(() => {
@@ -1238,7 +1304,8 @@ export default function App() {
     const freshRow = pickCourseRowForHistoryPayload(
       combinedCatalogRows,
       deferredCourseRoute.courseId,
-      deferredCourseRoute.adminPreviewCourseOwnerUid
+      deferredCourseRoute.adminPreviewCourseOwnerUid,
+      deferredCourseRoute.courseFromCreatorDraft === true ? true : undefined
     );
     if (freshRow) {
       const fresh = freshRow.course;
@@ -3040,6 +3107,7 @@ export default function App() {
                   v: 1,
                   view: 'overview',
                   courseId: c.id,
+                  courseFromCreatorDraft: !!(row.fromCreatorDraft && !row.adminPreviewOwnerUid),
                   ...(selectedLearningPathId != null ? { learningPathId: selectedLearningPathId } : {}),
                   ...(selectedLearningPathFromCreatorDraft ? { learningPathFromCreatorDraft: true } : {}),
                   ...(selectedLearningPathAdminPreviewOwnerUid
@@ -3373,7 +3441,7 @@ export default function App() {
             navCatalogCategoryTag ? [navCatalogCategoryTag] : libraryFilters.categoryTags
           }
           catalogActiveSkillTags={navCatalogSkillTag ? [navCatalogSkillTag] : libraryFilters.skillTags}
-          learningPaths={combinedCatalogPathRows.map((r) => ({
+          learningPaths={navbarCatalogPathRows.map((r) => ({
             id: r.id,
             title: r.title,
             fromCreatorDraft: r.fromCreatorDraft,

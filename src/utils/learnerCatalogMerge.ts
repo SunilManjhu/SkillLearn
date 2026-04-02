@@ -47,7 +47,8 @@ export function pickPublishedFirstCourseRow(
 export function pickCourseRowForHistoryPayload(
   rows: readonly CatalogCourseRow[],
   courseId: string,
-  adminPreviewCourseOwnerUid?: string | null
+  adminPreviewCourseOwnerUid?: string | null,
+  courseFromCreatorDraft?: boolean | null
 ): CatalogCourseRow | undefined {
   const uid = adminPreviewCourseOwnerUid?.trim();
   if (uid) {
@@ -55,6 +56,10 @@ export function pickCourseRowForHistoryPayload(
       (r) => r.course.id === courseId && r.adminPreviewOwnerUid === uid
     );
     if (exact) return exact;
+  }
+  if (courseFromCreatorDraft === true) {
+    const draft = rows.find((r) => r.course.id === courseId && r.fromCreatorDraft);
+    if (draft) return draft;
   }
   return pickPublishedFirstCourseRow(rows, courseId);
 }

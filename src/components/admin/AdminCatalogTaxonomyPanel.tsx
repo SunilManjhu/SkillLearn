@@ -32,6 +32,61 @@ function displayCourseLabelWithId(c: Course): string {
   return `${base} (${c.id})`;
 }
 
+/** Courses that reference this category (case-insensitive). */
+function coursesUsingLabelInCategories(courses: readonly Course[], label: string): Course[] {
+  const k = lower(label);
+  return courses.filter((c) => (c.categories ?? []).some((x) => lower(x) === k));
+}
+
+/** Courses that reference this skill (case-insensitive). */
+function coursesUsingLabelInSkills(courses: readonly Course[], label: string): Course[] {
+  const k = lower(label);
+  return courses.filter((c) => (c.skills ?? []).some((x) => lower(x) === k));
+}
+
+/**
+ * Removing this label would leave `categories: []`, which Firestore rules reject for both
+ * `publishedCourses` and `creatorCourses` (`categories.size() > 0`).
+ */
+function coursesWithOnlyThisCategory(courses: readonly Course[], label: string): Course[] {
+  const k = lower(label);
+  return courses.filter((c) => {
+    const arr = c.categories ?? [];
+    if (arr.length !== 1) return false;
+    return lower(arr[0]!) === k;
+  });
+}
+
+function formatBlockedCategoryRemovalMessage(blocked: readonly Course[], label: string): string {
+  const max = 6;
+  const shown = blocked.slice(0, max);
+  const lines = shown.map((c, i) => `${i + 1}. ${displayCourseLabelWithId(c)}`);
+  const tail = blocked.length > max ? ` …and ${blocked.length - max} more.` : '';
+  return (
+    `Can’t remove “${label}”: every course needs at least one category (same rule for published courses and creator drafts). ` +
+    `These only have that label—open each in Catalog, add or change categories, then remove the label here.\n\n` +
+    `${lines.join('\n')}${tail}`
+  );
+}
+
+function formatCourseSaveFailedMessage(kind: TaxonomyKind, failed: Course): string {
+  const who = displayCourseLabelWithId(failed);
+  if (kind === 'category') {
+    return (
+      `Could not update ${who}. Firestore often shows “missing permissions” when the write is invalid—for example ` +
+      `if a course would end up with zero categories (published and creator drafts must each keep at least one). ` +
+      `Fix the course in Catalog, then retry.`
+    );
+  }
+  return `Could not update ${who}. Check your connection and permissions, then try again.`;
+}
+
+function removingWouldDeleteLastMainPill(mainPills: readonly string[], label: string): boolean {
+  const k = lower(label);
+  const remaining = mainPills.filter((x) => lower(x) !== k);
+  return remaining.length === 0 && mainPills.some((x) => lower(x) === k);
+}
+
 function formatUpdatedCoursesToastSuffix(updated: readonly Course[]): string {
   if (updated.length === 0) return '';
   const maxList = 5;
@@ -295,7 +350,13 @@ export function AdminCatalogTaxonomyPanel({
   showActionToast: (msg: string, variant?: 'neutral' | 'danger') => void;
 }) {
   const [busy, setBusy] = useState(false);
-  const [confirm, setConfirm] = useState<{ kind: TaxonomyKind; label: string } | null>(null);
+  const [confirm, setConfirm] = useState<{
+    kind: TaxonomyKind;
+    label: string;
+    linkedCourses: Course[];
+    /** Category only: courses that only have this category—removal is blocked until they get another. */
+    blockedCourses: Course[];
+  } | null>(null);
   const confirmOpen = confirm != null;
   const [pendingRenames, setPendingRenames] = useState<{ category: Record<string, string>; skill: Record<string, string> }>(
     () => ({ category: {}, skill: {} })
@@ -346,6 +407,14 @@ export function AdminCatalogTaxonomyPanel({
 
   const updateCoursesEverywhere = async (kind: TaxonomyKind, from: string, to?: string) => {
     const fromK = lower(from);
+    if (kind === 'category' && !to) {
+      const blocked = coursesWithOnlyThisCategory(publishedList, from);
+      if (blocked.length > 0) {
+        showActionToast(formatBlockedCategoryRemovalMessage(blocked, from), 'danger');
+        return { updated: [] as Course[], failed: null as Course | null };
+      }
+    }
+
     const nextCourses = publishedList
       .map((c) => {
         const arr = kind === 'category' ? c.categories ?? [] : c.skills ?? [];
@@ -354,6 +423,7 @@ export function AdminCatalogTaxonomyPanel({
         const nextArr = to
           ? dedupeLabelsPreserveOrder(arr.map((x) => (lower(x) === fromK ? to : x)))
           : arr.filter((x) => lower(x) !== fromK);
+        if (kind === 'category' && !to && nextArr.length === 0) return null;
         return kind === 'category' ? ({ ...c, categories: nextArr } as Course) : ({ ...c, skills: nextArr } as Course);
       })
       .filter((x): x is Course => x != null);
@@ -385,21 +455,37 @@ export function AdminCatalogTaxonomyPanel({
     const n = Math.min(CONCURRENCY, nextCourses.length);
     await Promise.all(Array.from({ length: n }, () => worker()));
 
-    if (failed) {
-      showActionToast(`Save failed while updating "${failed.title || failed.id}".`, 'danger');
-    }
     return { updated, failed };
   };
 
-  const removeEverywhere = async (kind: TaxonomyKind, label: string) => setConfirm({ kind, label });
-
   const closeConfirm = useCallback(() => setConfirm(null), []);
 
-  const confirmRemove = async () => {
-    if (!confirm) return;
-    const { kind, label } = confirm;
-    setConfirm(null);
+  const performRemovalWork = async (kind: TaxonomyKind, label: string) => {
     if (busy) return;
+
+    if (kind === 'category') {
+      const blocked = coursesWithOnlyThisCategory(publishedList, label);
+      if (blocked.length > 0) {
+        showActionToast(formatBlockedCategoryRemovalMessage(blocked, label), 'danger');
+        return;
+      }
+      if (removingWouldDeleteLastMainPill(categoryPresets.mainPills, label)) {
+        showActionToast(
+          'Can’t remove the last “Popular topic” (main pill). Add another main topic under Topic presets first.',
+          'danger'
+        );
+        return;
+      }
+    } else {
+      if (removingWouldDeleteLastMainPill(skillPresets.mainPills, label)) {
+        showActionToast(
+          'Can’t remove the last main skill pill. Add another main skill under Skill presets first.',
+          'danger'
+        );
+        return;
+      }
+    }
+
     showActionToast('Updating…', 'neutral');
     setBusy(true);
     setPendingRemovals((prev) => {
@@ -408,7 +494,14 @@ export function AdminCatalogTaxonomyPanel({
       return next;
     });
     try {
-      // 1) Remove from presets (both buckets) and write to Firestore.
+      // 1) Courses first so we never strip presets then fail on invalid course writes (empty categories, etc.).
+      const courseUpdate = await updateCoursesEverywhere(kind, label, undefined);
+      if (courseUpdate.failed) {
+        showActionToast(formatCourseSaveFailedMessage(kind, courseUpdate.failed), 'danger');
+        return;
+      }
+
+      // 2) Presets + extras
       if (kind === 'category') {
         const k = lower(label);
         const nextCats = normalizeCatalogCategoryPresets({
@@ -429,8 +522,6 @@ export function AdminCatalogTaxonomyPanel({
         onPresetsChanged({ categories: categoryPresets, skills: nextSkills });
       }
 
-      // 2) Remove from all courses.
-      const courseUpdate = await updateCoursesEverywhere(kind, label, undefined);
       await onRefreshList();
       await onCatalogChanged();
       showActionToast(`Removed ${label} everywhere.${formatUpdatedCoursesToastSuffix(courseUpdate.updated)}`);
@@ -442,6 +533,29 @@ export function AdminCatalogTaxonomyPanel({
         return next;
       });
     }
+  };
+
+  const removeEverywhere = (kind: TaxonomyKind, label: string) => {
+    if (busy) return;
+    const linked =
+      kind === 'category'
+        ? coursesUsingLabelInCategories(publishedList, label)
+        : coursesUsingLabelInSkills(publishedList, label);
+    if (linked.length === 0) {
+      void performRemovalWork(kind, label);
+      return;
+    }
+    const blockedCourses =
+      kind === 'category' ? coursesWithOnlyThisCategory(publishedList, label) : [];
+    setConfirm({ kind, label, linkedCourses: linked, blockedCourses });
+  };
+
+  const confirmRemove = () => {
+    if (!confirm) return;
+    const { kind, label, blockedCourses } = confirm;
+    if (blockedCourses.length > 0) return;
+    setConfirm(null);
+    void performRemovalWork(kind, label);
   };
 
   useBodyScrollLock(confirmOpen);
@@ -493,7 +607,14 @@ export function AdminCatalogTaxonomyPanel({
       [kind]: { ...prev[kind], [lower(from)]: to },
     }));
     try {
-      // 1) Presets + extras.
+      // 1) Courses first so preset renames aren’t left inconsistent if a save fails.
+      const courseUpdate = await updateCoursesEverywhere(kind, from, to);
+      if (courseUpdate.failed) {
+        showActionToast(formatCourseSaveFailedMessage(kind, courseUpdate.failed), 'danger');
+        return;
+      }
+
+      // 2) Presets + extras.
       if (kind === 'category') {
         const fk = lower(from);
         const nextCats = normalizeCatalogCategoryPresets({
@@ -514,8 +635,6 @@ export function AdminCatalogTaxonomyPanel({
         onPresetsChanged({ categories: categoryPresets, skills: nextSkills });
       }
 
-      // 2) Courses.
-      const courseUpdate = await updateCoursesEverywhere(kind, from, to);
       await onRefreshList();
       await onCatalogChanged();
       showActionToast(`Renamed ${from} → ${to}.${formatUpdatedCoursesToastSuffix(courseUpdate.updated)}`);
@@ -538,7 +657,10 @@ export function AdminCatalogTaxonomyPanel({
           <>
             <li>Search to add, rename, or remove everywhere.</li>
             <li>Click a chip to edit it in place.</li>
-            <li>Click × to remove from all courses, presets, and extras.</li>
+            <li>
+              Click × to remove from presets and extras. If no course uses the label, it removes immediately; otherwise
+              you’ll see which courses use it before confirming.
+            </li>
           </>
         }
         kind="category"
@@ -555,7 +677,10 @@ export function AdminCatalogTaxonomyPanel({
         tip={
           <>
             <li>Same UX as categories.</li>
-            <li>Removing deletes the skill from all courses, presets, and extras.</li>
+            <li>
+              Removing deletes the skill from courses, presets, and extras. Unused skills remove in one step; if any
+              course uses the skill, you’ll see the list before confirming.
+            </li>
           </>
         }
         kind="skill"
@@ -582,7 +707,7 @@ export function AdminCatalogTaxonomyPanel({
             >
               <div className="flex items-center justify-between gap-4 border-b border-[var(--border-color)] p-6">
                 <h2 id="admin-taxonomy-remove-title" className="text-xl font-bold text-[var(--text-primary)]">
-                  Remove everywhere?
+                  Remove “{confirm.label}”?
                 </h2>
                 <button
                   type="button"
@@ -595,9 +720,64 @@ export function AdminCatalogTaxonomyPanel({
               </div>
               <div className="space-y-4 p-6">
                 <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
-                  This will remove <strong className="text-[var(--text-primary)]">{confirm.label}</strong> from all courses,
-                  presets, and quick-pick extras.
+                  {confirm.kind === 'category' ? (
+                    <>
+                      This category is on <strong className="text-[var(--text-primary)]">{confirm.linkedCourses.length}</strong>{' '}
+                      course{confirm.linkedCourses.length === 1 ? '' : 's'}. Removing it will strip it from each of
+                      those courses, plus topic presets and quick-picks.
+                    </>
+                  ) : (
+                    <>
+                      This skill is on <strong className="text-[var(--text-primary)]">{confirm.linkedCourses.length}</strong>{' '}
+                      course{confirm.linkedCourses.length === 1 ? '' : 's'}. Removing it will strip it from each course,
+                      plus skill presets and quick-picks.
+                    </>
+                  )}
                 </p>
+                {confirm.blockedCourses.length > 0 ? (
+                  <div
+                    role="alert"
+                    className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-sm text-[var(--text-primary)]"
+                  >
+                    <strong className="font-semibold">Can’t remove yet:</strong> some courses below only have this
+                    category. Add at least one other category in Catalog for each marked course, then try again.
+                  </div>
+                ) : null}
+                <div>
+                  <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
+                    Linked courses
+                  </p>
+                  <ul
+                    className="max-h-[min(50vh,20rem)] space-y-1.5 overflow-y-auto overscroll-y-contain rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/50 p-3 text-sm"
+                  >
+                    {[...confirm.linkedCourses]
+                      .sort((a, b) => {
+                        const t = a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+                        return t !== 0 ? t : a.id.localeCompare(b.id);
+                      })
+                      .map((c) => {
+                        const blocked = confirm.blockedCourses.some((x) => x.id === c.id);
+                        return (
+                          <li
+                            key={c.id}
+                            className={
+                              blocked
+                                ? 'rounded-lg border border-amber-500/35 bg-amber-500/5 px-2.5 py-2'
+                                : 'rounded-lg px-2.5 py-1.5'
+                            }
+                          >
+                            <span className="font-medium text-[var(--text-primary)]">{displayCourseLabelWithId(c)}</span>
+                            {blocked ? (
+                              <span className="mt-1 block text-xs text-amber-700 dark:text-amber-300">
+                                Only category — add another in Catalog first
+                              </span>
+                            ) : null}
+                          </li>
+                        );
+                      })}
+                  </ul>
+                </div>
+                <p className="text-xs text-[var(--text-muted)]">Cancel to keep everything as-is.</p>
                 <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                   <button
                     type="button"
@@ -609,13 +789,13 @@ export function AdminCatalogTaxonomyPanel({
                   </button>
                   <button
                     type="button"
-                    autoFocus
-                    disabled={busy}
-                    onClick={() => void confirmRemove()}
-                    className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-red-500 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-red-600 disabled:opacity-40 sm:w-auto"
+                    autoFocus={confirm.blockedCourses.length === 0}
+                    disabled={busy || confirm.blockedCourses.length > 0}
+                    onClick={() => confirmRemove()}
+                    className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-red-500 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-red-600 disabled:pointer-events-none disabled:opacity-40 sm:w-auto"
                   >
                     <Trash2 size={18} className="mr-2" aria-hidden />
-                    Remove
+                    Remove from courses &amp; presets
                   </button>
                 </div>
               </div>

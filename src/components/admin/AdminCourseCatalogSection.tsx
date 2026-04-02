@@ -64,11 +64,13 @@ import {
   addCatalogCategoryExtra,
   CATALOG_CATEGORY_EXTRAS_CHANGED,
   readCatalogCategoryExtras,
+  removeCatalogCategoryExtra,
 } from '../../utils/catalogCategoryExtras';
 import {
   addCatalogSkillExtra,
   CATALOG_SKILL_EXTRAS_CHANGED,
   readCatalogSkillExtras,
+  removeCatalogSkillExtra,
 } from '../../utils/catalogSkillExtras';
 import {
   CATALOG_SKILL_PRESETS_CHANGED,
@@ -383,6 +385,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 }) => {
   const isCreatorCatalog = catalogPersistence?.kind === 'creator';
   const [publishedList, setPublishedList] = useState<Course[]>([]);
+  /**
+   * Creator studio only: published `publishedCourses` snapshot for category/skill pickers. Creator `publishedList`
+   * is draft-only, so without this, labels admins add on published courses never appear in “add from list”.
+   */
+  const [publishedCoursesForPicker, setPublishedCoursesForPicker] = useState<Course[]>([]);
   /** '' = none selected; avoids loading Firestore until the user opens the Course dropdown. */
   const [selector, setSelector] = useState<string>('');
   const [draft, setDraft] = useState<Course | null>(null);
@@ -637,31 +644,33 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     };
   }, [tipsNarrowViewport, categoriesTipsOpen, categoriesTipFixedTop, syncCategoriesTipTop]);
 
-  /** Full list for adding categories (presets, saved extras, labels from published courses). */
+  /** Full list for adding categories (presets, saved extras, labels from catalog courses in this editor + live published when creator). */
   const categorySelectOptions = useMemo(() => {
     const s = new Set<string>(allPresetCatalogCategoriesFromState(categoryPresetsState));
     for (const c of readCatalogCategoryExtras()) s.add(c);
-    for (const co of publishedList) {
+    const courseRows = isCreatorCatalog ? [...publishedList, ...publishedCoursesForPicker] : publishedList;
+    for (const co of courseRows) {
       for (const cat of co.categories ?? []) {
         const t = cat?.trim();
         if (t) s.add(t);
       }
     }
     return [...s].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-  }, [publishedList, categoryOptionsVersion, categoryPresetsState]);
+  }, [publishedList, publishedCoursesForPicker, isCreatorCatalog, categoryOptionsVersion, categoryPresetsState]);
 
-  /** Full list for adding skills (presets, saved extras, labels from published courses). */
+  /** Full list for adding skills (presets, saved extras, labels from catalog courses + live published when creator). */
   const skillSelectOptions = useMemo(() => {
     const s = new Set<string>([...skillPresetsState.mainPills, ...skillPresetsState.moreSkills]);
     for (const x of readCatalogSkillExtras()) s.add(x);
-    for (const co of publishedList) {
+    const courseRows = isCreatorCatalog ? [...publishedList, ...publishedCoursesForPicker] : publishedList;
+    for (const co of courseRows) {
       for (const sk of co.skills ?? []) {
         const t = sk?.trim();
         if (t) s.add(t);
       }
     }
     return [...s].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-  }, [publishedList, skillOptionsVersion, skillPresetsState]);
+  }, [publishedList, publishedCoursesForPicker, isCreatorCatalog, skillOptionsVersion, skillPresetsState]);
 
   useEffect(() => {
     const h = () => setCategoryOptionsVersion((v) => v + 1);
@@ -676,7 +685,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   }, []);
 
   const registerDraftTaxonomyExtras = () => {
-    if (!draft) return;
+    if (!draft || isCreatorCatalog) return;
     for (const c of draft.categories) {
       if (c.trim()) addCatalogCategoryExtra(c.trim());
     }
@@ -699,14 +708,51 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
   const refreshList = useCallback(async (): Promise<Course[]> => {
     setListLoading(true);
-    const list =
-      catalogPersistence?.kind === 'creator'
-        ? await loadCreatorCoursesForOwner(catalogPersistence.ownerUid)
-        : await loadPublishedCoursesFromFirestore();
-    setPublishedList(list);
-    setListLoading(false);
-    return list;
+    try {
+      if (catalogPersistence?.kind === 'creator') {
+        const [list, publishedForPicker] = await Promise.all([
+          loadCreatorCoursesForOwner(catalogPersistence.ownerUid),
+          loadPublishedCoursesFromFirestore(),
+        ]);
+        setPublishedList(list);
+        setPublishedCoursesForPicker(publishedForPicker);
+        return list;
+      }
+      const list = await loadPublishedCoursesFromFirestore();
+      setPublishedList(list);
+      setPublishedCoursesForPicker([]);
+      return list;
+    } finally {
+      setListLoading(false);
+    }
   }, [catalogPersistence]);
+
+  /**
+   * Creator studio: load picker data as soon as the page opens. Otherwise `catalogRequested` stays false until the
+   * user focuses the course dropdown—`categoryPresetsState` never left DEFAULT and admin Firestore presets (and any
+   * category only on published courses until refresh) were invisible in “Add category from list”.
+   */
+  useEffect(() => {
+    if (!isCreatorCatalog) {
+      setPublishedCoursesForPicker([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const [pub, catPre, skPre] = await Promise.all([
+        loadPublishedCoursesFromFirestore(),
+        loadCatalogCategoryPresets(),
+        loadCatalogSkillPresets(),
+      ]);
+      if (cancelled) return;
+      setPublishedCoursesForPicker(pub);
+      setCategoryPresetsState(catPre);
+      setSkillPresetsState(skPre);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isCreatorCatalog]);
 
   const openCourseCatalogOnce = useCallback(() => {
     if (catalogRequestedRef.current) return;
@@ -881,15 +927,19 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         if (d.categories.some((c) => c.toLowerCase() === canonical.toLowerCase())) return d;
         return { ...d, categories: [...d.categories, canonical] };
       });
-      addCatalogCategoryExtra(canonical);
+      if (!isCreatorCatalog) addCatalogCategoryExtra(canonical);
     },
-    [categorySelectOptions]
+    [categorySelectOptions, isCreatorCatalog]
   );
 
-  const removeDraftCategory = useCallback((label: string) => {
-    const low = label.toLowerCase();
-    setDraft((d) => (d ? { ...d, categories: d.categories.filter((c) => c.toLowerCase() !== low) } : d));
-  }, []);
+  const removeDraftCategory = useCallback(
+    (label: string) => {
+      const low = label.toLowerCase();
+      setDraft((d) => (d ? { ...d, categories: d.categories.filter((c) => c.toLowerCase() !== low) } : d));
+      if (isCreatorCatalog) removeCatalogCategoryExtra(label);
+    },
+    [isCreatorCatalog]
+  );
 
   const addDraftSkill = useCallback(
     (raw: string) => {
@@ -901,15 +951,19 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         if (d.skills.some((s) => s.toLowerCase() === canonical.toLowerCase())) return d;
         return { ...d, skills: [...d.skills, canonical] };
       });
-      addCatalogSkillExtra(canonical);
+      if (!isCreatorCatalog) addCatalogSkillExtra(canonical);
     },
-    [skillSelectOptions]
+    [skillSelectOptions, isCreatorCatalog]
   );
 
-  const removeDraftSkill = useCallback((label: string) => {
-    const low = label.toLowerCase();
-    setDraft((d) => (d ? { ...d, skills: d.skills.filter((s) => s.toLowerCase() !== low) } : d));
-  }, []);
+  const removeDraftSkill = useCallback(
+    (label: string) => {
+      const low = label.toLowerCase();
+      setDraft((d) => (d ? { ...d, skills: d.skills.filter((s) => s.toLowerCase() !== low) } : d));
+      if (isCreatorCatalog) removeCatalogSkillExtra(label);
+    },
+    [isCreatorCatalog]
+  );
 
   const updateModule = (mi: number, patch: Partial<Module>) => {
     setDraft((d) => {
@@ -1506,6 +1560,23 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     onDraftDirtyChange?.(isDirty);
     return () => onDraftDirtyChange?.(false);
   }, [isDirty, onDraftDirtyChange]);
+
+  /**
+   * Bulk updates (Taxonomy “remove/rename everywhere”, etc.) refresh `publishedList` from Firestore while the
+   * catalog editor `draft` can stay stale until a full page reload. Re-bind the selected course when there are no
+   * unsaved local edits so categories/skills match the server immediately.
+   */
+  useEffect(() => {
+    if (selector === '' || selector === '__new__') return;
+    const fresh = publishedList.find((c) => c.id === selector);
+    if (!fresh || !draft || draft.id !== selector) return;
+    if (isDirty) return;
+    const keyed = ensureCourseLessonRowKeys(normalizeCourseTaxonomy(deepClone(fresh)));
+    const nextBaseline = draftJsonForBaseline(keyed);
+    if (nextBaseline === draftJsonForBaseline(draft)) return;
+    setDraft(keyed);
+    setBaselineJson(nextBaseline);
+  }, [publishedList, selector, draft, isDirty]);
 
   const onCourseSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const id = e.target.value;
@@ -2482,7 +2553,20 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   >
                     <ul className="list-disc space-y-1.5 pl-4 text-[var(--text-muted)] marker:text-orange-500/70 sm:space-y-1">
                       <li>At least one category required.</li>
-                      <li>Custom categories appear in library filters after save or when you leave these fields.</li>
+                      {isCreatorCatalog ? (
+                        <>
+                          <li>
+                            Removing a category chip also drops it from your add-from-list suggestions when it is not
+                            used on your other drafts or the live catalog.
+                          </li>
+                          <li>
+                            “Add category from list” includes labels from the live published catalog and your drafts, not
+                            only this browser’s saved list.
+                          </li>
+                        </>
+                      ) : (
+                        <li>Custom categories appear in library filters after save or when you leave these fields.</li>
+                      )}
                     </ul>
                   </div>
                 </span>

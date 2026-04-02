@@ -878,6 +878,7 @@ function AddPathBranchModal({
   contextHint,
   mode = 'add',
   addPreset,
+  topLevelOutlineAdd = false,
   allowSectionDivider = false,
   replaceSource = null,
 }: {
@@ -890,6 +891,8 @@ function AddPathBranchModal({
   mode?: 'add' | 'changeType';
   /** When `mode === 'add'`, skip the kind picker and open the matching step. */
   addPreset?: 'label' | 'course' | 'link' | 'divider';
+  /** Top-level outline: section labels only — default to label step; Back from label closes (no course/link kind picker). */
+  topLevelOutlineAdd?: boolean;
   /** Section divider rows only make sense under a top-level section, not at the root list. */
   allowSectionDivider?: boolean;
   /** When changing an existing row’s type: keep id, visibility, and children when allowed. */
@@ -921,7 +924,7 @@ function AddPathBranchModal({
         setLinkHrefInput(replaceSource.href);
       }
     } else {
-      if (addPreset === 'label') {
+      if (addPreset === 'label' || (topLevelOutlineAdd && addPreset == null)) {
         setStep('label');
       } else if (addPreset === 'divider') {
         setStep('divider');
@@ -934,7 +937,7 @@ function AddPathBranchModal({
       }
       setLessonCourse(null);
     }
-  }, [open, mode, catalogCourses, addPreset, allowSectionDivider, replaceSource]);
+  }, [open, mode, catalogCourses, addPreset, allowSectionDivider, replaceSource, topLevelOutlineAdd]);
 
   useDialogKeyboard({ open, onClose });
 
@@ -1092,8 +1095,13 @@ function AddPathBranchModal({
                   setStep('kind');
                   return;
                 }
-                if (step === 'label' || step === 'divider') setStep('kind');
-                else if (step === 'linkForm') setStep('kind');
+                if (step === 'label' || step === 'divider') {
+                  if (mode === 'add' && topLevelOutlineAdd) {
+                    onClose();
+                    return;
+                  }
+                  setStep('kind');
+                } else if (step === 'linkForm') setStep('kind');
                 else if (step === 'lessonPick') {
                   setLessonCourse(null);
                   setStep('lessonCourse');
@@ -1486,9 +1494,9 @@ function PathBranchInsertSlot({
   persistVisibleOnMd?: boolean;
 }) {
   const atTopLevel = parentId == null;
-  const label = atTopLevel ? 'Add top-level branch here' : 'Add branch here';
+  const label = atTopLevel ? 'Add top-level section here' : 'Add branch here';
   const title = atTopLevel
-    ? 'Adds a new top-level row in the outline (a section with its own list).'
+    ? 'Adds a new top-level section (label). Add courses, links, or dividers inside the section afterward.'
     : 'Adds a row inside this section at this position among its items.';
   const pad =
     depth > 0 ? ({ paddingLeft: `${Math.min(depth, 8) * 0.75}rem` } as const) : undefined;
@@ -3051,7 +3059,9 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                   <div className="rounded-xl border border-dashed border-orange-500/35 bg-orange-500/[0.07] px-4 py-6 sm:px-6">
                     <p className="text-center text-sm font-semibold text-[var(--text-primary)]">Start your outline</p>
                     <p className="mt-2 text-center text-xs leading-relaxed text-[var(--text-muted)]">
-                      Add a section label, a course, or a link. You can reorder and refine anytime.
+                      Top-level rows are <strong className="text-[var(--text-secondary)]">sections</strong> (a label
+                      only). After you add one, use <strong className="text-[var(--text-secondary)]">Add branch here</strong>{' '}
+                      inside it to attach courses, lessons, links, or dividers.
                     </p>
                     <div className="mt-4 flex flex-col gap-2">
                       <button
@@ -3062,48 +3072,17 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                       >
                         <span className="flex w-full items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
                           <Type size={18} className="shrink-0 text-orange-500" aria-hidden />
-                          Text label
-                        </span>
-                        <span className="pl-[1.625rem] text-xs text-[var(--text-muted)]">Section or topic heading</span>
-                      </button>
-                      <button
-                        type="button"
-                        disabled={
-                          (pathMindmapLoading && pathSelector !== '__new__') || publishedList.length === 0
-                        }
-                        onClick={() => setBranchModal({ kind: 'add', parentId: null, preset: 'course' })}
-                        className="flex min-h-12 w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-left transition-colors hover:border-orange-500/40 hover:bg-[var(--hover-bg)] disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        <span className="flex w-full items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
-                          <GraduationCap size={18} className="shrink-0 text-blue-500" aria-hidden />
-                          Whole course
+                          Section label
                         </span>
                         <span className="pl-[1.625rem] text-xs text-[var(--text-muted)]">
-                          {publishedList.length === 0
-                            ? 'Publish courses in Catalog first'
-                            : 'Link a course from the catalog'}
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!!pathMindmapLoading && pathSelector !== '__new__'}
-                        onClick={() => setBranchModal({ kind: 'add', parentId: null, preset: 'link' })}
-                        className="flex min-h-12 w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-left transition-colors hover:border-orange-500/40 hover:bg-[var(--hover-bg)] disabled:opacity-40"
-                      >
-                        <span className="flex w-full items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
-                          <Link2 size={18} className="shrink-0 text-violet-500" aria-hidden />
-                          Web link
-                        </span>
-                        <span className="pl-[1.625rem] text-xs text-[var(--text-muted)]">
-                          Blog, article, or any page — opens in a new tab
+                          Topic or module heading for this block of the path
                         </span>
                       </button>
                     </div>
                     <p className="mt-4 text-center text-[11px] leading-relaxed text-[var(--text-muted)]">
-                      After the first row, use the dashed controls between rows:{' '}
-                      <strong className="text-[var(--text-secondary)]">Add top-level branch here</strong> on the main outline, or{' '}
-                      <strong className="text-[var(--text-secondary)]">Add branch here</strong> inside a section—for other types
-                      (divider, lesson, etc.).
+                      More top-level sections: <strong className="text-[var(--text-secondary)]">Add top-level section here</strong>{' '}
+                      between rows. Nested content always uses <strong className="text-[var(--text-secondary)]">Add branch here</strong>{' '}
+                      inside a section.
                     </p>
                   </div>
                 ) : (
@@ -3117,7 +3096,11 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                       onToggleCollapse={toggleBranchCollapse}
                       onBranchRowFocus={focusBranchRow}
                       onInsertBranchAt={(pid, insertIndex) =>
-                        setBranchModal({ kind: 'add', parentId: pid, insertIndex })
+                        setBranchModal(
+                          pid == null
+                            ? { kind: 'add', parentId: null, insertIndex, preset: 'label' }
+                            : { kind: 'add', parentId: pid, insertIndex }
+                        )
                       }
                       onRemove={handleRemoveBranch}
                       onCopyBranch={handleDuplicateBranch}
@@ -3171,6 +3154,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
             catalogCourses={publishedList}
             contextHint={branchModalContextHint}
             addPreset={branchModal.kind === 'add' ? branchModal.preset : undefined}
+            topLevelOutlineAdd={branchModal.kind === 'add' && branchModal.parentId == null}
             allowSectionDivider={
               (branchModal.kind === 'add' && branchModal.parentId != null) ||
               (branchModal.kind === 'changeType' &&

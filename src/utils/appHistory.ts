@@ -1,6 +1,7 @@
 /** Serialized app location for History API + hash URLs (mobile-friendly, shareable). */
 
 import type { Course, Lesson } from '../data/courses';
+import { pickCourseRowForHistoryPayload, type CatalogCourseRow } from './learnerCatalogMerge';
 
 export const APP_HISTORY_KEY = 'skillstreamApp' as const;
 
@@ -61,6 +62,11 @@ export interface AppHistoryPayload {
    * when a published course shares the same `courseId`.
    */
   adminPreviewCourseOwnerUid?: string | null;
+  /**
+   * When a published course and the signed-in user’s `creatorCourses` draft share the same `courseId`,
+   * history + `#/course/.../overview/draft` disambiguate so reload opens the draft (taxonomy, modules, etc.).
+   */
+  courseFromCreatorDraft?: boolean | null;
 }
 
 const SIMPLE_VIEWS: AppHistoryView[] = [
@@ -93,6 +99,7 @@ export function payloadToHash(payload: AppHistoryPayload): string {
     adminTab,
     learningPathId,
     adminPreviewCourseOwnerUid,
+    courseFromCreatorDraft,
   } = payload;
 
   if (view === 'home') return '#/';
@@ -108,7 +115,11 @@ export function payloadToHash(payload: AppHistoryPayload): string {
       adminPreviewCourseOwnerUid && adminPreviewCourseOwnerUid.length > 0
         ? `/preview/${encodeURIComponent(adminPreviewCourseOwnerUid)}`
         : '';
-    let out = `#/course/${encodeURIComponent(courseId)}/overview${preview}`;
+    const draftSeg =
+      courseFromCreatorDraft === true && !preview
+        ? '/draft'
+        : '';
+    let out = `#/course/${encodeURIComponent(courseId)}/overview${preview}${draftSeg}`;
     if (learningPathId && learningPathId.length > 0) {
       out += `/path/${encodeURIComponent(learningPathId)}`;
     }
@@ -118,6 +129,8 @@ export function payloadToHash(payload: AppHistoryPayload): string {
     let base = `#/course/${encodeURIComponent(courseId)}/player`;
     if (adminPreviewCourseOwnerUid && adminPreviewCourseOwnerUid.length > 0) {
       base += `/preview/${encodeURIComponent(adminPreviewCourseOwnerUid)}`;
+    } else if (courseFromCreatorDraft === true) {
+      base += '/draft';
     }
     if (learningPathId && learningPathId.length > 0) {
       const withPath = `${base}/path/${encodeURIComponent(learningPathId)}`;
@@ -180,10 +193,13 @@ export function parseHashToPayload(hash: string): AppHistoryPayload | null {
         adminPreviewCourseOwnerUid = decodeURIComponent(segments[idx + 1]!);
         idx += 2;
       }
+      const courseFromCreatorDraftFlag = segments[idx] === 'draft';
+      if (courseFromCreatorDraftFlag) idx += 1;
       const base: AppHistoryPayload = {
         v: 1,
         view: 'overview',
         courseId,
+        courseFromCreatorDraft: courseFromCreatorDraftFlag,
         ...(adminPreviewCourseOwnerUid ? { adminPreviewCourseOwnerUid } : {}),
       };
       if (segments.length === idx) {
@@ -204,10 +220,13 @@ export function parseHashToPayload(hash: string): AppHistoryPayload | null {
         adminPreviewCourseOwnerUid = decodeURIComponent(segments[i + 1]!);
         i += 2;
       }
+      const courseFromCreatorDraftFlag = !adminPreviewCourseOwnerUid && segments[i] === 'draft';
+      if (courseFromCreatorDraftFlag) i += 1;
       const withPreview = (): AppHistoryPayload => ({
         v: 1,
         view: 'player',
         courseId,
+        courseFromCreatorDraft: courseFromCreatorDraftFlag,
         ...(adminPreviewCourseOwnerUid ? { adminPreviewCourseOwnerUid } : {}),
       });
       if (segments.length === i) {
@@ -320,6 +339,11 @@ export function shouldPushCourseOverviewBeforePlayer(
   }
   if ((hashPayload.adminPreviewCourseOwnerUid ?? null) !== (overviewPayload.adminPreviewCourseOwnerUid ?? null))
     return true;
+  if (
+    (hashPayload.courseFromCreatorDraft === true) !== (overviewPayload.courseFromCreatorDraft === true)
+  ) {
+    return true;
+  }
 
   if (historyStatePayload != null) {
     const s = historyStatePayload;
@@ -331,7 +355,8 @@ export function shouldPushCourseOverviewBeforePlayer(
         (overviewPayload.learningPathFromCreatorDraft === true) &&
       (s.learningPathAdminPreviewOwnerUid ?? null) ===
         (overviewPayload.learningPathAdminPreviewOwnerUid ?? null) &&
-      (s.adminPreviewCourseOwnerUid ?? null) === (overviewPayload.adminPreviewCourseOwnerUid ?? null);
+      (s.adminPreviewCourseOwnerUid ?? null) === (overviewPayload.adminPreviewCourseOwnerUid ?? null) &&
+      (s.courseFromCreatorDraft === true) === (overviewPayload.courseFromCreatorDraft === true);
     if (!stackIsThisOverview) return true;
   } else {
     // Hash can show overview while the stack top has no payload (initial visit, or entry without our key).
@@ -411,19 +436,28 @@ export function historyPayloadsEqual(a: AppHistoryPayload | null, b: AppHistoryP
   if ((a.learningPathFromCreatorDraft === true) !== (b.learningPathFromCreatorDraft === true)) return false;
   if ((a.learningPathAdminPreviewOwnerUid ?? null) !== (b.learningPathAdminPreviewOwnerUid ?? null)) return false;
   if ((a.adminPreviewCourseOwnerUid ?? null) !== (b.adminPreviewCourseOwnerUid ?? null)) return false;
+  if ((a.courseFromCreatorDraft === true) !== (b.courseFromCreatorDraft === true)) return false;
   return true;
 }
 
 export function resolvePayloadForCourses(
   payload: AppHistoryPayload,
-  courses: Course[],
+  catalogRows: readonly CatalogCourseRow[],
   findLessonById: (course: Course, lessonId: string) => Lesson | undefined
 ): AppHistoryPayload {
   const next: AppHistoryPayload = { ...payload, v: 1 };
   const needsCourse = next.view === 'overview' || next.view === 'player';
   if (!needsCourse) return next;
 
-  const course = next.courseId ? courses.find((c) => c.id === next.courseId) : undefined;
+  const row = next.courseId
+    ? pickCourseRowForHistoryPayload(
+        catalogRows,
+        next.courseId,
+        next.adminPreviewCourseOwnerUid,
+        next.courseFromCreatorDraft
+      )
+    : undefined;
+  const course = row?.course;
   if (!course) {
     return { v: 1, view: 'catalog', learningPathId: payload.learningPathId };
   }
