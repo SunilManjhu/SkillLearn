@@ -8,7 +8,7 @@ import { LearnerPathMindmapPanel } from './components/LearnerPathMindmapPanel';
 import { CourseLibraryCategoryFilter } from './components/CourseLibraryCategoryFilter';
 import { ProfilePage } from './components/ProfilePage';
 import { Certificate } from './components/Certificate';
-import { filterPathCourseIdsBySavedMindmap } from './data/pathMindmap';
+import { filterPathCourseIdsBySavedMindmap, type MindmapTreeNode } from './data/pathMindmap';
 import { useBodyScrollLock } from './hooks/useBodyScrollLock';
 import { usePathMindmapOutlineChildren } from './hooks/usePathMindmapOutlineChildren';
 import { useDialogKeyboard } from './hooks/useDialogKeyboard';
@@ -47,6 +47,7 @@ import {
   writeMergedCatalogLearningPaths,
   writeResolvedCreatorCatalog,
 } from './utils/creatorCatalogSession';
+import { peekPublishedPathOutlines, writePublishedPathOutlines } from './utils/pathOutlineSessionCache';
 import { enrollUserInCourse, fetchEnrolledCourseIds } from './utils/enrollmentsFirestore';
 import {
   fetchActiveAlertsForCourses,
@@ -152,7 +153,8 @@ import {
   type LibraryFilterState,
 } from './utils/courseTaxonomy';
 import { PhoneMockupAdRail } from './components/PhoneMockupAdRail';
-import { DEFAULT_HERO_PHONE_AD_SLIDES, type PhoneMockupAdSlide } from './utils/heroPhoneAdsShared';
+import type { PhoneMockupAdSlide } from './utils/heroPhoneAdsShared';
+import { readPublicHeroPhoneAdsCache } from './utils/heroPhoneAdsPublicCache';
 import { subscribeHeroPhoneAdsForPublic } from './utils/heroPhoneAdsFirestore';
 
 /** Bump when replacing `src/images/Mobile.png` so cached clients load the new file. */
@@ -500,6 +502,17 @@ export default function App() {
   const [catalogPathRows, setCatalogPathRows] = useState<CatalogLearningPathRow[]>(() =>
     peekMergedCatalogLearningPaths(readCachedAuthProfile()?.uid ?? null) ?? []
   );
+  /** Parsed `pathMindmap` children from the same list queries as path metadata (avoids a second `getDoc` per path). */
+  const [pathOutlinePrefetchPublished, setPathOutlinePrefetchPublished] = useState<
+    Record<string, MindmapTreeNode[]>
+  >(() => peekPublishedPathOutlines(readCachedAuthProfile()?.uid ?? null) ?? {});
+  const [pathOutlinePrefetchCreator, setPathOutlinePrefetchCreator] = useState<
+    Record<string, MindmapTreeNode[]>
+  >(() => {
+    const uid = readCachedAuthProfile()?.uid ?? null;
+    if (!uid) return {};
+    return peekResolvedCreatorCatalog(uid)?.pathOutlineChildrenByPathId ?? {};
+  });
   /** True once we have a merged paths snapshot (session) or after first Firestore load. */
   const [learningPathsFetched, setLearningPathsFetched] = useState(
     () => peekMergedCatalogLearningPaths(readCachedAuthProfile()?.uid ?? null) !== null
@@ -537,6 +550,18 @@ export default function App() {
     [activeCatalogPathRow]
   );
 
+  const pathMindmapPrefetchedChildren = useMemo((): MindmapTreeNode[] | undefined => {
+    if (selectedLearningPathId == null) return undefined;
+    const useCreator = activeCatalogPathRow?.fromCreatorDraft === true;
+    const map = useCreator ? pathOutlinePrefetchCreator : pathOutlinePrefetchPublished;
+    return map[selectedLearningPathId];
+  }, [
+    selectedLearningPathId,
+    activeCatalogPathRow?.fromCreatorDraft,
+    pathOutlinePrefetchCreator,
+    pathOutlinePrefetchPublished,
+  ]);
+
   const { loading: pathMindmapOutlineLoading, children: pathMindmapOutlineChildren } =
     usePathMindmapOutlineChildren(selectedLearningPathId, {
       creatorDraftPathIds: catalogPrivatePathIds,
@@ -544,6 +569,7 @@ export default function App() {
         selectedLearningPathId != null
           ? (activeCatalogPathRow?.fromCreatorDraft ?? false)
           : undefined,
+      prefetchedOutlineChildren: pathMindmapPrefetchedChildren,
     });
   const [libraryFilters, setLibraryFilters] = useState<LibraryFilterState>({
     categoryTags: [],
@@ -559,8 +585,9 @@ export default function App() {
   const [skillPresets, setSkillPresets] = useState<CatalogSkillPresetsState>(() =>
     normalizeCatalogSkillPresets(DEFAULT_CATALOG_SKILL_PRESETS)
   );
-  const [heroPhoneAdSlides, setHeroPhoneAdSlides] =
-    useState<PhoneMockupAdSlide[]>(DEFAULT_HERO_PHONE_AD_SLIDES);
+  const [heroPhoneAdSlides, setHeroPhoneAdSlides] = useState<PhoneMockupAdSlide[]>(
+    () => readPublicHeroPhoneAdsCache() ?? []
+  );
   const [focusedCourseIndex, setFocusedCourseIndex] = useState(-1);
   const [focusedFooterIndex, setFocusedFooterIndex] = useState(-1);
   const [user, setUser] = useState<User | null>(null);
@@ -1007,14 +1034,18 @@ export default function App() {
         privateFirestoreUid = uid;
       }
     }
+    const emptyCreatorPathsLoad = {
+      paths: [] as LearningPath[],
+      outlineChildrenByPathId: {} as Record<string, MindmapTreeNode[]>,
+    };
     /** Load creator drafts in parallel with published; rules use `ownerUid`, not `users.role`. */
-    const [published, pubPaths, draftCourses, draftPaths] = await Promise.all([
+    const [published, pubLoad, draftCourses, draftPathsLoad] = await Promise.all([
       resolveCatalogCourses(),
       loadLearningPathsFromFirestore(),
       privateFirestoreUid ? loadCreatorCoursesForOwner(privateFirestoreUid) : Promise.resolve([] as Course[]),
       privateFirestoreUid
         ? loadCreatorLearningPathsForOwner(privateFirestoreUid)
-        : Promise.resolve([] as LearningPath[]),
+        : Promise.resolve(emptyCreatorPathsLoad),
     ]);
     const includePrivate =
       !!uid && (!adminAccessResolved || isCreatorUser || isAdminUser);
@@ -1023,25 +1054,34 @@ export default function App() {
         course,
         fromCreatorDraft: false,
       }));
-      const pubRows = pubPaths.map((p) => ({ ...p, fromCreatorDraft: false as const }));
+      const pubRows = pubLoad.paths.map((p) => ({ ...p, fromCreatorDraft: false as const }));
       writeMergedCatalogLearningPaths(uid, pubRows);
       return {
         courseRows,
         paths: pubRows,
         privatePathIds: new Set<string>(),
+        outlinePublished: pubLoad.outlineChildrenByPathId,
+        outlineCreator: {} as Record<string, MindmapTreeNode[]>,
       };
     }
     const courseRows = mergeOwnerPreviewCourseRows(published, draftCourses);
-    const mergedPaths = mergeOwnerPreviewPathRows(pubPaths, draftPaths);
-    const privatePathIds = new Set(draftPaths.map((p) => p.id));
+    const mergedPaths = mergeOwnerPreviewPathRows(pubLoad.paths, draftPathsLoad.paths);
+    const privatePathIds = new Set(draftPathsLoad.paths.map((p) => p.id));
     if (privateFirestoreUid) {
-      writeResolvedCreatorCatalog(privateFirestoreUid, draftCourses, draftPaths);
+      writeResolvedCreatorCatalog(
+        privateFirestoreUid,
+        draftCourses,
+        draftPathsLoad.paths,
+        draftPathsLoad.outlineChildrenByPathId
+      );
     }
     writeMergedCatalogLearningPaths(uid, mergedPaths);
     return {
       courseRows,
       paths: mergedPaths,
       privatePathIds,
+      outlinePublished: pubLoad.outlineChildrenByPathId,
+      outlineCreator: draftPathsLoad.outlineChildrenByPathId,
     };
   }, [user?.uid, adminAccessResolved, isCreatorUser, isAdminUser]);
 
@@ -1069,22 +1109,29 @@ export default function App() {
         includePrivate && privateFirestoreUid
           ? loadCreatorCoursesForOwner(privateFirestoreUid)
           : Promise.resolve([] as Course[]);
+      const emptyCreatorPathsLoad = {
+        paths: [] as LearningPath[],
+        outlineChildrenByPathId: {} as Record<string, MindmapTreeNode[]>,
+      };
       const draftPathsP =
         includePrivate && privateFirestoreUid
           ? loadCreatorLearningPathsForOwner(privateFirestoreUid)
-          : Promise.resolve([] as LearningPath[]);
+          : Promise.resolve(emptyCreatorPathsLoad);
 
-      const [published, pubPaths] = await Promise.all([publishedP, pathsP]);
+      const [published, pubLoad] = await Promise.all([publishedP, pathsP]);
       if (cancelled) return;
 
       if (!includePrivate) {
         setCatalogCourseRows(
           published.map((course) => ({ course, fromCreatorDraft: false as const }))
         );
-        const pubOnlyRows = pubPaths.map((p) => ({ ...p, fromCreatorDraft: false as const }));
+        const pubOnlyRows = pubLoad.paths.map((p) => ({ ...p, fromCreatorDraft: false as const }));
         setCatalogPathRows(pubOnlyRows);
         setCatalogPrivatePathIds(new Set());
         writeMergedCatalogLearningPaths(uid, pubOnlyRows);
+        setPathOutlinePrefetchPublished(pubLoad.outlineChildrenByPathId);
+        writePublishedPathOutlines(uid, pubLoad.outlineChildrenByPathId);
+        setPathOutlinePrefetchCreator({});
         setLiveCatalogHydrated(true);
         setLearningPathsFetched(true);
         return;
@@ -1095,23 +1142,32 @@ export default function App() {
       const draftFirst = cached?.courses ?? [];
       const draftPathsFirst = cached?.paths ?? [];
       setCatalogCourseRows(mergeOwnerPreviewCourseRows(published, draftFirst));
-      setCatalogPathRows(mergeOwnerPreviewPathRows(pubPaths, draftPathsFirst));
+      setCatalogPathRows(mergeOwnerPreviewPathRows(pubLoad.paths, draftPathsFirst));
       setCatalogPrivatePathIds(new Set(draftPathsFirst.map((p) => p.id)));
-      writeMergedCatalogLearningPaths(uid, mergeOwnerPreviewPathRows(pubPaths, draftPathsFirst));
+      writeMergedCatalogLearningPaths(uid, mergeOwnerPreviewPathRows(pubLoad.paths, draftPathsFirst));
+      setPathOutlinePrefetchPublished(pubLoad.outlineChildrenByPathId);
+      writePublishedPathOutlines(uid, pubLoad.outlineChildrenByPathId);
+      setPathOutlinePrefetchCreator(cached?.pathOutlineChildrenByPathId ?? {});
       setLiveCatalogHydrated(true);
       setLearningPathsFetched(true);
 
-      const [draftCourses, draftPaths] = await Promise.all([draftCoursesP, draftPathsP]);
+      const [draftCourses, draftPathsLoad] = await Promise.all([draftCoursesP, draftPathsP]);
       if (cancelled) return;
 
       if (privateFirestoreUid) {
-        writeResolvedCreatorCatalog(privateFirestoreUid, draftCourses, draftPaths);
+        writeResolvedCreatorCatalog(
+          privateFirestoreUid,
+          draftCourses,
+          draftPathsLoad.paths,
+          draftPathsLoad.outlineChildrenByPathId
+        );
       }
-      const mergedPathsLive = mergeOwnerPreviewPathRows(pubPaths, draftPaths);
+      const mergedPathsLive = mergeOwnerPreviewPathRows(pubLoad.paths, draftPathsLoad.paths);
       writeMergedCatalogLearningPaths(uid, mergedPathsLive);
       setCatalogCourseRows(mergeOwnerPreviewCourseRows(published, draftCourses));
       setCatalogPathRows(mergedPathsLive);
-      setCatalogPrivatePathIds(new Set(draftPaths.map((p) => p.id)));
+      setCatalogPrivatePathIds(new Set(draftPathsLoad.paths.map((p) => p.id)));
+      setPathOutlinePrefetchCreator(draftPathsLoad.outlineChildrenByPathId);
     })();
     return () => {
       cancelled = true;
@@ -1129,9 +1185,12 @@ export default function App() {
     setCatalogCourseRows(snap.courseRows);
     setCatalogPathRows(snap.paths);
     setCatalogPrivatePathIds(snap.privatePathIds);
+    setPathOutlinePrefetchPublished(snap.outlinePublished);
+    writePublishedPathOutlines(user?.uid ?? null, snap.outlinePublished);
+    setPathOutlinePrefetchCreator(snap.outlineCreator);
     setLiveCatalogHydrated(true);
     setLearningPathsFetched(true);
-  }, [fetchCatalogSnapshot]);
+  }, [fetchCatalogSnapshot, user?.uid]);
 
   /**
    * Re-bind overview/player to the live catalog when it loads (or refreshes).
@@ -1290,6 +1349,10 @@ export default function App() {
   }, [user?.uid]);
 
   useEffect(() => {
+    /** Avoid guest welcome + bell teardown while Firebase auth is still resolving `user`. */
+    if (!isAuthReady) {
+      return;
+    }
     if (!user?.uid) {
       const { read, dismissed } = readGuestWelcomePersistedState();
       if (dismissed) {
@@ -1311,6 +1374,12 @@ export default function App() {
     }
     let cancelled = false;
     const uid = user.uid;
+    /** Avoid showing another user’s bell rows (or a pre-snapshot merge) until `reportNotices` delivers its first snapshot. Keep certs + admin moderation strip. */
+    setNotifications((prev) =>
+      prev.filter(
+        (n) => n.kind === 'certificate' || n.id.startsWith('admin-moderation-')
+      )
+    );
     const accountCreatedAtMs = (() => {
       const raw = user.metadata.creationTime;
       if (!raw) return null;
@@ -1370,7 +1439,6 @@ export default function App() {
     };
 
     const reportNoticesQ = query(collection(db, 'reportNotices'), where('forUserId', '==', uid), limit(50));
-    void applyMergedAlerts([]);
     const unsub = onSnapshot(
       reportNoticesQ,
       (snap) => {
@@ -1390,7 +1458,7 @@ export default function App() {
       cancelled = true;
       unsub();
     };
-  }, [user?.uid, user?.metadata.creationTime]);
+  }, [isAuthReady, user?.uid, user?.metadata.creationTime]);
 
   useEffect(() => {
     if (!user?.uid || !isAdminUser) {

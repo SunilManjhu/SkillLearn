@@ -23,6 +23,77 @@ export interface NavbarNotification {
 
 const EMPTY_PRIVATE_PATH_IDS: ReadonlySet<string> = new Set();
 
+type NavbarAccountUser = FirebaseUser | AuthProfileSnapshot;
+
+function accountInitials(u: NavbarAccountUser): string {
+  const d = u.displayName?.trim();
+  if (d) {
+    const parts = d.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      const a = parts[0]![0];
+      const b = parts[1]![0];
+      if (a && b) return (a + b).toUpperCase();
+    }
+    if (d.length >= 2) return d.slice(0, 2).toUpperCase();
+    if (d.length === 1) return d.toUpperCase();
+  }
+  const em = u.email?.trim();
+  if (em) {
+    const local = em.split('@')[0] ?? '';
+    if (local.length >= 2) return local.slice(0, 2).toUpperCase();
+    if (local.length === 1) return local.toUpperCase();
+  }
+  if (u.uid.length >= 2) return u.uid.slice(0, 2).toUpperCase();
+  return '?';
+}
+
+function accountMenuAriaLabel(u: NavbarAccountUser): string {
+  const n = u.displayName?.trim();
+  if (n) return `Account menu, ${n}`;
+  const e = u.email?.trim();
+  if (e) return `Account menu, ${e}`;
+  return 'Account menu';
+}
+
+function NavProfileAvatar({ user }: { user: NavbarAccountUser }) {
+  const [photoBroken, setPhotoBroken] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
+  useEffect(() => {
+    setPhotoBroken(false);
+    setImageLoaded(false);
+  }, [user.uid, user.photoURL]);
+
+  const url = user.photoURL?.trim();
+  const tryPhoto = Boolean(url && !photoBroken);
+
+  const shellClass = tryPhoto
+    ? imageLoaded
+      ? 'bg-[var(--hover-bg)]'
+      : 'bg-[var(--hover-bg)] animate-pulse'
+    : 'bg-gradient-to-br from-orange-500 to-pink-500 text-white text-xs font-bold';
+
+  return (
+    <span
+      className={`relative flex h-full w-full min-h-0 min-w-0 items-center justify-center overflow-hidden ${shellClass}`}
+    >
+      {tryPhoto ? (
+        <img
+          src={url}
+          alt=""
+          className={`h-full w-full object-cover ${imageLoaded ? '' : 'opacity-0'}`}
+          referrerPolicy="no-referrer"
+          onLoad={() => setImageLoaded(true)}
+          onError={() => setPhotoBroken(true)}
+        />
+      ) : (
+        <span className="select-none truncate px-0.5 text-[0.65rem] leading-none tracking-tight" aria-hidden>
+          {accountInitials(user)}
+        </span>
+      )}
+    </span>
+  );
+}
+
 interface NavbarProps {
   onNavigate: (
     view: 'home' | 'catalog' | 'contact' | 'profile' | 'admin' | 'creator',
@@ -581,14 +652,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                   setMobileMenuOpen(false);
                   setOpenDropdown(openDropdown === 'profile' ? null : 'profile');
                 }}
-                className="h-8 w-8 shrink-0 rounded-full bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center text-white text-xs font-bold cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-500 overflow-hidden"
+                aria-label={accountMenuAriaLabel(user)}
+                className="h-8 w-8 shrink-0 cursor-pointer rounded-full p-0 text-white focus:outline-none focus:ring-2 focus:ring-orange-500 overflow-hidden flex items-center justify-center"
               >
-                <img 
-                  src={user.photoURL || `https://picsum.photos/seed/${user.uid}/100/100`} 
-                  alt="User" 
-                  className="w-full h-full object-cover"
-                  referrerPolicy="no-referrer"
-                />
+                <NavProfileAvatar user={user} />
               </button>
 
               {openDropdown === 'profile' && (

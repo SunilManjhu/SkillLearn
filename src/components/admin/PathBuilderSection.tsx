@@ -2248,8 +2248,8 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     setPathsLoading(true);
     const list =
       pathPersistence?.kind === 'creator'
-        ? await loadCreatorLearningPathsForOwner(pathPersistence.ownerUid)
-        : await loadLearningPathsFromFirestore();
+        ? (await loadCreatorLearningPathsForOwner(pathPersistence.ownerUid)).paths
+        : (await loadLearningPathsFromFirestore()).paths;
     setPaths(list);
     setPathsLoading(false);
     return list;

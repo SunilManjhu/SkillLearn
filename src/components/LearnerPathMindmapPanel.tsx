@@ -50,7 +50,7 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
   mindmapOutlineLoading: loading,
 }) => {
   const [storageProgressTick, setStorageProgressTick] = useState(0);
-  /** Which top-level block is open; `null` = all collapsed (accordion). Restored from sessionStorage per path. */
+  /** Which top-level block is open; `null` = all collapsed (accordion). Restored from localStorage per path. */
   const [expandedPathBlockKey, setExpandedPathBlockKey] = useState<string | null>(null);
 
   const filteredBranchesForViewer = useMemo(
@@ -100,10 +100,21 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
     [pathId]
   );
 
+  /**
+   * Restore / validate expanded section only after mindmap data is stable. While `branches === null` or
+   * `loading`, `courseRowBlocks` is built from provisional data and keys often differ from the saved key —
+   * validating then would clear localStorage and break restore on full page reload.
+   */
   useEffect(() => {
+    if (loading || branches === null) {
+      return;
+    }
     const stored = readPathCourseRowExpandedBlockKey(pathId);
     if (!courseRowBlocks || courseRowBlocks.length === 0) {
       setExpandedPathBlockKey(stored);
+      return;
+    }
+    if (!useCourseRowLayout) {
       return;
     }
     const valid = new Set(
@@ -111,8 +122,17 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
     );
     const next = stored && valid.has(stored) ? stored : null;
     setExpandedPathBlockKey(next);
-    writePathCourseRowExpandedBlockKey(pathId, next);
-  }, [pathId, courseRowBlocks, pathSectionBlockKey]);
+    if (next !== stored) {
+      writePathCourseRowExpandedBlockKey(pathId, next);
+    }
+  }, [
+    pathId,
+    courseRowBlocks,
+    pathSectionBlockKey,
+    useCourseRowLayout,
+    loading,
+    branches,
+  ]);
 
   const isPathSectionExpanded = useCallback(
     (key: string) => expandedPathBlockKey === key,

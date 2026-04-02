@@ -16,7 +16,6 @@ import {
 } from 'lucide-react';
 import { PhoneMockupAdRail } from '../PhoneMockupAdRail';
 import {
-  DEFAULT_HERO_PHONE_AD_SLIDES,
   HERO_AD_IMAGE_FIT_OPTIONS,
   HERO_PHONE_AD_GRADIENT_PRESET_OPTIONS,
   HERO_PHONE_AD_MAX_AUTO_SEC,
@@ -268,7 +267,7 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
   const previewSlides = useMemo(() => {
     const active = draftSlides.filter((s) => s.enabled !== false);
     const mapped = active.map((s) => storedSlideToRailSlide(s, draftDefaultSec));
-    return mapped.length > 0 ? mapped : DEFAULT_HERO_PHONE_AD_SLIDES;
+    return mapped;
   }, [draftSlides, draftDefaultSec]);
 
   const enabledSlideCount = useMemo(

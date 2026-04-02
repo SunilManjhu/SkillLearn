@@ -11,6 +11,11 @@ export type PathMindmapOutlineOptions = {
    * If omitted, falls back to `creatorDraftPathIds?.has(pathId)` for backwards compatibility.
    */
   useCreatorDraftMindmap?: boolean;
+  /**
+   * Outline already parsed from the same Firestore `getDocs` that loaded path metadata — skips an extra `getDoc`.
+   * Omit or `undefined` when unknown (e.g. path not in merged catalog yet); use `[]` when loaded and empty.
+   */
+  prefetchedOutlineChildren?: MindmapTreeNode[];
 };
 
 /**
@@ -28,11 +33,17 @@ export function usePathMindmapOutlineChildren(
   const [children, setChildren] = useState<MindmapTreeNode[] | null>(null);
   const draftSet = options?.creatorDraftPathIds;
   const explicitDraft = options?.useCreatorDraftMindmap;
+  const prefetched = options?.prefetchedOutlineChildren;
 
   useEffect(() => {
     if (!pathId) {
       setLoading(false);
       setChildren(null);
+      return;
+    }
+    if (prefetched !== undefined) {
+      setLoading(false);
+      setChildren(prefetched);
       return;
     }
     const fromCreator =
@@ -51,7 +62,7 @@ export function usePathMindmapOutlineChildren(
     return () => {
       cancelled = true;
     };
-  }, [pathId, draftSet, explicitDraft]);
+  }, [pathId, draftSet, explicitDraft, prefetched]);
 
   return { loading, children };
 }

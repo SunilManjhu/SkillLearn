@@ -1,11 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ExternalLink, Sparkles } from 'lucide-react';
-import {
-  DEFAULT_HERO_PHONE_AD_SLIDES,
-  slideAriaLabel,
-  type PhoneMockupAdBlock,
-  type PhoneMockupAdSlide,
-} from '../utils/heroPhoneAdsShared';
+import { slideAriaLabel, type PhoneMockupAdBlock, type PhoneMockupAdSlide } from '../utils/heroPhoneAdsShared';
 
 export type { PhoneMockupAdSlide } from '../utils/heroPhoneAdsShared';
 
@@ -156,7 +151,7 @@ function SlideProgressTrack({
 export const PhoneMockupAdRail: React.FC<PhoneMockupAdRailProps> = ({
   imageSrc,
   imageAlt,
-  slides = DEFAULT_HERO_PHONE_AD_SLIDES,
+  slides = [],
 }) => {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const slidesRef = useRef(slides);
@@ -437,6 +432,7 @@ export const PhoneMockupAdRail: React.FC<PhoneMockupAdRailProps> = ({
     tapStartRef.current = null;
   };
 
+  const isEmpty = slideCount === 0;
   const showAutoplayUi = slideCount > 1;
   const isTransformCarousel = slideCount > 1 && !useNativeScroller;
 
@@ -513,7 +509,12 @@ export const PhoneMockupAdRail: React.FC<PhoneMockupAdRailProps> = ({
       />
 
       <div className={SCREEN_BOX}>
-        {isTransformCarousel ? (
+        {isEmpty ? (
+          <div
+            className="flex h-full w-full min-h-0 items-center justify-center rounded-xl bg-gradient-to-br from-neutral-950/95 via-neutral-900/95 to-neutral-800/90 ring-1 ring-white/10"
+            aria-label="No promotional slides"
+          />
+        ) : isTransformCarousel ? (
           <div
             ref={scrollerRef}
             role="region"

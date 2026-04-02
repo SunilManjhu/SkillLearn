@@ -1,7 +1,13 @@
-import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
+import {
+  doc,
+  getDoc,
+  onSnapshot,
+  serverTimestamp,
+  setDoc,
+  type DocumentSnapshot,
+} from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import {
-  DEFAULT_HERO_PHONE_AD_SLIDES,
   type HeroAdBlockStored,
   type HeroPhoneAdSlideStored,
   type PhoneMockupAdSlide,
@@ -10,6 +16,7 @@ import {
   isHeroPhoneAdGradientPreset,
   storedSlideToRailSlide,
 } from './heroPhoneAdsShared';
+import { writePublicHeroPhoneAdsCache } from './heroPhoneAdsPublicCache';
 
 const COLLECTION = 'siteSettings';
 export const HERO_PHONE_ADS_DOC_ID = 'heroPhoneAds';
@@ -167,9 +174,9 @@ function parseDocument(
 
 export function resolvedRailSlidesFromDoc(data: Record<string, unknown> | undefined): PhoneMockupAdSlide[] {
   const parsed = parseDocument(data);
-  if (!parsed || !parsed.enabled) return DEFAULT_HERO_PHONE_AD_SLIDES;
+  if (!parsed || !parsed.enabled) return [];
   const activeSlides = parsed.slides.filter((s) => s.enabled !== false);
-  if (activeSlides.length === 0) return DEFAULT_HERO_PHONE_AD_SLIDES;
+  if (activeSlides.length === 0) return [];
   return activeSlides.map((s) => storedSlideToRailSlide(s, parsed.defaultSlideDurationSec));
 }
 
@@ -177,18 +184,32 @@ export function subscribeHeroPhoneAdsForPublic(
   onSlides: (slides: PhoneMockupAdSlide[]) => void,
   onError?: (err: unknown) => void
 ): () => void {
+  const docRef = doc(db, COLLECTION, HERO_PHONE_ADS_DOC_ID);
+
+  const applySnap = (snap: DocumentSnapshot) => {
+    const slides = snap.exists()
+      ? resolvedRailSlidesFromDoc(snap.data() as Record<string, unknown>)
+      : [];
+    writePublicHeroPhoneAdsCache(slides);
+    onSlides(slides);
+  };
+
+  /** One-shot read often returns as fast as or before the first snapshot listener result — reduces empty-state delay. */
+  void getDoc(docRef)
+    .then(applySnap)
+    .catch((e) => {
+      handleFirestoreError(e, OperationType.GET, `${COLLECTION}/${HERO_PHONE_ADS_DOC_ID}`);
+      onError?.(e);
+    });
+
   return onSnapshot(
-    doc(db, COLLECTION, HERO_PHONE_ADS_DOC_ID),
-    (snap) => {
-      const slides = snap.exists()
-        ? resolvedRailSlidesFromDoc(snap.data() as Record<string, unknown>)
-        : DEFAULT_HERO_PHONE_AD_SLIDES;
-      onSlides(slides);
-    },
+    docRef,
+    applySnap,
     (err) => {
       handleFirestoreError(err, OperationType.GET, `${COLLECTION}/${HERO_PHONE_ADS_DOC_ID}`);
       onError?.(err);
-      onSlides(DEFAULT_HERO_PHONE_AD_SLIDES);
+      writePublicHeroPhoneAdsCache([]);
+      onSlides([]);
     }
   );
 }

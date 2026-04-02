@@ -1,11 +1,18 @@
 import type { Course } from '../data/courses';
+import type { MindmapTreeNode } from '../data/pathMindmap';
 import type { LearningPath } from '../data/learningPaths';
 import type { CatalogLearningPathRow } from './learnerCatalogMerge';
+import { validatePathOutlineChildrenByPathId } from './pathOutlineSessionCache';
 
 const CREATOR_KEY_PREFIX = 'skilllearn:resolvedCreatorCatalog:v1:';
 const MERGED_PATHS_KEY = 'skilllearn:lastMergedCatalogPaths:v1';
 
-export type CreatorCatalogBundle = { courses: Course[]; paths: LearningPath[] };
+export type CreatorCatalogBundle = {
+  courses: Course[];
+  paths: LearningPath[];
+  /** Draft path mindmap top-level branches from the same list query as `paths` (session restore on hard refresh). */
+  pathOutlineChildrenByPathId?: Record<string, MindmapTreeNode[]>;
+};
 
 let lastCreatorInMemory: { ownerUid: string } & CreatorCatalogBundle | null = null;
 
@@ -69,7 +76,12 @@ function readCreatorBundleFromSession(ownerUid: string): CreatorCatalogBundle | 
     if (!parsed || typeof parsed !== 'object') return null;
     const o = parsed as Record<string, unknown>;
     if (!validateCoursesJson(o.courses) || !validatePathsJson(o.paths)) return null;
-    return { courses: o.courses, paths: o.paths };
+    let pathOutlineChildrenByPathId: Record<string, MindmapTreeNode[]> | undefined;
+    if ('pathOutlineChildrenByPathId' in o && o.pathOutlineChildrenByPathId != null) {
+      const parsed = validatePathOutlineChildrenByPathId(o.pathOutlineChildrenByPathId);
+      if (parsed) pathOutlineChildrenByPathId = parsed;
+    }
+    return { courses: o.courses, paths: o.paths, pathOutlineChildrenByPathId };
   } catch {
     return null;
   }
@@ -78,7 +90,11 @@ function readCreatorBundleFromSession(ownerUid: string): CreatorCatalogBundle | 
 /** In-memory (Strict remount) then session: last Firestore creator snapshot for this owner. */
 export function peekResolvedCreatorCatalog(ownerUid: string): CreatorCatalogBundle | null {
   if (lastCreatorInMemory?.ownerUid === ownerUid) {
-    return { courses: lastCreatorInMemory.courses, paths: lastCreatorInMemory.paths };
+    return {
+      courses: lastCreatorInMemory.courses,
+      paths: lastCreatorInMemory.paths,
+      pathOutlineChildrenByPathId: lastCreatorInMemory.pathOutlineChildrenByPathId,
+    };
   }
   return readCreatorBundleFromSession(ownerUid);
 }
@@ -86,12 +102,22 @@ export function peekResolvedCreatorCatalog(ownerUid: string): CreatorCatalogBund
 export function writeResolvedCreatorCatalog(
   ownerUid: string,
   courses: Course[],
-  paths: LearningPath[]
+  paths: LearningPath[],
+  pathOutlineChildrenByPathId?: Record<string, MindmapTreeNode[]>
 ): void {
-  lastCreatorInMemory = { ownerUid, courses, paths };
+  const bundle: CreatorCatalogBundle = {
+    courses,
+    paths,
+    ...(pathOutlineChildrenByPathId !== undefined ? { pathOutlineChildrenByPathId } : {}),
+  };
+  lastCreatorInMemory = { ownerUid, ...bundle };
   if (typeof sessionStorage === 'undefined') return;
   try {
-    sessionStorage.setItem(creatorSessionKey(ownerUid), JSON.stringify({ courses, paths }));
+    const payload: Record<string, unknown> = { courses, paths };
+    if (pathOutlineChildrenByPathId !== undefined) {
+      payload.pathOutlineChildrenByPathId = pathOutlineChildrenByPathId;
+    }
+    sessionStorage.setItem(creatorSessionKey(ownerUid), JSON.stringify(payload));
   } catch {
     /* quota / private mode */
   }

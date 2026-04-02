@@ -10,12 +10,12 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import type { MindmapDocument } from '../data/pathMindmap';
+import type { MindmapDocument, MindmapTreeNode } from '../data/pathMindmap';
 import { parseMindmapDocument } from '../data/pathMindmap';
 import type { LearningPath } from '../data/learningPaths';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { docToLearningPath, pathToFirestorePayload } from './learningPathsFirestore';
-import { PATH_MINDMAP_FIELD } from './pathMindmapFirestore';
+import { outlineChildrenFromPathFirestoreData, PATH_MINDMAP_FIELD } from './pathMindmapFirestore';
 
 /** Document ids for this owner (includes docs that fail `docToLearningPath`). */
 export async function listCreatorLearningPathDocumentIdsForOwner(ownerUid: string): Promise<string[]> {
@@ -30,26 +30,37 @@ export async function listCreatorLearningPathDocumentIdsForOwner(ownerUid: strin
   }
 }
 
-export async function loadCreatorLearningPathsForOwner(ownerUid: string): Promise<LearningPath[]> {
+export type CreatorLearningPathsLoadResult = {
+  paths: LearningPath[];
+  outlineChildrenByPathId: Record<string, MindmapTreeNode[]>;
+};
+
+export async function loadCreatorLearningPathsForOwner(ownerUid: string): Promise<CreatorLearningPathsLoadResult> {
   try {
     const snap = await getDocs(
       query(collection(db, 'creatorLearningPaths'), where('ownerUid', '==', ownerUid))
     );
     const out: LearningPath[] = [];
+    const outlineChildrenByPathId: Record<string, MindmapTreeNode[]> = {};
     for (const d of snap.docs) {
-      const p = docToLearningPath(d.id, d.data() as Record<string, unknown>);
-      if (p) out.push(p);
+      const raw = d.data() as Record<string, unknown>;
+      const p = docToLearningPath(d.id, raw);
+      if (p) {
+        out.push(p);
+        outlineChildrenByPathId[d.id] = outlineChildrenFromPathFirestoreData(raw);
+      }
     }
     out.sort((a, b) => a.title.localeCompare(b.title));
-    return out;
+    return { paths: out, outlineChildrenByPathId };
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'creatorLearningPaths');
-    return [];
+    return { paths: [], outlineChildrenByPathId: {} };
   }
 }
 
 export async function listCreatorLearningPathsForAdminByOwner(ownerUid: string): Promise<LearningPath[]> {
-  return loadCreatorLearningPathsForOwner(ownerUid);
+  const r = await loadCreatorLearningPathsForOwner(ownerUid);
+  return r.paths;
 }
 
 export async function saveCreatorLearningPath(path: LearningPath, ownerUid: string): Promise<boolean> {

@@ -7,9 +7,10 @@ import {
   setDoc,
   serverTimestamp,
 } from 'firebase/firestore';
+import type { MindmapTreeNode } from '../data/pathMindmap';
 import type { LearningPath } from '../data/learningPaths';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { PATH_MINDMAP_FIELD } from './pathMindmapFirestore';
+import { outlineChildrenFromPathFirestoreData, PATH_MINDMAP_FIELD } from './pathMindmapFirestore';
 
 const MAX_COURSE_IDS = 100;
 const MAX_TITLE = 500;
@@ -63,19 +64,30 @@ export async function listLearningPathDocumentIds(): Promise<string[]> {
   }
 }
 
-export async function loadLearningPathsFromFirestore(): Promise<LearningPath[]> {
+export type LearningPathsFirestoreLoadResult = {
+  paths: LearningPath[];
+  /** Top-level mindmap branches keyed by path id (from the same `getDocs` — avoids a per-path `getDoc` in the catalog). */
+  outlineChildrenByPathId: Record<string, MindmapTreeNode[]>;
+};
+
+export async function loadLearningPathsFromFirestore(): Promise<LearningPathsFirestoreLoadResult> {
   try {
     const snap = await getDocs(collection(db, 'learningPaths'));
     const out: LearningPath[] = [];
+    const outlineChildrenByPathId: Record<string, MindmapTreeNode[]> = {};
     for (const d of snap.docs) {
-      const p = docToLearningPath(d.id, d.data() as Record<string, unknown>);
-      if (p) out.push(p);
+      const raw = d.data() as Record<string, unknown>;
+      const p = docToLearningPath(d.id, raw);
+      if (p) {
+        out.push(p);
+        outlineChildrenByPathId[d.id] = outlineChildrenFromPathFirestoreData(raw);
+      }
     }
     out.sort((a, b) => a.title.localeCompare(b.title));
-    return out;
+    return { paths: out, outlineChildrenByPathId };
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'learningPaths');
-    return [];
+    return { paths: [], outlineChildrenByPathId: {} };
   }
 }
 

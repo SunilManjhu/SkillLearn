@@ -1,9 +1,16 @@
 import { deleteField, doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
-import type { MindmapDocument } from '../data/pathMindmap';
+import type { MindmapDocument, MindmapTreeNode } from '../data/pathMindmap';
 import { parseMindmapDocument } from '../data/pathMindmap';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 
 export const PATH_MINDMAP_FIELD = 'pathMindmap' as const;
+
+/** Parsed top-level outline branches from a `learningPaths` / `creatorLearningPaths` doc (same shape as the learner hook). */
+export function outlineChildrenFromPathFirestoreData(data: Record<string, unknown>): MindmapTreeNode[] {
+  const doc = parseMindmapDocument(data[PATH_MINDMAP_FIELD]);
+  if (!doc || doc.root.children.length === 0) return [];
+  return doc.root.children;
+}
 
 export async function fetchPathMindmapFromFirestore(pathId: string): Promise<MindmapDocument | null> {
   try {

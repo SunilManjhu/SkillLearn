@@ -1,14 +1,49 @@
 /**
- * Persist learning-path outline UI (which sections/branches are open) in sessionStorage
- * so browser back/forward restores expansion after leaving for a course or lesson.
+ * Persist learning-path outline UI (which sections/branches are open).
+ * Uses localStorage so expansion survives hard refresh, new tabs, and revisits; migrates
+ * older sessionStorage-only data on first read.
  */
 
 const COURSE_ROW_KEY = 'skilllearn-path-course-rows:';
 const OUTLINE_KEY = 'skilllearn-path-mindmap-outline:';
 
+function readRawPersistent(storageKey: string): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const fromLocal = localStorage.getItem(storageKey);
+    if (fromLocal != null && fromLocal.length > 0) return fromLocal;
+    const fromSession = sessionStorage.getItem(storageKey);
+    if (fromSession != null && fromSession.length > 0) {
+      try {
+        localStorage.setItem(storageKey, fromSession);
+      } catch {
+        /* quota / private mode */
+      }
+      return fromSession;
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+function writeRawPersistent(storageKey: string, value: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(storageKey, value);
+  } catch {
+    /* quota / private mode */
+  }
+  try {
+    sessionStorage.setItem(storageKey, value);
+  } catch {
+    /* ignore */
+  }
+}
+
 export function readPathCourseRowExpandedBlockKey(pathId: string): string | null {
   try {
-    const raw = sessionStorage.getItem(`${COURSE_ROW_KEY}${pathId}`);
+    const raw = readRawPersistent(`${COURSE_ROW_KEY}${pathId}`);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as { expandedBlockKey?: unknown };
     const k = parsed.expandedBlockKey;
@@ -22,7 +57,7 @@ export function readPathCourseRowExpandedBlockKey(pathId: string): string | null
 
 export function writePathCourseRowExpandedBlockKey(pathId: string, expandedBlockKey: string | null): void {
   try {
-    sessionStorage.setItem(`${COURSE_ROW_KEY}${pathId}`, JSON.stringify({ expandedBlockKey }));
+    writeRawPersistent(`${COURSE_ROW_KEY}${pathId}`, JSON.stringify({ expandedBlockKey }));
   } catch {
     /* ignore */
   }
@@ -35,7 +70,7 @@ export type PathMindmapOutlineExpandSnapshot = {
 
 export function readPathMindmapOutlineExpand(pathId: string): PathMindmapOutlineExpandSnapshot | null {
   try {
-    const raw = sessionStorage.getItem(`${OUTLINE_KEY}${pathId}`);
+    const raw = readRawPersistent(`${OUTLINE_KEY}${pathId}`);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as PathMindmapOutlineExpandSnapshot;
     if (!parsed || typeof parsed !== 'object') return null;
@@ -54,7 +89,7 @@ export function readPathMindmapOutlineExpand(pathId: string): PathMindmapOutline
 
 export function writePathMindmapOutlineExpand(pathId: string, snap: PathMindmapOutlineExpandSnapshot): void {
   try {
-    sessionStorage.setItem(`${OUTLINE_KEY}${pathId}`, JSON.stringify(snap));
+    writeRawPersistent(`${OUTLINE_KEY}${pathId}`, JSON.stringify(snap));
   } catch {
     /* ignore */
   }
