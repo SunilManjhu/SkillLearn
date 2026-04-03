@@ -306,6 +306,10 @@ export function mergeHashAndHistoryStatePayload(
   ) {
     merged.adminPreviewCourseOwnerUid = fromState.adminPreviewCourseOwnerUid;
   }
+  /** Hash is only `#/certificate`; certificate payload lives on `history.state`. */
+  if (merged.view === 'certificate' && merged.certificate == null && fromState?.certificate != null) {
+    merged.certificate = fromState.certificate;
+  }
   return merged;
 }
 

@@ -8,6 +8,18 @@
     <title>SkillStream</title>
   </head>
   <body>
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem('skillstream.auth.profile.v1');
+          if (!raw) return;
+          var p = JSON.parse(raw);
+          if (!p || typeof p.uid !== 'string') return;
+          var t = localStorage.getItem('skilllearn:uiTheme:' + p.uid);
+          if (t === 'light') document.body.classList.add('light');
+        } catch (e) {}
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

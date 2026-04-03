@@ -110,6 +110,11 @@ import {
   clearCachedAuthProfile,
   type AuthProfileSnapshot,
 } from './utils/authProfileCache';
+import {
+  readInitialUiThemeForSession,
+  readPersistedUiThemeForUser,
+  writePersistedUiThemeForUser,
+} from './utils/uiThemePreference';
 import { stashAuthReturnState, consumeAuthReturnState, type AuthReturnPayload } from './utils/authReturnContext';
 import {
   APP_HISTORY_KEY,
@@ -241,9 +246,18 @@ function findLessonById(course: Course, lessonId: string): Lesson | undefined {
   return undefined;
 }
 
-/** React key fragment: changes when any lesson id changes (e.g. live catalog replaces static fallback). */
-function courseCurriculumSignature(course: Course): string {
-  return course.modules.map((m) => m.lessons.map((l) => l.id).join('.')).join('/');
+/**
+ * Stable instance key for overview/player — curriculum updates are handled inside those components (effects
+ * on course id / structure). Including every lesson id in the key remounted the tree when Firestore merged
+ * drafts, replaying motion `initial` states and looking like theme flicker.
+ */
+function courseOverviewPlayerInstanceKey(params: {
+  courseId: string;
+  fromCreatorDraft: boolean;
+  adminPreviewOwnerUid: string | null;
+}): string {
+  const preview = params.adminPreviewOwnerUid?.trim() ?? '';
+  return `${params.courseId}:${params.fromCreatorDraft ? 'draft' : 'pub'}:${preview}`;
 }
 
 function formatAlertListTime(ms: number): string {
@@ -263,6 +277,14 @@ type DeferredCourseRoute = {
   courseFromCreatorDraft?: boolean;
 };
 
+interface CertificateData {
+  courseId: string;
+  userName: string;
+  date: string;
+  certificateId: string;
+  isPublic: boolean;
+}
+
 function getInitialCatalogCourseRowsForRoute(): CatalogCourseRow[] {
   const pub = peekResolvedCatalogCourses() ?? [];
   const uid = readCachedAuthProfile()?.uid ?? null;
@@ -278,86 +300,71 @@ function getInitialRouteState(courseRows: CatalogCourseRow[] = []): {
   initialLesson: Lesson | undefined;
   adminTab: AdminHistoryTab;
   deferredCourseRoute: DeferredCourseRoute | null;
+  certificateData: CertificateData | null;
 } {
+  const empty = {
+    selectedCourse: null as Course | null,
+    selectedCourseIsCreatorDraft: false,
+    selectedCourseAdminPreviewOwnerUid: null as string | null,
+    initialLesson: undefined as Lesson | undefined,
+    adminTab: 'alerts' as AdminHistoryTab,
+    deferredCourseRoute: null as DeferredCourseRoute | null,
+    certificateData: null as CertificateData | null,
+  };
+
   if (typeof window === 'undefined') {
-    return {
-      view: 'home',
-      selectedCourse: null,
-      selectedCourseIsCreatorDraft: false,
-      selectedCourseAdminPreviewOwnerUid: null,
-      initialLesson: undefined,
-      adminTab: 'alerts',
-      deferredCourseRoute: null,
-    };
+    return { view: 'home', ...empty };
   }
   const params = new URLSearchParams(window.location.search);
   if (params.get('cert_id')) {
-    return {
-      view: 'home',
-      selectedCourse: null,
-      selectedCourseIsCreatorDraft: false,
-      selectedCourseAdminPreviewOwnerUid: null,
-      initialLesson: undefined,
-      adminTab: 'alerts',
-      deferredCourseRoute: null,
-    };
+    return { view: 'home', ...empty };
   }
-  const parsed = parseHashToPayload(window.location.hash);
-  if (!parsed) {
-    return {
-      view: 'home',
-      selectedCourse: null,
-      selectedCourseIsCreatorDraft: false,
-      selectedCourseAdminPreviewOwnerUid: null,
-      initialLesson: undefined,
-      adminTab: 'alerts',
-      deferredCourseRoute: null,
-    };
+  const fromHash = parseHashToPayload(window.location.hash);
+  const fromState = readPayloadFromHistoryState(window.history.state);
+  const merged = mergeHashAndHistoryStatePayload(fromHash, fromState);
+  if (!merged) {
+    return { view: 'home', ...empty };
   }
 
   if (
-    (parsed.view === 'overview' || parsed.view === 'player') &&
-    parsed.courseId &&
-    !courseRows.some((r) => r.course.id === parsed.courseId)
+    (merged.view === 'overview' || merged.view === 'player') &&
+    merged.courseId &&
+    !courseRows.some((r) => r.course.id === merged.courseId)
   ) {
     return {
-      view: parsed.view as View,
-      selectedCourse: null,
-      selectedCourseIsCreatorDraft: false,
-      selectedCourseAdminPreviewOwnerUid: null,
-      initialLesson: undefined,
-      adminTab: 'alerts',
+      view: merged.view as View,
+      ...empty,
       deferredCourseRoute: {
-        view: parsed.view,
-        courseId: parsed.courseId,
-        lessonId: parsed.lessonId ?? undefined,
-        ...(parsed.adminPreviewCourseOwnerUid
-          ? { adminPreviewCourseOwnerUid: parsed.adminPreviewCourseOwnerUid }
+        view: merged.view,
+        courseId: merged.courseId,
+        lessonId: merged.lessonId ?? undefined,
+        ...(merged.adminPreviewCourseOwnerUid
+          ? { adminPreviewCourseOwnerUid: merged.adminPreviewCourseOwnerUid }
           : {}),
-        ...(parsed.courseFromCreatorDraft === true ? { courseFromCreatorDraft: true } : {}),
+        ...(merged.courseFromCreatorDraft === true ? { courseFromCreatorDraft: true } : {}),
       },
     };
   }
 
-  let routeParsed: AppHistoryPayload = parsed;
+  let routeParsed: AppHistoryPayload = merged;
   if (
-    parsed.view === 'player' &&
-    parsed.courseId &&
-    !parsed.lessonId &&
-    courseRows.some((r) => r.course.id === parsed.courseId)
+    merged.view === 'player' &&
+    merged.courseId &&
+    !merged.lessonId &&
+    courseRows.some((r) => r.course.id === merged.courseId)
   ) {
     const row = pickCourseRowForHistoryPayload(
       courseRows,
-      parsed.courseId,
-      parsed.adminPreviewCourseOwnerUid,
-      parsed.courseFromCreatorDraft
+      merged.courseId,
+      merged.adminPreviewCourseOwnerUid,
+      merged.courseFromCreatorDraft
     );
     const c = row?.course;
     if (c) {
       const uid = readCachedAuthProfile()?.uid ?? null;
       const resume = getResumeOrStartLesson(c, loadLessonProgressMap(c.id, uid));
       if (resume) {
-        routeParsed = { ...parsed, lessonId: resume.id };
+        routeParsed = { ...merged, lessonId: resume.id };
       }
     }
   }
@@ -384,29 +391,35 @@ function getInitialRouteState(courseRows: CatalogCourseRow[] = []): {
         initialLesson: l,
         adminTab: 'alerts',
         deferredCourseRoute: null,
+        certificateData: null,
       };
     }
-    return {
-      view: 'catalog',
-      selectedCourse: null,
-      selectedCourseIsCreatorDraft: false,
-      selectedCourseAdminPreviewOwnerUid: null,
-      initialLesson: undefined,
-      adminTab: 'alerts',
-      deferredCourseRoute: null,
-    };
+    return { view: 'catalog', ...empty };
   }
 
   if (resolved.view === 'certificate') {
-    return {
-      view: 'home',
-      selectedCourse: null,
-      selectedCourseIsCreatorDraft: false,
-      selectedCourseAdminPreviewOwnerUid: null,
-      initialLesson: undefined,
-      adminTab: 'alerts',
-      deferredCourseRoute: null,
-    };
+    const c = resolved.certificate;
+    if (
+      c &&
+      typeof c.courseId === 'string' &&
+      typeof c.userName === 'string' &&
+      typeof c.date === 'string' &&
+      typeof c.certificateId === 'string' &&
+      typeof c.isPublic === 'boolean'
+    ) {
+      return {
+        view: 'certificate',
+        ...empty,
+        certificateData: {
+          courseId: c.courseId,
+          userName: c.userName,
+          date: c.date,
+          certificateId: c.certificateId,
+          isPublic: c.isPublic,
+        },
+      };
+    }
+    return { view: 'catalog', ...empty };
   }
 
   const adminTab: AdminHistoryTab =
@@ -414,26 +427,14 @@ function getInitialRouteState(courseRows: CatalogCourseRow[] = []): {
 
   return {
     view: resolved.view as View,
-    selectedCourse: null,
-    selectedCourseIsCreatorDraft: false,
-    selectedCourseAdminPreviewOwnerUid: null,
-    initialLesson: undefined,
+    ...empty,
     adminTab,
-    deferredCourseRoute: null,
   };
 }
 
 function readInitialLearningPathIdFromHash(): string | null {
   if (typeof window === 'undefined') return null;
   return parseHashToPayload(window.location.hash)?.learningPathId ?? null;
-}
-
-interface CertificateData {
-  courseId: string;
-  userName: string;
-  date: string;
-  certificateId: string;
-  isPublic: boolean;
 }
 
 function PlayerSignInGate({
@@ -503,7 +504,7 @@ export default function App() {
   const [currentView, setCurrentView] = useState<View>(initialRoute.view);
   /** Course player: hide global nav + full-bleed video while lesson is playing. */
   const [playerImmersiveNav, setPlayerImmersiveNav] = useState(false);
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => readInitialUiThemeForSession());
   /** In-app bell: hide course/admin alerts; certificates still show. Persisted per uid. */
   const [alertsMuted, setAlertsMuted] = useState(false);
   const { siteNotificationsEnabled } = useNotificationsSiteEnabled();
@@ -637,9 +638,21 @@ export default function App() {
   const [isAuthReady, setIsAuthReady] = useState(false);
   /** Last signed-in profile from localStorage — shown until Firebase finishes async restore (no avatar flash on refresh). */
   const [authSnapshot, setAuthSnapshot] = useState<AuthProfileSnapshot | null>(() => readCachedAuthProfile());
-  const [certificateData, setCertificateData] = useState<CertificateData | null>(null);
+  /** Apply stored theme only when auth identity changes — avoids clobbering a toggle made before `user` was set. */
+  const uiThemeSyncedForAuthKeyRef = useRef<string>('');
+  const [certificateData, setCertificateData] = useState<CertificateData | null>(
+    () => initialRoute.certificateData
+  );
   /** Where to return when closing the certificate view (set synchronously before navigation). */
   const certificateReturnRef = useRef<{ view: View; courseId: string | null } | null>(null);
+  const didPrimeCertificateReturnRef = useRef(false);
+  useLayoutEffect(() => {
+    if (didPrimeCertificateReturnRef.current) return;
+    didPrimeCertificateReturnRef.current = true;
+    const cert = initialRoute.certificateData;
+    if (initialRoute.view !== 'certificate' || !cert) return;
+    certificateReturnRef.current = { view: 'overview', courseId: cert.courseId };
+  }, [initialRoute]);
   const [notifications, setNotifications] = useState<NavbarNotification[]>([]);
   const [catalogCourseRows, setCatalogCourseRows] = useState<CatalogCourseRow[]>(() => {
     const pub = peekResolvedCatalogCourses() ?? [];
@@ -2132,7 +2145,21 @@ export default function App() {
     return () => window.removeEventListener(CATALOG_SKILL_EXTRAS_CHANGED, onSkillExtras);
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (!isAuthReady) return;
+    const key = user?.uid ?? '__guest__';
+    if (uiThemeSyncedForAuthKeyRef.current === key) return;
+    uiThemeSyncedForAuthKeyRef.current = key;
+    if (!user?.uid) {
+      setTheme((prev) => (prev === 'dark' ? prev : 'dark'));
+      return;
+    }
+    const stored = readPersistedUiThemeForUser(user.uid);
+    const next = stored ?? 'dark';
+    setTheme((prev) => (prev === next ? prev : next));
+  }, [isAuthReady, user?.uid]);
+
+  useLayoutEffect(() => {
     if (theme === 'light') {
       document.body.classList.add('light');
     } else {
@@ -3278,7 +3305,12 @@ export default function App() {
           </div>
         </div>
         <div className="bg-[var(--bg-secondary)] p-8 rounded-2xl border border-[var(--border-color)]">
-          <ContactForm user={user} onLogin={() => void handleLogin().catch(() => {})} />
+          <ContactForm
+            user={user}
+            isAuthReady={isAuthReady}
+            navUser={navUser}
+            onLogin={() => void handleLogin().catch(() => {})}
+          />
         </div>
       </div>
     </div>
@@ -3451,7 +3483,13 @@ export default function App() {
           onPathSelect={handlePathSelect}
           onSkillSelect={handleSkillSelect}
           theme={theme}
-          onThemeToggle={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')}
+          onThemeToggle={() =>
+            setTheme((prev) => {
+              const next = prev === 'dark' ? 'light' : 'dark';
+              if (user?.uid) writePersistedUiThemeForUser(user.uid, next);
+              return next;
+            })
+          }
           isAuthReady={isAuthReady}
           user={navUser}
           onLogin={() => void handleLogin().catch(() => {})}
@@ -3502,7 +3540,11 @@ export default function App() {
                 <CourseCatalogLoadingSkeleton variant="overview" />
               ) : (
                 <CourseOverview
-                  key={`${selectedCourseResolved.id}:${courseCurriculumSignature(selectedCourseResolved)}`}
+                  key={courseOverviewPlayerInstanceKey({
+                    courseId: selectedCourseResolved.id,
+                    fromCreatorDraft: selectedCourseIsCreatorDraft,
+                    adminPreviewOwnerUid: selectedCourseAdminPreviewOwnerUid,
+                  })}
                   course={selectedCourseResolved}
                   onStartCourse={handleStartCourseFromOverview}
                   user={navUser}
@@ -3526,7 +3568,11 @@ export default function App() {
                 </div>
               ) : user ? (
                 <CoursePlayer
-                  key={`${selectedCourseResolved.id}:${courseCurriculumSignature(selectedCourseResolved)}`}
+                  key={courseOverviewPlayerInstanceKey({
+                    courseId: selectedCourseResolved.id,
+                    fromCreatorDraft: selectedCourseIsCreatorDraft,
+                    adminPreviewOwnerUid: selectedCourseAdminPreviewOwnerUid,
+                  })}
                   course={selectedCourseResolved}
                   initialLesson={initialLesson}
                   onActiveLessonIdChange={handlePlayerActiveLessonIdChange}

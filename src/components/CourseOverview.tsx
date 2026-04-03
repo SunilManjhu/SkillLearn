@@ -573,7 +573,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                 </div>
 
                 <div className="min-w-0 flex-1 text-center md:text-left">
-                  <p className="mb-2 text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                  <p className="mb-2 text-sm font-medium text-emerald-600 app-dark:text-emerald-400">
                     Thanks — your rating was saved.
                   </p>
                   <div className="mb-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 md:justify-start">

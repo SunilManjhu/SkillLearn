@@ -1,6 +1,9 @@
 @import url('https://fonts.googleapis.com/css2?family=Great+Vibes&family=Cormorant+Garamond:wght@300;400;600;700&family=Montserrat:wght@300;400;600;700&display=swap');
 @import 'tailwindcss';
 
+/* App theme (body.light), not prefers-color-scheme — avoids light-mode flicker when OS is set to dark. */
+@custom-variant app-dark (body:not(.light) &);
+
 @theme {
   --font-signature: "Great Vibes", cursive;
   --font-serif: "Cormorant Garamond", serif;

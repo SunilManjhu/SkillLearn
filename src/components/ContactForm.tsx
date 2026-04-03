@@ -2,13 +2,17 @@ import React, { useState } from 'react';
 import { Loader2, LogIn } from 'lucide-react';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType, type User } from '../firebase';
+import type { AuthProfileSnapshot } from '../utils/authProfileCache';
 
 export interface ContactFormProps {
   user: User | null;
+  isAuthReady: boolean;
+  /** Cached session for first paint (same as navbar) — when set before Firebase is ready, skip the spinner and show the form. */
+  navUser: User | AuthProfileSnapshot | null;
   onLogin: () => Promise<void>;
 }
 
-export const ContactForm: React.FC<ContactFormProps> = ({ user, onLogin }) => {
+export const ContactForm: React.FC<ContactFormProps> = ({ user, isAuthReady, navUser, onLogin }) => {
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<'subject' | 'message', string>>>({});
@@ -58,7 +62,21 @@ export const ContactForm: React.FC<ContactFormProps> = ({ user, onLogin }) => {
     }
   };
 
-  if (!user) {
+  if (!isAuthReady && !navUser) {
+    return (
+      <div
+        className="flex min-h-[min(280px,50dvh)] flex-col items-center justify-center gap-3 px-2 text-center"
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+      >
+        <Loader2 className="h-8 w-8 shrink-0 animate-spin text-orange-500" aria-hidden />
+        <p className="text-sm text-[var(--text-secondary)]">Checking sign-in…</p>
+      </div>
+    );
+  }
+
+  if (isAuthReady && !user) {
     return (
       <div className="space-y-6 text-center">
         <p className="text-[var(--text-secondary)] leading-relaxed">
@@ -159,7 +177,8 @@ export const ContactForm: React.FC<ContactFormProps> = ({ user, onLogin }) => {
       )}
       <button
         type="submit"
-        disabled={submitting}
+        disabled={submitting || !user}
+        aria-busy={submitting}
         className="w-full py-4 bg-orange-500 hover:bg-orange-600 disabled:opacity-60 disabled:pointer-events-none text-white rounded-lg font-bold transition-colors flex items-center justify-center gap-2"
       >
         {submitting ? (

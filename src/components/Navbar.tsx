@@ -57,39 +57,39 @@ function accountMenuAriaLabel(u: NavbarAccountUser): string {
 
 function NavProfileAvatar({ user }: { user: NavbarAccountUser }) {
   const [photoBroken, setPhotoBroken] = useState(false);
-  const [imageLoaded, setImageLoaded] = useState(false);
   useEffect(() => {
     setPhotoBroken(false);
-    setImageLoaded(false);
   }, [user.uid, user.photoURL]);
 
   const url = user.photoURL?.trim();
   const tryPhoto = Boolean(url && !photoBroken);
 
-  const shellClass = tryPhoto
-    ? imageLoaded
-      ? 'bg-[var(--hover-bg)]'
-      : 'bg-[var(--hover-bg)] animate-pulse'
-    : 'bg-gradient-to-br from-orange-500 to-pink-500 text-white text-xs font-bold';
-
-  return (
-    <span
-      className={`relative flex h-full w-full min-h-0 min-w-0 items-center justify-center overflow-hidden ${shellClass}`}
-    >
-      {tryPhoto ? (
+  if (tryPhoto) {
+    return (
+      <span className="relative flex h-full w-full min-h-0 min-w-0 items-center justify-center overflow-hidden rounded-full bg-[var(--hover-bg)]">
         <img
+          key={url}
           src={url}
           alt=""
-          className={`h-full w-full object-cover ${imageLoaded ? '' : 'opacity-0'}`}
+          className="h-full w-full object-cover"
           referrerPolicy="no-referrer"
-          onLoad={() => setImageLoaded(true)}
+          loading="eager"
+          fetchPriority="high"
+          decoding="async"
           onError={() => setPhotoBroken(true)}
         />
-      ) : (
-        <span className="select-none truncate px-0.5 text-[0.65rem] leading-none tracking-tight" aria-hidden>
-          {accountInitials(user)}
-        </span>
-      )}
+      </span>
+    );
+  }
+
+  return (
+    <span className="flex h-full w-full min-h-0 min-w-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-orange-500 to-pink-500 text-white text-xs font-bold">
+      <span
+        className="select-none truncate px-0.5 text-[0.65rem] leading-none tracking-tight"
+        aria-hidden
+      >
+        {accountInitials(user)}
+      </span>
     </span>
   );
 }
@@ -653,7 +653,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   setOpenDropdown(openDropdown === 'profile' ? null : 'profile');
                 }}
                 aria-label={accountMenuAriaLabel(user)}
-                className="h-8 w-8 shrink-0 cursor-pointer rounded-full p-0 text-white focus:outline-none focus:ring-2 focus:ring-orange-500 overflow-hidden flex items-center justify-center"
+                className="h-8 w-8 shrink-0 cursor-pointer rounded-full border-2 border-orange-500 p-0 text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)] overflow-hidden flex items-center justify-center"
               >
                 <NavProfileAvatar user={user} />
               </button>

@@ -2729,7 +2729,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                   Mark as done
                 </button>
               ) : (
-                <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">Completed</p>
+                <p className="text-sm font-medium text-emerald-600 app-dark:text-emerald-400">Completed</p>
               )}
             </div>
           ) : null}
