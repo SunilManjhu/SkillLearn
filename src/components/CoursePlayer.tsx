@@ -256,6 +256,8 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   const chromeHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Set after `clearChromeHideTimer` exists; used by window keydown (arrow seek) registered earlier in the hook list. */
   const revealChromeAfterKeyboardSeekRef = useRef<() => void>(() => {});
+  const keyboardToggleMuteRef = useRef<() => void>(() => {});
+  const keyboardToggleCaptionsRef = useRef<() => void>(() => {});
   const mediaPausedRef = useRef(mediaPaused);
   const lessonPlaybackEverStartedRef = useRef(lessonPlaybackEverStarted);
   lessonPlaybackEverStartedRef.current = lessonPlaybackEverStarted;
@@ -858,7 +860,6 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
       if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
       if (e.key === ' ' || e.code === 'Space') {
         if (e.repeat) return;
-        if (typeof window !== 'undefined' && !window.matchMedia('(min-width: 1024px)').matches) return;
         if (
           isCustomizeModalOpenRef.current ||
           isReportModalOpenRef.current ||
@@ -879,12 +880,12 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
           return;
         }
         e.preventDefault();
+        revealChromeAfterKeyboardSeekRef.current();
         togglePlaybackFromKeyboard();
         return;
       }
       if (e.key === 'f' || e.key === 'F') {
         if (e.repeat) return;
-        if (typeof window !== 'undefined' && !window.matchMedia('(min-width: 1024px)').matches) return;
         if (
           isCustomizeModalOpenRef.current ||
           isReportModalOpenRef.current ||
@@ -897,7 +898,42 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
         }
         if (isTypingTarget(e.target)) return;
         e.preventDefault();
+        revealChromeAfterKeyboardSeekRef.current();
         void toggleVideoAreaFullscreen();
+        return;
+      }
+      if (e.key === 'm' || e.key === 'M') {
+        if (e.repeat) return;
+        if (
+          isCustomizeModalOpenRef.current ||
+          isReportModalOpenRef.current ||
+          pauseForAppNavOverlayRef.current ||
+          isVoteLoginModalOpenRef.current ||
+          showRatingPromptRef.current ||
+          showReplayCtaRef.current
+        ) {
+          return;
+        }
+        if (isTypingTarget(e.target)) return;
+        e.preventDefault();
+        keyboardToggleMuteRef.current();
+        return;
+      }
+      if (e.key === 'c' || e.key === 'C') {
+        if (e.repeat) return;
+        if (
+          isCustomizeModalOpenRef.current ||
+          isReportModalOpenRef.current ||
+          pauseForAppNavOverlayRef.current ||
+          isVoteLoginModalOpenRef.current ||
+          showRatingPromptRef.current ||
+          showReplayCtaRef.current
+        ) {
+          return;
+        }
+        if (isTypingTarget(e.target)) return;
+        e.preventDefault();
+        keyboardToggleCaptionsRef.current();
         return;
       }
       if (isTypingTarget(e.target)) return;
@@ -974,6 +1010,30 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
         if (!mediaPausedRef.current) setChromeVisible(false);
       }, PLAYER_CHROME_IDLE_MS);
     }
+  };
+
+  keyboardToggleMuteRef.current = () => {
+    if (lessonBlocksVideoPlayback(lessonRef.current)) return;
+    revealChromeAfterKeyboardSeekRef.current();
+    if (youtubeEmbedUrlRef.current) {
+      handleYtMuteToggle();
+    } else {
+      const v = videoRef.current;
+      if (v) {
+        v.muted = !v.muted;
+        writePlayerMutedPreference(v.muted);
+      }
+    }
+  };
+
+  keyboardToggleCaptionsRef.current = () => {
+    if (lessonBlocksVideoPlayback(lessonRef.current) || !youtubeEmbedUrlRef.current) return;
+    revealChromeAfterKeyboardSeekRef.current();
+    setYoutubeCaptionsEnabled((prev) => {
+      const next = !prev;
+      writeYoutubeCaptionsPreference(next);
+      return next;
+    });
   };
 
   const showTopControls = mediaPaused || chromeVisible;

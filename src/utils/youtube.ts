@@ -67,9 +67,10 @@ export function youtubeUrlToEmbedUrl(url: string | undefined | null): string | u
 export const YOUTUBE_EMBED_TOP_CROP_PX = 78;
 
 /**
- * Clips the bottom of the iframe (time row, “More videos”, logo). Custom seek HUD stays outside the iframe.
+ * Bottom iframe crop clips YouTube’s own UI *and* where captions render — keep **0** so subtitles stay visible.
+ * (Custom seek HUD sits outside the iframe; top crop still hides title/scrim.)
  */
-export const YOUTUBE_EMBED_BOTTOM_CROP_PX = 78;
+export const YOUTUBE_EMBED_BOTTOM_CROP_PX = 0;
 
 /** Default caption track language for embeds (`cc_lang_pref`) and `setOption('captions','track',...)`. */
 export const YOUTUBE_CC_LANG_PREF = 'en';
