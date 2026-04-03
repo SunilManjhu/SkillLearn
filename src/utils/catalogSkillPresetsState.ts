@@ -36,5 +36,11 @@ export function setCachedCatalogSkillPresets(next: CatalogSkillPresetsState): vo
   cachedPresets = normalizeCatalogSkillPresetsInternal(next);
 }
 
+/** First preset skill for new-course defaults (mirrors {@link defaultNewCourseCategoryFromState}). */
+export function defaultNewCourseSkillFromState(state: CatalogSkillPresetsState): string {
+  const s = normalizeCatalogSkillPresetsInternal(state);
+  return s.mainPills[0] ?? s.moreSkills[0] ?? 'General';
+}
+
 export const CATALOG_SKILL_PRESETS_CHANGED = 'skilllearn-catalog-skill-presets-changed';
 

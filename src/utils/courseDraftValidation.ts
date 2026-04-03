@@ -61,6 +61,9 @@ export function validateCourseDraft(c: Course): string | null {
   if (!c.categories?.length || !c.categories.some((x) => x.trim())) {
     return 'At least one category is required.';
   }
+  if (!c.skills?.length || !c.skills.some((x) => x.trim())) {
+    return 'At least one skill is required.';
+  }
   if (!isCourseLevel(c.level)) return 'Level must be Beginner, Intermediate, Advanced, or Proficient.';
   if (!c.modules.length) return 'At least one module is required.';
   for (let mi = 0; mi < c.modules.length; mi += 1) {

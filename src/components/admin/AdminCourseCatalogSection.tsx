@@ -89,6 +89,8 @@ import {
 import {
   CATALOG_SKILL_PRESETS_CHANGED,
   DEFAULT_CATALOG_SKILL_PRESETS,
+  defaultNewCourseSkillFromState,
+  getCachedCatalogSkillPresets,
   normalizeCatalogSkillPresets,
   type CatalogSkillPresetsState,
 } from '../../utils/catalogSkillPresetsState';
@@ -206,7 +208,7 @@ function emptyCourse(docId: string): Course {
     duration: '1h',
     rating: 4.5,
     categories: [defaultNewCourseCategoryFromState(getCachedCatalogCategoryPresets())],
-    skills: [],
+    skills: [defaultNewCourseSkillFromState(getCachedCatalogSkillPresets())],
     modules: [
       {
         id: mid,
@@ -1707,6 +1709,9 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     if (!c.categories?.length || !c.categories.some((x) => x.trim())) {
       return { targetId: 'admin-course-categories', scope: 'course', moduleIndex: 0 };
     }
+    if (!c.skills?.length || !c.skills.some((x) => x.trim())) {
+      return { targetId: 'admin-course-skills', scope: 'course', moduleIndex: 0 };
+    }
     if (!c.modules.length) return { targetId: 'admin-course-title', scope: 'course', moduleIndex: 0 };
     for (let mi = 0; mi < c.modules.length; mi += 1) {
       const m = c.modules[mi];
@@ -1823,6 +1828,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       courseThumbnail: false,
       courseRating: false,
       courseCategories: false,
+      courseSkills: false,
       moduleId: new Set<number>(),
       moduleTitle: new Set<number>(),
       lessonId: new Set<string>(),
@@ -1836,6 +1842,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     if (!draft.author.trim()) out.courseAuthor = true;
     if (!draft.thumbnail.trim()) out.courseThumbnail = true;
     if (!draft.categories?.length || !draft.categories.some((x) => x.trim())) out.courseCategories = true;
+    if (!draft.skills?.length || !draft.skills.some((x) => x.trim())) out.courseSkills = true;
     if (draft.rating < 0 || draft.rating > 5) out.courseRating = true;
     for (let mi = 0; mi < draft.modules.length; mi += 1) {
       const m = draft.modules[mi];
@@ -3131,7 +3138,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     }
                   >
                     <ul className="list-disc space-y-1.5 pl-4 text-[var(--text-muted)] marker:text-orange-500/70 sm:space-y-1">
-                      <li>At least one category required.</li>
+                      <li>At least one category and one skill are required.</li>
                       {isCreatorCatalog ? (
                         <>
                           <li>
@@ -3220,11 +3227,28 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 </div>
               </div>
             </div>
-            <div className="space-y-2 sm:col-span-2">
-              <span className="text-xs font-semibold text-[var(--text-secondary)]">Skills</span>
+            <div
+              id="admin-course-skills"
+              aria-labelledby="admin-course-skills-label"
+              className={`space-y-2 sm:col-span-2 ${showValidationHints && fieldErrors.courseSkills ? 'rounded-lg ring-2 ring-red-500/60 p-2 -m-2' : ''}`}
+            >
+              <span
+                id="admin-course-skills-label"
+                className="text-xs font-semibold leading-none text-[var(--text-secondary)]"
+              >
+                Skills
+              </span>
               <div className="flex min-h-10 flex-wrap gap-2">
                 {draft.skills.length === 0 ? (
-                  <span className="text-xs text-[var(--text-muted)]">Optional — add skill tags for learners and filters.</span>
+                  <span
+                    className={`text-xs ${
+                      showValidationHints && fieldErrors.courseSkills
+                        ? 'font-medium text-red-400'
+                        : 'text-[var(--text-muted)]'
+                    }`}
+                  >
+                    Add at least one skill.
+                  </span>
                 ) : (
                   draft.skills.map((sk) => (
                     <span
