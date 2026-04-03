@@ -16,7 +16,7 @@ Grouped by folder. **Large screens** get an extra line for sub-responsibilities 
 
 ## `src/components/ContactForm.tsx`
 
-- **Role:** **Contact** page form; optional sign-in; writes to Firestore for moderation inbox.
+- **Role:** **Contact** page form; writes to Firestore for moderation inbox. Props **`user`** (Firebase), **`isAuthReady`**, **`navUser`** (cached-or-live account, same idea as navbar): shows **“Checking sign-in…”** only when auth is not ready **and** there is no cached profile; otherwise shows the **sign-in** CTA or the **form** (submit disabled until **`user`** exists).
 - **Primary exports:** `ContactForm`.
 - **Used by:** `App.tsx` `contact` view.
 
@@ -70,7 +70,7 @@ Grouped by folder. **Large screens** get an extra line for sub-responsibilities 
 
 ## `src/components/Navbar.tsx`
 
-- **Role:** Top **navigation**: auth, theme, notifications, catalog filters slot, learning path picker, admin entry.
+- **Role:** Top **navigation**: auth, theme toggle, notifications, catalog filters slot, learning path picker, admin entry. **`NavProfileAvatar`:** photo when `photoURL` is valid (eager image, `no-referrer`, error → initials on gradient); desktop profile control uses an **orange border** and **`focus-visible`** ring.
 - **Primary exports:** `Navbar`, `NavbarNotification` type.
 - **Used by:** `App.tsx`.
 

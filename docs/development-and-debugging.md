@@ -52,7 +52,7 @@ See [`.env.example`](../.env.example) for copy-paste templates and comments.
 | Area | Path | Notes |
 |------|------|--------|
 | Shell / navigation / most view state | [`src/App.tsx`](../src/App.tsx) | Large file: catalog, player, profile, admin gate, alerts, enrollments, etc. **See [app-shell-app-tsx.md](./app-shell-app-tsx.md) for a structured map.** |
-| URL ↔ state | [`src/utils/appHistory.ts`](../src/utils/appHistory.ts) | Hash + `history.state` under `APP_HISTORY_KEY` (`skillstreamApp`). Payload shape `AppHistoryPayload` (`view`, `courseId`, `lessonId`, `adminTab`, `learningPathId`, …). |
+| URL ↔ state | [`src/utils/appHistory.ts`](../src/utils/appHistory.ts) | Hash + `history.state` under `APP_HISTORY_KEY` (`skillstreamApp`). Payload shape `AppHistoryPayload` (`view`, `courseId`, `lessonId`, `adminTab`, `learningPathId`, `certificate`, …). **`#/certificate`** carries details in **state**, merged on load via `mergeHashAndHistoryStatePayload` (see [app-shell-app-tsx.md](./app-shell-app-tsx.md)). |
 | Firebase bootstrap | [`src/firebase.ts`](../src/firebase.ts) | `auth`, `db`, Google sign-in (popup → redirect fallback), `isFirestorePermissionDenied`. Config: [`firebase-applet-config.json`](../firebase-applet-config.json). |
 | Firestore access | [`src/utils/*Firestore.ts`](../src/utils/) | One file per domain (courses, paths, progress, moderation, …). Good search anchor: `Firestore.ts`. |
 | Static / fallback catalog data | [`src/data/`](../src/data/) | e.g. `courses.ts`, `learningPaths.ts` — used with published Firestore data. |
@@ -68,7 +68,9 @@ When searching the codebase semantically, phrases like “Firestore subscription
 - **Admin sub-tabs** are `AdminHistoryTab`: `alerts` | `ai` | `catalog` | `moderation` | `roles`. The **Content** tab uses `adminTab === 'catalog'`; canonical hash `#/admin/content` (see [admin-portal-content.md](./admin-portal-content.md)).
 - **Learning Path** scoping (code: `learningPathId`) can be carried in history for shareable catalog context. See [learning-paths-lpaths.md](./learning-paths-lpaths.md) for terminology and file map.
 
-If “wrong screen after refresh” or “shared link opens wrong place” appears, trace `parseHashToPayload` / `buildHistoryUrl` and `popstate` handling in `App.tsx` together with `appHistory.ts`.
+If “wrong screen after refresh” or “shared link opens wrong place” appears, trace `parseHashToPayload` / `buildHistoryUrl` and `popstate` handling in `App.tsx` together with `appHistory.ts`. For **certificate** reload, also check **`getInitialRouteState`** (hash + `history.state`) and that **`history.state`** was not overwritten on first paint.
+
+**Theme:** Signed-in **light/dark** is stored per uid in [`uiThemePreference.ts`](../src/utils/uiThemePreference.ts); guests default to dark once auth is known. [`index.html`](../index.html) can pre-apply `body.light` using the same keys as the auth profile cache.
 
 ## Firebase and permissions
 

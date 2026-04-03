@@ -33,9 +33,14 @@
 - **Role:** Vite + React + Tailwind plugins; `define` injects `process.env.GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_MODEL_FALLBACK`; `@` alias to repo root; optional `DISABLE_HMR`.
 - **Primary symbols:** `default export` config factory.
 
+## `index.html` (repo root)
+
+- **Role:** Vite HTML shell; **`body`** contains an **inline script** before `#root` that applies **`body.light`** when a cached signed-in user has stored **light** theme (must match [`authProfileCache`](../../src/utils/authProfileCache.ts) + [`uiThemePreference`](../../src/utils/uiThemePreference.ts) key strings). Reduces wrong background before React mounts.
+- **Primary symbols:** none (markup + small script).
+
 ## `src/index.css`
 
-- **Role:** Global CSS (Tailwind entry, design tokens, base styles).
+- **Role:** Global CSS (Tailwind entry, design tokens, base styles). Defines **`@custom-variant app-dark (body:not(.light) &);`** so Tailwind utilities can track **app** light/dark instead of **`prefers-color-scheme`** alone.
 - **Primary symbols:** none (stylesheet).
 
 ## `firebase-applet-config.json`

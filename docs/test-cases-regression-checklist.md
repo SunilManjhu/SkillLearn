@@ -52,6 +52,12 @@ For each of the above:
 - Hard reload
 - **Expected**: same route/view restores (no silent fallbacks to `#/catalog` unless intentionally handled with an explanation).
 
+**Also verify:**
+
+- **Certificate (in-app):** From a course, open the achievement/certificate view so the URL is `#/certificate` and the page shows your certificate. Hard reload → **still** on the certificate (not home/catalog) with the same data.
+- **Theme:** While signed in, switch to **light** mode, reload → stays **light**. Sign out → reload as guest → **dark** default (guest choice not persisted).
+- **Contact (signed in):** Open **Contact Us**, reload → form appears **without** a long “Checking sign-in…” flash when a session exists (cached profile).
+
 ### 1.3 Back/forward history is sane
 
 - Navigate: Catalog → Path → Course → Back → returns to Path, Back → returns to Catalog.

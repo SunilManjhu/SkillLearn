@@ -15,6 +15,7 @@
 - **Serialized state:** `AppHistoryPayload` (`v: 1`, `view`, optional `courseId`, `lessonId`, `certificate`, `adminTab`, `learningPathId`). Stored in `history.state` under **`APP_HISTORY_KEY`** (`skillstreamApp`) and mirrored in the **hash** via `buildHistoryUrl` (see `appHistory.ts`).
 - **`buildHistoryPayload`:** Derives the payload from React state. For **`player`**, includes **`lessonId`** when `playerLessonIdForUrl` / `initialLesson` is set so reload restores the active lesson; see [`video-player-and-history.md`](./video-player-and-history.md).
 - **`applyHistoryPayload`:** Applies a payload to state (course selection, `initialLesson`, `adminTab`, path id, certificate snapshot). Used on **browser Back/Forward** (`popstate`). Prefers **hash** over `history.state` when they diverge.
+- **Certificate URL:** The hash is only `#/certificate`; **`certificate` metadata** (course id, user name, date, id, public flag) lives in **`history.state`** under the same payload. **`mergeHashAndHistoryStatePayload`** keeps `certificate` from state when the hash omits it. **`getInitialRouteState`** merges hash + `history.state` on cold load so **reload** restores `currentView === 'certificate'` and **`certificateData`** instead of resetting to home and wiping state. **`initialRoute.certificateData`** seeds React state; a one-time layout effect primes **`certificateReturnRef`** for Close. Public share links still use **`?cert_id=…&cert_course=…`** (handled in a dedicated `useEffect`).
 - **`historySkipSyncRef`:** Skips the “push new history entry” effect for one cycle after programmatic navigation that already updated the URL — **unless** `historyPayloadsEqual(prev, payload)` is false (React moved but ref still set); see [`video-player-and-history.md`](./video-player-and-history.md).
 - **`historyActionRef`:** `'replace'` vs `'push'` — used for auth return, certificate public links, deferred-route resolution, profile overlay transitions, etc.
 
@@ -31,7 +32,9 @@
 | `initialLesson` | Lesson to open in the player; set from deep link, resume logic, notification actions, or “start course” from overview. |
 | `deferredCourseRoute` | If the hash asked for **overview/player** before that `courseId` existed in the first-paint catalog, the shell stores a deferred job and applies it when `catalogCourses` gains the course; if the course never appears after hydration, user is sent to catalog. |
 
-**Cold-load deep links:** `getInitialRouteState` runs once with `peekResolvedCatalogCourses() ?? []` (no bundled catalog). Creator/admin initial rows can also hydrate from **`creatorCatalogSession`** when the cached profile uid matches — same §8. The shell can set `deferredCourseRoute` or fill `player` **lessonId** from resume when the hash has player without lesson.
+**Cold-load deep links:** `getInitialRouteState` runs once with `peekResolvedCatalogCourses() ?? []` (no bundled catalog). It builds the initial location from **`mergeHashAndHistoryStatePayload(parseHashToPayload(hash), readPayloadFromHistoryState(history.state))`** so **certificate** (and similar) data survives refresh. Creator/admin initial rows can also hydrate from **`creatorCatalogSession`** when the cached profile uid matches — same §8. The shell can set `deferredCourseRoute` or fill `player` **lessonId** from resume when the hash has player without lesson.
+
+**Overview / player React keys:** `CourseOverview` and `CoursePlayer` use **`courseOverviewPlayerInstanceKey`** (`courseId` + draft / admin-preview disambiguation only), **not** a curriculum signature of every lesson id. That avoids remounting when the live catalog merges drafts and replaying motion `initial` animations (often mistaken for theme flicker).
 
 **Learning Paths:** `selectedLearningPathId` scopes the catalog to a path’s `courseIds`. Initialized from hash; cleared if the path document disappears. Naming: user-facing **Learning Path(s)**; code shorthand **LPath** — see [learning-paths-lpaths.md](./learning-paths-lpaths.md).
 
@@ -67,6 +70,19 @@ Opening admin from notifications sets `adminTab` and optionally `pendingModerati
 - **`authSnapshot` / `readCachedAuthProfile`:** Stale-while-revalidate display for the navbar until auth restores.
 - **`navUser`:** `user` or, while auth not ready, cached snapshot — used where progress/UI must not flicker.
 - **`applyAuthReturnPayload`:** Restores view/course after **redirect sign-in** (`authReturnContext`).
+- **Navbar profile control:** [`Navbar.tsx`](../src/components/Navbar.tsx) **`NavProfileAvatar`** prefers **`photoURL`** (with `referrerPolicy="no-referrer"`, eager load, **`onError`** → initials on gradient) so initials do not flash over the photo while the image loads; the desktop profile button uses a visible **orange ring** plus **`focus-visible`** focus styles.
+
+## Theme (light / dark)
+
+- **Source of truth:** React state `theme` in `App.tsx` (`'dark' | 'light'`). **`document.body`** gets class **`light`** in a **`useLayoutEffect`** when theme is light (design tokens live in [`src/index.css`](../src/index.css): `:root` vs `body.light`).
+- **Persistence (signed-in):** [`src/utils/uiThemePreference.ts`](../src/utils/uiThemePreference.ts) — `localStorage` key **`skilllearn:uiTheme:{uid}`**. Theme toggle writes when **`user?.uid`** is set. **Guests** are not persisted; when auth is known guest, sync forces **dark**.
+- **First paint:** [`index.html`](../index.html) runs an **inline script** (before the app bundle) that reads **`skillstream.auth.profile.v1`** + the same theme key and adds **`body.light`** when stored theme is light — reduces flash before React runs (must stay in sync with `authProfileCache` / `uiThemePreference` key strings).
+- **Auth transition:** **`uiThemeSyncedForAuthKeyRef`** applies stored theme only when the auth key (**guest** vs **uid**) **changes**, so a toggle before `user` is set is not overwritten when Firebase attaches.
+- **Tailwind `dark:` vs app theme:** Many learner accents use CSS variables. Where Tailwind **`dark:`** would follow **system** preference, the app defines **`@custom-variant app-dark (body:not(.light) &);`** in `index.css` so “dark styling” tracks **app** theme (e.g. overview/player emerald lines).
+
+## Contact page
+
+- **`ContactForm`** receives **`user`**, **`isAuthReady`**, and **`navUser`** (same composite as the navbar). **“Checking sign-in…”** shows only when **`!isAuthReady && !navUser`**. If a **cached profile** exists, the **form** shows immediately; **submit** stays disabled until **`user`** (Firebase) exists so Firestore rules see a real token.
 
 ## Notifications (`notifications` state)
 
@@ -93,8 +109,10 @@ Failures on `reportNotices` with permission errors can set **`authBanner`** sugg
 | Course/player behavior | Prefer **`CoursePlayer.tsx` / `CourseOverview.tsx`**; only touch `App.tsx` for state that must be global or URL-bound. |
 | Firestore catalog refresh | `refreshCatalogCourses`, `resolveCatalogCourses`, admin `onCatalogChanged`. |
 | Admin tab or guard | `adminTab`, `AdminPage` props, `adminPortalUnsavedRef` flow. |
-| Deep link / hash | `appHistory.ts`, `getInitialRouteState`, `applyHistoryPayload`, `deferredCourseRoute` effects. |
+| Deep link / hash | `appHistory.ts`, `getInitialRouteState` (hash + `history.state` merge), `applyHistoryPayload`, `deferredCourseRoute` effects. |
+| Theme / `body.light` | `App.tsx` + [`uiThemePreference.ts`](../src/utils/uiThemePreference.ts) + [`index.html`](../index.html) inline bootstrap; `index.css` `app-dark` variant. |
+| Contact auth UX | `ContactForm.tsx` (`navUser` / `isAuthReady`). |
 
 ## Refactors (for humans)
 
-If `App.tsx` grows further, the lowest-risk extractions are usually: **history sync** (custom hook), **notification merge + admin moderation listeners**, and **initial route / deferred route** helpers (already partially isolated in `getInitialRouteState`). Keep **`buildHistoryPayload` / `applyHistoryPayload`** behavior identical when splitting—add integration tests or manual checklists if you extract them.
+If `App.tsx` grows further, the lowest-risk extractions are usually: **history sync** (custom hook), **notification merge + admin moderation listeners**, and **initial route / deferred route** helpers (already partially isolated in `getInitialRouteState`, including **certificate** restore from merged hash + state). Keep **`buildHistoryPayload` / `applyHistoryPayload`** behavior identical when splitting—add integration tests or manual checklists if you extract them. **Theme** persistence is already isolated in **`uiThemePreference.ts`**.

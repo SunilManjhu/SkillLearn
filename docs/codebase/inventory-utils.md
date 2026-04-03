@@ -22,8 +22,8 @@ Alphabetical. Each module is **pure logic, Firestore I/O, or cross-cutting helpe
 
 ## `src/utils/appHistory.ts`
 
-- **Role:** Serialize/deserialize **SPA location** to hash + `history.state` (`APP_HISTORY_KEY`); equality and course-aware resolution.
-- **Primary exports:** `APP_HISTORY_KEY`, `AppHistoryPayload`, `AppHistoryView`, `AdminHistoryTab`, `payloadToHash`, `parseHashToPayload`, `buildHistoryUrl`, `readPayloadFromHistoryState`, `historyPayloadsEqual`, `resolvePayloadForCourses`, `historyBackOrFallback`.
+- **Role:** Serialize/deserialize **SPA location** to hash + `history.state` (`APP_HISTORY_KEY`); equality and course-aware resolution. **`mergeHashAndHistoryStatePayload`** combines hash + stack state (e.g. preserves **`learningPathId`** and **`certificate`** when the hash is only `#/certificate`).
+- **Primary exports:** `APP_HISTORY_KEY`, `AppHistoryPayload`, `AppHistoryView`, `AdminHistoryTab`, `payloadToHash`, `parseHashToPayload`, `buildHistoryUrl`, `readPayloadFromHistoryState`, `mergeHashAndHistoryStatePayload`, `historyPayloadsEqual`, `resolvePayloadForCourses`, `shouldPushCourseOverviewBeforePlayer`, `historyBackOrFallback`.
 - **Used by:** `App.tsx`.
 
 ## `src/utils/authErrors.ts`
@@ -34,9 +34,9 @@ Alphabetical. Each module is **pure logic, Firestore I/O, or cross-cutting helpe
 
 ## `src/utils/authProfileCache.ts`
 
-- **Role:** **localStorage** cache of display name/photo/uid for instant navbar paint before `onAuthStateChanged` finishes.
+- **Role:** **localStorage** cache of display name/photo/uid for instant navbar paint before `onAuthStateChanged` finishes. Key **`skillstream.auth.profile.v1`** — the same key is read by [`index.html`](../../index.html) for **theme** first paint (see `uiThemePreference`).
 - **Primary exports:** `AuthProfileSnapshot`, `readCachedAuthProfile`, `writeCachedAuthProfile`, `clearCachedAuthProfile`.
-- **Used by:** `App.tsx`, resume/deep-link helpers.
+- **Used by:** `App.tsx`, `uiThemePreference.ts`, resume/deep-link helpers.
 
 ## `src/utils/authReturnContext.ts`
 
@@ -271,6 +271,12 @@ Alphabetical. Each module is **pure logic, Firestore I/O, or cross-cutting helpe
 - **Role:** Scroll `document.documentElement` / `body` to top after navigations.
 - **Primary exports:** `scrollDocumentToTop`.
 - **Used by:** `App.tsx`, many navigations.
+
+## `src/utils/uiThemePreference.ts`
+
+- **Role:** Persist **light/dark** choice per signed-in user in **localStorage** (`skilllearn:uiTheme:{uid}`); synchronous **session read** via cached auth profile for first paint.
+- **Primary exports:** `readPersistedUiThemeForUser`, `writePersistedUiThemeForUser`, `readInitialUiThemeForSession`.
+- **Used by:** `App.tsx`.
 
 ## `src/utils/userProfileFirestore.ts`
 
