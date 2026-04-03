@@ -113,6 +113,7 @@ import {
   REORDER_DATA_ATTR_SELECTORS,
 } from '../../utils/reorderScrollViewport';
 import { scrollDisclosureRowToTop } from '../../utils/scrollDisclosureRowToTop';
+import { subscribeUsersForAdmin, type AdminUserRow } from '../../utils/adminUsersFirestore';
 
 function deepClone<T>(x: T): T {
   return JSON.parse(JSON.stringify(x)) as T;
@@ -370,6 +371,29 @@ function buildAdminCatalogCreatorSelector(ownerUid: string, courseId: string): s
   return `${ADMIN_CATALOG_SEL_CREATOR_PREFIX}${ownerUid}:${courseId}`;
 }
 
+/** Short owner line for merged-catalog creator-draft options (matches Creators tab when profile exists). */
+function creatorDraftOwnerShortLabel(ownerUid: string, row: AdminUserRow | undefined): string {
+  if (row) {
+    if (row.displayName.trim() && row.displayName !== 'Unnamed user') return row.displayName.trim();
+    if (row.email.trim()) return row.email.trim();
+  }
+  return `${ownerUid.slice(0, 8)}…`;
+}
+
+/** Native option tooltip: full course id + owner (Document ID column also shows id when selected). */
+function creatorDraftOptionTitleAttr(
+  c: Course,
+  ownerUid: string,
+  row: AdminUserRow | undefined
+): string {
+  const idPart = `Course id: ${c.id}`;
+  if (!row) return `${idPart} · Owner uid: ${ownerUid}`;
+  const bits = [idPart, `Owner: ${row.displayName}`];
+  if (row.email.trim()) bits.push(row.email.trim());
+  bits.push(`uid ${ownerUid}`);
+  return bits.join(' · ');
+}
+
 /** Sub-tabs inside Course catalog: course entries, learning paths, category management. */
 type ContentCatalogSubTab = 'catalog' | 'paths' | 'taxonomy' | 'categories' | 'presets' | 'skillPresets';
 
@@ -446,7 +470,17 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const isAdminMergedCatalog = includeCreatorDraftCourses && !isCreatorCatalog;
   const [publishedList, setPublishedList] = useState<Course[]>([]);
   const [creatorDraftRows, setCreatorDraftRows] = useState<Array<{ course: Course; ownerUid: string }>>([]);
+  /** `users` docs — for merged-catalog creator-draft dropdown labels (display name / email). */
+  const [mergedCatalogAdminUsers, setMergedCatalogAdminUsers] = useState<AdminUserRow[]>([]);
   const newCourseSaveTargetRef = useRef<NewCourseSaveTarget>({ kind: 'published' });
+
+  useEffect(() => {
+    if (!isAdminMergedCatalog) {
+      setMergedCatalogAdminUsers([]);
+      return;
+    }
+    return subscribeUsersForAdmin(setMergedCatalogAdminUsers);
+  }, [isAdminMergedCatalog]);
   /**
    * Creator studio only: published `publishedCourses` snapshot for category/skill pickers. Creator `publishedList`
    * is draft-only, so without this, labels admins add on published courses never appear in “add from list”.
@@ -950,29 +984,46 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     [publishedList]
   );
 
-  /** Course dropdown rows (value + label). Admin merged mode uses prefixed values so published vs creator drafts stay distinct. */
+  const adminUsersByIdForMergedCatalog = useMemo(() => {
+    const m = new Map<string, AdminUserRow>();
+    for (const r of mergedCatalogAdminUsers) m.set(r.id, r);
+    return m;
+  }, [mergedCatalogAdminUsers]);
+
+  /** Course dropdown rows (value + label + optional native tooltip). Admin merged mode uses prefixed values so published vs creator drafts stay distinct. */
   const catalogCourseMenuRows = useMemo(() => {
     if (!isAdminMergedCatalog) {
       return sortedCatalogCourses.map((c) => ({
         value: c.id,
         label: `${c.title} (${c.id})`,
+        title: `Course id: ${c.id}`,
       }));
     }
     const pub = sortedCatalogCourses.map((c) => ({
       value: buildAdminCatalogPublishedSelector(c.id),
       label: `[Published] ${c.title} (${c.id})`,
+      title: `Course id: ${c.id}`,
     }));
     const cre = [...creatorDraftRows]
       .sort((a, b) => {
         const byTitle = a.course.title.localeCompare(b.course.title, undefined, { sensitivity: 'base' });
         return byTitle !== 0 ? byTitle : a.course.id.localeCompare(b.course.id);
       })
-      .map(({ course: c, ownerUid }) => ({
-        value: buildAdminCatalogCreatorSelector(ownerUid, c.id),
-        label: `[Creator draft] ${c.title} (${c.id}) · ${ownerUid.slice(0, 8)}…`,
-      }));
+      .map(({ course: c, ownerUid }) => {
+        const profile = adminUsersByIdForMergedCatalog.get(ownerUid);
+        return {
+          value: buildAdminCatalogCreatorSelector(ownerUid, c.id),
+          label: `[Creator draft] ${c.title} (${c.id}) · ${creatorDraftOwnerShortLabel(ownerUid, profile)}`,
+          title: creatorDraftOptionTitleAttr(c, ownerUid, profile),
+        };
+      });
     return [...pub, ...cre];
-  }, [isAdminMergedCatalog, sortedCatalogCourses, publishedList, creatorDraftRows]);
+  }, [
+    isAdminMergedCatalog,
+    sortedCatalogCourses,
+    creatorDraftRows,
+    adminUsersByIdForMergedCatalog,
+  ]);
 
   const selectionIsExistingCatalogCourse = useMemo(() => {
     if (!selector || selector === '__new__') return false;
@@ -2808,7 +2859,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         </strong>{' '}
                         vs{' '}
                         <strong className="font-semibold text-[var(--text-secondary)]">[Creator draft]</strong> (same
-                        document ID can exist in both).
+                        document ID can exist in both). Creator rows show title (id) · owner; hover for full uid details.
                       </li>
                     ) : null}
                     <li>
@@ -2848,7 +2899,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 <>
                   <option value="__new__">New Course</option>
                   {catalogCourseMenuRows.map((row) => (
-                    <option key={row.value} value={row.value}>
+                    <option key={row.value} value={row.value} title={row.title}>
                       {row.label}
                     </option>
                   ))}
