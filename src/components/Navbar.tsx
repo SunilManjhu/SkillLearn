@@ -122,6 +122,11 @@ interface NavbarProps {
   privatePathIds?: ReadonlySet<string>;
   /** Second arg: creator draft row; third: admin inventory preview owner uid when set. */
   onPathSelect: (pathId: string, fromCreatorDraft?: boolean, adminPreviewOwnerUid?: string) => void;
+  /**
+   * When set, catalog is scoped to a learning path (catalog hero, overview, or player with path context).
+   * Highlights **Learning Paths** in the nav instead of **Browse Catalog**.
+   */
+  learningPathNavActive?: boolean;
   onSkillSelect: (skill: string) => void;
   theme: 'dark' | 'light';
   onThemeToggle: () => void;
@@ -160,6 +165,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   learningPaths = [],
   privatePathIds = EMPTY_PRIVATE_PATH_IDS,
   onPathSelect,
+  learningPathNavActive = false,
   onSkillSelect,
   theme,
   onThemeToggle,
@@ -420,7 +426,12 @@ export const Navbar: React.FC<NavbarProps> = ({
               onNavigate('catalog');
             }}
             tabIndex={focusedNavIndex === 1 ? 0 : -1}
-            className={`h-16 transition-colors hover:text-[var(--text-primary)] focus:text-[var(--text-primary)] focus:outline-none ${activeView === 'catalog' ? 'border-b-2 border-orange-500 text-orange-500' : 'text-[var(--text-secondary)]'}`}
+            aria-current={activeView === 'catalog' && !learningPathNavActive ? 'page' : undefined}
+            className={`h-16 transition-colors hover:text-[var(--text-primary)] focus:text-[var(--text-primary)] focus:outline-none ${
+              activeView === 'catalog' && !learningPathNavActive
+                ? 'border-b-2 border-orange-500 text-orange-500'
+                : 'text-[var(--text-secondary)]'
+            }`}
           >
             Browse Catalog
           </button>
@@ -435,7 +446,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                 setFocusedItemIndex(-1);
               }}
               tabIndex={focusedNavIndex === 2 ? 0 : -1}
-              className="hover:text-[var(--text-primary)] transition-colors flex items-center gap-1 h-16 focus:outline-none focus:text-[var(--text-primary)]"
+              aria-current={learningPathNavActive ? 'page' : undefined}
+              className={`flex h-16 items-center gap-1 transition-colors focus:text-[var(--text-primary)] focus:outline-none hover:text-[var(--text-primary)] ${
+                learningPathNavActive ? 'border-b-2 border-orange-500 text-orange-500' : 'text-[var(--text-secondary)]'
+              }`}
             >
               Learning Paths{' '}
               <ChevronDown size={14} className={`${openDropdown === 'paths' ? 'rotate-180' : ''} transition-transform`} />
@@ -884,7 +898,9 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="flex flex-col py-2 text-sm font-medium text-[var(--text-secondary)]">
               <button
                 type="button"
-                className={`px-4 py-3 text-left transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] ${activeView === 'catalog' ? 'text-orange-500' : ''}`}
+                className={`px-4 py-3 text-left transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] ${
+                  activeView === 'catalog' && !learningPathNavActive ? 'text-orange-500' : ''
+                }`}
                 onClick={() => {
                   /* Default shouldClear=true matches desktop Browse Catalog: clears learning path + library filters. */
                   onNavigate('catalog');
@@ -896,7 +912,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               <div className="border-t border-[var(--border-color)]">
                 <button
                   type="button"
-                  className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-[var(--hover-bg)]"
+                  className={`flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-[var(--hover-bg)] ${
+                    learningPathNavActive ? 'text-orange-500' : ''
+                  }`}
                   onClick={() => setMobileNavExpand((e) => (e === 'paths' ? null : 'paths'))}
                   aria-expanded={mobileNavExpand === 'paths'}
                 >

@@ -1572,9 +1572,10 @@ function PathBranchInsertSlot({
       {/* md+: zero list height; hover/focus hit strip straddles the gap between rows */}
       <div
         className={
-          persistVisibleOnMd
+          (persistVisibleOnMd
             ? 'w-full'
-            : 'w-full md:pointer-events-auto md:absolute md:inset-x-0 md:top-0 md:z-[5] md:flex md:min-h-11 md:-translate-y-1/2 md:items-center md:justify-center'
+            : 'w-full md:pointer-events-auto md:absolute md:inset-x-0 md:top-0 md:z-[5] md:flex md:min-h-11 md:-translate-y-1/2 md:items-center md:justify-center') +
+          ' max-md:!pl-0'
         }
         style={pad}
       >
@@ -1598,7 +1599,7 @@ function PathBranchInsertSlot({
 
 /** Outline row (top + nested): row1 = title labels; row2 = badge, field(s), show, audience, actions. */
 const PATH_BRANCH_OUTLINE_ROW_GRID =
-  'grid w-full min-w-0 grid-cols-1 gap-y-2 md:grid-cols-[auto_minmax(0,1fr)_8.25rem_14rem_minmax(7.25rem,max-content)] md:grid-rows-[auto_auto] md:gap-x-3 md:gap-y-1';
+  'grid w-full min-w-0 grid-cols-1 gap-y-2 max-md:gap-y-1.5 md:grid-cols-[auto_minmax(0,1fr)_8.25rem_14rem_minmax(7.25rem,max-content)] md:grid-rows-[auto_auto] md:gap-x-3 md:gap-y-1';
 
 /** Hover / long-press tip for the catalog outline visibility checkbox column. */
 const PATH_BRANCH_SHOW_COLUMN_TIP =
@@ -1677,14 +1678,14 @@ function PathBranchVisibilityCells({
 
   if ((nested && nestedGridSecondRow) || topLevelGridSecondRow) {
     return (
-      <>
-        <div className="col-start-3 row-start-2 flex min-w-0 items-center justify-center justify-self-center">
+      <div className="max-md:col-span-full max-md:col-start-1 max-md:row-auto max-md:flex max-md:min-w-0 max-md:flex-row max-md:flex-wrap max-md:items-center max-md:gap-x-3 max-md:gap-y-2 md:contents">
+        <div className="col-start-3 row-start-2 flex min-w-0 items-center justify-center justify-self-center max-md:justify-start md:justify-self-center">
           {showCell}
         </div>
-        <div className="col-start-4 row-start-2 flex min-w-0 w-full max-w-[16rem] items-center justify-self-stretch sm:min-w-[12rem]">
+        <div className="col-start-4 row-start-2 flex min-w-0 w-full items-center justify-self-stretch max-md:min-w-0 max-md:max-w-none max-md:flex-1 sm:min-w-[12rem] md:max-w-[16rem]">
           {roleCell}
         </div>
-      </>
+      </div>
     );
   }
 
@@ -1830,60 +1831,56 @@ function PathBranchRow({
   const renderOutlineRowMainCells = () => {
     if (b.kind === 'label') {
       return (
-        <>
+        <div className="max-md:flex max-md:min-w-0 max-md:flex-row max-md:flex-wrap max-md:items-center max-md:gap-2 md:contents">
           <span
-            className={`min-w-0 md:col-start-2 md:row-start-1 ${PATH_BRANCH_TITLE_FIELD_LABEL_CLASS}`}
+            className={`min-w-0 shrink-0 md:col-start-2 md:row-start-1 ${PATH_BRANCH_TITLE_FIELD_LABEL_CLASS}`}
           >
             Title
           </span>
-          <div className="max-md:flex max-md:min-w-0 max-md:flex-row max-md:items-center max-md:gap-2 md:contents">
-            <div className="flex items-center md:col-start-1 md:row-start-2">{branchBadgeGroup}</div>
-            <input
-              type="text"
-              value={b.label}
-              onChange={(e) => onLabelChange(b.id, e.target.value)}
-              onClick={(e) => e.stopPropagation()}
-              onKeyDown={(e) => e.stopPropagation()}
-              aria-label="Branch label"
-              className={`${branchFieldInputClass} min-w-0 md:col-start-2 md:row-start-2`}
-              placeholder="Label text"
-            />
-          </div>
-        </>
+          <div className="flex shrink-0 items-center md:col-start-1 md:row-start-2">{branchBadgeGroup}</div>
+          <input
+            type="text"
+            value={b.label}
+            onChange={(e) => onLabelChange(b.id, e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+            aria-label="Branch label"
+            className={`${branchFieldInputClass} min-w-0 max-md:min-h-10 max-md:flex-1 md:col-start-2 md:row-start-2`}
+            placeholder="Label text"
+          />
+        </div>
       );
     }
     if (b.kind === 'divider') {
       return (
-        <>
+        <div className="max-md:flex max-md:min-w-0 max-md:flex-row max-md:flex-wrap max-md:items-center max-md:gap-2 md:contents">
           <span
-            className={`min-w-0 md:col-start-2 md:row-start-1 ${PATH_BRANCH_TITLE_FIELD_LABEL_CLASS}`}
+            className={`min-w-0 shrink-0 md:col-start-2 md:row-start-1 ${PATH_BRANCH_TITLE_FIELD_LABEL_CLASS}`}
           >
             Title
           </span>
-          <div className="max-md:flex max-md:min-w-0 max-md:flex-row max-md:items-center max-md:gap-2 md:contents">
-            <div className="flex items-center md:col-start-1 md:row-start-2">{branchBadgeGroup}</div>
-            <input
-              type="text"
-              value={b.label}
-              onChange={(e) => onLabelChange(b.id, e.target.value)}
-              onClick={(e) => e.stopPropagation()}
-              onKeyDown={(e) => e.stopPropagation()}
-              aria-label="Divider text"
-              className={`${branchFieldInputClass} min-w-0 md:col-start-2 md:row-start-2`}
-              placeholder="Divider text (shown in learner outline)"
-            />
-          </div>
-        </>
+          <div className="flex shrink-0 items-center md:col-start-1 md:row-start-2">{branchBadgeGroup}</div>
+          <input
+            type="text"
+            value={b.label}
+            onChange={(e) => onLabelChange(b.id, e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+            aria-label="Divider text"
+            className={`${branchFieldInputClass} min-w-0 max-md:min-h-10 max-md:flex-1 md:col-start-2 md:row-start-2`}
+            placeholder="Divider text (shown in learner outline)"
+          />
+        </div>
       );
     }
     if (b.kind === 'link') {
       return (
         <>
-          <div className="flex min-w-0 flex-wrap gap-x-4 gap-y-1 md:col-start-2 md:row-start-1">
+          <div className="flex min-w-0 flex-wrap gap-x-4 gap-y-1 max-md:flex-col max-md:gap-1 md:col-start-2 md:row-start-1">
             <span className={PATH_BRANCH_TITLE_FIELD_LABEL_CLASS}>Title</span>
             <span className={PATH_BRANCH_TITLE_FIELD_LABEL_CLASS}>URL</span>
           </div>
-          <div className="max-md:flex max-md:min-w-0 max-md:flex-row max-md:flex-wrap max-md:items-center max-md:gap-2 md:contents">
+          <div className="max-md:flex max-md:min-w-0 max-md:flex-col max-md:items-stretch max-md:gap-1.5 md:contents">
             <div className="flex items-center md:col-start-1 md:row-start-2">{branchBadgeGroup}</div>
             <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end sm:gap-x-3 sm:gap-y-2 md:col-start-2 md:row-start-2">
               <input
@@ -1913,19 +1910,17 @@ function PathBranchRow({
       );
     }
     return (
-      <>
+      <div className="max-md:flex max-md:min-w-0 max-md:flex-row max-md:flex-wrap max-md:items-center max-md:gap-2 md:contents">
         <span
-          className={`min-w-0 md:col-start-2 md:row-start-1 ${PATH_BRANCH_TITLE_FIELD_LABEL_CLASS}`}
+          className={`min-w-0 shrink-0 md:col-start-2 md:row-start-1 ${PATH_BRANCH_TITLE_FIELD_LABEL_CLASS}`}
         >
           Title
         </span>
-        <div className="max-md:flex max-md:min-w-0 max-md:flex-row max-md:items-center max-md:gap-2 md:contents">
-          <div className="flex items-center md:col-start-1 md:row-start-2">{branchBadgeGroup}</div>
-          <span className="flex min-h-10 min-w-0 items-center truncate text-sm font-bold text-[var(--text-primary)] md:col-start-2 md:row-start-2">
-            {branchNodeDisplayLabel(b, publishedList)}
-          </span>
-        </div>
-      </>
+        <div className="flex shrink-0 items-center md:col-start-1 md:row-start-2">{branchBadgeGroup}</div>
+        <span className="flex min-h-10 min-w-0 flex-1 items-center truncate text-sm font-bold text-[var(--text-primary)] max-md:min-h-0 md:col-start-2 md:row-start-2">
+          {branchNodeDisplayLabel(b, publishedList)}
+        </span>
+      </div>
     );
   };
 
@@ -2003,7 +1998,7 @@ function PathBranchRow({
       data-path-branch-node-id={b.id}
       className={`min-w-0 list-none overflow-hidden ${rowDivider}${
         depth === 0
-          ? 'grid grid-cols-1 gap-y-3 px-3 py-3 sm:px-4 md:grid md:grid-cols-[auto_minmax(0,1fr)_8.25rem_14rem_minmax(7.25rem,max-content)] md:grid-rows-[auto_auto] md:gap-x-3 md:gap-y-1'
+          ? 'grid grid-cols-1 gap-y-3 px-3 py-3 max-md:gap-y-2 max-md:px-2 max-md:py-2 sm:px-4 md:grid md:grid-cols-[auto_minmax(0,1fr)_8.25rem_14rem_minmax(7.25rem,max-content)] md:grid-rows-[auto_auto] md:gap-x-3 md:gap-y-1'
           : ''
       }`}
       onFocusCapture={depth === 0 ? onBranchRowFocusCapture : undefined}
@@ -2019,14 +2014,14 @@ function PathBranchRow({
             topLevelGridSecondRow
           />
           <div className="max-md:flex max-md:w-full max-md:justify-end md:contents">
-            <div className="flex items-center justify-end gap-1 md:col-start-5 md:row-start-2">
+            <div className="flex items-center justify-end gap-1 max-md:col-span-full max-md:col-start-1 max-md:row-auto md:col-start-5 md:row-start-2">
               {branchActionButtons}
             </div>
           </div>
         </div>
       ) : (
         <div
-          className={`${PATH_BRANCH_OUTLINE_ROW_GRID} px-1 py-2 sm:px-2 sm:py-2`}
+          className={`${PATH_BRANCH_OUTLINE_ROW_GRID} max-md:!pl-0 max-md:px-0 max-md:py-1.5 px-1 py-2 sm:px-2 sm:py-2`}
           style={{ paddingLeft: `${Math.min(depth, 8) * 0.75}rem` }}
           onFocusCapture={onBranchRowFocusCapture}
           role="group"
@@ -2041,7 +2036,7 @@ function PathBranchRow({
             nestedGridSecondRow
           />
           <div className="max-md:flex max-md:w-full max-md:justify-end md:contents">
-            <div className="flex items-center justify-end gap-1 max-md:pt-0 md:col-start-5 md:row-start-2">
+            <div className="flex items-center justify-end gap-1 max-md:col-span-full max-md:col-start-1 max-md:row-auto max-md:pt-0 md:col-start-5 md:row-start-2">
               {branchActionButtons}
             </div>
           </div>
@@ -2116,7 +2111,7 @@ function PathBranchTreeList({
     <ul
       className={
         depth > 0
-          ? 'space-y-0 border-l-2 border-orange-500/30 pl-3 sm:pl-4'
+          ? 'space-y-0 max-md:border-l-0 max-md:pl-0 border-l-2 border-orange-500/30 pl-3 sm:pl-4'
           : // Reserve space so the first md “between rows” insert strip (–translate-y-1/2) does not overlap the Outline heading above the list.
             'space-y-0 pt-5 md:pt-6'
       }

@@ -566,7 +566,7 @@ export default function App() {
     const paths = uid ? peekResolvedCreatorCatalog(uid)?.paths ?? [] : [];
     return new Set(paths.map((p) => p.id));
   });
-  /** Admin Creators tab: injected path row(s) for “Open in catalog” preview (another creator’s draft path). */
+  /** Admin Creators tab: injected path row(s) for “Open Path” preview (another creator’s draft path). */
   const [adminCreatorPreviewPathRows, setAdminCreatorPreviewPathRows] = useState<CatalogLearningPathRow[]>([]);
   const combinedCatalogPathRows = useMemo(
     () => [...catalogPathRows, ...adminCreatorPreviewPathRows],
@@ -3447,6 +3447,13 @@ export default function App() {
   const profileOverlayOpen = currentView === 'profile';
   const mainView: View = profileOverlayOpen ? (profileSettingsUnderlayView ?? 'catalog') : currentView;
 
+  /** Navbar: highlight Learning Paths (not Browse Catalog) when a path scopes the learner catalog experience. */
+  const learningPathNavActive =
+    selectedLearningPathId != null &&
+    mainView !== 'admin' &&
+    mainView !== 'creator' &&
+    (mainView === 'catalog' || mainView === 'overview' || mainView === 'player');
+
   return (
     <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] selection:bg-orange-500/30 transition-colors duration-300">
       {currentView !== 'certificate' && (
@@ -3485,6 +3492,7 @@ export default function App() {
           }))}
           privatePathIds={catalogPrivatePathIds}
           onPathSelect={handlePathSelect}
+          learningPathNavActive={learningPathNavActive}
           onSkillSelect={handleSkillSelect}
           theme={theme}
           onThemeToggle={() =>

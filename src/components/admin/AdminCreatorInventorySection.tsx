@@ -6,6 +6,7 @@ import { subscribeUsersForAdmin, type AdminUserRow } from '../../utils/adminUser
 import { listCreatorCoursesForAdminByOwner } from '../../utils/creatorCoursesFirestore';
 import { listCreatorLearningPathsForAdminByOwner } from '../../utils/creatorLearningPathsFirestore';
 import { useAdminActionToast } from './useAdminActionToast';
+import { AdminLabelInfoTip } from './adminLabelInfoTip';
 
 const ALL_CREATORS_KEY = '__ALL__';
 
@@ -15,7 +16,7 @@ type PathRow = { path: LearningPath; ownerUid: string };
 export type AdminCreatorInventorySectionProps = {
   /** Open a creator’s private course in the learner course overview (admin can start the player from there). */
   onPreviewCreatorCourse?: (ownerUid: string, course: Course) => void;
-  /** Open a creator’s private path in Browse Catalog (path outline + courses as learners would see). */
+  /** Open a creator’s private path in the learner path view (outline + courses as learners would see). */
   onPreviewCreatorPath?: (ownerUid: string, path: LearningPath) => void;
 };
 
@@ -282,29 +283,38 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
   const showOwnerOnRows = selectedKey === ALL_CREATORS_KEY;
 
   return (
-    <div className="min-w-0 space-y-6 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="min-w-0 space-y-6 max-md:space-y-4 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 max-md:px-3 max-md:py-4 sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3 max-md:flex-col max-md:items-stretch max-md:gap-3">
         <div className="min-w-0">
           <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
-            <h2 className="m-0 flex items-center gap-2 text-lg font-bold leading-none">
+            <h2 className="m-0 flex min-w-0 items-center gap-2 text-base font-bold leading-tight text-[var(--text-primary)] sm:text-lg">
               <Library size={20} className="shrink-0 text-orange-500" aria-hidden />
-              Creator content
+              <span className="min-w-0">Creator content</span>
             </h2>
+            <AdminLabelInfoTip
+              controlOnly
+              tipId="admin-creator-content-tips"
+              tipRegionAriaLabel="Creator content tips"
+              tipSubject="Creator content"
+            >
+              <li>
+                Read-only list of private courses and paths stored under{' '}
+                <code className="text-orange-500/90">creatorCourses</code> and{' '}
+                <code className="text-orange-500/90">creatorLearningPaths</code>.
+              </li>
+              <li>
+                Use <strong className="font-semibold text-[var(--text-secondary)]">Open overview</strong> for a course
+                or <strong className="font-semibold text-[var(--text-secondary)]">Open Path</strong> for a path to
+                view them in the learner experience.
+              </li>
+            </AdminLabelInfoTip>
           </div>
-          <p className="mt-1 max-w-xl text-xs text-[var(--text-muted)] sm:text-sm">
-            Read-only list of private courses and paths stored under{' '}
-            <code className="text-orange-500/90">creatorCourses</code> and{' '}
-            <code className="text-orange-500/90">creatorLearningPaths</code>. Use{' '}
-            <strong className="text-[var(--text-secondary)]">Open overview</strong> for a course or{' '}
-            <strong className="text-[var(--text-secondary)]">Open in catalog</strong> for a path to view them in the
-            learner experience.
-          </p>
         </div>
         <button
           type="button"
           onClick={() => setSubscriptionKey((k) => k + 1)}
           disabled={loadingUsers}
-          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[var(--border-color)] hover:bg-[var(--hover-bg)] disabled:opacity-50"
+          className="inline-flex h-11 min-h-11 w-11 min-w-11 shrink-0 items-center justify-center self-end rounded-lg border border-[var(--border-color)] hover:bg-[var(--hover-bg)] disabled:opacity-50 sm:h-10 sm:min-h-10 sm:w-10 sm:min-w-10 sm:self-auto"
           title="Refresh user list"
           aria-label="Refresh user list"
         >
@@ -333,12 +343,12 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
           Roles.
         </p>
       ) : (
-        <div className="space-y-4">
-          <div className="space-y-1" ref={wrapRef}>
+        <div className="space-y-4 max-md:space-y-3">
+          <div className="min-w-0 space-y-1" ref={wrapRef}>
             <label htmlFor="admin-creator-inventory-combobox" className="text-xs font-semibold text-[var(--text-secondary)]">
               Created by
             </label>
-            <div className="relative max-w-md">
+            <div className="relative w-full max-w-md min-w-0">
               {menuOpen ? (
                 <div className="relative rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)]">
                   <div className="relative min-h-11 pr-10">
@@ -441,10 +451,10 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
                           }
                         }
                       }}
-                      className="absolute inset-0 z-10 box-border h-full w-full border-0 bg-transparent py-2 pl-3 pr-2 text-sm text-transparent caret-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
+                      className="absolute inset-0 z-10 box-border h-full w-full border-0 bg-transparent py-2 pl-3 pr-2 text-base text-transparent caret-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] sm:text-sm"
                     />
                     <div
-                      className="pointer-events-none flex min-h-11 items-center gap-0 py-2 pl-3 pr-2 text-sm"
+                      className="pointer-events-none flex min-h-11 items-center gap-0 py-2 pl-3 pr-2 text-base sm:text-sm"
                       aria-hidden
                     >
                       {filterQuery.length > 0 || uniqueInlineSuffix ? (
@@ -503,7 +513,7 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
                         openMenu();
                       }
                     }}
-                    className="box-border min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] py-2 pl-3 pr-10 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] read-only:cursor-pointer"
+                    className="box-border min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] py-2 pl-3 pr-10 text-base text-[var(--text-primary)] placeholder:text-[var(--text-muted)] read-only:cursor-pointer sm:text-sm"
                   />
                   <button
                     type="button"
@@ -526,7 +536,7 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
                   role="listbox"
                   tabIndex={-1}
                   aria-label="Creator options"
-                  className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] py-1 shadow-lg outline-none ring-offset-2 ring-offset-[var(--bg-primary)] focus-visible:ring-2 focus-visible:ring-orange-500/50 [scrollbar-width:thin]"
+                  className="absolute z-50 mt-1 max-h-[min(15rem,50dvh)] w-full min-w-0 overflow-y-auto overscroll-contain rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] py-1 shadow-lg outline-none ring-offset-2 ring-offset-[var(--bg-primary)] focus-visible:ring-2 focus-visible:ring-orange-500/50 [scrollbar-width:thin] [-webkit-overflow-scrolling:touch]"
                   onKeyDown={(e) => {
                     if (listboxOptions.length === 0) return;
                     if (e.key === 'ArrowDown') {
@@ -597,12 +607,14 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
             )}
           </div>
 
-          <div className="grid gap-6 lg:grid-cols-2">
+          <div className="grid gap-4 min-w-0 lg:grid-cols-2 lg:gap-6">
             <div className="min-w-0 space-y-2">
-              <h3 className="flex items-center gap-2 text-sm font-bold text-[var(--text-primary)]">
+              <h3 className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm font-bold text-[var(--text-primary)]">
                 <BookOpen className="shrink-0 text-orange-500" size={16} aria-hidden />
-                Private courses (
+                <span className="min-w-0">
+                  Private courses (
                 {!selectedKey ? '—' : coursesLoading ? '…' : courseRows.length})
+                </span>
               </h3>
               {!selectedKey ? (
                 <p className="text-xs text-[var(--text-muted)]">
@@ -614,19 +626,19 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
               ) : courseRows.length === 0 ? (
                 <p className="text-xs text-[var(--text-muted)]">No creator courses for this scope.</p>
               ) : (
-                <ul className="max-h-72 space-y-0 overflow-y-auto rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] p-2 text-sm [scrollbar-width:thin] [scrollbar-color:var(--border-light)_var(--bg-secondary)] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-[var(--bg-secondary)] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[var(--border-light)]">
+                <ul className="max-h-72 space-y-0 overflow-y-auto overflow-x-hidden overscroll-contain rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] p-2 max-md:p-1.5 text-sm [scrollbar-width:thin] [scrollbar-color:var(--border-light)_var(--bg-secondary)] [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-[var(--bg-secondary)] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[var(--border-light)]">
                   {courseRows.map(({ course: c, ownerUid }) => (
                     <li
                       key={`${ownerUid}:${c.id}`}
-                      className="flex flex-col gap-2 border-b border-[var(--border-color)] py-2.5 last:border-0 sm:flex-row sm:items-center sm:gap-3"
+                      className="flex flex-col gap-2 border-b border-[var(--border-color)] py-2 last:border-0 max-md:gap-1.5 sm:flex-row sm:items-center sm:gap-3 sm:py-2.5"
                     >
                       <div className="min-w-0 flex-1">
                         {showOwnerOnRows ? (
-                          <div className="mb-0.5 text-[11px] font-medium text-orange-500/90">
+                          <div className="mb-0.5 text-[11px] font-medium leading-snug text-orange-500/90">
                             {creators.find((x) => x.id === ownerUid)?.displayName ?? ownerUid}
                           </div>
                         ) : null}
-                        <div className="truncate font-medium text-[var(--text-primary)]">{c.title}</div>
+                        <div className="break-words font-medium text-[var(--text-primary)] sm:truncate">{c.title}</div>
                         <code className="break-all text-[11px] text-[var(--text-muted)]">{c.id}</code>
                       </div>
                       {onPreviewCreatorCourse ? (
@@ -647,10 +659,12 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
             </div>
 
             <div className="min-w-0 space-y-2">
-              <h3 className="flex items-center gap-2 text-sm font-bold text-[var(--text-primary)]">
+              <h3 className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm font-bold text-[var(--text-primary)]">
                 <Route className="shrink-0 text-orange-500" size={16} aria-hidden />
-                Private paths (
+                <span className="min-w-0">
+                  Private paths (
                 {!selectedKey ? '—' : pathsLoading ? '…' : pathRows.length})
+                </span>
               </h3>
               {!selectedKey ? (
                 <p className="text-xs text-[var(--text-muted)]">
@@ -662,19 +676,19 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
               ) : pathRows.length === 0 ? (
                 <p className="text-xs text-[var(--text-muted)]">No creator paths for this scope.</p>
               ) : (
-                <ul className="max-h-72 space-y-0 overflow-y-auto rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] p-2 text-sm [scrollbar-width:thin] [scrollbar-color:var(--border-light)_var(--bg-secondary)] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-[var(--bg-secondary)] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[var(--border-light)]">
+                <ul className="max-h-72 space-y-0 overflow-y-auto overflow-x-hidden overscroll-contain rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] p-2 max-md:p-1.5 text-sm [scrollbar-width:thin] [scrollbar-color:var(--border-light)_var(--bg-secondary)] [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-[var(--bg-secondary)] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[var(--border-light)]">
                   {pathRows.map(({ path: p, ownerUid }) => (
                     <li
                       key={`${ownerUid}:${p.id}`}
-                      className="flex flex-col gap-2 border-b border-[var(--border-color)] py-2.5 last:border-0 sm:flex-row sm:items-center sm:gap-3"
+                      className="flex flex-col gap-2 border-b border-[var(--border-color)] py-2 last:border-0 max-md:gap-1.5 sm:flex-row sm:items-center sm:gap-3 sm:py-2.5"
                     >
                       <div className="min-w-0 flex-1">
                         {showOwnerOnRows ? (
-                          <div className="mb-0.5 text-[11px] font-medium text-orange-500/90">
+                          <div className="mb-0.5 text-[11px] font-medium leading-snug text-orange-500/90">
                             {creators.find((x) => x.id === ownerUid)?.displayName ?? ownerUid}
                           </div>
                         ) : null}
-                        <div className="truncate font-medium text-[var(--text-primary)]">{p.title}</div>
+                        <div className="break-words font-medium text-[var(--text-primary)] sm:truncate">{p.title}</div>
                         <code className="break-all text-[11px] text-[var(--text-muted)]">{p.id}</code>
                       </div>
                       {onPreviewCreatorPath ? (
@@ -682,10 +696,10 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
                           type="button"
                           onClick={() => onPreviewCreatorPath(ownerUid, p)}
                           className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[var(--border-color)] bg-[var(--hover-bg)] px-3 py-2 text-xs font-semibold text-[var(--text-primary)] transition-colors hover:border-orange-500/40 hover:text-orange-500 sm:w-auto sm:min-w-[7.5rem]"
-                          aria-label={`Open ${p.title} in catalog`}
+                          aria-label={`Open path: ${p.title}`}
                         >
                           <Route size={14} aria-hidden />
-                          Open in catalog
+                          Open Path
                         </button>
                       ) : null}
                     </li>

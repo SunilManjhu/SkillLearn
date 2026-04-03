@@ -36,7 +36,7 @@ interface AdminPageProps {
   onAlertsMutedChange?: (muted: boolean) => void;
   /** Creators tab: open another user’s private course in learner overview. */
   onAdminPreviewCreatorCourse?: (ownerUid: string, course: Course) => void;
-  /** Creators tab: open another user’s private path in Browse Catalog. */
+  /** Creators tab: open another user’s private path (Open Path — learner path view). */
   onAdminPreviewCreatorPath?: (ownerUid: string, path: LearningPath) => void;
 }
 
