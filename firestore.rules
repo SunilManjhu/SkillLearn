@@ -289,7 +289,7 @@ service cloud.firestore {
     }
 
     match /customizations/{customizationId} {
-      allow read: if isAuthenticated() && isOwner(resource.data.userId);
+      allow read: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
       allow create: if isAuthenticated() && isValidCustomization(request.resource.data);
       allow update: if isAuthenticated() && isOwner(resource.data.userId) && isValidCustomization(request.resource.data);
       allow delete: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
@@ -319,25 +319,28 @@ service cloud.firestore {
       // get() on a missing doc has no resource; allow so clients can safely check existence
       allow read: if isAuthenticated() && (
         !exists(/databases/$(database)/documents/progress/$(progressId)) ||
-        isOwner(resource.data.userId)
+        isOwner(resource.data.userId) ||
+        isAdmin()
       );
       allow create, update: if isAuthenticated() && isValidProgress(request.resource.data);
-      allow delete: if isAuthenticated() && isOwner(resource.data.userId);
+      allow delete: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
     }
 
     match /courseRatings/{ratingId} {
       allow read: if isAuthenticated() && (
         !exists(/databases/$(database)/documents/courseRatings/$(ratingId)) ||
-        isOwner(resource.data.userId)
+        isOwner(resource.data.userId) ||
+        isAdmin()
       );
       allow create, update: if isAuthenticated() && isValidCourseRating(request.resource.data);
-      allow delete: if isAuthenticated() && isOwner(resource.data.userId);
+      allow delete: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
     }
 
     match /quizAttempts/{attemptId} {
       allow read: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
       allow create: if isAuthenticated() && isValidQuizAttempt(request.resource.data);
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if isAdmin();
     }
 
     match /users/{userId} {

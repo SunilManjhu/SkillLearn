@@ -225,6 +225,18 @@ export function collectCourseIdsFromMindmapTree(nodes: MindmapTreeNode[]): Set<s
   return out;
 }
 
+/** Drop course/lesson rows for `courseId` (used when deleting a catalog course still listed on paths). */
+export function removeCourseIdFromMindmapBranchList(nodes: MindmapTreeNode[], courseId: string): MindmapTreeNode[] {
+  const out: MindmapTreeNode[] = [];
+  for (const n of nodes) {
+    if (n.kind === 'course' && n.courseId === courseId) continue;
+    if (n.kind === 'lesson' && n.courseId === courseId) continue;
+    const children = removeCourseIdFromMindmapBranchList(n.children, courseId);
+    out.push({ ...n, children });
+  }
+  return out;
+}
+
 /**
  * Align Firestore `courseIds` with the saved outline: drops ids removed from the mindmap but left in `courseIds`
  * (older saves merged instead of replacing). `mindmapOutlineChildren === null` = not loaded yet — keep `pathCourseIds`.

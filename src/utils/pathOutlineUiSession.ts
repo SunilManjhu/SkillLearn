@@ -94,3 +94,21 @@ export function writePathMindmapOutlineExpand(pathId: string, snap: PathMindmapO
     /* ignore */
   }
 }
+
+/** Drop persisted outline / row UI for a path (e.g. after the path doc is deleted) so reusing the id does not restore old UI. */
+export function clearPathOutlineUiSessionForPathId(pathId: string): void {
+  if (typeof window === 'undefined') return;
+  const keys = [`${COURSE_ROW_KEY}${pathId}`, `${OUTLINE_KEY}${pathId}`];
+  for (const k of keys) {
+    try {
+      localStorage.removeItem(k);
+    } catch {
+      /* ignore */
+    }
+    try {
+      sessionStorage.removeItem(k);
+    } catch {
+      /* ignore */
+    }
+  }
+}

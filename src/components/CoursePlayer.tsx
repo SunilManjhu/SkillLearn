@@ -55,6 +55,7 @@ import {
   isCourseReadyToFinalize,
   syncProgressToFirestore,
   loadProgressFromFirestore,
+  clearLocalLearnerStateForCourseId,
   type LessonProgress,
 } from '../utils/courseProgress';
 import { mergeCompletionTimestampFromRemote } from '../utils/courseCompletionLog';
@@ -63,6 +64,7 @@ import {
   hasRatedOrDismissed,
   remindLaterCourseRating,
   loadCourseRatingFromFirestore,
+  clearCourseRating,
 } from '../utils/courseRating';
 import { useYoutubeResolvedSeconds } from '../hooks/useYoutubeResolvedSeconds';
 import { formatAuthError } from '../utils/authErrors';
@@ -1494,14 +1496,28 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
 
     // Load from Firestore if logged in
     if (progressUserId) {
-      loadProgressFromFirestore(course.id, progressUserId).then((remote) => {
-        if (!remote) return;
-        if (remote.completedAtMs != null) {
-          mergeCompletionTimestampFromRemote(course.id, progressUserId, remote.completedAtMs);
+      loadProgressFromFirestore(course.id, progressUserId).then((res) => {
+        if (!res.ok) return;
+        if (res.absent) {
+          console.debug('[debug:courseReuse]', 'player: clearing local progress (no Firestore progress doc)', {
+            courseId: course.id,
+          });
+          clearLocalLearnerStateForCourseId(course.id, progressUserId);
+          setProgressByLesson({});
+          try {
+            localStorage.setItem(progressStorageKey(course.id, progressUserId), JSON.stringify({}));
+          } catch {
+            /* ignore */
+          }
+          lastKnownProgressByLessonRef.current = {};
+          return;
         }
-        if (Object.keys(remote.lessonProgress).length === 0) return;
+        if (res.completedAtMs != null) {
+          mergeCompletionTimestampFromRemote(course.id, progressUserId, res.completedAtMs);
+        }
+        if (Object.keys(res.lessonProgress).length === 0) return;
         setProgressByLesson((prev) => {
-          const next = { ...prev, ...remote.lessonProgress };
+          const next = { ...prev, ...res.lessonProgress };
           try {
             localStorage.setItem(progressStorageKey(course.id, progressUserId), JSON.stringify(next));
           } catch {
@@ -1516,9 +1532,15 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   useEffect(() => {
     if (!progressUserId) return;
     let cancelled = false;
-    loadCourseRatingFromFirestore(course.id, progressUserId).then((remote) => {
-      if (cancelled || !remote) return;
-      saveCourseRating(course.id, remote, progressUserId, { skipFirestoreSync: true });
+    loadCourseRatingFromFirestore(course.id, progressUserId).then((res) => {
+      if (cancelled || !res.ok) return;
+      if (res.absent) {
+        clearCourseRating(course.id, progressUserId);
+        return;
+      }
+      if (res.rating) {
+        saveCourseRating(course.id, res.rating, progressUserId, { skipFirestoreSync: true });
+      }
     });
     return () => {
       cancelled = true;

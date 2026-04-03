@@ -63,6 +63,18 @@ import {
   saveCreatorCourse,
 } from '../../utils/creatorCoursesFirestore';
 import {
+  findLearningPathReferencesToCourseId,
+  removeCourseIdFromLearningPathDocument,
+  type LearningPathCourseRefHit,
+} from '../../utils/learningPathCourseDelete';
+import { purgeLearnerFirestoreDataForCourse } from '../../utils/courseDeleteFirestorePurge';
+import {
+  findCourseSaveTitleConflict,
+  loadPathTitlesForConflictCheck,
+  type TitleConflictHit,
+} from '../../utils/catalogDisplayNameConflicts';
+import { AdminDisplayNameConflictDialog } from './AdminDisplayNameConflictDialog';
+import {
   addCatalogCategoryExtra,
   CATALOG_CATEGORY_EXTRAS_CHANGED,
   readCatalogCategoryExtras,
@@ -462,6 +474,10 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const pendingOpenNewModuleIndexRef = useRef<number | null>(null);
   /** After adding a lesson, open that exact lesson once draft state is committed. */
   const pendingOpenNewLessonKeyRef = useRef<string | null>(null);
+  /** After adding a module, scroll/focus module title once the panel is open (same tab — not `storage`). */
+  const pendingScrollToNewModuleTitleMiRef = useRef<number | null>(null);
+  /** After adding a lesson, scroll/focus lesson title once the panel is open. */
+  const pendingScrollToNewLessonTitleRef = useRef<{ mi: number; li: number } | null>(null);
   /** On failed save, scroll/focus the first invalid required field once it is rendered. */
   const pendingScrollTargetIdRef = useRef<string | null>(null);
   /** After lesson reorder: restore viewport Y of the control + focus (mouse stays on same arrow). */
@@ -1281,6 +1297,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       const newModuleIndex = d.modules.length;
       pendingOpenNewModuleIndexRef.current = newModuleIndex;
       pendingOpenNewLessonKeyRef.current = `${newModuleIndex}:0`;
+      pendingScrollToNewModuleTitleMiRef.current = newModuleIndex;
       const structured = isStructuredCourseId(d.id);
       const mid = structured ? nextModuleIdForCourse(d) : nextModuleIdLegacy(d.modules);
       const lid = structured ? `${mid}L1` : nextLessonIdLegacy(d);
@@ -1321,7 +1338,9 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       if (!d) return null;
       const targetModule = d.modules[mi];
       if (!targetModule) return d;
-      pendingOpenNewLessonKeyRef.current = `${mi}:${targetModule.lessons.length}`;
+      const newLi = targetModule.lessons.length;
+      pendingOpenNewLessonKeyRef.current = `${mi}:${newLi}`;
+      pendingScrollToNewLessonTitleRef.current = { mi, li: newLi };
       const lid = isStructuredCourseId(d.id)
         ? nextLessonIdInModule(d, mi)
         : nextLessonIdLegacy(d);
@@ -1581,6 +1600,47 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     scrollDisclosureRowToTop(null, el);
   }, [catalogDisclosureLessonKey, catalogDisclosureModuleMi, courseDetailsOpen]);
 
+  useLayoutEffect(() => {
+    const miFocus = pendingScrollToNewModuleTitleMiRef.current;
+    if (miFocus == null || !draft) return;
+    if (!openModules[miFocus]) return;
+    let frames = 0;
+    const tryFocus = () => {
+      const el = document.getElementById(`admin-module-title-${miFocus}`);
+      if (el instanceof HTMLElement) {
+        pendingScrollToNewModuleTitleMiRef.current = null;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.focus({ preventScroll: true });
+        return;
+      }
+      frames += 1;
+      if (frames < 24) requestAnimationFrame(tryFocus);
+      else pendingScrollToNewModuleTitleMiRef.current = null;
+    };
+    requestAnimationFrame(tryFocus);
+  }, [draft, openModules]);
+
+  useLayoutEffect(() => {
+    const pos = pendingScrollToNewLessonTitleRef.current;
+    if (!pos || !draft) return;
+    const { mi, li } = pos;
+    if (!openModules[mi] || !openLessons[`${mi}:${li}`]) return;
+    let frames = 0;
+    const tryFocus = () => {
+      const el = document.getElementById(`admin-lesson-title-${mi}-${li}`);
+      if (el instanceof HTMLElement) {
+        pendingScrollToNewLessonTitleRef.current = null;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.focus({ preventScroll: true });
+        return;
+      }
+      frames += 1;
+      if (frames < 24) requestAnimationFrame(tryFocus);
+      else pendingScrollToNewLessonTitleRef.current = null;
+    };
+    requestAnimationFrame(tryFocus);
+  }, [draft, openModules, openLessons]);
+
   const getFirstRequiredFieldTarget = (c: Course): RequiredFieldTarget | null => {
     if (!c.title.trim()) return { targetId: 'admin-course-title', scope: 'course', moduleIndex: 0 };
     if (!c.author.trim()) return { targetId: 'admin-course-author', scope: 'course', moduleIndex: 0 };
@@ -1606,6 +1666,18 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           moduleIndex: mi,
           lessonKeys: [`${mi}:0`],
         };
+      }
+      const moduleTitleKey = m.title.trim().toLowerCase();
+      for (let pj = 0; pj < mi; pj += 1) {
+        const prev = c.modules[pj];
+        if (prev.title.trim() && prev.title.trim().toLowerCase() === moduleTitleKey) {
+          return {
+            targetId: `admin-module-title-${mi}`,
+            scope: 'module',
+            moduleIndex: mi,
+            lessonKeys: [`${mi}:0`],
+          };
+        }
       }
       if (!m.lessons.length) {
         return {
@@ -1634,6 +1706,22 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             moduleIndex: mi,
             lessonKeys: openKeys,
           };
+        }
+        const lessonTitleKey = l.title.trim().toLowerCase();
+        for (let mi2 = 0; mi2 < c.modules.length; mi2 += 1) {
+          for (let li2 = 0; li2 < c.modules[mi2].lessons.length; li2 += 1) {
+            if (mi2 === mi && li2 === li) continue;
+            if (mi2 > mi || (mi2 === mi && li2 > li)) continue;
+            const other = c.modules[mi2].lessons[li2];
+            if (other.title.trim() && other.title.trim().toLowerCase() === lessonTitleKey) {
+              return {
+                targetId: `admin-lesson-title-${mi}-${li}`,
+                scope: 'module',
+                moduleIndex: mi,
+                lessonKeys: openKeys,
+              };
+            }
+          }
         }
         if (l.contentKind === 'web') {
           if (!lessonWebHref(l)) {
@@ -1694,6 +1782,16 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       const m = draft.modules[mi];
       if (!m.id.trim()) out.moduleId.add(mi);
       if (!m.title.trim()) out.moduleTitle.add(mi);
+      const mt = m.title.trim().toLowerCase();
+      if (mt) {
+        for (let pj = 0; pj < mi; pj += 1) {
+          const prev = draft.modules[pj];
+          if (prev.title.trim() && prev.title.trim().toLowerCase() === mt) {
+            out.moduleTitle.add(mi);
+            out.moduleTitle.add(pj);
+          }
+        }
+      }
       for (let li = 0; li < m.lessons.length; li += 1) {
         const l = m.lessons[li];
         const key = `${mi}:${li}`;
@@ -1705,6 +1803,25 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           if (validateLessonQuiz(l, mi, li)) out.lessonQuiz.add(key);
         } else if (!l.videoUrl.trim() || !l.videoUrl.startsWith('http')) {
           out.videoUrl.add(key);
+        }
+      }
+    }
+    for (let mi = 0; mi < draft.modules.length; mi += 1) {
+      for (let li = 0; li < draft.modules[mi].lessons.length; li += 1) {
+        const l = draft.modules[mi].lessons[li];
+        const key = `${mi}:${li}`;
+        const lt = l.title.trim().toLowerCase();
+        if (!lt) continue;
+        for (let mi2 = 0; mi2 < draft.modules.length; mi2 += 1) {
+          for (let li2 = 0; li2 < draft.modules[mi2].lessons.length; li2 += 1) {
+            if (mi2 === mi && li2 === li) continue;
+            if (mi2 > mi || (mi2 === mi && li2 > li)) continue;
+            const o = draft.modules[mi2].lessons[li2];
+            if (o.title.trim() && o.title.trim().toLowerCase() === lt) {
+              out.lessonTitle.add(key);
+              out.lessonTitle.add(`${mi2}:${li2}`);
+            }
+          }
         }
       }
     }
@@ -1801,6 +1918,34 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       showActionToast(err, 'danger');
       return;
     }
+    try {
+      const pathTitles = await loadPathTitlesForConflictCheck({
+        mode: isCreatorCatalog ? 'creator' : 'admin',
+        creatorOwnerUid: catalogPersistence?.kind === 'creator' ? catalogPersistence.ownerUid : undefined,
+      });
+      const courseRows =
+        isCreatorCatalog
+          ? [...publishedList, ...publishedCoursesForPicker].map((c) => ({ id: c.id, title: c.title }))
+          : isAdminMergedCatalog
+            ? [...publishedList, ...creatorDraftRows.map((r) => r.course)].map((c) => ({
+                id: c.id,
+                title: c.title,
+              }))
+            : publishedList.map((c) => ({ id: c.id, title: c.title }));
+      const titleHit = findCourseSaveTitleConflict(
+        normalized.title,
+        normalized.id,
+        pathTitles,
+        courseRows
+      );
+      if (titleHit) {
+        setCourseTitleConflict(titleHit);
+        return;
+      }
+    } catch {
+      showActionToast('Could not verify title uniqueness. Try again.', 'danger');
+      return;
+    }
     setBusy(true);
     let ok = false;
     if (catalogPersistence?.kind === 'creator') {
@@ -1880,7 +2025,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         if (row) {
           fromEditor =
             draft && draft.id === row.course.id ? draft : deepClone(row.course);
-          newCourseSaveTargetRef.current = { kind: 'creator', ownerUid: row.ownerUid };
+          /** Admin merged catalog: copy saves to published catalog, not the source creator's private `creatorCourses`. */
+          newCourseSaveTargetRef.current = { kind: 'published' };
         }
       }
     } else {
@@ -1909,7 +2055,9 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     setDraft(keyed);
     setBaselineJson(draftJsonForBaseline(keyed));
     showActionToast(
-      'Copy loaded as a new draft — IDs use C{n}M{m}L{l}. Adjust title if needed, then Save.'
+      isAdminMergedCatalog
+        ? 'Copy loaded as a new draft — it will save to the live (published) catalog. IDs use C{n}M{m}L{l}. Adjust title if needed, then Save.'
+        : 'Copy loaded as a new draft — IDs use C{n}M{m}L{l}. Adjust title if needed, then Save.'
     );
   };
 
@@ -1944,49 +2092,152 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   };
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deletePathRefs, setDeletePathRefs] = useState<LearningPathCourseRefHit[]>([]);
+  const [courseTitleConflict, setCourseTitleConflict] = useState<TitleConflictHit | null>(null);
 
-  const closeDeleteDialog = useCallback(() => setDeleteDialogOpen(false), []);
-
-  const openDeleteDialog = useCallback(() => {
-    if (!draft || !selectionIsExistingCatalogCourse) return;
-    setDeleteDialogOpen(true);
-  }, [draft, selectionIsExistingCatalogCourse]);
-
-  const confirmDeletePublished = useCallback(async () => {
-    if (!draft) return;
-    const courseId = draft.id;
+  const closeDeleteDialog = useCallback(() => {
     setDeleteDialogOpen(false);
-    setBusy(true);
+    setDeletePathRefs([]);
+  }, []);
+
+  const executeCourseDelete = useCallback(
+    async (courseSnapshot: Course, pathHits: LearningPathCourseRefHit[]) => {
+      const courseId = courseSnapshot.id;
+      const parsed = isAdminMergedCatalog ? parseAdminCatalogCourseSelector(selector) : null;
+      const deleteCreator =
+        catalogPersistence?.kind === 'creator' || parsed?.kind === 'creator';
+      const allowNonOwnerCreatorPathWrite = !isCreatorCatalog;
+
+      setDeleteDialogOpen(false);
+      setDeletePathRefs([]);
+      setBusy(true);
+      try {
+        for (const hit of pathHits) {
+          const ok = await removeCourseIdFromLearningPathDocument(hit, courseId, {
+            allowNonOwnerCreatorPathWrite,
+          });
+          if (!ok) {
+            showActionToast(
+              `Could not update learning path “${hit.title}”. The course was not deleted.`,
+              'danger'
+            );
+            return;
+          }
+        }
+        if (!isCreatorCatalog) {
+          console.debug('[debug:courseReuse]', 'admin delete: running learner Firestore purge', {
+            courseId: courseSnapshot.id,
+          });
+          const purged = await purgeLearnerFirestoreDataForCourse(courseSnapshot);
+          if (!purged) {
+            showActionToast(
+              'Could not clear all learner data for this course. The course was not deleted.',
+              'danger'
+            );
+            return;
+          }
+        } else {
+          console.debug('[debug:courseReuse]', 'creator delete: skipping full learner purge', {
+            courseId: courseSnapshot.id,
+          });
+        }
+        const ok = deleteCreator ? await deleteCreatorCourse(courseId) : await deletePublishedCourse(courseId);
+        if (!ok) {
+          showActionToast('Delete failed.', 'danger');
+          return;
+        }
+        await refreshList();
+        await onCatalogChanged();
+        if (pathHits.length > 0) {
+          await pathBuilderRef.current?.reloadPaths();
+        }
+        setDraft(null);
+        setBaselineJson(null);
+        setSelector('');
+        const pathNote =
+          pathHits.length > 0
+            ? ` Removed from ${pathHits.length} learning path${pathHits.length === 1 ? '' : 's'}.`
+            : '';
+        showActionToast(`Course deleted.${pathNote}`);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [
+      selector,
+      isAdminMergedCatalog,
+      catalogPersistence,
+      isCreatorCatalog,
+      refreshList,
+      onCatalogChanged,
+      showActionToast,
+    ]
+  );
+
+  const requestDeleteCourse = useCallback(async () => {
+    if (!draft || !selectionIsExistingCatalogCourse) return;
+    const courseId = draft.id;
+
     const parsed = isAdminMergedCatalog ? parseAdminCatalogCourseSelector(selector) : null;
     const deleteCreator =
       catalogPersistence?.kind === 'creator' || parsed?.kind === 'creator';
-    const ok = deleteCreator ? await deleteCreatorCourse(courseId) : await deletePublishedCourse(courseId);
-    setBusy(false);
-    if (ok) {
-      await refreshList();
-      await onCatalogChanged();
-      setDraft(null);
-      setBaselineJson(null);
-      setSelector('');
-      showActionToast('Course deleted.');
-    } else {
-      showActionToast('Delete failed.', 'danger');
+
+    let scopedUid = '';
+    if (deleteCreator) {
+      scopedUid =
+        catalogPersistence?.kind === 'creator'
+          ? catalogPersistence.ownerUid.trim()
+          : parsed?.kind === 'creator'
+            ? parsed.ownerUid.trim()
+            : '';
+      if (!scopedUid) {
+        showActionToast('Could not resolve creator for this course.', 'danger');
+        return;
+      }
     }
+
+    setBusy(true);
+    let hits: LearningPathCourseRefHit[] = [];
+    try {
+      hits = await findLearningPathReferencesToCourseId(
+        courseId,
+        deleteCreator ? { creatorOwnerUidForScopedScan: scopedUid } : undefined
+      );
+    } catch {
+      showActionToast('Could not check learning paths. Try again.', 'danger');
+      setBusy(false);
+      return;
+    }
+    setBusy(false);
+
+    if (hits.length === 0) {
+      void executeCourseDelete(draft, []);
+      return;
+    }
+    setDeletePathRefs(hits);
+    setDeleteDialogOpen(true);
   }, [
     draft,
-    refreshList,
-    onCatalogChanged,
-    showActionToast,
-    catalogPersistence,
-    selector,
+    selectionIsExistingCatalogCourse,
     isAdminMergedCatalog,
+    selector,
+    catalogPersistence,
+    showActionToast,
+    executeCourseDelete,
   ]);
+
+  const confirmDeletePublished = useCallback(async () => {
+    if (!draft) return;
+    const refs = deletePathRefs;
+    await executeCourseDelete(draft, refs);
+  }, [draft, deletePathRefs, executeCourseDelete]);
 
   useBodyScrollLock(
     deleteDialogOpen ||
       subTabSwitchConfirmOpen ||
       pathSubTabSwitchConfirmOpen ||
-      courseLeaveDialog !== null
+      courseLeaveDialog !== null ||
+      courseTitleConflict !== null
   );
 
   /** Ref updated by PathBuilder via onPathsDirtyChange — read before opening catalog tab confirm. */
@@ -2240,6 +2491,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   useEffect(() => {
     pendingOpenNewModuleIndexRef.current = null;
     pendingOpenNewLessonKeyRef.current = null;
+    pendingScrollToNewModuleTitleMiRef.current = null;
+    pendingScrollToNewLessonTitleRef.current = null;
 
     const prev = prevCatalogOpenStateRef.current;
     const did = draft?.id;
@@ -2690,7 +2943,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             <button
               type="button"
               disabled={busy || !draft || !selectionIsExistingCatalogCourse}
-              onClick={openDeleteDialog}
+              onClick={() => void requestDeleteCourse()}
               aria-label="Delete course from catalog"
               className="inline-flex min-h-11 shrink-0 touch-manipulation items-center justify-center gap-2 rounded-xl border border-red-500/40 px-4 py-2 text-sm font-bold text-red-400 hover:bg-red-500/10 disabled:opacity-40 sm:px-5"
             >
@@ -3251,7 +3504,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           : 'text-transparent'
                       }`}
                     >
-                      Module title is required.
+                      {!mod.title.trim()
+                        ? 'Module title is required.'
+                        : showValidationHints && fieldErrors.moduleTitle.has(mi)
+                          ? 'Module title must be unique in this course.'
+                          : ''}
                     </span>
                   </label>
                 </div>
@@ -3454,7 +3711,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                                 : 'text-transparent'
                             }`}
                           >
-                            Lesson title is required.
+                            {!lesson.title.trim()
+                              ? 'Lesson title is required.'
+                              : showValidationHints && fieldErrors.lessonTitle.has(`${mi}:${li}`)
+                                ? 'Lesson title must be unique in this course.'
+                                : ''}
                           </span>
                         </label>
                       </div>
@@ -3937,6 +4198,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           ref={pathBuilderRef}
           key={pathBuilderResetKey}
           publishedList={publishedList}
+          coursesForPathTitleConflictCheck={courseRowsForTaxonomyPickers}
           onRefreshPublishedList={refreshList}
           onCatalogChanged={onCatalogChanged}
           onPathsDirtyChange={setPathBuilderDirty}
@@ -4137,7 +4399,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   id="admin-catalog-delete-title"
                   className="text-xl font-bold text-[var(--text-primary)]"
                 >
-                  Remove this course?
+                  {deletePathRefs.length > 0 ? 'Remove course from paths and catalog?' : 'Remove this course?'}
                 </h2>
                 <button
                   type="button"
@@ -4158,6 +4420,25 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     ? 'will be removed as a creator draft. This cannot be undone.'
                     : 'will be removed from the live catalog. Learners will no longer see it. This cannot be undone.'}
                 </p>
+                {deletePathRefs.length > 0 && (
+                  <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-4">
+                    <p className="text-sm font-semibold text-[var(--text-primary)]">
+                      It appears on {deletePathRefs.length} learning path
+                      {deletePathRefs.length === 1 ? '' : 's'}. It will be removed from those paths, then deleted.
+                    </p>
+                    <ul className="mt-3 max-h-40 list-disc space-y-1 overflow-y-auto pl-5 text-sm text-[var(--text-secondary)]">
+                      {deletePathRefs.map((h) => (
+                        <li key={`${h.persistence}-${h.pathId}`}>
+                          <span className="text-[var(--text-primary)]">{h.title}</span>
+                          <span className="text-[var(--text-secondary)]">
+                            {' '}
+                            ({h.persistence === 'published' ? 'published path' : 'creator path'})
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                   <button
                     type="button"
@@ -4181,6 +4462,15 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           </div>
         )}
       </AnimatePresence>
+
+      <AdminDisplayNameConflictDialog
+        open={courseTitleConflict !== null}
+        savingLabel="course"
+        conflict={courseTitleConflict}
+        renameFieldId="admin-course-title"
+        onPrepareRenameField={() => setCourseDetailsOpen(true)}
+        onClose={() => setCourseTitleConflict(null)}
+      />
 
       {actionToast}
     </div>

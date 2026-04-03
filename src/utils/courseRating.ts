@@ -83,23 +83,35 @@ export async function deleteCourseRatingFromFirestore(courseId: string, userId: 
   }
 }
 
+export type LoadCourseRatingFromFirestoreResult =
+  | { ok: true; absent: boolean; rating: CourseRating | null }
+  | { ok: false };
+
 export async function loadCourseRatingFromFirestore(
   courseId: string,
   userId: string
-): Promise<CourseRating | null> {
+): Promise<LoadCourseRatingFromFirestoreResult> {
   try {
     const snap = await getDoc(doc(db, 'courseRatings', courseRatingDocId(courseId, userId)));
-    if (!snap.exists()) return null;
+    if (!snap.exists()) {
+      console.debug('[debug:courseReuse]', 'Firestore courseRating doc missing', { courseId });
+      return { ok: true, absent: true, rating: null };
+    }
     const data = snap.data();
     const stars = data.stars as number;
-    if (!(stars >= 1 && stars <= 5)) return null;
+    if (!(stars >= 1 && stars <= 5)) {
+      return { ok: true, absent: false, rating: null };
+    }
     const comment = data.comment as string | undefined;
-    return { stars, ...(comment ? { comment } : {}) };
+    return { ok: true, absent: false, rating: { stars, ...(comment ? { comment } : {}) } };
   } catch (error) {
-    if (isFirestorePermissionDenied(error)) return null;
+    if (isFirestorePermissionDenied(error)) {
+      console.debug('[debug:courseReuse]', 'courseRating load permission denied', { courseId });
+      return { ok: false };
+    }
     handleFirestoreError(error, OperationType.GET, 'courseRatings');
+    return { ok: false };
   }
-  return null;
 }
 
 export async function hydrateAllCourseRatingsFromFirestore(userId: string): Promise<void> {

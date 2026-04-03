@@ -58,6 +58,13 @@ import { fetchPathMindmapFromFirestore, savePathMindmapToFirestore } from '../..
 import { normalizeExternalHref } from '../../utils/externalUrl';
 import { AdminLabelInfoTip } from './adminLabelInfoTip';
 import { useAdminActionToast } from './useAdminActionToast';
+import { AdminDisplayNameConflictDialog } from './AdminDisplayNameConflictDialog';
+import {
+  findPathSaveTitleConflict,
+  loadPathTitlesForConflictCheck,
+  type TitleConflictHit,
+} from '../../utils/catalogDisplayNameConflicts';
+import { clearPathOutlineUiSessionForPathId } from '../../utils/pathOutlineUiSession';
 import {
   applyReorderViewportScrollAndFocus,
   escapeSelectorAttrValue,
@@ -2096,6 +2103,8 @@ export type PathPersistenceMode =
 
 export interface PathBuilderSectionProps {
   publishedList: Course[];
+  /** Courses whose titles must not collide with a path title (published + creator drafts as in the catalog). */
+  coursesForPathTitleConflictCheck: Course[];
   onRefreshPublishedList: () => Promise<void>;
   onCatalogChanged: () => void | Promise<void>;
   onPathsDirtyChange?: (dirty: boolean) => void;
@@ -2113,6 +2122,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
   function PathBuilderSection(
     {
       publishedList,
+      coursesForPathTitleConflictCheck,
       onRefreshPublishedList: _onRefreshPublishedList,
       onCatalogChanged,
       onPathsDirtyChange,
@@ -2123,6 +2133,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
   ) {
   const isCreatorPaths = pathPersistence?.kind === 'creator';
   const { showActionToast, actionToast } = useAdminActionToast();
+  const [pathTitleConflict, setPathTitleConflict] = useState<TitleConflictHit | null>(null);
   const [paths, setPaths] = useState<LearningPath[]>([]);
   const [pathsLoading, setPathsLoading] = useState(true);
   const [pathBusy, setPathBusy] = useState(false);
@@ -2263,6 +2274,60 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     return list;
   }, [pathPersistence]);
 
+  /**
+   * Full reload for parent triggers (e.g. catalog deleted a course and stripped paths).
+   * Re-fetches the path list and, when a saved path is selected, reloads its mindmap into the branch editor
+   * — `refreshPaths` alone does not update `pathBranchTree` because that effect only runs on `pathSelector` change.
+   *
+   * When updating `paths` and `pathDraft` for the same selected id, batch with `flushSync` so the `[pathSelector, paths]`
+   * effect does not run between them and re-apply stale `pathDraft` (it returns `prev` when ids match).
+   */
+  const reloadPathsFromServer = useCallback(async () => {
+    setPathsLoading(true);
+    try {
+      const list =
+        pathPersistence?.kind === 'creator'
+          ? (await loadCreatorLearningPathsForOwner(pathPersistence.ownerUid)).paths
+          : (await loadLearningPathsFromFirestore()).paths;
+
+      const sel = pathSelector;
+      if (sel && sel !== '__new__') {
+        const found = list.find((p) => p.id === sel);
+        if (found) {
+          const clone = deepClone(found);
+          flushSync(() => {
+            setPaths(list);
+            setPathDraft(clone);
+            setPathBaselineJson(JSON.stringify(clone));
+          });
+        } else {
+          setPaths(list);
+        }
+      } else {
+        setPaths(list);
+      }
+
+      if (sel && sel !== '__new__' && list.some((p) => p.id === sel)) {
+        setPathMindmapLoading(true);
+        try {
+          const mm =
+            pathPersistence?.kind === 'creator'
+              ? await fetchCreatorPathMindmapFromFirestore(sel)
+              : await fetchPathMindmapFromFirestore(sel);
+          const roots = mm?.root.children.map(mindmapNodeToPathBranch) ?? [];
+          setPathBranchTree(roots);
+          setPathBranchTreeBaselineJson(JSON.stringify(roots));
+        } finally {
+          setPathMindmapLoading(false);
+        }
+      }
+
+      return list;
+    } finally {
+      setPathsLoading(false);
+    }
+  }, [pathPersistence, pathSelector]);
+
   /** Union Firestore doc ids + in-memory list so allocation skips every occupied id (incl. unparsable docs) and survives a failed list request. Creators also reserve ids used in published `learningPaths` so doc ids never collide across collections. */
   const pathDocumentIdsForAllocation = useCallback(async (): Promise<string[]> => {
     let fromServer: string[];
@@ -2282,9 +2347,9 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
   useImperativeHandle(
     ref,
     () => ({
-      reloadPaths: () => refreshPaths(),
+      reloadPaths: () => reloadPathsFromServer(),
     }),
-    [refreshPaths]
+    [reloadPathsFromServer]
   );
 
   useEffect(() => {
@@ -2559,6 +2624,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
             : await deleteLearningPath(id);
         setPathBusy(false);
         if (deleted) {
+          clearPathOutlineUiSessionForPathId(id);
           showActionToast('Path deleted.');
           setPathSelector('');
           setPathDraft(null);
@@ -2648,7 +2714,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     }
   }, [pathConfirmDialog, pathSelector, pathDraft]);
 
-  useBodyScrollLock(!!pathConfirmDialog || branchModal.kind !== 'closed');
+  useBodyScrollLock(!!pathConfirmDialog || branchModal.kind !== 'closed' || pathTitleConflict !== null);
 
   useDialogKeyboard({
     open: !!pathConfirmDialog,
@@ -2719,6 +2785,22 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
       }
     }
 
+    try {
+      const pathRows = await loadPathTitlesForConflictCheck({
+        mode: isCreatorPaths ? 'creator' : 'admin',
+        creatorOwnerUid: pathPersistence?.kind === 'creator' ? pathPersistence.ownerUid : undefined,
+      });
+      const courseRows = coursesForPathTitleConflictCheck.map((c) => ({ id: c.id, title: c.title }));
+      const titleHit = findPathSaveTitleConflict(pathDraft.title, pathDraft.id, pathRows, courseRows);
+      if (titleHit) {
+        setPathTitleConflict(titleHit);
+        return;
+      }
+    } catch {
+      showActionToast('Could not verify path title uniqueness. Try again.', 'danger');
+      return;
+    }
+
     const toSave = { ...pathDraft, courseIds: mergedCourseIds };
 
     setPathBusy(true);
@@ -2775,6 +2857,13 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
 
   return (
     <div className="min-w-0 w-full space-y-4">
+      <AdminDisplayNameConflictDialog
+        open={pathTitleConflict !== null}
+        savingLabel="path"
+        conflict={pathTitleConflict}
+        renameFieldId="admin-path-title"
+        onClose={() => setPathTitleConflict(null)}
+      />
       {actionToast}
 
       {isCreatorPaths && publishedList.length === 0 && (

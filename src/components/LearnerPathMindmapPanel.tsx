@@ -12,6 +12,10 @@ import {
   readPathCourseRowExpandedBlockKey,
   writePathCourseRowExpandedBlockKey,
 } from '../utils/pathOutlineUiSession';
+import {
+  alignLocalLearnerStateIfFirestoreProgressMissing,
+  SKILLLEARN_LOCAL_LEARNER_CLEARED_EVENT,
+} from '../utils/courseProgress';
 import { LearnerPathCourseRowList } from './LearnerPathCourseRowList';
 import { PathMindmapOutline } from './PathMindmapOutline';
 
@@ -33,6 +37,8 @@ export type LearnerPathMindmapPanelProps = {
   /** Same `pathMindmap` children as in Firestore — parent loads once (catalog filter + outline). */
   mindmapOutlineChildren: MindmapTreeNode[] | null;
   mindmapOutlineLoading: boolean;
+  /** After syncing path-linked courses with Firestore (purged id → clear local), bump so outline/rows re-read storage without full reload. */
+  onPathLearnerFirestoreSynced?: () => void;
 };
 
 export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = ({
@@ -48,6 +54,7 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
   pathCourseIds = [],
   mindmapOutlineChildren: branches,
   mindmapOutlineLoading: loading,
+  onPathLearnerFirestoreSynced,
 }) => {
   const [storageProgressTick, setStorageProgressTick] = useState(0);
   /** Which top-level block is open; `null` = all collapsed (accordion). Restored from localStorage per path. */
@@ -84,14 +91,64 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
       if (
         k.includes('skilllearn-progress') ||
         k.includes('skilllearn-course-completed-at') ||
+        k.includes('skilllearn-course-rating') ||
         k.startsWith('skilllearn-progress:')
       ) {
         setStorageProgressTick((t) => t + 1);
       }
     };
+    const onLocalLearnerCleared = () => setStorageProgressTick((t) => t + 1);
     window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
+    window.addEventListener(SKILLLEARN_LOCAL_LEARNER_CLEARED_EVENT, onLocalLearnerCleared);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener(SKILLLEARN_LOCAL_LEARNER_CLEARED_EVENT, onLocalLearnerCleared);
+    };
   }, []);
+
+  /** Catalog course ids on this path (flat list + outline nodes) — used to sync localStorage with purged Firestore before progress bars render. */
+  const pathCatalogCourseIdsForAlign = useMemo(() => {
+    const catalogSet = new Set(catalogCourses.map((c) => c.id));
+    const out = new Set<string>();
+    for (const id of pathCourseIdsForLayout) {
+      if (catalogSet.has(id)) out.add(id);
+    }
+    const walk = (n: MindmapTreeNode) => {
+      if (n.kind === 'course' && n.courseId && catalogSet.has(n.courseId)) out.add(n.courseId);
+      if (n.kind === 'lesson' && n.courseId && catalogSet.has(n.courseId)) out.add(n.courseId);
+      for (const ch of n.children) walk(ch);
+    };
+    for (const sec of filteredBranchesForViewer) walk(sec);
+    return [...out];
+  }, [pathCourseIdsForLayout, filteredBranchesForViewer, catalogCourses]);
+
+  const pathCatalogCourseIdsForAlignKey = pathCatalogCourseIdsForAlign.join('\0');
+
+  useEffect(() => {
+    if (!progressUserId || pathCatalogCourseIdsForAlign.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      for (const courseId of pathCatalogCourseIdsForAlign) {
+        if (cancelled) return;
+        await alignLocalLearnerStateIfFirestoreProgressMissing(courseId, progressUserId);
+      }
+      if (!cancelled) {
+        // CustomEvent from clearLocalLearnerStateForCourseId already bumps tick; still bump + notify App so
+        // PathMindmapOutline useMemos tied to progressSnapshotVersion refresh even if batching missed one.
+        setStorageProgressTick((t) => t + 1);
+        onPathLearnerFirestoreSynced?.();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    pathId,
+    progressUserId,
+    pathCatalogCourseIdsForAlignKey,
+    pathCatalogCourseIdsForAlign.length,
+    onPathLearnerFirestoreSynced,
+  ]);
 
   const outlineProgressVersion = progressSnapshotVersion + storageProgressTick;
 
@@ -291,14 +348,15 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
                         })()}
                       </div>
                     ) : (
-                      <LearnerPathCourseRowList
-                        key={`${bIdx}-lpcr-${sIdx}-${seg.courseIds.join('-')}`}
-                        courseIds={seg.courseIds}
-                        catalogCourses={catalogCourses}
-                        progressUserId={progressUserId}
-                        progressSnapshotVersion={outlineProgressVersion}
-                        onOpenCourse={handleOpenCourseFromRow}
-                      />
+                      <React.Fragment key={`${bIdx}-lpcr-${sIdx}-${seg.courseIds.join('-')}`}>
+                        <LearnerPathCourseRowList
+                          courseIds={seg.courseIds}
+                          catalogCourses={catalogCourses}
+                          progressUserId={progressUserId}
+                          progressSnapshotVersion={outlineProgressVersion}
+                          onOpenCourse={handleOpenCourseFromRow}
+                        />
+                      </React.Fragment>
                     )
                   )}
                 </div>

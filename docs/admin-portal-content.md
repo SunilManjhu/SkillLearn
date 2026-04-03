@@ -18,7 +18,7 @@ The Content tab renders a single large surface: [`AdminCourseCatalogSection.tsx`
 
 | Sub-tab | Purpose |
 |---------|---------|
-| **Catalog** | List published courses; open course editor (modules, lessons, video / web / quiz, validation, publish, delete). **Course** row (label + **info** button, same layout as **Modules and lessons**) toggles editor notes on **click/tap** (Firestore, **Course** control, **New Course** ids, `C1M1` / `C1M1L1`). Pattern detail: [patterns-admin-label-info-tip.md](./patterns-admin-label-info-tip.md). |
+| **Catalog** | List published courses and (for admins) merged **creator** drafts; open course editor (modules, lessons, video / web / quiz, validation, publish, delete). **Duplicate as new draft** from a creator row saves the copy to the **live published** catalog (`publishedCourses`), not the source creator’s private `creatorCourses`. **Course** row (label + **info** button, same layout as **Modules and lessons**) toggles editor notes on **click/tap** (Firestore, **Course** control, **New Course** ids, `C1M1` / `C1M1L1`). Pattern detail: [patterns-admin-label-info-tip.md](./patterns-admin-label-info-tip.md). |
 | **Learning Paths** | Path list and [`PathBuilderSection`](../src/components/admin/PathBuilderSection.tsx) (ordered courses + outline tree saved to Firestore; UI copy uses “Learning Path(s)”). |
 | **Categories** | [`AdminCatalogCategoriesPanel`](../src/components/admin/AdminCatalogCategoriesPanel.tsx) — custom catalog categories (“extras”) alongside presets. |
 | **Topic presets** | [`AdminCatalogCategoryPresetsPanel`](../src/components/admin/AdminCatalogCategoryPresetsPanel.tsx) — main/more category pills synced to Firestore. |

@@ -741,6 +741,9 @@ export default function App() {
   const [remoteProfileDataVersion, setRemoteProfileDataVersion] = useState(0);
   /** Bumps when the catalog (with path outline) is shown so section progress bars re-read lesson progress. */
   const [pathProgressSnapshot, setPathProgressSnapshot] = useState(0);
+  const bumpPathProgressAfterPathFirestoreSync = useCallback(() => {
+    setPathProgressSnapshot((n) => n + 1);
+  }, []);
   const [authBanner, setAuthBanner] = useState<string | null>(null);
   const [profileSettingsUnderlayView, setProfileSettingsUnderlayView] = useState<View | null>(null);
   const viewBeforeProfileOrSettingsRef = useRef<View>('catalog');
@@ -3113,6 +3116,7 @@ export default function App() {
               mindmapOutlineChildren={pathMindmapOutlineChildren}
               mindmapOutlineLoading={pathMindmapOutlineLoading}
               pathCourseIds={activeLearningPath?.courseIds ?? []}
+              onPathLearnerFirestoreSynced={bumpPathProgressAfterPathFirestoreSync}
               onOpenCourse={(courseId) => {
                 const row = resolveCatalogRowForPathCourse(courseId);
                 if (row) handleCourseRowClick(row);

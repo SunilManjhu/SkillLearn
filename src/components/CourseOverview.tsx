@@ -14,6 +14,7 @@ import {
   getCourseLessonProgressSummaryFromMap,
   progressPercent,
   clearCourseProgress,
+  clearLocalLearnerStateForCourseId,
   syncProgressToFirestore,
   loadProgressFromFirestore,
   progressStorageKey,
@@ -286,14 +287,24 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
   useEffect(() => {
     if (!progressUserId) return undefined;
     let cancelled = false;
-    loadProgressFromFirestore(course.id, progressUserId).then((remote) => {
-      if (cancelled || !remote) return;
-      if (remote.completedAtMs != null) {
-        mergeCompletionTimestampFromRemote(course.id, progressUserId, remote.completedAtMs);
+    loadProgressFromFirestore(course.id, progressUserId).then((res) => {
+      if (cancelled || !res.ok) return;
+      if (res.absent) {
+        console.debug('[debug:courseReuse]', 'clearing local progress+completion+rating (no Firestore progress doc)', {
+          courseId: course.id,
+        });
+        clearLocalLearnerStateForCourseId(course.id, progressUserId);
+        setProgressMap({});
+        setExistingRating(null);
+        setShowRatingPrompt(false);
+        return;
       }
-      if (Object.keys(remote.lessonProgress).length === 0) return;
+      if (res.completedAtMs != null) {
+        mergeCompletionTimestampFromRemote(course.id, progressUserId, res.completedAtMs);
+      }
+      if (Object.keys(res.lessonProgress).length === 0) return;
       setProgressMap((prev) => {
-        const merged = { ...prev, ...remote.lessonProgress };
+        const merged = { ...prev, ...res.lessonProgress };
         const { map, migrated } = reconcileLessonProgressMap(course, merged);
         try {
           localStorage.setItem(progressStorageKey(course.id, progressUserId), JSON.stringify(map));
@@ -312,10 +323,20 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
   useEffect(() => {
     if (!progressUserId) return undefined;
     let cancelled = false;
-    loadCourseRatingFromFirestore(course.id, progressUserId).then((remote) => {
-      if (cancelled || !remote) return;
-      saveCourseRating(course.id, remote, progressUserId, { skipFirestoreSync: true });
-      setExistingRating(remote);
+    loadCourseRatingFromFirestore(course.id, progressUserId).then((res) => {
+      if (cancelled || !res.ok) return;
+      if (res.absent) {
+        console.debug('[debug:courseReuse]', 'clearing local rating (no Firestore courseRatings doc)', {
+          courseId: course.id,
+        });
+        clearCourseRating(course.id, progressUserId);
+        setExistingRating(null);
+        return;
+      }
+      if (res.rating) {
+        saveCourseRating(course.id, res.rating, progressUserId, { skipFirestoreSync: true });
+        setExistingRating(res.rating);
+      }
     });
     return () => {
       cancelled = true;

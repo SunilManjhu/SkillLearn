@@ -4,7 +4,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Clock } from 'lucide-react';
 import type { Course } from '../data/courses';
-import { getCourseLessonProgressSummary } from '../utils/courseProgress';
+import {
+  getCourseLessonProgressSummary,
+  SKILLLEARN_LOCAL_LEARNER_CLEARED_EVENT,
+} from '../utils/courseProgress';
 import { getLearningPathCourseRowStatus, type PathOutlineRowStatus } from '../utils/pathOutlineRowStatus';
 import './LearnerPathCourseRowList.css';
 
@@ -115,13 +118,19 @@ export function LearnerPathCourseRowList({
       if (
         k.includes('skilllearn-progress') ||
         k.includes('skilllearn-course-completed-at') ||
+        k.includes('skilllearn-course-rating') ||
         k.startsWith('skilllearn-progress:')
       ) {
         setStorageTick((t) => t + 1);
       }
     };
+    const onLocalLearnerCleared = () => setStorageTick((t) => t + 1);
     window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
+    window.addEventListener(SKILLLEARN_LOCAL_LEARNER_CLEARED_EVENT, onLocalLearnerCleared);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener(SKILLLEARN_LOCAL_LEARNER_CLEARED_EVENT, onLocalLearnerCleared);
+    };
   }, []);
 
   const version = progressSnapshotVersion + storageTick;

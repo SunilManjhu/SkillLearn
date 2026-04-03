@@ -1,6 +1,11 @@
 import { Course, Lesson } from '../data/courses';
 import { flattenLessons } from './courseLessons';
-import { loadCompletionTimestamps, mergeCompletionTimestampFromRemote } from './courseCompletionLog';
+import {
+  clearCourseCompletionTimestamp,
+  loadCompletionTimestamps,
+  mergeCompletionTimestampFromRemote,
+} from './courseCompletionLog';
+import { clearCourseRating } from './courseRating';
 import { db, handleFirestoreError, isFirestorePermissionDenied, OperationType } from '../firebase';
 import {
   collection,
@@ -241,6 +246,36 @@ export function clearCourseProgress(courseId: string, userId?: string | null): v
   }
 }
 
+/**
+ * Same-tab listeners (path UI, etc.) — `storage` events do not fire for writes from this document.
+ * @see https://developer.mozilla.org/en-US/docs/Web/API/Window/storage_event
+ */
+export const SKILLLEARN_LOCAL_LEARNER_CLEARED_EVENT = 'skilllearn-local-learner-cleared' as const;
+
+/** Clears browser progress, completion timestamp map entry, and rating for this course+user (e.g. Firestore progress was purged). */
+export function clearLocalLearnerStateForCourseId(courseId: string, userId: string): void {
+  clearCourseProgress(courseId, userId);
+  clearCourseCompletionTimestamp(courseId, userId);
+  clearCourseRating(courseId, userId);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(SKILLLEARN_LOCAL_LEARNER_CLEARED_EVENT, { detail: { courseId } }));
+  }
+}
+
+/**
+ * If there is no `progress/{userId}_{courseId}` document, clears local copies so path rows and overview match a republished id.
+ * Returns true if local learner state was cleared.
+ */
+export async function alignLocalLearnerStateIfFirestoreProgressMissing(
+  courseId: string,
+  userId: string
+): Promise<boolean> {
+  const res = await loadProgressFromFirestore(courseId, userId);
+  if (!res.ok || !res.absent) return false;
+  clearLocalLearnerStateForCourseId(courseId, userId);
+  return true;
+}
+
 export type SyncProgressOptions = {
   /** Clear `completedAt` on the progress doc (e.g. course retake). */
   completedAt?: 'delete';
@@ -287,34 +322,39 @@ export async function markCourseCompletedTimestampInFirestore(courseId: string, 
   }
 }
 
-export type LoadedProgressFromFirestore = {
-  lessonProgress: Record<string, LessonProgress>;
-  completedAtMs?: number;
-} | null;
+/** `absent: true` = no `progress/{userId}_{courseId}` doc (e.g. after admin purge). Distinct from `ok: false` (error / permission). */
+export type LoadProgressFromFirestoreResult =
+  | { ok: true; absent: boolean; lessonProgress: Record<string, LessonProgress>; completedAtMs?: number }
+  | { ok: false };
 
 /** Loads progress from Firestore for logged-in users. */
 export async function loadProgressFromFirestore(
   courseId: string,
   userId: string
-): Promise<LoadedProgressFromFirestore> {
+): Promise<LoadProgressFromFirestoreResult> {
   try {
     const progressId = `${userId}_${courseId}`;
     const snap = await getDoc(doc(db, 'progress', progressId));
-    if (snap.exists()) {
-      const data = snap.data();
-      const lessonProgress = (data.lessonProgress ?? {}) as Record<string, LessonProgress>;
-      const ca = data.completedAt;
-      let completedAtMs: number | undefined;
-      if (ca && typeof (ca as { toMillis?: () => number }).toMillis === 'function') {
-        completedAtMs = (ca as { toMillis: () => number }).toMillis();
-      }
-      return { lessonProgress, completedAtMs };
+    if (!snap.exists()) {
+      console.debug('[debug:courseReuse]', 'Firestore progress doc missing', { courseId, progressId });
+      return { ok: true, absent: true, lessonProgress: {} };
     }
+    const data = snap.data();
+    const lessonProgress = (data.lessonProgress ?? {}) as Record<string, LessonProgress>;
+    const ca = data.completedAt;
+    let completedAtMs: number | undefined;
+    if (ca && typeof (ca as { toMillis?: () => number }).toMillis === 'function') {
+      completedAtMs = (ca as { toMillis: () => number }).toMillis();
+    }
+    return { ok: true, absent: false, lessonProgress, completedAtMs };
   } catch (error) {
-    if (isFirestorePermissionDenied(error)) return null;
+    if (isFirestorePermissionDenied(error)) {
+      console.debug('[debug:courseReuse]', 'progress load permission denied', { courseId });
+      return { ok: false };
+    }
     handleFirestoreError(error, OperationType.GET, 'progress');
+    return { ok: false };
   }
-  return null;
 }
 
 /** Merge all remote progress + completion times into localStorage for profile/offline reads. */
