@@ -519,6 +519,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
 
         {tab === 'catalog' && (
           <AdminCourseCatalogSection
+            includeCreatorDraftCourses
             onCatalogChanged={onCatalogChanged}
             onDraftDirtyChange={setCatalogDirty}
             onPathsDirtyChange={setPathDirty}

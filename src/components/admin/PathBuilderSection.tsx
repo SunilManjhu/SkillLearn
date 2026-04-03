@@ -2267,11 +2267,11 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
   const pathDocumentIdsForAllocation = useCallback(async (): Promise<string[]> => {
     let fromServer: string[];
     if (pathPersistence?.kind === 'creator') {
-      const [creatorIds, publishedIds] = await Promise.all([
+      const [ownCreatorIds, publishedIds] = await Promise.all([
         listCreatorLearningPathDocumentIdsForOwner(pathPersistence.ownerUid),
         listLearningPathDocumentIds(),
       ]);
-      fromServer = [...creatorIds, ...publishedIds];
+      fromServer = [...ownCreatorIds, ...publishedIds];
     } else {
       fromServer = await listLearningPathDocumentIds();
     }

@@ -715,37 +715,65 @@ service cloud.firestore {
     }
 
     // Creator-owned drafts: owner or admin may read any doc (admin = inventory/audit).
-    // Writes: only docs where ownerUid == request.auth.uid, by role creator OR admin (admin studio uses own uid).
+    // Split get vs list: `list` queries must use `resource.data` (per Firebase query rules). `get()`-based
+    // canReadCreatorCourseDoc breaks filtered owner queries; unfiltered collection scans are admin-only via isAdmin().
+    // Writes: owner (creator or admin acting as self), or admin for any doc (Catalog tab / moderation).
     match /creatorCourses/{courseId} {
-      allow read: if isAuthenticated() && canReadCreatorCourseDoc(courseId);
-      allow create: if isAuthenticated() &&
-        (hasCreatorRole() || isAdmin()) &&
-        request.resource.data.ownerUid == request.auth.uid &&
-        isValidCreatorCourseWrite(request.resource.data);
+      allow get: if isAuthenticated() && canReadCreatorCourseDoc(courseId);
+      allow list: if isAuthenticated() &&
+        (isAdmin() || resource.data.ownerUid == request.auth.uid);
+      allow create: if isAuthenticated() && isValidCreatorCourseWrite(request.resource.data) &&
+        (
+          (
+            (hasCreatorRole() || isAdmin()) &&
+            request.resource.data.ownerUid == request.auth.uid
+          ) ||
+          isAdmin()
+        );
       allow update: if isAuthenticated() &&
-        (hasCreatorRole() || isAdmin()) &&
-        resource.data.ownerUid == request.auth.uid &&
+        isValidCreatorCourseWrite(request.resource.data) &&
         request.resource.data.ownerUid == resource.data.ownerUid &&
-        isValidCreatorCourseWrite(request.resource.data);
+        (
+          (
+            (hasCreatorRole() || isAdmin()) &&
+            resource.data.ownerUid == request.auth.uid
+          ) ||
+          isAdmin()
+        );
       allow delete: if isAuthenticated() &&
-        (hasCreatorRole() || isAdmin()) &&
-        resource.data.ownerUid == request.auth.uid;
+        (
+          ((hasCreatorRole() || isAdmin()) && resource.data.ownerUid == request.auth.uid) ||
+          isAdmin()
+        );
     }
 
     match /creatorLearningPaths/{pathId} {
-      allow read: if isAuthenticated() && canReadCreatorLearningPathDoc(pathId);
-      allow create: if isAuthenticated() &&
-        (hasCreatorRole() || isAdmin()) &&
-        request.resource.data.ownerUid == request.auth.uid &&
-        isValidCreatorLearningPathWrite(request.resource.data);
+      allow get: if isAuthenticated() && canReadCreatorLearningPathDoc(pathId);
+      allow list: if isAuthenticated() &&
+        (isAdmin() || resource.data.ownerUid == request.auth.uid);
+      allow create: if isAuthenticated() && isValidCreatorLearningPathWrite(request.resource.data) &&
+        (
+          (
+            (hasCreatorRole() || isAdmin()) &&
+            request.resource.data.ownerUid == request.auth.uid
+          ) ||
+          isAdmin()
+        );
       allow update: if isAuthenticated() &&
-        (hasCreatorRole() || isAdmin()) &&
-        resource.data.ownerUid == request.auth.uid &&
+        isValidCreatorLearningPathWrite(request.resource.data) &&
         request.resource.data.ownerUid == resource.data.ownerUid &&
-        isValidCreatorLearningPathWrite(request.resource.data);
+        (
+          (
+            (hasCreatorRole() || isAdmin()) &&
+            resource.data.ownerUid == request.auth.uid
+          ) ||
+          isAdmin()
+        );
       allow delete: if isAuthenticated() &&
-        (hasCreatorRole() || isAdmin()) &&
-        resource.data.ownerUid == request.auth.uid;
+        (
+          ((hasCreatorRole() || isAdmin()) && resource.data.ownerUid == request.auth.uid) ||
+          isAdmin()
+        );
     }
   }
 }

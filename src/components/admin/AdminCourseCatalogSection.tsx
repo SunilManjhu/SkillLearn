@@ -56,7 +56,9 @@ import {
 } from '../../utils/publishedCoursesFirestore';
 import {
   deleteCreatorCourse,
+  listAllCreatorCourseDocumentIds,
   listCreatorCourseDocumentIdsForOwner,
+  loadAllCreatorCoursesForAdmin,
   loadCreatorCoursesForOwner,
   saveCreatorCourse,
 } from '../../utils/creatorCoursesFirestore';
@@ -317,6 +319,45 @@ function computeModuleSwapDraft(
   return { next, pair: { a: mi, b: ni } };
 }
 
+/** Admin merged catalog: disambiguate published vs creator draft rows (same `course.id` can exist in both). */
+const ADMIN_CATALOG_SEL_PUBLISHED_PREFIX = 'pub:';
+const ADMIN_CATALOG_SEL_CREATOR_PREFIX = 'cre:';
+
+type AdminCatalogCourseSelectorParsed =
+  | { kind: 'empty' }
+  | { kind: 'new' }
+  | { kind: 'published'; courseId: string }
+  | { kind: 'creator'; ownerUid: string; courseId: string };
+
+type NewCourseSaveTarget = { kind: 'published' } | { kind: 'creator'; ownerUid: string };
+
+function parseAdminCatalogCourseSelector(sel: string): AdminCatalogCourseSelectorParsed {
+  if (!sel) return { kind: 'empty' };
+  if (sel === '__new__') return { kind: 'new' };
+  if (sel.startsWith(ADMIN_CATALOG_SEL_PUBLISHED_PREFIX)) {
+    return { kind: 'published', courseId: sel.slice(ADMIN_CATALOG_SEL_PUBLISHED_PREFIX.length) };
+  }
+  if (sel.startsWith(ADMIN_CATALOG_SEL_CREATOR_PREFIX)) {
+    const rest = sel.slice(ADMIN_CATALOG_SEL_CREATOR_PREFIX.length);
+    const colon = rest.indexOf(':');
+    if (colon <= 0) return { kind: 'empty' };
+    return {
+      kind: 'creator',
+      ownerUid: rest.slice(0, colon),
+      courseId: rest.slice(colon + 1),
+    };
+  }
+  return { kind: 'empty' };
+}
+
+function buildAdminCatalogPublishedSelector(courseId: string): string {
+  return `${ADMIN_CATALOG_SEL_PUBLISHED_PREFIX}${courseId}`;
+}
+
+function buildAdminCatalogCreatorSelector(ownerUid: string, courseId: string): string {
+  return `${ADMIN_CATALOG_SEL_CREATOR_PREFIX}${ownerUid}:${courseId}`;
+}
+
 /** Sub-tabs inside Course catalog: course entries, learning paths, category management. */
 type ContentCatalogSubTab = 'catalog' | 'paths' | 'taxonomy' | 'categories' | 'presets' | 'skillPresets';
 
@@ -335,6 +376,11 @@ interface AdminCourseCatalogSectionProps {
   catalogPersistence?: PathPersistenceMode;
   /** Overrides the section heading (creator portal). */
   catalogSectionTitle?: string;
+  /**
+   * Admin portal only: list and edit every `creatorCourses` doc alongside published (prefixed selectors).
+   * Ignored when `catalogPersistence.kind === 'creator'`.
+   */
+  includeCreatorDraftCourses?: boolean;
 }
 
 interface RequiredFieldTarget {
@@ -382,9 +428,13 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   onPathsDirtyChange,
   catalogPersistence,
   catalogSectionTitle,
+  includeCreatorDraftCourses = false,
 }) => {
   const isCreatorCatalog = catalogPersistence?.kind === 'creator';
+  const isAdminMergedCatalog = includeCreatorDraftCourses && !isCreatorCatalog;
   const [publishedList, setPublishedList] = useState<Course[]>([]);
+  const [creatorDraftRows, setCreatorDraftRows] = useState<Array<{ course: Course; ownerUid: string }>>([]);
+  const newCourseSaveTargetRef = useRef<NewCourseSaveTarget>({ kind: 'published' });
   /**
    * Creator studio only: published `publishedCourses` snapshot for category/skill pickers. Creator `publishedList`
    * is draft-only, so without this, labels admins add on published courses never appear in “add from list”.
@@ -644,33 +694,43 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     };
   }, [tipsNarrowViewport, categoriesTipsOpen, categoriesTipFixedTop, syncCategoriesTipTop]);
 
+  const courseRowsForTaxonomyPickers = useMemo(() => {
+    if (isCreatorCatalog) return [...publishedList, ...publishedCoursesForPicker];
+    if (isAdminMergedCatalog) return [...publishedList, ...creatorDraftRows.map((r) => r.course)];
+    return publishedList;
+  }, [
+    isCreatorCatalog,
+    isAdminMergedCatalog,
+    publishedList,
+    publishedCoursesForPicker,
+    creatorDraftRows,
+  ]);
+
   /** Full list for adding categories (presets, saved extras, labels from catalog courses in this editor + live published when creator). */
   const categorySelectOptions = useMemo(() => {
     const s = new Set<string>(allPresetCatalogCategoriesFromState(categoryPresetsState));
     for (const c of readCatalogCategoryExtras()) s.add(c);
-    const courseRows = isCreatorCatalog ? [...publishedList, ...publishedCoursesForPicker] : publishedList;
-    for (const co of courseRows) {
+    for (const co of courseRowsForTaxonomyPickers) {
       for (const cat of co.categories ?? []) {
         const t = cat?.trim();
         if (t) s.add(t);
       }
     }
     return [...s].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-  }, [publishedList, publishedCoursesForPicker, isCreatorCatalog, categoryOptionsVersion, categoryPresetsState]);
+  }, [courseRowsForTaxonomyPickers, categoryOptionsVersion, categoryPresetsState]);
 
   /** Full list for adding skills (presets, saved extras, labels from catalog courses + live published when creator). */
   const skillSelectOptions = useMemo(() => {
     const s = new Set<string>([...skillPresetsState.mainPills, ...skillPresetsState.moreSkills]);
     for (const x of readCatalogSkillExtras()) s.add(x);
-    const courseRows = isCreatorCatalog ? [...publishedList, ...publishedCoursesForPicker] : publishedList;
-    for (const co of courseRows) {
+    for (const co of courseRowsForTaxonomyPickers) {
       for (const sk of co.skills ?? []) {
         const t = sk?.trim();
         if (t) s.add(t);
       }
     }
     return [...s].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-  }, [publishedList, publishedCoursesForPicker, isCreatorCatalog, skillOptionsVersion, skillPresetsState]);
+  }, [courseRowsForTaxonomyPickers, skillOptionsVersion, skillPresetsState]);
 
   useEffect(() => {
     const h = () => setCategoryOptionsVersion((v) => v + 1);
@@ -718,6 +778,17 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         setPublishedCoursesForPicker(publishedForPicker);
         return list;
       }
+      if (includeCreatorDraftCourses) {
+        const [list, creatorRows] = await Promise.all([
+          loadPublishedCoursesFromFirestore(),
+          loadAllCreatorCoursesForAdmin(),
+        ]);
+        setPublishedList(list);
+        setCreatorDraftRows(creatorRows);
+        setPublishedCoursesForPicker([]);
+        return list;
+      }
+      setCreatorDraftRows([]);
       const list = await loadPublishedCoursesFromFirestore();
       setPublishedList(list);
       setPublishedCoursesForPicker([]);
@@ -725,7 +796,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     } finally {
       setListLoading(false);
     }
-  }, [catalogPersistence]);
+  }, [catalogPersistence, includeCreatorDraftCourses]);
 
   /**
    * Creator studio: load picker data as soon as the page opens. Otherwise `catalogRequested` stays false until the
@@ -863,19 +934,61 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     [publishedList]
   );
 
+  /** Course dropdown rows (value + label). Admin merged mode uses prefixed values so published vs creator drafts stay distinct. */
+  const catalogCourseMenuRows = useMemo(() => {
+    if (!isAdminMergedCatalog) {
+      return sortedCatalogCourses.map((c) => ({
+        value: c.id,
+        label: `${c.title} (${c.id})`,
+      }));
+    }
+    const pub = sortedCatalogCourses.map((c) => ({
+      value: buildAdminCatalogPublishedSelector(c.id),
+      label: `[Published] ${c.title} (${c.id})`,
+    }));
+    const cre = [...creatorDraftRows]
+      .sort((a, b) => {
+        const byTitle = a.course.title.localeCompare(b.course.title, undefined, { sensitivity: 'base' });
+        return byTitle !== 0 ? byTitle : a.course.id.localeCompare(b.course.id);
+      })
+      .map(({ course: c, ownerUid }) => ({
+        value: buildAdminCatalogCreatorSelector(ownerUid, c.id),
+        label: `[Creator draft] ${c.title} (${c.id}) · ${ownerUid.slice(0, 8)}…`,
+      }));
+    return [...pub, ...cre];
+  }, [isAdminMergedCatalog, sortedCatalogCourses, publishedList, creatorDraftRows]);
+
+  const selectionIsExistingCatalogCourse = useMemo(() => {
+    if (!selector || selector === '__new__') return false;
+    if (!isAdminMergedCatalog) return publishedList.some((c) => c.id === selector);
+    const p = parseAdminCatalogCourseSelector(selector);
+    if (p.kind === 'published') return publishedList.some((c) => c.id === p.courseId);
+    if (p.kind === 'creator')
+      return creatorDraftRows.some((r) => r.ownerUid === p.ownerUid && r.course.id === p.courseId);
+    return false;
+  }, [selector, isAdminMergedCatalog, publishedList, creatorDraftRows]);
+
   /** Union Firestore course doc ids + in-memory list so new C{n} skips every occupied id. Creators also reserve published `publishedCourses` ids. */
   const courseDocumentIdsForAllocation = useCallback(async (): Promise<string[]> => {
     const fromState = publishedList.map((c) => c.id);
     if (catalogPersistence?.kind === 'creator') {
-      const [creatorIds, publishedIds] = await Promise.all([
+      const [ownCreatorIds, publishedIds] = await Promise.all([
         listCreatorCourseDocumentIdsForOwner(catalogPersistence.ownerUid),
         listPublishedCourseDocumentIds(),
       ]);
-      return [...new Set([...creatorIds, ...publishedIds, ...fromState])];
+      // Cannot list all `creatorCourses` from the client: rules only allow per-owner list + admin full scan.
+      return [...new Set([...ownCreatorIds, ...publishedIds, ...fromState])];
+    }
+    if (includeCreatorDraftCourses) {
+      const [publishedIds, allCreatorIds] = await Promise.all([
+        listPublishedCourseDocumentIds(),
+        listAllCreatorCourseDocumentIds(),
+      ]);
+      return [...new Set([...publishedIds, ...allCreatorIds, ...fromState])];
     }
     const publishedIds = await listPublishedCourseDocumentIds();
     return [...new Set([...publishedIds, ...fromState])];
-  }, [catalogPersistence, publishedList]);
+  }, [catalogPersistence, publishedList, includeCreatorDraftCourses]);
 
   /** First time draft appears (e.g. initial load) without baseline yet. */
   useEffect(() => {
@@ -888,6 +1001,10 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       if (id === '') return;
       setSelector(id);
       if (id === '__new__') {
+        newCourseSaveTargetRef.current =
+          catalogPersistence?.kind === 'creator'
+            ? { kind: 'creator', ownerUid: catalogPersistence.ownerUid }
+            : { kind: 'published' };
         pendingFocusCourseTitleRef.current = true;
         const reserveIds =
           selector === '__new__' && draft && STRUCTURED_COURSE_ID_RE.test(draft.id) ? [draft.id] : [];
@@ -897,6 +1014,40 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         const keyed = ensureCourseLessonRowKeys(fresh);
         setDraft(keyed);
         setBaselineJson(draftJsonForBaseline(keyed));
+        return;
+      }
+      if (isAdminMergedCatalog) {
+        const parsed = parseAdminCatalogCourseSelector(id);
+        if (parsed.kind === 'published') {
+          const c = publishedList.find((x) => x.id === parsed.courseId);
+          if (c) {
+            const clone = normalizeCourseTaxonomy(deepClone(c));
+            const keyed = ensureCourseLessonRowKeys(clone);
+            setDraft(keyed);
+            setBaselineJson(draftJsonForBaseline(keyed));
+          } else {
+            setDraft(null);
+            setBaselineJson(null);
+          }
+          return;
+        }
+        if (parsed.kind === 'creator') {
+          const row = creatorDraftRows.find(
+            (r) => r.ownerUid === parsed.ownerUid && r.course.id === parsed.courseId
+          );
+          if (row) {
+            const clone = normalizeCourseTaxonomy(deepClone(row.course));
+            const keyed = ensureCourseLessonRowKeys(clone);
+            setDraft(keyed);
+            setBaselineJson(draftJsonForBaseline(keyed));
+          } else {
+            setDraft(null);
+            setBaselineJson(null);
+          }
+          return;
+        }
+        setDraft(null);
+        setBaselineJson(null);
         return;
       }
       const c = publishedList.find((x) => x.id === id);
@@ -910,7 +1061,16 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         setBaselineJson(null);
       }
     },
-    [publishedList, selector, draft, courseDocumentIdsForAllocation]
+    [
+      publishedList,
+      creatorDraftRows,
+      selector,
+      draft,
+      courseDocumentIdsForAllocation,
+      isAdminMergedCatalog,
+      isCreatorCatalog,
+      catalogPersistence,
+    ]
   );
 
   const updateDraft = (patch: Partial<Course>) => {
@@ -1568,15 +1728,40 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
    */
   useEffect(() => {
     if (selector === '' || selector === '__new__') return;
+    if (isDirty || !draft) return;
+    if (isAdminMergedCatalog) {
+      const p = parseAdminCatalogCourseSelector(selector);
+      if (p.kind === 'published') {
+        const fresh = publishedList.find((c) => c.id === p.courseId);
+        if (!fresh || draft.id !== p.courseId) return;
+        const keyed = ensureCourseLessonRowKeys(normalizeCourseTaxonomy(deepClone(fresh)));
+        const nextBaseline = draftJsonForBaseline(keyed);
+        if (nextBaseline === draftJsonForBaseline(draft)) return;
+        setDraft(keyed);
+        setBaselineJson(nextBaseline);
+        return;
+      }
+      if (p.kind === 'creator') {
+        const row = creatorDraftRows.find(
+          (r) => r.ownerUid === p.ownerUid && r.course.id === p.courseId
+        );
+        if (!row || draft.id !== p.courseId) return;
+        const keyed = ensureCourseLessonRowKeys(normalizeCourseTaxonomy(deepClone(row.course)));
+        const nextBaseline = draftJsonForBaseline(keyed);
+        if (nextBaseline === draftJsonForBaseline(draft)) return;
+        setDraft(keyed);
+        setBaselineJson(nextBaseline);
+      }
+      return;
+    }
     const fresh = publishedList.find((c) => c.id === selector);
-    if (!fresh || !draft || draft.id !== selector) return;
-    if (isDirty) return;
+    if (!fresh || draft.id !== selector) return;
     const keyed = ensureCourseLessonRowKeys(normalizeCourseTaxonomy(deepClone(fresh)));
     const nextBaseline = draftJsonForBaseline(keyed);
     if (nextBaseline === draftJsonForBaseline(draft)) return;
     setDraft(keyed);
     setBaselineJson(nextBaseline);
-  }, [publishedList, selector, draft, isDirty]);
+  }, [publishedList, creatorDraftRows, selector, draft, isDirty, isAdminMergedCatalog]);
 
   const onCourseSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const id = e.target.value;
@@ -1617,10 +1802,25 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       return;
     }
     setBusy(true);
-    const ok =
-      catalogPersistence?.kind === 'creator'
-        ? await saveCreatorCourse(normalized, catalogPersistence.ownerUid)
-        : await savePublishedCourse(normalized);
+    let ok = false;
+    if (catalogPersistence?.kind === 'creator') {
+      ok = await saveCreatorCourse(normalized, catalogPersistence.ownerUid);
+    } else if (isAdminMergedCatalog) {
+      const ps = parseAdminCatalogCourseSelector(selector);
+      if (ps.kind === 'new') {
+        const t = newCourseSaveTargetRef.current;
+        ok =
+          t.kind === 'creator'
+            ? await saveCreatorCourse(normalized, t.ownerUid, { allowNonOwnerWriter: true })
+            : await savePublishedCourse(normalized);
+      } else if (ps.kind === 'published') {
+        ok = await savePublishedCourse(normalized);
+      } else if (ps.kind === 'creator') {
+        ok = await saveCreatorCourse(normalized, ps.ownerUid, { allowNonOwnerWriter: true });
+      }
+    } else {
+      ok = await savePublishedCourse(normalized);
+    }
     setBusy(false);
     if (ok) {
       setShowValidationHints(false);
@@ -1636,7 +1836,25 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       showActionToast('Course saved.');
       await refreshList();
       await onCatalogChanged();
-      setSelector(normalized.id);
+      if (isAdminMergedCatalog) {
+        if (selector === '__new__') {
+          const t = newCourseSaveTargetRef.current;
+          setSelector(
+            t.kind === 'creator'
+              ? buildAdminCatalogCreatorSelector(t.ownerUid, normalized.id)
+              : buildAdminCatalogPublishedSelector(normalized.id)
+          );
+        } else {
+          const ps = parseAdminCatalogCourseSelector(selector);
+          if (ps.kind === 'creator') {
+            setSelector(buildAdminCatalogCreatorSelector(ps.ownerUid, normalized.id));
+          } else if (ps.kind === 'published') {
+            setSelector(buildAdminCatalogPublishedSelector(normalized.id));
+          }
+        }
+      } else {
+        setSelector(normalized.id);
+      }
       setBaselineJson(JSON.stringify(normalized));
     } else {
       showActionToast('Save failed (check console / rules).', 'danger');
@@ -1645,11 +1863,35 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
   const duplicatePublishedAsDraft = async () => {
     if (!selector || selector === '__new__') {
-      showActionToast('Select an existing published course in the list, then duplicate.', 'danger');
+      showActionToast('Select an existing course in the list, then duplicate.', 'danger');
       return;
     }
-    const fromEditor =
-      draft && draft.id === selector ? draft : publishedList.find((c) => c.id === selector);
+    let fromEditor: Course | null = null;
+    if (isAdminMergedCatalog) {
+      const p = parseAdminCatalogCourseSelector(selector);
+      if (p.kind === 'published') {
+        fromEditor =
+          draft && draft.id === p.courseId ? draft : publishedList.find((c) => c.id === p.courseId) ?? null;
+        if (fromEditor) newCourseSaveTargetRef.current = { kind: 'published' };
+      } else if (p.kind === 'creator') {
+        const row = creatorDraftRows.find(
+          (r) => r.ownerUid === p.ownerUid && r.course.id === p.courseId
+        );
+        if (row) {
+          fromEditor =
+            draft && draft.id === row.course.id ? draft : deepClone(row.course);
+          newCourseSaveTargetRef.current = { kind: 'creator', ownerUid: row.ownerUid };
+        }
+      }
+    } else {
+      fromEditor =
+        draft && draft.id === selector ? draft : publishedList.find((c) => c.id === selector) ?? null;
+      if (isCreatorCatalog && catalogPersistence?.kind === 'creator') {
+        newCourseSaveTargetRef.current = { kind: 'creator', ownerUid: catalogPersistence.ownerUid };
+      } else {
+        newCourseSaveTargetRef.current = { kind: 'published' };
+      }
+    }
     if (!fromEditor) {
       showActionToast('Course not found. Reload the list and try again.', 'danger');
       return;
@@ -1706,19 +1948,19 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const closeDeleteDialog = useCallback(() => setDeleteDialogOpen(false), []);
 
   const openDeleteDialog = useCallback(() => {
-    if (!draft || !publishedList.some((c) => c.id === draft.id)) return;
+    if (!draft || !selectionIsExistingCatalogCourse) return;
     setDeleteDialogOpen(true);
-  }, [draft, publishedList]);
+  }, [draft, selectionIsExistingCatalogCourse]);
 
   const confirmDeletePublished = useCallback(async () => {
     if (!draft) return;
     const courseId = draft.id;
     setDeleteDialogOpen(false);
     setBusy(true);
-    const ok =
-      catalogPersistence?.kind === 'creator'
-        ? await deleteCreatorCourse(courseId)
-        : await deletePublishedCourse(courseId);
+    const parsed = isAdminMergedCatalog ? parseAdminCatalogCourseSelector(selector) : null;
+    const deleteCreator =
+      catalogPersistence?.kind === 'creator' || parsed?.kind === 'creator';
+    const ok = deleteCreator ? await deleteCreatorCourse(courseId) : await deletePublishedCourse(courseId);
     setBusy(false);
     if (ok) {
       await refreshList();
@@ -1730,7 +1972,15 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     } else {
       showActionToast('Delete failed.', 'danger');
     }
-  }, [draft, refreshList, onCatalogChanged, showActionToast, catalogPersistence]);
+  }, [
+    draft,
+    refreshList,
+    onCatalogChanged,
+    showActionToast,
+    catalogPersistence,
+    selector,
+    isAdminMergedCatalog,
+  ]);
 
   useBodyScrollLock(
     deleteDialogOpen ||
@@ -2011,7 +2261,16 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     }
 
     // First save: selector __new__ → same id as draft; draft id did not change — keep expand/collapse as-is.
-    if (prev.selector === '__new__' && did && selector === did && prev.draftId === did) {
+    const selMatchesDraftId =
+      !isAdminMergedCatalog || !did
+        ? selector === did
+        : (() => {
+            const p = parseAdminCatalogCourseSelector(selector);
+            return (
+              (p.kind === 'published' || p.kind === 'creator') && p.courseId === did
+            );
+          })();
+    if (prev.selector === '__new__' && did && selMatchesDraftId && prev.draftId === did) {
       prevCatalogOpenStateRef.current = { selector, draftId: did };
       return;
     }
@@ -2020,7 +2279,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     setOpenModules({});
     setOpenLessons({});
     prevCatalogOpenStateRef.current = { selector, draftId: did };
-  }, [draft?.id, selector]);
+  }, [draft?.id, selector, isAdminMergedCatalog]);
 
   useEffect(() => {
     const idx = pendingOpenNewModuleIndexRef.current;
@@ -2285,8 +2544,20 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     <li>
                       {isCreatorCatalog
                         ? 'Saves go to your private courses (Firestore) — only you and admins can see them.'
-                        : 'Saves go to the live catalog (Firestore).'}
+                        : isAdminMergedCatalog
+                          ? 'Published rows save to the live catalog; creator drafts save to that owner’s private course (owner unchanged).'
+                          : 'Saves go to the live catalog (Firestore).'}
                     </li>
+                    {isAdminMergedCatalog ? (
+                      <li>
+                        Course list is prefixed: <strong className="font-semibold text-[var(--text-secondary)]">
+                          [Published]
+                        </strong>{' '}
+                        vs{' '}
+                        <strong className="font-semibold text-[var(--text-secondary)]">[Creator draft]</strong> (same
+                        document ID can exist in both).
+                      </li>
+                    ) : null}
                     <li>
                       Open <strong className="font-semibold text-[var(--text-secondary)]">Course</strong> once to load
                       titles.
@@ -2323,9 +2594,9 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               {catalogRequested && !listLoading && (
                 <>
                   <option value="__new__">New Course</option>
-                  {sortedCatalogCourses.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.title} ({c.id})
+                  {catalogCourseMenuRows.map((row) => (
+                    <option key={row.value} value={row.value}>
+                      {row.label}
                     </option>
                   ))}
                 </>
@@ -2334,11 +2605,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             {selector !== '__new__' && (
               <button
                 type="button"
-                disabled={
-                  listLoading ||
-                  !selector ||
-                  !publishedList.some((c) => c.id === selector)
-                }
+                disabled={listLoading || !selector || !selectionIsExistingCatalogCourse}
                 onClick={requestDuplicateOrConfirm}
                 title="Clone the selected course into a new draft with a new document ID"
                 aria-label="Duplicate as new draft"
@@ -2422,7 +2689,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             </button>
             <button
               type="button"
-              disabled={busy || !draft || !publishedList.some((c) => c.id === draft.id)}
+              disabled={busy || !draft || !selectionIsExistingCatalogCourse}
               onClick={openDeleteDialog}
               aria-label="Delete course from catalog"
               className="inline-flex min-h-11 shrink-0 touch-manipulation items-center justify-center gap-2 rounded-xl border border-red-500/40 px-4 py-2 text-sm font-bold text-red-400 hover:bg-red-500/10 disabled:opacity-40 sm:px-5"
@@ -3884,8 +4151,12 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               <div className="space-y-4 p-6">
                 <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
                   <span className="font-semibold text-[var(--text-primary)]">{draft.title || draft.id}</span>
-                  {' '}({draft.id}) will be removed from the catalog. Learners will no longer see it. This cannot be
-                  undone.
+                  {' '}({draft.id}){' '}
+                  {catalogPersistence?.kind === 'creator' ||
+                  (isAdminMergedCatalog &&
+                    parseAdminCatalogCourseSelector(selector).kind === 'creator')
+                    ? 'will be removed as a creator draft. This cannot be undone.'
+                    : 'will be removed from the live catalog. Learners will no longer see it. This cannot be undone.'}
                 </p>
                 <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                   <button
@@ -3899,7 +4170,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     type="button"
                     autoFocus
                     onClick={() => void confirmDeletePublished()}
-                    aria-label={`Remove ${draft.id} from the catalog permanently`}
+                    aria-label={`Remove ${draft.id} permanently`}
                     className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-red-600 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-red-500 sm:w-auto"
                   >
                     Yes, remove

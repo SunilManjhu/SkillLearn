@@ -30,6 +30,17 @@ export async function listCreatorLearningPathDocumentIdsForOwner(ownerUid: strin
   }
 }
 
+/** All `creatorLearningPaths` document ids (any owner) — use when allocating new path ids for creators. */
+export async function listAllCreatorLearningPathDocumentIds(): Promise<string[]> {
+  try {
+    const snap = await getDocs(collection(db, 'creatorLearningPaths'));
+    return snap.docs.map((d) => d.id);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'creatorLearningPaths');
+    return [];
+  }
+}
+
 export type CreatorLearningPathsLoadResult = {
   paths: LearningPath[];
   outlineChildrenByPathId: Record<string, MindmapTreeNode[]>;
@@ -63,16 +74,55 @@ export async function listCreatorLearningPathsForAdminByOwner(ownerUid: string):
   return r.paths;
 }
 
-export async function saveCreatorLearningPath(path: LearningPath, ownerUid: string): Promise<boolean> {
+export type SaveCreatorLearningPathOptions = {
+  allowNonOwnerWriter?: boolean;
+};
+
+export async function saveCreatorLearningPath(
+  path: LearningPath,
+  ownerUid: string,
+  options?: SaveCreatorLearningPathOptions
+): Promise<boolean> {
   const uid = auth.currentUser?.uid;
-  if (!uid || uid !== ownerUid) {
+  if (!uid) {
     return false;
   }
+
+  const isPrivilegedWriter = options?.allowNonOwnerWriter === true;
+  const ref = doc(db, 'creatorLearningPaths', path.id);
+  let resolvedOwnerUid: string;
+
   try {
-    const ref = doc(db, 'creatorLearningPaths', path.id);
-    const payload = { ...pathToFirestorePayload(path), ownerUid } as Record<string, unknown>;
-    // No pre-read: `get` on a missing doc can be denied under some rule sets. Shallow merge keeps
-    // existing `pathMindmap` (and other fields) when updating title/courseIds/ownerUid.
+    const existing = await getDoc(ref);
+    if (existing.exists()) {
+      const raw = existing.data()?.ownerUid;
+      const fromDb = typeof raw === 'string' ? raw.trim() : '';
+      if (isPrivilegedWriter) {
+        resolvedOwnerUid = fromDb || ownerUid.trim() || uid;
+      } else {
+        if (fromDb && fromDb !== uid) {
+          return false;
+        }
+        resolvedOwnerUid = uid;
+      }
+    } else if (isPrivilegedWriter) {
+      const t = ownerUid.trim();
+      if (!t) return false;
+      resolvedOwnerUid = t;
+    } else {
+      resolvedOwnerUid = uid;
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, `creatorLearningPaths/${path.id}`);
+    return false;
+  }
+
+  if (!isPrivilegedWriter && uid !== resolvedOwnerUid) {
+    return false;
+  }
+
+  try {
+    const payload = { ...pathToFirestorePayload(path), ownerUid: resolvedOwnerUid } as Record<string, unknown>;
     await setDoc(ref, payload, { merge: true });
     return true;
   } catch (error) {
