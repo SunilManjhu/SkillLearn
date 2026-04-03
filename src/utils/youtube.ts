@@ -61,10 +61,15 @@ export function youtubeUrlToEmbedUrl(url: string | undefined | null): string | u
 }
 
 /**
- * Pixels shifted/clipped from the top of YouTube embeds via `overflow: hidden` + offset iframe.
- * Kept at 0 so the full video frame is visible; a positive value hides chrome but can crop picture.
+ * Clips the top of the YouTube iframe (title row + dark scrim YouTube draws after play/resume).
+ * Raise if a top shadow remains; lower if the picture feels too tight.
  */
-export const YOUTUBE_EMBED_TOP_CROP_PX = 0;
+export const YOUTUBE_EMBED_TOP_CROP_PX = 78;
+
+/**
+ * Clips the bottom of the iframe (time row, “More videos”, logo). Custom seek HUD stays outside the iframe.
+ */
+export const YOUTUBE_EMBED_BOTTOM_CROP_PX = 78;
 
 /** Default caption track language for embeds (`cc_lang_pref`) and `setOption('captions','track',...)`. */
 export const YOUTUBE_CC_LANG_PREF = 'en';

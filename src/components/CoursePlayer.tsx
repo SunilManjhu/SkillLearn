@@ -37,6 +37,7 @@ import {
   writePlayerMutedPreference,
   writePlayerVolumePreference,
   writeYoutubeCaptionsPreference,
+  YOUTUBE_EMBED_BOTTOM_CROP_PX,
   YOUTUBE_EMBED_TOP_CROP_PX,
   youtubeEmbedSrcForVideoId,
   youtubeUrlToEmbedUrl,
@@ -171,7 +172,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   const [mediaPaused, setMediaPaused] = useState(true);
   /** Once true for this lesson, show blurred "Paused" overlay when stopped (not before first play). */
   const [lessonPlaybackEverStarted, setLessonPlaybackEverStarted] = useState(false);
-  /** YouTube: frost/blocker after PAUSE is confirmed (100ms) or right away on end / non-buffering stop. */
+  /** YouTube: after PAUSE is confirmed (100ms) or right away on end / non-buffering stop — enables resume layer + iframe pointer block (no in-app frost; frame stays readable). */
   const [ytPauseBlurActive, setYtPauseBlurActive] = useState(false);
   /** Native video: frost/blocker after pause is confirmed (100ms) or right away on ended. */
   const [nativePauseFrostReady, setNativePauseFrostReady] = useState(false);
@@ -253,6 +254,8 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   /** Pull focus out of cross-origin iframe so parent (e.g. Navbar Esc) receives key events. */
   const pauseResumeOverlayRef = useRef<HTMLDivElement>(null);
   const chromeHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Set after `clearChromeHideTimer` exists; used by window keydown (arrow seek) registered earlier in the hook list. */
+  const revealChromeAfterKeyboardSeekRef = useRef<() => void>(() => {});
   const mediaPausedRef = useRef(mediaPaused);
   const lessonPlaybackEverStartedRef = useRef(lessonPlaybackEverStarted);
   lessonPlaybackEverStartedRef.current = lessonPlaybackEverStarted;
@@ -900,11 +903,13 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
       if (isTypingTarget(e.target)) return;
       if (e.key === 'ArrowRight') {
         e.preventDefault();
+        revealChromeAfterKeyboardSeekRef.current();
         setSeekNudgeSeconds(5);
         setSeekNudgeVisible(true);
         seekActiveVideoBySeconds(5);
       } else if (e.key === 'ArrowLeft') {
         e.preventDefault();
+        revealChromeAfterKeyboardSeekRef.current();
         setSeekNudgeSeconds(-5);
         setSeekNudgeVisible(true);
         seekActiveVideoBySeconds(-5);
@@ -960,6 +965,16 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     setChromeVisible(true);
     if (!mediaPausedRef.current) scheduleTouchChromeHide();
   }, [scheduleTouchChromeHide]);
+
+  revealChromeAfterKeyboardSeekRef.current = () => {
+    clearChromeHideTimer();
+    setChromeVisible(true);
+    if (!mediaPausedRef.current) {
+      chromeHideTimerRef.current = window.setTimeout(() => {
+        if (!mediaPausedRef.current) setChromeVisible(false);
+      }, PLAYER_CHROME_IDLE_MS);
+    }
+  };
 
   const showTopControls = mediaPaused || chromeVisible;
 
@@ -1605,8 +1620,8 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
           controls: 0,
           disablekb: 1,
           fs: 0,
-          rel: 0,
           modestbranding: 1,
+          rel: 0,
         },
         events: {
           onReady: (ev) => {
@@ -2526,14 +2541,14 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
             aria-hidden={!youtubeEmbedUrl}
           >
             {/*
-              Optional top offset via YOUTUBE_EMBED_TOP_CROP_PX (0 = full frame, no picture crop).
+              Optional top/bottom crop via overflow:hidden + taller host (see YOUTUBE_EMBED_*_CROP_PX in youtube.ts).
             */}
             <div
               ref={ytContainerRef}
               className="absolute left-0 right-0 w-full"
               style={{
                 top: -YOUTUBE_EMBED_TOP_CROP_PX,
-                height: `calc(100% + ${YOUTUBE_EMBED_TOP_CROP_PX}px)`,
+                height: `calc(100% + ${YOUTUBE_EMBED_TOP_CROP_PX + YOUTUBE_EMBED_BOTTOM_CROP_PX}px)`,
               }}
             />
           </div>
@@ -2700,44 +2715,20 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
             />
           )}
 
-          {showPauseFrostBackdrop && (
+          {showPauseFrostBackdrop && !youtubeEmbedUrl && (
             <div
-              className={`pointer-events-none absolute inset-0 z-20 bg-black/80 backdrop-blur-[28px] supports-[backdrop-filter]:bg-black/70 ${
-                youtubeEmbedUrl ? 'flex flex-col' : 'flex items-center justify-center'
-              }`}
+              className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-black/80 backdrop-blur-[28px] supports-[backdrop-filter]:bg-black/70"
               aria-hidden="true"
             >
-              {youtubeEmbedUrl ? (
-                <>
-                  {/* Reserve bottom HUD height so “Paused” centers like landscape on all small viewports */}
-                  <div className="flex min-h-0 flex-1 flex-col items-center justify-center">
-                    {showPauseFrostLabel && (
-                      <div
-                        className="flex h-24 w-24 items-center justify-center rounded-full border-2 border-white/70 bg-black/30 shadow-lg transition-[width,height,border-width] duration-300 ease-out max-lg:portrait:h-[4.75rem] max-lg:portrait:w-[4.75rem] max-lg:portrait:border-[1.75px] max-lg:landscape:h-14 max-lg:landscape:w-14 max-lg:landscape:border-[1.5px]"
-                        role="status"
-                      >
-                        <p className="text-center text-lg font-semibold tracking-wide text-white drop-shadow-md transition-[font-size] duration-300 ease-out max-lg:portrait:text-sm max-lg:portrait:leading-snug max-lg:landscape:text-xs max-lg:landscape:leading-tight max-lg:landscape:px-1">
-                          Paused
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                  <div
-                    className="pointer-events-none shrink-0 max-lg:h-[4.25rem] lg:h-[6.5rem]"
-                    aria-hidden
-                  />
-                </>
-              ) : (
-                showPauseFrostLabel && (
-                  <div
-                    className="flex h-24 w-24 items-center justify-center rounded-full border-2 border-white/70 bg-black/30 shadow-lg transition-[width,height,border-width] duration-300 ease-out max-lg:portrait:h-[4.75rem] max-lg:portrait:w-[4.75rem] max-lg:portrait:border-[1.75px] max-lg:landscape:h-14 max-lg:landscape:w-14 max-lg:landscape:border-[1.5px]"
-                    role="status"
-                  >
-                    <p className="text-center text-lg font-semibold tracking-wide text-white drop-shadow-md transition-[font-size] duration-300 ease-out max-lg:portrait:text-sm max-lg:portrait:leading-snug max-lg:landscape:text-xs max-lg:landscape:leading-tight max-lg:landscape:px-1">
-                      Paused
-                    </p>
-                  </div>
-                )
+              {showPauseFrostLabel && (
+                <div
+                  className="flex h-24 w-24 items-center justify-center rounded-full border-2 border-white/70 bg-black/30 shadow-lg transition-[width,height,border-width] duration-300 ease-out max-lg:portrait:h-[4.75rem] max-lg:portrait:w-[4.75rem] max-lg:portrait:border-[1.75px] max-lg:landscape:h-14 max-lg:landscape:w-14 max-lg:landscape:border-[1.5px]"
+                  role="status"
+                >
+                  <p className="text-center text-lg font-semibold tracking-wide text-white drop-shadow-md transition-[font-size] duration-300 ease-out max-lg:portrait:text-sm max-lg:portrait:leading-snug max-lg:landscape:text-xs max-lg:landscape:leading-tight max-lg:landscape:px-1">
+                    Paused
+                  </p>
+                </div>
               )}
             </div>
           )}
@@ -2805,7 +2796,13 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
           ) : null}
 
           {youtubeEmbedUrl && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-40 bg-gradient-to-t from-black/70 to-transparent px-4 pb-3 pt-8 transition-[padding] duration-300 ease-out max-lg:portrait:px-3 max-lg:portrait:pb-2.5 max-lg:portrait:pt-6 max-lg:landscape:px-2 max-lg:landscape:pb-2 max-lg:landscape:pt-4">
+            <div
+              className={`pointer-events-none absolute inset-x-0 bottom-0 z-40 px-4 pb-3 pt-6 transition-[padding,background-image] duration-300 ease-out max-lg:portrait:px-3 max-lg:portrait:pb-2.5 max-lg:portrait:pt-5 max-lg:landscape:px-2 max-lg:landscape:pb-2 max-lg:landscape:pt-3 ${
+                showTopControls
+                  ? 'bg-[linear-gradient(to_top,rgba(0,0,0,0.38)_0%,rgba(0,0,0,0.04)_48%,transparent_72%)]'
+                  : 'bg-transparent'
+              }`}
+            >
               <div
                 className={`mb-2 flex w-full flex-col gap-0 transition-opacity duration-200 ease-out max-lg:portrait:mb-1.5 max-lg:landscape:mb-1 ${
                   showTopControls ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
@@ -3222,7 +3219,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                                       className="absolute left-0 right-0 w-full border-0"
                                       style={{
                                         top: -YOUTUBE_EMBED_TOP_CROP_PX,
-                                        height: `calc(100% + ${YOUTUBE_EMBED_TOP_CROP_PX}px)`,
+                                        height: `calc(100% + ${YOUTUBE_EMBED_TOP_CROP_PX + YOUTUBE_EMBED_BOTTOM_CROP_PX}px)`,
                                       }}
                                       allowFullScreen
                                     />
@@ -3281,7 +3278,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                                       className="absolute left-0 right-0 w-full border-0"
                                       style={{
                                         top: -YOUTUBE_EMBED_TOP_CROP_PX,
-                                        height: `calc(100% + ${YOUTUBE_EMBED_TOP_CROP_PX}px)`,
+                                        height: `calc(100% + ${YOUTUBE_EMBED_TOP_CROP_PX + YOUTUBE_EMBED_BOTTOM_CROP_PX}px)`,
                                       }}
                                       allowFullScreen
                                     />
