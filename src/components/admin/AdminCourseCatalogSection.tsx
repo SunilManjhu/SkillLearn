@@ -396,6 +396,14 @@ function creatorDraftOptionTitleAttr(
   return bits.join(' · ');
 }
 
+/** Shorten native select option text on narrow viewports (picker width is limited; full detail stays in `title`). */
+function truncateForNarrowCourseMenu(text: string, maxChars: number): string {
+  const t = text.trim();
+  if (t.length <= maxChars) return t;
+  if (maxChars <= 1) return '…';
+  return `${t.slice(0, maxChars - 1)}…`;
+}
+
 /** Sub-tabs inside Course catalog: course entries, learning paths, category management. */
 type ContentCatalogSubTab = 'catalog' | 'paths' | 'taxonomy' | 'categories' | 'presets' | 'skillPresets';
 
@@ -996,16 +1004,23 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
   /** Course dropdown rows (value + label + optional native tooltip). Admin merged mode uses prefixed values so published vs creator drafts stay distinct. */
   const catalogCourseMenuRows = useMemo(() => {
+    const narrow = tipsNarrowViewport;
+    const tMax = 26;
+
     if (!isAdminMergedCatalog) {
       return sortedCatalogCourses.map((c) => ({
         value: c.id,
-        label: `${c.title} (${c.id})`,
+        label: narrow
+          ? `${c.id} · ${truncateForNarrowCourseMenu(c.title, tMax)}`
+          : `${c.title} (${c.id})`,
         title: `Course id: ${c.id}`,
       }));
     }
     const pub = sortedCatalogCourses.map((c) => ({
       value: buildAdminCatalogPublishedSelector(c.id),
-      label: `[Published] ${c.title} (${c.id})`,
+      label: narrow
+        ? `Pub ${c.id} · ${truncateForNarrowCourseMenu(c.title, tMax)}`
+        : `[Published] ${c.title} (${c.id})`,
       title: `Course id: ${c.id}`,
     }));
     const cre = [...creatorDraftRows]
@@ -1015,9 +1030,12 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       })
       .map(({ course: c, ownerUid }) => {
         const profile = adminUsersByIdForMergedCatalog.get(ownerUid);
+        const ownerShort = creatorDraftOwnerShortLabel(ownerUid, profile);
         return {
           value: buildAdminCatalogCreatorSelector(ownerUid, c.id),
-          label: `[Creator draft] ${c.title} (${c.id}) · ${creatorDraftOwnerShortLabel(ownerUid, profile)}`,
+          label: narrow
+            ? `Draft ${c.id} · ${truncateForNarrowCourseMenu(c.title, 20)}`
+            : `[Creator draft] ${c.title} (${c.id}) · ${ownerShort}`,
           title: creatorDraftOptionTitleAttr(c, ownerUid, profile),
         };
       });
@@ -1027,6 +1045,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     sortedCatalogCourses,
     creatorDraftRows,
     adminUsersByIdForMergedCatalog,
+    tipsNarrowViewport,
   ]);
 
   const selectionIsExistingCatalogCourse = useMemo(() => {
