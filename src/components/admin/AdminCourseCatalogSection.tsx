@@ -531,6 +531,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const [moduleReorderLayoutTick, setModuleReorderLayoutTick] = useState(0);
   const courseCatalogEditorRef = useRef<HTMLDivElement | null>(null);
   const courseDetailsDisclosureRef = useRef<HTMLDivElement | null>(null);
+  /** Tracks prior `courseDetailsOpen` so we only viewport-align when the user (or UI) expands the section. */
+  const prevCourseDetailsOpenRef = useRef(false);
   /** After choosing New Course (or equivalent), focus Course title once details are expanded. */
   const pendingFocusCourseTitleRef = useRef(false);
   /** Avoid collapsing the editor when selector moves from __new__ to draft.id after first save (draft id unchanged). */
@@ -1631,7 +1633,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     return Number.isInteger(mi) ? mi : null;
   }, [openModules]);
 
-  /** Align expanded course details / module / lesson block to top of viewport (catalog has no inner scroll shell). */
+  /** Align expanded lesson or module to top when those disclosures change (catalog has no inner scroll shell). */
   useLayoutEffect(() => {
     const root = courseCatalogEditorRef.current;
     if (!root) return;
@@ -1645,11 +1647,17 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       }
     } else if (catalogDisclosureModuleMi != null) {
       el = root.querySelector(`[data-admin-module-index="${catalogDisclosureModuleMi}"]`);
-    } else if (courseDetailsOpen) {
-      el = courseDetailsDisclosureRef.current;
     }
     scrollDisclosureRowToTop(null, el);
-  }, [catalogDisclosureLessonKey, catalogDisclosureModuleMi, courseDetailsOpen]);
+  }, [catalogDisclosureLessonKey, catalogDisclosureModuleMi]);
+
+  /** Whenever Course details goes from collapsed → expanded, scroll it to the top (even if a module/lesson is open). */
+  useLayoutEffect(() => {
+    const wasOpen = prevCourseDetailsOpenRef.current;
+    prevCourseDetailsOpenRef.current = courseDetailsOpen;
+    if (!courseDetailsOpen || wasOpen) return;
+    scrollDisclosureRowToTop(null, courseDetailsDisclosureRef.current);
+  }, [courseDetailsOpen]);
 
   useLayoutEffect(() => {
     const miFocus = pendingScrollToNewModuleTitleMiRef.current;
