@@ -165,13 +165,19 @@ function flattenPathBranchSectionChildren(nodes: PathBranchNode[]): PathBranchNo
 
 function collectPathBranchStructureIssues(roots: PathBranchNode[], publishedList: Course[]): string[] {
   const issues: string[] = [];
-  for (const section of roots) {
-    if (section.kind === 'divider') {
-      issues.push('A divider cannot be a top-level section — move it under a section or delete it.');
-      continue;
+  for (const root of roots) {
+    if (root.kind !== 'label') {
+      const display = branchNodeDisplayLabel(root, publishedList);
+      if (root.kind === 'divider') {
+        issues.push('A divider cannot be a top-level section — move it under a section or delete it.');
+      } else {
+        issues.push(
+          `Top-level rows must be text labels (sections). “${display}” is a ${root.kind} row — use Change type to convert it to a text label, or remove it and add a section first.`
+        );
+      }
     }
-    const secLabel = branchNodeDisplayLabel(section, publishedList);
-    for (const row of section.children) {
+    const secLabel = branchNodeDisplayLabel(root, publishedList);
+    for (const row of root.children) {
       if (row.children.length > 0) {
         issues.push(
           `Under “${secLabel}”, “${branchNodeDisplayLabel(row, publishedList)}” has nested rows. Paths must be section → flat list only—flatten or remove nesting.`
@@ -180,6 +186,11 @@ function collectPathBranchStructureIssues(roots: PathBranchNode[], publishedList
     }
   }
   return issues;
+}
+
+/** True if `id` is a root row in the outline (not nested under a section). */
+function isRootBranchId(roots: PathBranchNode[], id: string): boolean {
+  return roots.some((r) => r.id === id);
 }
 
 function updateNodeChildren(n: PathBranchNode, children: PathBranchNode[]): PathBranchNode {
@@ -524,7 +535,10 @@ function PlaceDuplicateBranchModal({
   rootsRef.current = roots;
 
   const parentOptions = useMemo(() => {
-    const opts: { id: string | null; label: string }[] = [{ id: null, label: 'Top of outline' }];
+    const opts: { id: string | null; label: string }[] = [];
+    if (branch.kind === 'label') {
+      opts.push({ id: null, label: 'Top of outline' });
+    }
     if (topLevelOnly) return opts;
     for (const r of topLevelParentsForDuplicate(roots)) {
       if (!parentAllowsChildRows(roots, r.id)) continue;
@@ -534,7 +548,7 @@ function PlaceDuplicateBranchModal({
       });
     }
     return opts;
-  }, [roots, publishedList, topLevelOnly]);
+  }, [branch.kind, roots, publishedList, topLevelOnly]);
 
   const effectiveParentId = topLevelOnly ? null : parentId;
 
@@ -612,7 +626,11 @@ function PlaceDuplicateBranchModal({
 
   const summary = branchNodeDisplayLabel(branch, publishedList);
   const totalRows = countSubtreeRows(branch);
-  const canCommit = effectiveParentId === null || findBranchNode(roots, effectiveParentId) != null;
+  const canCommit =
+    parentOptions.length > 0 &&
+    (effectiveParentId === null
+      ? parentOptions.some((o) => o.id === null)
+      : findBranchNode(roots, effectiveParentId) != null);
   const subtreeHint =
     effectiveParentId === null
       ? 'Order among top-level rows.'
@@ -698,55 +716,64 @@ function PlaceDuplicateBranchModal({
           )}
 
           <div className="space-y-3">
-            <div>
-              <label className="block text-xs font-semibold text-[var(--text-secondary)]" htmlFor="place-dup-parent">
-                Top parent
-              </label>
-              <p id="place-dup-parent-hint" className="mt-1 text-[11px] leading-snug text-[var(--text-muted)]">
-                Top-level outline row that will contain the copy, or the main list.
+            {parentOptions.length === 0 ? (
+              <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs leading-relaxed text-[var(--text-primary)]">
+                No valid placement target for this copy. Top-level outline only accepts section labels — fix the branch
+                type or outline structure first.
               </p>
-              <select
-                key={parentSelectKey}
-                id="place-dup-parent"
-                aria-describedby="place-dup-parent-hint"
-                className="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
-                value={effectiveParentId ?? ''}
-                disabled={topLevelOnly}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setParentId(v === '' ? null : v);
-                }}
-              >
-                {parentOptions.map((o) => (
-                  <option key={o.id ?? 'root'} value={o.id ?? ''}>
-                    {o.id === null ? o.label : `Section: ${o.label}`}
-                  </option>
-                ))}
-              </select>
-            </div>
+            ) : (
+              <>
+                <div>
+                  <label className="block text-xs font-semibold text-[var(--text-secondary)]" htmlFor="place-dup-parent">
+                    Top parent
+                  </label>
+                  <p id="place-dup-parent-hint" className="mt-1 text-[11px] leading-snug text-[var(--text-muted)]">
+                    Top-level outline row that will contain the copy, or the main list.
+                  </p>
+                  <select
+                    key={parentSelectKey}
+                    id="place-dup-parent"
+                    aria-describedby="place-dup-parent-hint"
+                    className="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                    value={effectiveParentId ?? ''}
+                    disabled={topLevelOnly}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setParentId(v === '' ? null : v);
+                    }}
+                  >
+                    {parentOptions.map((o) => (
+                      <option key={o.id ?? 'root'} value={o.id ?? ''}>
+                        {o.id === null ? o.label : `Section: ${o.label}`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-[var(--text-secondary)]" htmlFor="place-dup-index">
-                Within subtree
-              </label>
-              <p id="place-dup-subtree-hint" className="mt-1 text-[11px] leading-snug text-[var(--text-muted)]">
-                {subtreeHint}
-              </p>
-              <select
-                key={positionSelectKey}
-                id="place-dup-index"
-                aria-describedby="place-dup-subtree-hint"
-                className="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
-                value={Math.min(insertIndex, siblings.length)}
-                onChange={(e) => setInsertIndex(Number(e.target.value))}
-              >
-                {Array.from({ length: siblings.length + 1 }, (_, i) => (
-                  <option key={i} value={i}>
-                    {insertSlotLabel(siblings, i, publishedList)}
-                  </option>
-                ))}
-              </select>
-            </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[var(--text-secondary)]" htmlFor="place-dup-index">
+                    Within subtree
+                  </label>
+                  <p id="place-dup-subtree-hint" className="mt-1 text-[11px] leading-snug text-[var(--text-muted)]">
+                    {subtreeHint}
+                  </p>
+                  <select
+                    key={positionSelectKey}
+                    id="place-dup-index"
+                    aria-describedby="place-dup-subtree-hint"
+                    className="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                    value={Math.min(insertIndex, siblings.length)}
+                    onChange={(e) => setInsertIndex(Number(e.target.value))}
+                  >
+                    {Array.from({ length: siblings.length + 1 }, (_, i) => (
+                      <option key={i} value={i}>
+                        {insertSlotLabel(siblings, i, publishedList)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
           </div>
 
           <button
@@ -886,6 +913,7 @@ function AddPathBranchModal({
   mode = 'add',
   addPreset,
   topLevelOutlineAdd = false,
+  changeTypeRootRowLabelOnly = false,
   allowSectionDivider = false,
   replaceSource = null,
 }: {
@@ -900,6 +928,8 @@ function AddPathBranchModal({
   addPreset?: 'label' | 'course' | 'link' | 'divider';
   /** Top-level outline: section labels only — default to label step; Back from label closes (no course/link kind picker). */
   topLevelOutlineAdd?: boolean;
+  /** Root-row change type: only converting to a text label (no course/link/lesson/divider picker). */
+  changeTypeRootRowLabelOnly?: boolean;
   /** Section divider rows only make sense under a top-level section, not at the root list. */
   allowSectionDivider?: boolean;
   /** When changing an existing row’s type: keep id, visibility, and children when allowed. */
@@ -919,16 +949,29 @@ function AddPathBranchModal({
     setLinkLabelInput('');
     setLinkHrefInput('');
     if (mode === 'changeType' && replaceSource) {
-      setStep('kind');
       setLessonCourse(null);
-      if (replaceSource.kind === 'label' || replaceSource.kind === 'divider') {
-        setLabelInput(replaceSource.label);
+      if (changeTypeRootRowLabelOnly) {
+        setStep('label');
+        if (replaceSource.kind === 'label' || replaceSource.kind === 'divider') {
+          setLabelInput(replaceSource.label);
+        } else {
+          setLabelInput(branchNodeDisplayLabel(replaceSource, [...catalogCourses]).trim());
+        }
+        if (replaceSource.kind === 'link') {
+          setLinkLabelInput(replaceSource.label);
+          setLinkHrefInput(replaceSource.href);
+        }
       } else {
-        setLabelInput('');
-      }
-      if (replaceSource.kind === 'link') {
-        setLinkLabelInput(replaceSource.label);
-        setLinkHrefInput(replaceSource.href);
+        setStep('kind');
+        if (replaceSource.kind === 'label' || replaceSource.kind === 'divider') {
+          setLabelInput(replaceSource.label);
+        } else {
+          setLabelInput('');
+        }
+        if (replaceSource.kind === 'link') {
+          setLinkLabelInput(replaceSource.label);
+          setLinkHrefInput(replaceSource.href);
+        }
       }
     } else {
       if (addPreset === 'label' || (topLevelOutlineAdd && addPreset == null)) {
@@ -944,7 +987,16 @@ function AddPathBranchModal({
       }
       setLessonCourse(null);
     }
-  }, [open, mode, catalogCourses, addPreset, allowSectionDivider, replaceSource, topLevelOutlineAdd]);
+  }, [
+    open,
+    mode,
+    catalogCourses,
+    addPreset,
+    allowSectionDivider,
+    replaceSource,
+    topLevelOutlineAdd,
+    changeTypeRootRowLabelOnly,
+  ]);
 
   useDialogKeyboard({ open, onClose });
 
@@ -1104,6 +1156,10 @@ function AddPathBranchModal({
                 }
                 if (step === 'label' || step === 'divider') {
                   if (mode === 'add' && topLevelOutlineAdd) {
+                    onClose();
+                    return;
+                  }
+                  if (mode === 'changeType' && changeTypeRootRowLabelOnly) {
                     onClose();
                     return;
                   }
@@ -1746,15 +1802,25 @@ function PathBranchRow({
       ) : (
         <span className="inline-block h-7 w-7 shrink-0" aria-hidden />
       )}
-      <button
-        type="button"
-        onClick={() => onRequestChangeType(b.id)}
-        className={`inline-flex h-7 min-w-[3.25rem] shrink-0 items-center justify-center rounded-md px-3.5 text-[10px] font-bold uppercase leading-none transition-colors hover:ring-2 hover:ring-orange-500/40 focus:outline-none focus:ring-2 focus:ring-orange-500/40 ${kindBadgeClass}`}
-        title="Change branch type"
-        aria-label={`Change branch type, now ${pathBranchKindBadgeShortLabel(b.kind)}`}
-      >
-        {pathBranchKindBadgeShortLabel(b.kind)}
-      </button>
+      {depth === 0 && b.kind === 'label' ? (
+        <span
+          className={`inline-flex h-7 min-w-[3.25rem] shrink-0 items-center justify-center rounded-md px-3.5 text-[10px] font-bold uppercase leading-none ${kindBadgeClass}`}
+          title="Section label (edit title in the field)"
+          aria-label={`Branch type: ${pathBranchKindBadgeShortLabel(b.kind)}`}
+        >
+          {pathBranchKindBadgeShortLabel(b.kind)}
+        </span>
+      ) : (
+        <button
+          type="button"
+          onClick={() => onRequestChangeType(b.id)}
+          className={`inline-flex h-7 min-w-[3.25rem] shrink-0 items-center justify-center rounded-md px-3.5 text-[10px] font-bold uppercase leading-none transition-colors hover:ring-2 hover:ring-orange-500/40 focus:outline-none focus:ring-2 focus:ring-orange-500/40 ${kindBadgeClass}`}
+          title="Change branch type"
+          aria-label={`Change branch type, now ${pathBranchKindBadgeShortLabel(b.kind)}`}
+        >
+          {pathBranchKindBadgeShortLabel(b.kind)}
+        </button>
+      )}
     </div>
   );
 
@@ -2476,6 +2542,9 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
 
   const branchModalContextHint = useMemo(() => {
     if (branchModal.kind === 'changeType') {
+      if (isRootBranchId(pathBranchTree, branchModal.nodeId)) {
+        return 'Top-level rows must stay section labels. Enter the section title below; nested rows are kept when you confirm.';
+      }
       return 'Pick a new type. Nested rows are removed if you choose a section divider; otherwise they stay when the new type allows.';
     }
     if (branchModal.kind === 'add') {
@@ -3244,6 +3313,9 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
             contextHint={branchModalContextHint}
             addPreset={branchModal.kind === 'add' ? branchModal.preset : undefined}
             topLevelOutlineAdd={branchModal.kind === 'add' && branchModal.parentId == null}
+            changeTypeRootRowLabelOnly={
+              branchModal.kind === 'changeType' && isRootBranchId(pathBranchTree, branchModal.nodeId)
+            }
             allowSectionDivider={
               (branchModal.kind === 'add' && branchModal.parentId != null) ||
               (branchModal.kind === 'changeType' &&
@@ -3283,6 +3355,10 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
               onCommit={(parentId, insertIndex, namedBranch) => {
                 const br = namedBranch;
                 const roots = pathBranchTreeRef.current;
+                if (parentId === null && br.kind !== 'label') {
+                  showActionToast('Only section labels can be placed at the top level.', 'danger');
+                  return;
+                }
                 if (duplicateSubtreeRequiresTopLevelOnly(br) && parentId !== null) {
                   showActionToast('This copy must stay at the top level.', 'danger');
                   return;
