@@ -1,9 +1,4 @@
-import {
-  YOUTUBE_EMBED_BOTTOM_CROP_PX,
-  YOUTUBE_EMBED_TOP_CROP_PX,
-  youtubeEmbedSrcForVideoId,
-  youtubeVideoIdFromUrl,
-} from '../utils/youtube';
+import { youtubeEmbedSrcForVideoId, youtubeVideoIdFromUrl } from '../utils/youtube';
 
 type YoutubeUrlPreviewEmbedProps = {
   url: string;
@@ -28,11 +23,7 @@ export function YoutubeUrlPreviewEmbed({
       <iframe
         src={youtubeEmbedSrcForVideoId(vid)}
         title={title}
-        className="absolute left-0 right-0 w-full border-0"
-        style={{
-          top: -YOUTUBE_EMBED_TOP_CROP_PX,
-          height: `calc(100% + ${YOUTUBE_EMBED_TOP_CROP_PX + YOUTUBE_EMBED_BOTTOM_CROP_PX}px)`,
-        }}
+        className="absolute inset-0 h-full w-full border-0"
         allowFullScreen
       />
     </div>

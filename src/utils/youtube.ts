@@ -60,18 +60,6 @@ export function youtubeUrlToEmbedUrl(url: string | undefined | null): string | u
   return `https://www.youtube.com/embed/${id}`;
 }
 
-/**
- * Clips the top of the YouTube iframe (title row + dark scrim YouTube draws after play/resume).
- * Raise if a top shadow remains; lower if the picture feels too tight.
- */
-export const YOUTUBE_EMBED_TOP_CROP_PX = 78;
-
-/**
- * Bottom iframe crop clips YouTube’s own UI *and* where captions render — keep **0** so subtitles stay visible.
- * (Custom seek HUD sits outside the iframe; top crop still hides title/scrim.)
- */
-export const YOUTUBE_EMBED_BOTTOM_CROP_PX = 0;
-
 /** Default caption track language for embeds (`cc_lang_pref`) and `setOption('captions','track',...)`. */
 export const YOUTUBE_CC_LANG_PREF = 'en';
 

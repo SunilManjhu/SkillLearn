@@ -26,7 +26,7 @@ export function lessonBlocksVideoPlayback(l: Lesson): boolean {
   return isWebLesson(l) || l.contentKind === 'quiz';
 }
 
-/** Default / explicit `video` — the only kinds that use end-of-playback auto-next to the following lesson. */
+/** Default / explicit `video` — normal embedded playback (not web/quiz overlay). */
 export function isVideoLesson(l: Lesson): boolean {
   return !l.contentKind || l.contentKind === 'video';
 }
