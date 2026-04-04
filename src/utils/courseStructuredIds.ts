@@ -1,4 +1,4 @@
-import type { Course } from '../data/courses';
+import type { Course, Lesson, Module } from '../data/courses';
 
 /** C1, C12 — not C0. */
 export const STRUCTURED_COURSE_ID_RE = /^C[1-9]\d*$/;
@@ -56,6 +56,33 @@ export function remapStructuredCourseModuleLessonIdsByOrder(course: Course): Cou
         id: `${newMid}L${li + 1}`,
       }));
       return { ...mod, id: newMid, lessons };
+    }),
+  };
+}
+
+/**
+ * Remap module/lesson ids to C{n}M{m}L{l} for a given course id (new draft / duplicate / AI skeleton).
+ * Preserves lesson fields; fills missing titles and videoUrl.
+ */
+export function remapCourseToStructuredIds(course: Course, newCourseId: string): Course {
+  const modules: Module[] = Array.isArray(course.modules) ? course.modules : [];
+  return {
+    ...course,
+    id: newCourseId,
+    modules: modules.map((mod, mi) => {
+      const newMid = `${newCourseId}M${mi + 1}`;
+      const lessons: Lesson[] = Array.isArray(mod.lessons) ? mod.lessons : [];
+      return {
+        ...mod,
+        id: newMid,
+        title: typeof mod.title === 'string' ? mod.title : `Module ${mi + 1}`,
+        lessons: lessons.map((les, li) => ({
+          ...les,
+          id: `${newMid}L${li + 1}`,
+          title: typeof les.title === 'string' ? les.title : `Lesson ${li + 1}`,
+          videoUrl: typeof les.videoUrl === 'string' ? les.videoUrl : '',
+        })),
+      };
     }),
   };
 }

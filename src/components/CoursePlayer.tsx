@@ -39,10 +39,10 @@ import {
   writeYoutubeCaptionsPreference,
   YOUTUBE_EMBED_BOTTOM_CROP_PX,
   YOUTUBE_EMBED_TOP_CROP_PX,
-  youtubeEmbedSrcForVideoId,
   youtubeUrlToEmbedUrl,
   youtubeVideoIdFromUrl,
 } from '../utils/youtube';
+import { YoutubeUrlPreviewEmbed } from './YoutubeUrlPreviewEmbed';
 import { db, User, handleFirestoreError, OperationType } from '../firebase';
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, serverTimestamp, onSnapshot, deleteDoc, limit } from 'firebase/firestore';
 import {
@@ -3291,23 +3291,9 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                                 className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500/50"
                               />
                               
-                              {(() => {
-                                const replaceVid = youtubeVideoIdFromUrl(replaceUrl);
-                                return replaceUrl && replaceVid ? (
-                                  <div className="aspect-video rounded-xl overflow-hidden border border-[var(--border-color)] bg-black relative">
-                                    <iframe
-                                      src={youtubeEmbedSrcForVideoId(replaceVid)}
-                                      title="YouTube preview"
-                                      className="absolute left-0 right-0 w-full border-0"
-                                      style={{
-                                        top: -YOUTUBE_EMBED_TOP_CROP_PX,
-                                        height: `calc(100% + ${YOUTUBE_EMBED_TOP_CROP_PX + YOUTUBE_EMBED_BOTTOM_CROP_PX}px)`,
-                                      }}
-                                      allowFullScreen
-                                    />
-                                  </div>
-                                ) : null;
-                              })()}
+                              {replaceUrl && youtubeVideoIdFromUrl(replaceUrl) ? (
+                                <YoutubeUrlPreviewEmbed url={replaceUrl} title="YouTube preview" />
+                              ) : null}
 
                               <div className="flex gap-3">
                                 <button
@@ -3350,23 +3336,9 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                                 className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500/50"
                               />
                               
-                              {(() => {
-                                const suggestedVid = youtubeVideoIdFromUrl(suggestedUrl);
-                                return suggestedUrl && suggestedVid ? (
-                                  <div className="aspect-video rounded-xl overflow-hidden border border-[var(--border-color)] bg-black relative">
-                                    <iframe
-                                      src={youtubeEmbedSrcForVideoId(suggestedVid)}
-                                      title="YouTube preview"
-                                      className="absolute left-0 right-0 w-full border-0"
-                                      style={{
-                                        top: -YOUTUBE_EMBED_TOP_CROP_PX,
-                                        height: `calc(100% + ${YOUTUBE_EMBED_TOP_CROP_PX + YOUTUBE_EMBED_BOTTOM_CROP_PX}px)`,
-                                      }}
-                                      allowFullScreen
-                                    />
-                                  </div>
-                                ) : null;
-                              })()}
+                              {suggestedUrl && youtubeVideoIdFromUrl(suggestedUrl) ? (
+                                <YoutubeUrlPreviewEmbed url={suggestedUrl} title="YouTube preview" />
+                              ) : null}
 
                               <button
                                 type="submit"

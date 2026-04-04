@@ -1,10 +1,17 @@
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, type GroundingMetadata, type UrlContextMetadata } from '@google/genai';
 import { isRetryableQuotaError } from './formatGenaiError';
 import { getResolvedGeminiModelChain } from './geminiModelSettingsFirestore';
 
 export { getGeminiApiKey, getGeminiModelPrimary, getGeminiModelChain } from './geminiModelEnv';
 
 type GenConfig = Parameters<GoogleGenAI['models']['generateContent']>[0]['config'];
+
+export type GenerateContentWithModelChainResult = {
+  text: string | null;
+  error: unknown | null;
+  groundingMetadata?: GroundingMetadata;
+  urlContextMetadata?: UrlContextMetadata;
+};
 
 /**
  * Runs `generateContent` with the first model in the chain that succeeds.
@@ -15,7 +22,7 @@ export async function generateContentWithModelChain(
   apiKey: string,
   contents: string,
   config: GenConfig
-): Promise<{ text: string | null; error: unknown | null }> {
+): Promise<GenerateContentWithModelChainResult> {
   const ai = new GoogleGenAI({ apiKey });
   const modelChain = await getResolvedGeminiModelChain();
   if (modelChain.length === 0) {
@@ -36,7 +43,13 @@ export async function generateContentWithModelChain(
         config,
       });
       const text = response.text?.trim() ?? null;
-      return { text, error: null };
+      const cand = response.candidates?.[0];
+      return {
+        text,
+        error: null,
+        groundingMetadata: cand?.groundingMetadata,
+        urlContextMetadata: cand?.urlContextMetadata,
+      };
     } catch (err) {
       lastError = err;
       const tryNext = i < modelChain.length - 1 && isRetryableQuotaError(err);

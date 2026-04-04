@@ -1,3 +1,21 @@
+/** Gemini URL context rejects requests when a single lookup includes more than ~20 URLs (model-included links count). */
+export function isGeminiUrlContextUrlLimitError(error: unknown): boolean {
+  const raw =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+        ? error
+        : '';
+  if (!raw) return false;
+  const lower = raw.toLowerCase();
+  return (
+    lower.includes('urls to lookup exceeds') ||
+    (lower.includes('number of urls') &&
+      lower.includes('exceeds') &&
+      lower.includes('limit'))
+  );
+}
+
 /** True when retrying with another model may help (rate limit / quota). */
 export function isRetryableQuotaError(error: unknown): boolean {
   const raw =

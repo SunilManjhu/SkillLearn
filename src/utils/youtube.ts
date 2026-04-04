@@ -247,3 +247,9 @@ export function youtubeEmbedSrcForVideoId(id: string): string {
   });
   return `https://www.youtube.com/embed/${id}?${q.toString()}`;
 }
+
+/** Opens YouTube search in a new tab (no Data API). */
+export function youtubeSearchResultsUrl(searchQuery: string): string {
+  const q = searchQuery.trim() || 'video';
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
+}

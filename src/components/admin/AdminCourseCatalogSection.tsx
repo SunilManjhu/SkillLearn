@@ -44,6 +44,7 @@ import {
   STRUCTURED_COURSE_ID_RE,
   firstAvailableStructuredCourseIdFromDocIds,
   isStructuredCourseId,
+  remapCourseToStructuredIds,
   remapStructuredCourseModuleLessonIdsByOrder,
 } from '../../utils/courseStructuredIds';
 import { validateCourseDraft, validateLessonQuiz } from '../../utils/courseDraftValidation';
@@ -74,6 +75,7 @@ import {
   type TitleConflictHit,
 } from '../../utils/catalogDisplayNameConflicts';
 import { AdminDisplayNameConflictDialog } from './AdminDisplayNameConflictDialog';
+import { AdminCourseAiAssistant } from './AdminCourseAiAssistant';
 import {
   addCatalogCategoryExtra,
   CATALOG_CATEGORY_EXTRAS_CHANGED,
@@ -222,30 +224,6 @@ function emptyCourse(docId: string): Course {
         ],
       },
     ],
-  };
-}
-
-/** Remap module/lesson ids to C{n}M{m}L{l} for a duplicate (by order). Always assigns ids even if source omitted them. */
-function remapCourseToStructuredIds(course: Course, newCourseId: string): Course {
-  const modules = Array.isArray(course.modules) ? course.modules : [];
-  return {
-    ...course,
-    id: newCourseId,
-    modules: modules.map((mod, mi) => {
-      const newMid = `${newCourseId}M${mi + 1}`;
-      const lessons = Array.isArray(mod.lessons) ? mod.lessons : [];
-      return {
-        ...mod,
-        id: newMid,
-        title: typeof mod.title === 'string' ? mod.title : `Module ${mi + 1}`,
-        lessons: lessons.map((les, li) => ({
-          ...les,
-          id: `${newMid}L${li + 1}`,
-          title: typeof les.title === 'string' ? les.title : `Lesson ${li + 1}`,
-          videoUrl: typeof les.videoUrl === 'string' ? les.videoUrl : '',
-        })),
-      };
-    }),
   };
 }
 
@@ -1235,6 +1213,14 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       return { ...d, modules };
     });
   };
+
+  const applyAiGeneratedCourse = useCallback((c: Course) => {
+    setDraft((d) => {
+      if (!d) return null;
+      const merged = normalizeCourseTaxonomy(remapCourseToStructuredIds(c, d.id));
+      return ensureCourseLessonRowKeys(merged);
+    });
+  }, []);
 
   const mapQuizQuestion = (mi: number, li: number, qi: number, updater: (q: QuizQuestion) => QuizQuestion) => {
     setDraft((d) => {
@@ -3052,6 +3038,25 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
         {draft && (
           <div className="space-y-4">
+          {!isCreatorCatalog ? (
+            <AdminCourseAiAssistant
+              draft={draft}
+              apiKey={getGeminiApiKey()}
+              isDirty={isDirty}
+              showActionToast={showActionToast}
+              onApplyAiCourse={applyAiGeneratedCourse}
+              fallbackCategories={
+                draft.categories.length > 0
+                  ? draft.categories
+                  : [defaultNewCourseCategoryFromState(getCachedCatalogCategoryPresets())]
+              }
+              fallbackSkills={
+                draft.skills.length > 0
+                  ? draft.skills
+                  : [defaultNewCourseSkillFromState(getCachedCatalogSkillPresets())]
+              }
+            />
+          ) : null}
           <div
             ref={courseDetailsDisclosureRef}
             className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/20"
