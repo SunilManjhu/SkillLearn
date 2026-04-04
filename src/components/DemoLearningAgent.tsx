@@ -7,7 +7,7 @@ import { parseAssistantReplyJson } from '../utils/parseAssistantReply';
 import { formatGenaiError } from '../utils/formatGenaiError';
 import { useLearnerGeminiEnabled } from '../hooks/useLearnerGeminiEnabled';
 import { useLearnerAiModelsSiteEnabled } from '../hooks/useLearnerAiModelsSiteEnabled';
-import { generateContentWithModelChain, getGeminiApiKey } from '../utils/geminiClient';
+import { formatContextForGenaiError, generateContentWithModelChain, getGeminiApiKey } from '../utils/geminiClient';
 
 function newId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -15,7 +15,7 @@ function newId(): string {
 
 type ChatTurn =
   | { id: string; role: 'user'; content: string }
-  | { id: string; role: 'assistant'; reply: string; course?: Course }
+  | { id: string; role: 'assistant'; reply: string; course?: Course; modelUsed?: string }
   | { id: string; role: 'error'; content: string };
 
 const MAX_HISTORY_TURNS = 14;
@@ -131,10 +131,15 @@ export function DemoLearningAgent({ onOpenCourse, courses = [] }: DemoLearningAg
         temperature: 0.65,
       };
 
-      const { text, error: genError } = await generateContentWithModelChain(apiKey, contents, config);
+      const gen = await generateContentWithModelChain(apiKey, contents, config);
+      const { text, error: genError, modelUsed: assistantModel } = gen;
 
       if (genError) {
-        throw genError;
+        setMessages((prev) => [
+          ...prev,
+          { id: newId(), role: 'error', content: formatGenaiError(genError, formatContextForGenaiError(gen)) },
+        ]);
+        return;
       }
 
       if (!text) {
@@ -170,6 +175,7 @@ export function DemoLearningAgent({ onOpenCourse, courses = [] }: DemoLearningAg
           role: 'assistant',
           reply,
           ...(course ? { course } : {}),
+          ...(assistantModel ? { modelUsed: assistantModel } : {}),
         },
       ]);
     } catch (e) {
@@ -288,6 +294,11 @@ export function DemoLearningAgent({ onOpenCourse, courses = [] }: DemoLearningAg
                   return (
                     <li key={m.id} className="flex justify-start">
                       <div className="max-w-[90%] rounded-2xl rounded-bl-md border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2">
+                        {m.modelUsed ? (
+                          <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+                            Model · <span className="font-mono normal-case">{m.modelUsed}</span>
+                          </p>
+                        ) : null}
                         <p className="whitespace-pre-wrap text-sm text-[var(--text-primary)] leading-relaxed">
                           {m.reply}
                         </p>

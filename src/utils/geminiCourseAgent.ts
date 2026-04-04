@@ -2,7 +2,7 @@ import { Type, type Tool } from '@google/genai';
 import type { Course, CourseLevel } from '../data/courses';
 import { dedupeLabelsPreserveOrder } from './courseTaxonomy';
 import { formatGenaiError, isGeminiUrlContextUrlLimitError } from './formatGenaiError';
-import { generateContentWithModelChain } from './geminiClient';
+import { formatContextForGenaiError, generateContentWithModelChain } from './geminiClient';
 import { mergeGroundingSourceLines } from './geminiGroundingSummary';
 
 /** Optional Google Search + URL context for syllabus / official sources (Gemini API tools). */
@@ -87,8 +87,10 @@ const REFINE_CHAT_SYSTEM = [
   'If web tools are enabled: use Google Search and/or URL context on the listed reference URLs to verify syllabus, rationalized curriculum, or official wording when the user asks; then answer in JSON.',
   'For school boards, NCERT, CBSE, state syllabi, or "rationalized 2025–26" requests: propose a sensible module/lesson structure from typical patterns you know; offer to tighten the outline if they paste chapter or unit titles.',
   'Never imply you will only help after they get information from the web. You are the drafting assistant; they verify official documents.',
-  'Always write a helpful `reply` (2–10 sentences). Prefer actionable outline edits over disclaimers.',
-  'Set `updatedSkeleton` when the user wants the outline changed (modules, lesson titles, title, description, level, duration, categories, skills) — including "align to X syllabus" or "add topics on Y".',
+  'Output one JSON object with keys `reply` (string) and `updatedSkeleton` (object or null). The `reply` field is mandatory: it must be a non-empty string on every turn (never "" or whitespace only), even when `updatedSkeleton` is null — put your conversational answer to the admin there.',
+  'For informational questions only (e.g. chapter names from NCERT, syllabus facts) with no outline edit: set `updatedSkeleton` to null and put the full answer in `reply` — still as that JSON object, not plain prose outside JSON.',
+  'Always write a helpful `reply` (1–10 sentences, or longer lists when the user asks for names/titles). Prefer actionable outline edits over disclaimers.',
+  'Set `updatedSkeleton` when the user wants the outline changed (modules, lesson titles, title, description, level, duration, categories, skills) — including "align to X syllabus", lesson counts (e.g. 12 lessons), or "add topics on Y".',
   'When `updatedSkeleton` is set, it must be the complete new outline (same JSON shape as initial skeleton), not a partial diff.',
   'If the user only chats without wanting a new outline structure, set `updatedSkeleton` to null.',
   'In `designNotes` on updates: briefly what you changed; one line that admins should confirm against official materials if precision matters — not a repeat of the whole reply.',
@@ -99,7 +101,7 @@ const SKELETON_WEB_TOOLS_ADDON =
   '\n\nWeb tools are enabled: use Google Search and/or URL context on reference URLs when they help the topic (e.g. current board syllabus, rationalized curriculum).';
 
 const REFINE_WEB_TOOLS_ADDON =
-  '\n\nWeb tools are enabled: use Google Search and/or URL context on reference URLs to verify official or current syllabus details when relevant; keep `reply` concise about what you verified.';
+  '\n\nWeb tools are enabled: use Google Search and/or URL context on reference URLs to verify official or current syllabus details when relevant; keep `reply` concise about what you verified. After tool use, still return valid JSON with a non-empty `reply` string.';
 
 export type AiCourseSkeletonModule = {
   title: string;
@@ -258,6 +260,91 @@ function tryParseJsonFromModelText(raw: string): unknown | null {
   return null;
 }
 
+function pickStringFromRecord(o: Record<string, unknown>, ...preferredKeys: string[]): string {
+  for (const key of preferredKeys) {
+    if (key in o) {
+      const v = o[key];
+      if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+  }
+  for (const key of preferredKeys) {
+    const found = Object.keys(o).find((k) => k.toLowerCase() === key.toLowerCase());
+    if (found) {
+      const v = o[found];
+      if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+  }
+  return '';
+}
+
+function hasRefineChatCandidateShape(o: Record<string, unknown>): boolean {
+  if (pickStringFromRecord(o, 'reply', 'response', 'message', 'answer')) return true;
+  return 'updatedSkeleton' in o;
+}
+
+/**
+ * Prefer a JSON object that looks like refine-chat output. Tool-heavy responses sometimes
+ * prepend another `{...}` so the first parse is not the final assistant JSON.
+ */
+function tryParseJsonForRefineChat(raw: string): unknown | null {
+  const first = tryParseJsonFromModelText(raw);
+  if (first && typeof first === 'object' && !Array.isArray(first)) {
+    const o = first as Record<string, unknown>;
+    if (hasRefineChatCandidateShape(o)) return first;
+  }
+  const t = raw.trim();
+  for (let i = t.lastIndexOf('{'); i >= 0; i = t.lastIndexOf('{', i - 1)) {
+    const blob = extractFirstJsonObject(t.slice(i));
+    if (!blob) continue;
+    try {
+      const p = JSON.parse(blob) as unknown;
+      if (p && typeof p === 'object' && !Array.isArray(p)) {
+        const o = p as Record<string, unknown>;
+        if (hasRefineChatCandidateShape(o)) return p;
+      }
+    } catch {
+      /* try earlier `{` */
+    }
+  }
+  return first;
+}
+
+function proseBeforeFirstBrace(raw: string): string {
+  const i = raw.indexOf('{');
+  if (i <= 0) return '';
+  return raw
+    .slice(0, i)
+    .replace(/^[\s#*_`\-]+/g, '')
+    .trim();
+}
+
+/** When the model returns prose (no JSON), optional whole-response ``` fence. */
+function stripOuterMarkdownFence(s: string): string {
+  const t = s.trim();
+  const m = t.match(/^```(?:json|JSON|\w+)?\s*\n?([\s\S]*?)\n?```\s*$/);
+  return (m?.[1] ?? t).trim();
+}
+
+function extractRefineChatReply(root: Record<string, unknown>): string {
+  let reply = pickStringFromRecord(root, 'reply', 'response', 'message', 'answer');
+  if (!reply) {
+    const r = root.reply;
+    if (typeof r === 'number' && Number.isFinite(r)) reply = String(r);
+  }
+  if (reply) return reply;
+
+  const rawSkel = root.updatedSkeleton;
+  if (rawSkel !== null && rawSkel !== undefined) {
+    if (typeof rawSkel === 'object' && !Array.isArray(rawSkel)) {
+      const dn = (rawSkel as Record<string, unknown>).designNotes;
+      if (typeof dn === 'string' && dn.trim()) return dn.trim();
+    }
+    return 'I proposed an updated outline in this turn — use **Apply** in the assistant panel if you want to replace the draft with the new structure.';
+  }
+
+  return '';
+}
+
 function parseSkeletonFromJson(
   text: string
 ): { ok: true; skeleton: AiCourseSkeleton } | { ok: false; error: string } {
@@ -322,7 +409,8 @@ export async function generateCourseSkeletonFromTopic(params: {
   maxLessonsPerModule?: number;
   web?: CourseAgentWebOptions;
 }): Promise<
-  { ok: true; skeleton: AiCourseSkeleton; sourcesUsed?: string[] } | { ok: false; error: string }
+  | { ok: true; skeleton: AiCourseSkeleton; sourcesUsed?: string[]; modelUsed?: string }
+  | { ok: false; error: string }
 > {
   const maxModules = Math.min(8, Math.max(1, params.maxModules ?? 3));
   const maxLessonsPerModule = Math.min(8, Math.max(1, params.maxLessonsPerModule ?? 4));
@@ -389,16 +477,21 @@ export async function generateCourseSkeletonFromTopic(params: {
     },
   };
 
-  let { text, error, groundingMetadata, urlContextMetadata } = await generateContentWithModelChain(
-    params.apiKey,
-    contents,
-    {
-      systemInstruction,
-      ...(tools ? {} : structuredJson),
-      temperature: 0.55,
-      ...(tools ? { tools } : {}),
-    }
-  );
+  let {
+    text,
+    error,
+    groundingMetadata,
+    urlContextMetadata,
+    modelUsed,
+    lastAttemptedModel,
+    modelChain,
+    chainSource,
+  } = await generateContentWithModelChain(params.apiKey, contents, {
+    systemInstruction,
+    ...(tools ? {} : structuredJson),
+    temperature: 0.55,
+    ...(tools ? { tools } : {}),
+  });
 
   if (
     error &&
@@ -420,10 +513,17 @@ export async function generateCourseSkeletonFromTopic(params: {
     error = second.error;
     groundingMetadata = second.groundingMetadata;
     urlContextMetadata = second.urlContextMetadata;
+    modelUsed = second.modelUsed;
+    lastAttemptedModel = second.lastAttemptedModel;
+    modelChain = second.modelChain;
+    chainSource = second.chainSource;
   }
 
   if (error) {
-    return { ok: false, error: formatGenaiError(error) };
+    return {
+      ok: false,
+      error: formatGenaiError(error, formatContextForGenaiError({ lastAttemptedModel, modelChain, chainSource })),
+    };
   }
   if (!text) {
     return { ok: false, error: 'No response from the model. Try again.' };
@@ -448,6 +548,7 @@ export async function generateCourseSkeletonFromTopic(params: {
     ok: true,
     skeleton: { ...parsed.skeleton, modules },
     ...(sourcesUsed ? { sourcesUsed } : {}),
+    ...(modelUsed ? { modelUsed } : {}),
   };
 }
 
@@ -479,7 +580,7 @@ export async function refineOutlineWithChat(params: {
   maxLessonsPerModule: number;
   web?: CourseAgentWebOptions;
 }): Promise<
-  | { ok: true; reply: string; skeleton: AiCourseSkeleton | null; sourcesUsed?: string[] }
+  | { ok: true; reply: string; skeleton: AiCourseSkeleton | null; sourcesUsed?: string[]; modelUsed?: string }
   | { ok: false; error: string }
 > {
   const hist = params.history
@@ -567,16 +668,21 @@ export async function refineOutlineWithChat(params: {
     },
   };
 
-  let { text, error, groundingMetadata, urlContextMetadata } = await generateContentWithModelChain(
-    params.apiKey,
-    contents,
-    {
-      systemInstruction,
-      ...(tools ? {} : refineStructuredJson),
-      temperature: 0.5,
-      ...(tools ? { tools } : {}),
-    }
-  );
+  let {
+    text,
+    error,
+    groundingMetadata,
+    urlContextMetadata,
+    modelUsed,
+    lastAttemptedModel,
+    modelChain,
+    chainSource,
+  } = await generateContentWithModelChain(params.apiKey, contents, {
+    systemInstruction,
+    ...(tools ? {} : refineStructuredJson),
+    temperature: 0.5,
+    ...(tools ? { tools } : {}),
+  });
 
   if (
     error &&
@@ -598,36 +704,84 @@ export async function refineOutlineWithChat(params: {
     error = second.error;
     groundingMetadata = second.groundingMetadata;
     urlContextMetadata = second.urlContextMetadata;
+    modelUsed = second.modelUsed;
+    lastAttemptedModel = second.lastAttemptedModel;
+    modelChain = second.modelChain;
+    chainSource = second.chainSource;
   }
 
   if (error) {
-    return { ok: false, error: formatGenaiError(error) };
+    return {
+      ok: false,
+      error: formatGenaiError(error, formatContextForGenaiError({ lastAttemptedModel, modelChain, chainSource })),
+    };
   }
   if (!text) {
     return { ok: false, error: 'No response from the model. Try again.' };
   }
 
   const sourcesUsed = mergeGroundingSourceLines(groundingMetadata, urlContextMetadata);
+  const modelSpread = modelUsed ? { modelUsed } : {};
 
-  const parsed = tryParseJsonFromModelText(text);
+  let parsed: unknown = tryParseJsonForRefineChat(text);
   if (parsed === null) {
+    const unwrapped = stripOuterMarkdownFence(text);
+    if (unwrapped.length > 0 && unwrapped !== text.trim()) {
+      parsed = tryParseJsonForRefineChat(unwrapped);
+    }
+  }
+
+  const plainTextFallbackReply = (): string | null => {
+    const plain = stripOuterMarkdownFence(text);
+    return plain.length >= 4 ? plain.slice(0, 12000) : null;
+  };
+
+  if (parsed === null) {
+    const fb = plainTextFallbackReply();
+    if (fb) {
+      return {
+        ok: true,
+        reply: fb,
+        skeleton: null,
+        ...(sourcesUsed ? { sourcesUsed } : {}),
+        ...modelSpread,
+      };
+    }
     return { ok: false, error: 'Could not parse chat response JSON.' };
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    const fb = plainTextFallbackReply();
+    if (fb) {
+      return {
+        ok: true,
+        reply: fb,
+        skeleton: null,
+        ...(sourcesUsed ? { sourcesUsed } : {}),
+        ...modelSpread,
+      };
+    }
     return { ok: false, error: 'Invalid chat response shape.' };
   }
   const root = parsed as Record<string, unknown>;
-  const reply = typeof root.reply === 'string' ? root.reply.trim() : '';
+  let reply = extractRefineChatReply(root);
   if (!reply) {
-    return { ok: false, error: 'Model returned an empty reply.' };
+    const prose = proseBeforeFirstBrace(text);
+    if (prose.length >= 12) reply = prose.slice(0, 8000);
+  }
+  if (!reply) {
+    return {
+      ok: false,
+      error:
+        'Could not read a reply from the model. Try a shorter question, or ask for a concrete outline change (e.g. "reduce to 12 lessons total to match NCERT").',
+    };
   }
 
   const rawSkel = root.updatedSkeleton;
   if (rawSkel === null || rawSkel === undefined) {
-    return { ok: true, reply, skeleton: null, ...(sourcesUsed ? { sourcesUsed } : {}) };
+    return { ok: true, reply, skeleton: null, ...(sourcesUsed ? { sourcesUsed } : {}), ...modelSpread };
   }
   if (typeof rawSkel !== 'object' || Array.isArray(rawSkel)) {
-    return { ok: true, reply, skeleton: null, ...(sourcesUsed ? { sourcesUsed } : {}) };
+    return { ok: true, reply, skeleton: null, ...(sourcesUsed ? { sourcesUsed } : {}), ...modelSpread };
   }
 
   const coerced = coerceSkeletonFromRecord(rawSkel as Record<string, unknown>);
@@ -637,6 +791,7 @@ export async function refineOutlineWithChat(params: {
       reply: `${reply}\n\n(Outline update was not applied: ${coerced.error})`,
       skeleton: null,
       ...(sourcesUsed ? { sourcesUsed } : {}),
+      ...modelSpread,
     };
   }
 
@@ -654,5 +809,6 @@ export async function refineOutlineWithChat(params: {
     reply,
     skeleton: { ...coerced.skeleton, modules },
     ...(sourcesUsed ? { sourcesUsed } : {}),
+    ...modelSpread,
   };
 }

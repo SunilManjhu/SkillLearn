@@ -1064,6 +1064,14 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     setBaselineJson(draftJsonForBaseline(draft));
   }, [draft, baselineJson]);
 
+  const draftOutlineCounts = useMemo(() => {
+    if (!draft) return { moduleCount: 0, lessonCount: 0 };
+    return {
+      moduleCount: draft.modules.length,
+      lessonCount: draft.modules.reduce((n, m) => n + m.lessons.length, 0),
+    };
+  }, [draft]);
+
   const applyPickCourse = useCallback(
     async (id: string) => {
       if (id === '') return;
@@ -3064,15 +3072,27 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             <button
               type="button"
               onClick={() => setCourseDetailsOpen((v) => !v)}
-              className="flex w-full items-center justify-between px-4 py-3 text-left"
+              className="flex w-full min-w-0 items-center justify-between gap-2 px-4 py-3 text-left"
               aria-expanded={courseDetailsOpen}
+              aria-label={`Course details, ${draftOutlineCounts.moduleCount} module${draftOutlineCounts.moduleCount === 1 ? '' : 's'}, ${draftOutlineCounts.lessonCount} lesson${draftOutlineCounts.lessonCount === 1 ? '' : 's'}`}
             >
-              <span className="text-sm font-bold text-[var(--text-primary)]">Course details</span>
-              {courseDetailsOpen ? (
-                <ChevronDown size={16} className="text-[var(--text-secondary)]" />
-              ) : (
-                <ChevronRight size={16} className="text-[var(--text-secondary)]" />
-              )}
+              <span className="min-w-0 truncate text-sm font-bold text-[var(--text-primary)]">
+                Course details
+              </span>
+              <span className="flex min-w-0 shrink-0 items-center gap-2 sm:gap-3">
+                <span className="text-right text-xs font-medium tabular-nums text-[var(--text-muted)]">
+                  {draftOutlineCounts.moduleCount}{' '}
+                  {draftOutlineCounts.moduleCount === 1 ? 'module' : 'modules'}
+                  <span aria-hidden> . </span>
+                  {draftOutlineCounts.lessonCount}{' '}
+                  {draftOutlineCounts.lessonCount === 1 ? 'lesson' : 'lessons'}
+                </span>
+                {courseDetailsOpen ? (
+                  <ChevronDown size={16} className="shrink-0 text-[var(--text-secondary)]" />
+                ) : (
+                  <ChevronRight size={16} className="shrink-0 text-[var(--text-secondary)]" />
+                )}
+              </span>
             </button>
             {courseDetailsOpen && (
               <div className="border-t border-[var(--border-color)] p-4">
@@ -3487,7 +3507,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     onClick={() => toggleModuleOpen(mi)}
                     className="flex min-h-11 min-w-0 flex-1 items-start gap-1.5 rounded-lg py-0.5 text-left hover:bg-[var(--hover-bg)]/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 sm:gap-2 sm:py-1"
                     aria-expanded={!!openModules[mi]}
-                    aria-label={`Module ${mi + 1}: ${mod.id.trim() || 'no id'} - ${mod.title.trim() || 'Untitled module'}. ${openModules[mi] ? 'Collapse' : 'Expand'} module`}
+                    aria-label={`Module ${mi + 1}: ${mod.id.trim() || 'no id'} - ${mod.title.trim() || 'Untitled module'}, ${mod.lessons.length} lesson${mod.lessons.length === 1 ? '' : 's'}. ${openModules[mi] ? 'Collapse' : 'Expand'} module`}
                   >
                     <span className="mt-0.5 shrink-0" aria-hidden>
                       {openModules[mi] ? (
@@ -3501,8 +3521,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         <span className="font-mono text-orange-500/90">{mod.id.trim() || '—'}</span>
                         <span> - {mod.title.trim() || 'Untitled module'}</span>
                       </span>
-                      <span className="mt-0.5 block text-[11px] font-medium text-[var(--text-muted)] sm:text-xs sm:font-normal">
+                      <span className="mt-0.5 text-[11px] font-medium tabular-nums text-[var(--text-muted)] sm:text-xs sm:font-normal">
                         Module {mi + 1}
+                        <span aria-hidden> . </span>
+                        {mod.lessons.length}{' '}
+                        {mod.lessons.length === 1 ? 'lesson' : 'lessons'}
                       </span>
                     </span>
                   </button>

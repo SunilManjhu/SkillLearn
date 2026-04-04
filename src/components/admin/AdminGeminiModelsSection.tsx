@@ -188,9 +188,13 @@ export const AdminGeminiModelsSection: React.FC<AdminGeminiModelsSectionProps> =
         <div className="min-w-0">
           <h2 className="text-base font-bold text-[var(--text-primary)]">Gemini model chain</h2>
           <p className="mt-0.5 text-[11px] leading-snug text-[var(--text-muted)]">
-            Order = fallback. <kbd className="rounded border border-[var(--border-color)] bg-[var(--bg-primary)] px-1 font-mono text-[10px]">Enter</kbd>{' '}
-            adds id. No Firestore doc →{' '}
-            <code className="font-mono text-[10px] text-orange-500/90">GEMINI_MODEL</code> env.
+            Order = try next model on rate limit (enabled rows, top to bottom). After save, the app uses{' '}
+            <strong className="font-medium text-[var(--text-secondary)]">only</strong> this chain — it does not append
+            extra ids from <code className="font-mono text-[10px] text-orange-500/90">.env</code>. Add every fallback
+            model here. <kbd className="rounded border border-[var(--border-color)] bg-[var(--bg-primary)] px-1 font-mono text-[10px]">Enter</kbd>{' '}
+            adds an id. No Firestore doc yet →{' '}
+            <code className="font-mono text-[10px] text-orange-500/90">GEMINI_MODEL</code> /{' '}
+            <code className="font-mono text-[10px] text-orange-500/90">GEMINI_MODEL_FALLBACK</code>.
           </p>
           <p className="mt-1 text-[10px] text-[var(--text-muted)]">
             <span className="font-mono text-[var(--text-secondary)]">{envDefaultChain.join(' → ')}</span>

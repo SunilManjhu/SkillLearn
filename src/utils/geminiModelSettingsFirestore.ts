@@ -65,10 +65,15 @@ export function normalizeGeminiModelRows(rows: Array<{ id: string; enabled: bool
   return { modelIds, enabledFlags };
 }
 
-let cachedChain: string[] | null = null;
+/** `firestore` = Admin → Smart Hub → Gemini model chain; `env` = no Firestore doc / empty ids → build-time env chain. */
+export type GeminiModelChainSource = 'firestore' | 'env';
+
+type CachedResolution = { chain: string[]; source: GeminiModelChainSource };
+
+let cachedResolution: CachedResolution | null = null;
 
 export function invalidateGeminiModelChainCache(): void {
-  cachedChain = null;
+  cachedResolution = null;
 }
 
 if (typeof window !== 'undefined') {
@@ -80,10 +85,14 @@ if (typeof window !== 'undefined') {
 /**
  * Resolved order for AI calls: Firestore models with enabled flag true (order preserved), else env chain when doc missing/empty ids.
  * If the doc exists with at least one id but all are disabled, returns [] (no env fallback).
+ * When `source` is `firestore`, callers should use this chain as-is (Smart Hub order); when `env`, the chain comes from `GEMINI_MODEL` / `GEMINI_MODEL_FALLBACK` (+ default lite).
  */
-export async function getResolvedGeminiModelChain(): Promise<string[]> {
-  if (cachedChain !== null) {
-    return [...cachedChain];
+export async function getResolvedGeminiModelChainWithSource(): Promise<{
+  chain: string[];
+  source: GeminiModelChainSource;
+}> {
+  if (cachedResolution !== null) {
+    return { chain: [...cachedResolution.chain], source: cachedResolution.source };
   }
   try {
     const snap = await getDoc(doc(db, COLLECTION, GEMINI_AI_MODELS_DOC_ID));
@@ -93,16 +102,21 @@ export async function getResolvedGeminiModelChain(): Promise<string[]> {
       if (ids.length > 0) {
         const flags = alignGeminiEnabledFlags(ids.length, data.enabledFlags);
         const enabledOnly = ids.filter((_, i) => flags[i]);
-        cachedChain = [...enabledOnly];
-        return [...cachedChain];
+        cachedResolution = { chain: [...enabledOnly], source: 'firestore' };
+        return { chain: [...cachedResolution.chain], source: cachedResolution.source };
       }
     }
   } catch (e) {
     handleFirestoreError(e, OperationType.GET, `${COLLECTION}/${GEMINI_AI_MODELS_DOC_ID}`);
   }
   const fallback = getGeminiModelChain();
-  cachedChain = [...fallback];
-  return [...cachedChain];
+  cachedResolution = { chain: [...fallback], source: 'env' };
+  return { chain: [...cachedResolution.chain], source: cachedResolution.source };
+}
+
+export async function getResolvedGeminiModelChain(): Promise<string[]> {
+  const { chain } = await getResolvedGeminiModelChainWithSource();
+  return chain;
 }
 
 export type GeminiModelAdminRow = { id: string; enabled: boolean };
@@ -139,7 +153,10 @@ export async function saveGeminiAiModels(rows: GeminiModelAdminRow[]): Promise<b
       enabledFlags,
       updatedAt: serverTimestamp(),
     });
-    cachedChain = modelIds.filter((_, i) => enabledFlags[i]);
+    cachedResolution = {
+      chain: modelIds.filter((_, i) => enabledFlags[i]),
+      source: 'firestore',
+    };
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new Event(GEMINI_AI_MODELS_CHANGED));
     }

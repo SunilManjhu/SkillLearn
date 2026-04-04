@@ -1,6 +1,6 @@
 import { Type } from '@google/genai';
 import { formatGenaiError } from './formatGenaiError';
-import { generateContentWithModelChain } from './geminiClient';
+import { formatContextForGenaiError, generateContentWithModelChain } from './geminiClient';
 import { coerceQuizIndex, coerceScore0to100 } from './quizCoercion';
 
 const GRADE_SYSTEM = [
@@ -31,7 +31,7 @@ export async function gradeFreeformAnswer(params: {
     `Student answer:\n${params.studentAnswer}`,
   ].join('\n');
 
-  const { text, error } = await generateContentWithModelChain(params.apiKey, contents, {
+  const gen = await generateContentWithModelChain(params.apiKey, contents, {
     systemInstruction: GRADE_SYSTEM,
     responseMimeType: 'application/json',
     responseSchema: {
@@ -48,9 +48,10 @@ export async function gradeFreeformAnswer(params: {
     },
     temperature: 0.25,
   });
+  const { text, error } = gen;
 
   if (error) {
-    return { ok: false, error: formatGenaiError(error) };
+    return { ok: false, error: formatGenaiError(error, formatContextForGenaiError(gen)) };
   }
   if (!text) {
     return { ok: false, error: 'No response from the model. Try again.' };
@@ -111,7 +112,7 @@ export async function probeIncorrectMcq(params: {
     `What the student selected (incorrect):\n${params.selectedChoiceText}`,
   ].join('\n');
 
-  const { text, error } = await generateContentWithModelChain(params.apiKey, contents, {
+  const genMcq = await generateContentWithModelChain(params.apiKey, contents, {
     systemInstruction: PROBE_MCQ_SYSTEM,
     responseMimeType: 'application/json',
     responseSchema: {
@@ -123,8 +124,9 @@ export async function probeIncorrectMcq(params: {
     },
     temperature: 0.45,
   });
+  const { text, error } = genMcq;
 
-  if (error) return { ok: false, error: formatGenaiError(error) };
+  if (error) return { ok: false, error: formatGenaiError(error, formatContextForGenaiError(genMcq)) };
   if (!text) return { ok: false, error: 'No response from the model. Try again.' };
   let parsed: unknown;
   try {
@@ -169,7 +171,7 @@ export async function probeWeakFreeform(params: {
     `Grader feedback:\n${params.graderFeedback}`,
   ].join('\n');
 
-  const { text, error } = await generateContentWithModelChain(params.apiKey, contents, {
+  const genFf = await generateContentWithModelChain(params.apiKey, contents, {
     systemInstruction: PROBE_FREEFORM_SYSTEM,
     responseMimeType: 'application/json',
     responseSchema: {
@@ -181,8 +183,9 @@ export async function probeWeakFreeform(params: {
     },
     temperature: 0.4,
   });
+  const { text, error } = genFf;
 
-  if (error) return { ok: false, error: formatGenaiError(error) };
+  if (error) return { ok: false, error: formatGenaiError(error, formatContextForGenaiError(genFf)) };
   if (!text) return { ok: false, error: 'No response from the model. Try again.' };
   let parsed: unknown;
   try {
@@ -227,7 +230,7 @@ export async function resolveMcqCorrectIndex(params: {
     `Options:\n${list}`,
   ].join('\n');
 
-  const { text, error } = await generateContentWithModelChain(params.apiKey, contents, {
+  const genResolve = await generateContentWithModelChain(params.apiKey, contents, {
     systemInstruction: RESOLVE_MCQ_SYSTEM,
     responseMimeType: 'application/json',
     responseSchema: {
@@ -242,8 +245,9 @@ export async function resolveMcqCorrectIndex(params: {
     },
     temperature: 0.15,
   });
+  const { text, error } = genResolve;
 
-  if (error) return { ok: false, error: formatGenaiError(error) };
+  if (error) return { ok: false, error: formatGenaiError(error, formatContextForGenaiError(genResolve)) };
   if (!text) return { ok: false, error: 'No response from the model.' };
   let parsed: unknown;
   try {
@@ -283,7 +287,7 @@ export async function revealFreeformModelAnswer(params: {
     `Rubric / key points:\n${rubricBlock}`,
   ].join('\n');
 
-  const { text, error } = await generateContentWithModelChain(params.apiKey, contents, {
+  const genReveal = await generateContentWithModelChain(params.apiKey, contents, {
     systemInstruction: REVEAL_FREEFORM_SYSTEM,
     responseMimeType: 'application/json',
     responseSchema: {
@@ -295,8 +299,9 @@ export async function revealFreeformModelAnswer(params: {
     },
     temperature: 0.35,
   });
+  const { text, error } = genReveal;
 
-  if (error) return { ok: false, error: formatGenaiError(error) };
+  if (error) return { ok: false, error: formatGenaiError(error, formatContextForGenaiError(genReveal)) };
   if (!text) return { ok: false, error: 'No response from the model. Try again.' };
   let parsed: unknown;
   try {

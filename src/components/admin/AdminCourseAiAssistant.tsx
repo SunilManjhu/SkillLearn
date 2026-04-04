@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   ChevronDown,
   ChevronRight,
@@ -7,8 +8,11 @@ import {
   Send,
   Sparkles,
   Trash2,
+  X,
 } from 'lucide-react';
 import type { Course } from '../../data/courses';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
+import { useDialogKeyboard } from '../../hooks/useDialogKeyboard';
 import {
   compactOutlineForChat,
   courseFromAiSkeleton,
@@ -46,7 +50,7 @@ export type AdminCourseAiAssistantProps = {
   fallbackSkills: string[];
 };
 
-type ChatTurn = { role: 'user' | 'model'; text: string; sourcesUsed?: string[] };
+type ChatTurn = { role: 'user' | 'model'; text: string; sourcesUsed?: string[]; modelId?: string };
 
 export function AdminCourseAiAssistant({
   draft,
@@ -69,6 +73,7 @@ export function AdminCourseAiAssistant({
   const [chatInput, setChatInput] = useState('');
   const [chatBusy, setChatBusy] = useState(false);
   const [pendingChatSkeleton, setPendingChatSkeleton] = useState<AiCourseSkeleton | null>(null);
+  const [outlineReplaceDialog, setOutlineReplaceDialog] = useState<null | 'skeleton' | 'chatApply'>(null);
 
   const draftRef = useRef(draft);
   draftRef.current = draft;
@@ -83,7 +88,12 @@ export function AdminCourseAiAssistant({
     referenceUrls: parseReferenceUrlsFromText(referenceUrlsText),
   };
 
-  const requestGenerateSkeleton = useCallback(async () => {
+  const outlineReplaceKindRef = useRef(outlineReplaceDialog);
+  outlineReplaceKindRef.current = outlineReplaceDialog;
+
+  const closeOutlineReplaceDialog = useCallback(() => setOutlineReplaceDialog(null), []);
+
+  const runGenerateSkeleton = useCallback(async () => {
     const trimmed = topic.trim();
     if (!trimmed) {
       showActionToast('Enter a topic first.', 'danger');
@@ -97,12 +107,6 @@ export function AdminCourseAiAssistant({
     if (!d) {
       showActionToast('Select or create a course first.', 'danger');
       return;
-    }
-    if (isDirty || courseHasOutlineContent(d)) {
-      const ok = window.confirm(
-        'Replace the current course outline (title, description, modules, lessons) with an AI-generated skeleton? Unsaved edits will be lost for those fields.'
-      );
-      if (!ok) return;
     }
 
     setSkeletonBusy(true);
@@ -128,11 +132,41 @@ export function AdminCourseAiAssistant({
       setTopicHint(trimmed);
       setLastDesignNotes(res.skeleton.designNotes?.trim() || null);
       setLastSkeletonSources(res.sourcesUsed ?? null);
-      showActionToast('AI skeleton applied. Review and save when ready.', 'success');
+      showActionToast(
+        res.modelUsed
+          ? `AI skeleton applied using ${res.modelUsed}. Review and save when ready.`
+          : 'AI skeleton applied. Review and save when ready.',
+        'success'
+      );
     } finally {
       setSkeletonBusy(false);
     }
-  }, [apiKey, topic, isDirty, showActionToast, onApplyAiCourse, fallbackCategories, fallbackSkills]);
+  }, [apiKey, topic, showActionToast, onApplyAiCourse, fallbackCategories, fallbackSkills]);
+
+  const runGenerateSkeletonRef = useRef(runGenerateSkeleton);
+  runGenerateSkeletonRef.current = runGenerateSkeleton;
+
+  const requestGenerateSkeleton = useCallback(() => {
+    const trimmed = topic.trim();
+    if (!trimmed) {
+      showActionToast('Enter a topic first.', 'danger');
+      return;
+    }
+    if (!apiKey) {
+      showActionToast('Set GEMINI_API_KEY in .env to use AI course tools.', 'danger');
+      return;
+    }
+    const d = draftRef.current;
+    if (!d) {
+      showActionToast('Select or create a course first.', 'danger');
+      return;
+    }
+    if (isDirty || courseHasOutlineContent(d)) {
+      setOutlineReplaceDialog('skeleton');
+      return;
+    }
+    void runGenerateSkeleton();
+  }, [apiKey, topic, isDirty, showActionToast, runGenerateSkeleton]);
 
   useEffect(() => {
     if (!open || chatTurns.length === 0) return;
@@ -178,6 +212,7 @@ export function AdminCourseAiAssistant({
           role: 'model' as const,
           text: res.reply,
           ...(res.sourcesUsed?.length ? { sourcesUsed: res.sourcesUsed } : {}),
+          ...(res.modelUsed ? { modelId: res.modelUsed } : {}),
         },
       ];
       setChatTurns(withModel);
@@ -189,16 +224,10 @@ export function AdminCourseAiAssistant({
     }
   }, [apiKey, chatInput, chatBusy, showActionToast]);
 
-  const applyPendingChatSkeleton = useCallback(() => {
+  const runApplyChatSkeleton = useCallback(() => {
     if (!pendingChatSkeleton) return;
     const d = draftRef.current;
     if (!d) return;
-    if (isDirty || courseHasOutlineContent(d)) {
-      const ok = window.confirm(
-        'Replace the current course outline with the proposal from chat? Unsaved outline edits will be lost.'
-      );
-      if (!ok) return;
-    }
     const next = courseFromAiSkeleton(pendingChatSkeleton, d.id, {
       author: d.author,
       thumbnail: d.thumbnail,
@@ -208,15 +237,44 @@ export function AdminCourseAiAssistant({
     onApplyAiCourse(next);
     setLastDesignNotes(pendingChatSkeleton.designNotes?.trim() || null);
     setPendingChatSkeleton(null);
-    showActionToast('Outline from chat applied to draft.', 'success');
-  }, [
-    pendingChatSkeleton,
-    isDirty,
-    fallbackCategories,
-    fallbackSkills,
-    onApplyAiCourse,
-    showActionToast,
-  ]);
+    const lastModelId = [...chatTurnsRef.current]
+      .reverse()
+      .find((t) => t.role === 'model' && t.modelId)?.modelId;
+    showActionToast(
+      lastModelId
+        ? `Outline from chat applied (last reply: ${lastModelId}).`
+        : 'Outline from chat applied to draft.',
+      'success'
+    );
+  }, [pendingChatSkeleton, fallbackCategories, fallbackSkills, onApplyAiCourse, showActionToast]);
+
+  const runApplyChatSkeletonRef = useRef(runApplyChatSkeleton);
+  runApplyChatSkeletonRef.current = runApplyChatSkeleton;
+
+  const confirmOutlineReplaceDialog = useCallback(() => {
+    const kind = outlineReplaceKindRef.current;
+    setOutlineReplaceDialog(null);
+    if (kind === 'skeleton') void runGenerateSkeletonRef.current();
+    else if (kind === 'chatApply') runApplyChatSkeletonRef.current();
+  }, []);
+
+  useBodyScrollLock(outlineReplaceDialog !== null);
+  useDialogKeyboard({
+    open: outlineReplaceDialog !== null,
+    onClose: closeOutlineReplaceDialog,
+    onPrimaryAction: confirmOutlineReplaceDialog,
+  });
+
+  const applyPendingChatSkeleton = useCallback(() => {
+    if (!pendingChatSkeleton) return;
+    const d = draftRef.current;
+    if (!d) return;
+    if (isDirty || courseHasOutlineContent(d)) {
+      setOutlineReplaceDialog('chatApply');
+      return;
+    }
+    runApplyChatSkeleton();
+  }, [pendingChatSkeleton, isDirty, runApplyChatSkeleton]);
 
   const clearChat = useCallback(() => {
     setChatTurns([]);
@@ -226,7 +284,10 @@ export function AdminCourseAiAssistant({
 
   if (!draft) return null;
 
+  const outlineReplaceIsSkeleton = outlineReplaceDialog === 'skeleton';
+
   return (
+    <>
     <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/30">
       <button
         type="button"
@@ -405,7 +466,19 @@ export function AdminCourseAiAssistant({
                     }`}
                   >
                     <span className="mb-0.5 block text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">
-                      {turn.role === 'user' ? 'You' : 'Model'}
+                      {turn.role === 'user' ? (
+                        'You'
+                      ) : (
+                        <>
+                          Model
+                          {turn.modelId ? (
+                            <>
+                              {' '}
+                              · <span className="font-mono font-normal normal-case">{turn.modelId}</span>
+                            </>
+                          ) : null}
+                        </>
+                      )}
                     </span>
                     <span className="whitespace-pre-wrap">{turn.text}</span>
                     {turn.role === 'model' && turn.sourcesUsed && turn.sourcesUsed.length > 0 ? (
@@ -486,5 +559,79 @@ export function AdminCourseAiAssistant({
         </div>
       )}
     </div>
+
+      <AnimatePresence>
+        {outlineReplaceDialog ? (
+          <div
+            className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] backdrop-blur-sm sm:items-center sm:p-6"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="admin-ai-outline-replace-title"
+            aria-describedby="admin-ai-outline-replace-desc"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) closeOutlineReplaceDialog();
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 12 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              className="w-full max-w-lg overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl sm:rounded-3xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-3 border-b border-[var(--border-color)] p-4 sm:p-6">
+                <h2
+                  id="admin-ai-outline-replace-title"
+                  className="text-lg font-bold text-[var(--text-primary)] sm:text-xl"
+                >
+                  Replace course outline?
+                </h2>
+                <button
+                  type="button"
+                  onClick={closeOutlineReplaceDialog}
+                  className="shrink-0 rounded-full p-2 transition-colors hover:bg-[var(--hover-bg)]"
+                  aria-label="Close"
+                >
+                  <X size={20} className="text-[var(--text-secondary)]" aria-hidden />
+                </button>
+              </div>
+              <div
+                id="admin-ai-outline-replace-desc"
+                className="p-4 text-sm leading-relaxed text-[var(--text-secondary)] sm:p-6"
+              >
+                {outlineReplaceIsSkeleton ? (
+                  <p>
+                    Replace the current course outline (title, description, modules, lessons) with an AI-generated
+                    skeleton? Unsaved edits will be lost for those fields.
+                  </p>
+                ) : (
+                  <p>
+                    Replace the current course outline with the proposal from chat? Unsaved outline edits will be lost.
+                  </p>
+                )}
+              </div>
+              <div className="flex flex-col gap-3 border-t border-[var(--border-color)] p-4 sm:flex-row sm:justify-end sm:gap-3 sm:p-6">
+                <button
+                  type="button"
+                  onClick={closeOutlineReplaceDialog}
+                  className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-5 py-3 text-sm font-bold text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)] sm:w-auto"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  autoFocus
+                  onClick={confirmOutlineReplaceDialog}
+                  className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-orange-600 sm:w-auto"
+                >
+                  {outlineReplaceIsSkeleton ? 'Replace with AI skeleton' : 'Apply outline'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        ) : null}
+      </AnimatePresence>
+    </>
   );
 }

@@ -1,3 +1,6 @@
+/** Default second model when `GEMINI_MODEL_FALLBACK` is unset — used for automatic quota / rate-limit failover. */
+export const DEFAULT_GEMINI_QUOTA_FALLBACK_MODEL = 'gemini-2.5-flash-lite';
+
 /** Build-time env (Vite `define`) — primary Gemini model id. */
 export function getGeminiModelPrimary(): string {
   const m = process.env.GEMINI_MODEL;
@@ -7,6 +10,8 @@ export function getGeminiModelPrimary(): string {
 /**
  * Ordered chain from env: primary first, then comma-separated GEMINI_MODEL_FALLBACK (deduped).
  * Used when Firestore has no admin-configured list.
+ * If no explicit fallbacks are set, appends {@link DEFAULT_GEMINI_QUOTA_FALLBACK_MODEL} when not already present
+ * so `generateContentWithModelChain` can try another model on 429 / quota errors.
  */
 export function getGeminiModelChain(): string[] {
   const primary = getGeminiModelPrimary();
@@ -22,6 +27,10 @@ export function getGeminiModelChain(): string[] {
       seen.add(id);
       out.push(id);
     }
+  }
+  if (rest.length === 0 && !seen.has(DEFAULT_GEMINI_QUOTA_FALLBACK_MODEL)) {
+    seen.add(DEFAULT_GEMINI_QUOTA_FALLBACK_MODEL);
+    out.push(DEFAULT_GEMINI_QUOTA_FALLBACK_MODEL);
   }
   return out;
 }

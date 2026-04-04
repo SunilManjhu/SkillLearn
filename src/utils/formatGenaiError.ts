@@ -16,27 +16,67 @@ export function isGeminiUrlContextUrlLimitError(error: unknown): boolean {
   );
 }
 
+/** HTTP / SDK status on GenAI errors (e.g. ApiError from `@google/genai`). */
+function errorHttpStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== 'object') return undefined;
+  const st = (error as { status?: unknown }).status;
+  if (typeof st === 'number' && Number.isFinite(st)) return st;
+  if (typeof st === 'string' && /^\d+$/.test(st)) return Number(st);
+  return undefined;
+}
+
+/** Message + useful fields for substring matching (some errors hide 429 only in JSON). */
+function errorTextForQuotaMatch(error: unknown): string {
+  const parts: string[] = [];
+  if (error instanceof Error && error.message) parts.push(error.message);
+  if (typeof error === 'string') parts.push(error);
+  if (error && typeof error === 'object') {
+    const o = error as Record<string, unknown>;
+    if (typeof o.status !== 'undefined') parts.push(String(o.status));
+    if (typeof o.code !== 'undefined') parts.push(String(o.code));
+    try {
+      parts.push(JSON.stringify(error).slice(0, 2500));
+    } catch {
+      /* ignore */
+    }
+  }
+  return parts.join(' ').toLowerCase();
+}
+
 /** True when retrying with another model may help (rate limit / quota). */
 export function isRetryableQuotaError(error: unknown): boolean {
-  const raw =
-    error instanceof Error
-      ? error.message
-      : typeof error === 'string'
-        ? error
-        : '';
-  if (!raw) return false;
-  const lower = raw.toLowerCase();
+  const status = errorHttpStatus(error);
+  if (status === 429) return true;
+
+  const lower = errorTextForQuotaMatch(error);
+  if (!lower) return false;
   return (
     lower.includes('resource_exhausted') ||
+    lower.includes('resource exhausted') ||
     lower.includes('"code":429') ||
+    lower.includes('"code": 429') ||
     lower.includes(' 429') ||
-    lower.includes('quota') ||
-    lower.includes('rate limit')
+    lower.includes('"status":429') ||
+    lower.includes('too many requests') ||
+    lower.includes('exceeded your current quota') ||
+    lower.includes('quota exceeded') ||
+    lower.includes('you exceeded') ||
+    lower.includes('rate limit') ||
+    lower.includes('rate_limit') ||
+    lower.includes('throttl')
   );
 }
 
+/** Optional context from `generateContentWithModelChain` for clearer quota / model copy. */
+export type FormatGenaiErrorContext = {
+  lastTriedModel?: string;
+  modelChain?: string[];
+  /** `firestore` = Smart Hub chain; `env` = GEMINI_MODEL / .env */
+  chainSource?: 'firestore' | 'env';
+};
+
 /** Turn Gemini / SDK errors into short UI copy; avoids dumping raw JSON. */
-export function formatGenaiError(error: unknown): string {
+export function formatGenaiError(error: unknown, ctx?: FormatGenaiErrorContext): string {
   const raw =
     error instanceof Error
       ? error.message
@@ -57,7 +97,22 @@ export function formatGenaiError(error: unknown): string {
   }
 
   if (isRetryableQuotaError(error)) {
-    return 'Gemini rate limit or quota reached. Wait and retry, or set GEMINI_MODEL to another model (e.g. gemini-2.5-flash-lite). See https://ai.google.dev/gemini-api/docs/rate-limits';
+    const last = ctx?.lastTriedModel?.trim();
+    const chain = ctx?.modelChain?.filter(Boolean) ?? [];
+    const chainLabel =
+      ctx?.chainSource === 'firestore'
+        ? 'Smart Hub Gemini model chain'
+        : ctx?.chainSource === 'env'
+          ? 'configured Gemini chain (.env: GEMINI_MODEL / GEMINI_MODEL_FALLBACK)'
+          : 'Gemini model chain';
+    if (chain.length > 1) {
+      const lastPart = last ? ` Last tried: ${last}.` : '';
+      return `All ${chain.length} enabled models in your ${chainLabel} hit rate limits or quota.${lastPart} Wait and retry or check quotas: https://ai.google.dev/gemini-api/docs/rate-limits`;
+    }
+    if (last) {
+      return `Rate limit or quota on ${last}. Wait and retry, or add another model in Admin → Smart Hub → Gemini model chain (or set GEMINI_MODEL in .env). https://ai.google.dev/gemini-api/docs/rate-limits`;
+    }
+    return 'Gemini rate limit or quota reached. Wait and retry, or configure another model in Admin → Smart Hub → Gemini model chain. See https://ai.google.dev/gemini-api/docs/rate-limits';
   }
 
   if (raw.length > 280 && (raw.startsWith('{') || raw.includes('"error"'))) {
