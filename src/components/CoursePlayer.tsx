@@ -92,6 +92,14 @@ const POINTER_PLAY_IDLE_HIDE_MS = 1000;
 /** Hover + fine pointer while paused: hide chrome after this much idle time with cursor still on the video. */
 const POINTER_PAUSED_IDLE_HIDE_MS = 3000;
 
+/** Expand the notes panel (video outline) this long after playback resumes, when the lesson has an outline. */
+const VIDEO_OUTLINE_NOTES_AUTO_OPEN_MS = 1000;
+
+function lessonHasVideoOutlineNotes(lesson: Lesson): boolean {
+  if (lesson.contentKind === 'web' || lesson.contentKind === 'quiz') return false;
+  return Boolean(lesson.videoOutlineNotes?.trim());
+}
+
 function formatYtClock(totalSeconds: number): string {
   if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return '0:00';
   const s = Math.floor(totalSeconds);
@@ -166,6 +174,8 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   youtubeCaptionLangRef.current = youtubeCaptionLang;
   /** YouTube-only HUD: current time / duration and volume (synced via IFrame API). */
   const [ytHudTime, setYtHudTime] = useState({ current: 0, duration: 0 });
+  /** Native `<video>` current time for notes timestamp highlights (polled; HUD uses YouTube ticks). */
+  const [nativeNotePlaybackSeconds, setNativeNotePlaybackSeconds] = useState(0);
   /** While dragging the seek bar, HUD ticks must not fight the slider. */
   const [ytSeekDragging, setYtSeekDragging] = useState(false);
   const [ytSeekDragSeconds, setYtSeekDragSeconds] = useState(0);
@@ -1506,6 +1516,18 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     return () => clearInterval(id);
   }, [youtubeEmbedUrl, currentLesson.id]);
 
+  /** Poll native video time so lesson notes can highlight `(M:SS)` spans without waiting on throttled progress saves. */
+  useEffect(() => {
+    if (youtubeEmbedUrl || blocksVideoPlayback) return;
+    const poll = () => {
+      const v = videoRef.current;
+      if (v && Number.isFinite(v.currentTime)) setNativeNotePlaybackSeconds(v.currentTime);
+    };
+    poll();
+    const id = window.setInterval(poll, 400);
+    return () => clearInterval(id);
+  }, [youtubeEmbedUrl, blocksVideoPlayback, currentLesson.id]);
+
   /**
    * If the course already met finalize criteria when opening the player, skip layout-driven finalize
    * (retake / replay stays in the player until the last lesson ends again).
@@ -1961,8 +1983,10 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
               if (!youtubeCaptionsEnabledRef.current) {
                 applyYoutubeCaptionsModule(e.target, false, youtubeCaptionLangRef.current);
               }
+              scheduleVideoOutlineNotesAutoOpenRef.current();
             } else if (e.data === ps.PAUSED) {
               clearYtPauseUiTimer();
+              clearOutlineNotesAutoOpenTimerRef.current();
               clearUnpauseFrostLinger();
               setMediaPaused(true);
               setYtPauseBlurActive(false);
@@ -1991,6 +2015,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                 }
               }, PAUSE_UI_MIN_MS);
             } else if (e.data === ps.ENDED) {
+              collapseNotesOnVideoEndRef.current();
               clearYtPauseUiTimer();
               clearUnpauseFrostLinger();
               setMediaPaused(true);
@@ -2506,6 +2531,13 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   const notesRegionQuizMobileId = `${notesAriaIdBase}-sidebar-quiz-mobile`;
 
   const [notesExpanded, setNotesExpanded] = useState(false);
+  const setNotesExpandedRef = useRef(setNotesExpanded);
+  setNotesExpandedRef.current = setNotesExpanded;
+  const outlineNotesAutoOpenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearOutlineNotesAutoOpenTimerRef = useRef<() => void>(() => {});
+  const scheduleVideoOutlineNotesAutoOpenRef = useRef<() => void>(() => {});
+  const collapseNotesOnVideoEndRef = useRef<() => void>(() => {});
+
   const [lessonNoteText, setLessonNoteText] = useState('');
   const [notesEditorNonce, setNotesEditorNonce] = useState(0);
   /** Bumps on every lesson change so note editors remount even if lesson ids were duplicated. */
@@ -2563,6 +2595,70 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     };
   }, [course.id, progressUserId, debouncedNotes]);
 
+  const clearOutlineNotesAutoOpenTimer = useCallback(() => {
+    if (outlineNotesAutoOpenTimerRef.current != null) {
+      window.clearTimeout(outlineNotesAutoOpenTimerRef.current);
+      outlineNotesAutoOpenTimerRef.current = null;
+    }
+  }, []);
+
+  clearOutlineNotesAutoOpenTimerRef.current = clearOutlineNotesAutoOpenTimer;
+
+  const scheduleVideoOutlineNotesAutoOpen = useCallback(() => {
+    clearOutlineNotesAutoOpenTimer();
+    const lesson = lessonRef.current;
+    if (lessonBlocksVideoPlayback(lesson) || !lessonHasVideoOutlineNotes(lesson)) return;
+    const lessonId = lesson.id;
+    outlineNotesAutoOpenTimerRef.current = window.setTimeout(() => {
+      outlineNotesAutoOpenTimerRef.current = null;
+      if (lessonRef.current.id !== lessonId) return;
+      if (lessonBlocksVideoPlayback(lessonRef.current) || !lessonHasVideoOutlineNotes(lessonRef.current)) return;
+      setNotesExpandedRef.current(true);
+    }, VIDEO_OUTLINE_NOTES_AUTO_OPEN_MS);
+  }, [clearOutlineNotesAutoOpenTimer]);
+
+  const collapseNotesOnVideoEnd = useCallback(() => {
+    clearOutlineNotesAutoOpenTimer();
+    setNotesExpandedRef.current(false);
+  }, [clearOutlineNotesAutoOpenTimer]);
+
+  scheduleVideoOutlineNotesAutoOpenRef.current = scheduleVideoOutlineNotesAutoOpen;
+  collapseNotesOnVideoEndRef.current = collapseNotesOnVideoEnd;
+
+  useEffect(() => {
+    clearOutlineNotesAutoOpenTimer();
+  }, [currentLesson.id, clearOutlineNotesAutoOpenTimer]);
+
+  const notesPlaybackHighlightSeconds =
+    blocksVideoPlayback
+      ? null
+      : youtubeEmbedUrl
+        ? ytSeekDragging
+          ? ytSeekDragSeconds
+          : ytHudTime.current
+        : nativeNotePlaybackSeconds;
+
+  const seekVideoFromNotes = useCallback(
+    (seconds: number) => {
+      if (blocksVideoPlayback || !Number.isFinite(seconds) || seconds < 0) return;
+      revealChromeAfterKeyboardSeekRef.current();
+      if (youtubeEmbedUrl) {
+        commitYtSeek(seconds);
+        return;
+      }
+      const v = videoRef.current;
+      if (!v) return;
+      if (Number.isFinite(v.duration) && v.duration > 0) {
+        const nextT = Math.max(0, Math.min(seconds, v.duration));
+        v.currentTime = nextT;
+        mergeProgress(lessonRef.current.id, nextT, v.duration);
+      } else {
+        v.currentTime = Math.max(0, seconds);
+      }
+    },
+    [blocksVideoPlayback, commitYtSeek, mergeProgress, youtubeEmbedUrl]
+  );
+
   const renderCourseSidebarPanels = (notesRegionId: string) => (
     <CoursePlayerSidebarPanels
       notesRegionId={notesRegionId}
@@ -2589,6 +2685,8 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
         flushLessonNote(course.id, progressUserId, currentLesson.id, lessonNoteTextRef.current);
       }}
       onNotesPanelClose={() => setNotesEditorNonce((n) => n + 1)}
+      notesPlaybackSeconds={notesPlaybackHighlightSeconds}
+      onVideoSeekSeconds={blocksVideoPlayback ? undefined : seekVideoFromNotes}
     />
   );
 
@@ -2835,8 +2933,10 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
               if (hadPauseFrost) {
                 startUnpauseFrostLinger();
               }
+              scheduleVideoOutlineNotesAutoOpen();
             }}
             onPause={() => {
+              clearOutlineNotesAutoOpenTimer();
               if (nativePauseUiTimerRef.current) {
                 clearTimeout(nativePauseUiTimerRef.current);
                 nativePauseUiTimerRef.current = null;
@@ -2853,6 +2953,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
               }, PAUSE_UI_MIN_MS);
             }}
             onEnded={() => {
+              collapseNotesOnVideoEnd();
               if (nativePauseUiTimerRef.current) {
                 clearTimeout(nativePauseUiTimerRef.current);
                 nativePauseUiTimerRef.current = null;

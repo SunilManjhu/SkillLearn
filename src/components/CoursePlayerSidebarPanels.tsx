@@ -1,11 +1,11 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { CheckCircle2, ChevronDown, ChevronRight, ChevronUp, Play, StickyNote } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ChevronRight, Play, StickyNote } from 'lucide-react';
 import type { Course, Lesson } from '../data/courses';
 import type { LessonProgress } from '../utils/courseProgress';
 import { isLessonPlaybackComplete, progressPercent } from '../utils/courseProgress';
 import { LessonNotesRichEditor } from './LessonNotesRichEditor';
-import { plainFirstLineFromHtml } from '../utils/lessonNoteHtml';
+import { LessonVideoOutlineNotes } from './LessonVideoOutlineNotes';
 
 export type CoursePlayerSidebarPanelsProps = {
   course: Course;
@@ -31,10 +31,14 @@ export type CoursePlayerSidebarPanelsProps = {
   onNotesPanelClose?: () => void;
   /** Unique id for aria-controls / region (each mounted instance must differ). */
   notesRegionId: string;
+  /** Video time (seconds) for highlighting `(M:SS)` / `(M:SS - M:SS)` in notes; `null` when no seekable video. */
+  notesPlaybackSeconds?: number | null;
+  /** Seek embedded video (YouTube or native) when the learner taps an outline line. */
+  onVideoSeekSeconds?: (seconds: number) => void;
 };
 
 /**
- * Course outline playlist + collapsible lesson notes. Notes overlay covers the playlist scroll area when expanded.
+ * Course outline playlist + lesson notes. Header tabs switch between content and notes; notes overlay covers the playlist when Notes is selected.
  */
 export function CoursePlayerSidebarPanels({
   course,
@@ -46,7 +50,7 @@ export function CoursePlayerSidebarPanels({
   lessonDurationLabel,
   notesExpanded,
   onNotesExpandedChange,
-  noteText,
+  noteText: _noteText,
   noteEditorInitialHtml,
   notesEditorKey,
   notesLessonId,
@@ -54,20 +58,68 @@ export function CoursePlayerSidebarPanels({
   onNoteBlur,
   onNotesPanelClose,
   notesRegionId,
+  notesPlaybackSeconds = null,
+  onVideoSeekSeconds,
 }: CoursePlayerSidebarPanelsProps) {
-  const previewShort = (() => {
-    const plain = plainFirstLineFromHtml(noteText, 72);
-    return plain || null;
-  })();
+  const openNotes = () => onNotesExpandedChange(true);
+  const closeNotes = () => {
+    onNoteBlur?.();
+    onNotesPanelClose?.();
+    onNotesExpandedChange(false);
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="shrink-0 border-b border-[var(--border-color)] p-4 sm:p-6">
-        <h2 className="text-lg font-bold text-[var(--text-primary)]">Course Content</h2>
-        <div className="mt-1 text-sm text-[var(--text-secondary)]">
-          {course.modules.length} modules •{' '}
-          {course.modules.reduce((acc, m) => acc + m.lessons.length, 0)} lessons
+      <div className="shrink-0 space-y-3 border-b border-[var(--border-color)] p-4 sm:p-6">
+        <div
+          className="flex rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/60 p-1 dark:bg-black/20"
+          role="tablist"
+          aria-label="Sidebar view"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={!notesExpanded}
+            onClick={() => {
+              if (notesExpanded) closeNotes();
+            }}
+            className={`flex min-h-11 min-w-0 flex-1 touch-manipulation items-center justify-center gap-1.5 rounded-lg px-2 text-sm font-semibold transition-colors sm:min-h-10 sm:px-3 ${
+              !notesExpanded
+                ? 'bg-[var(--bg-secondary)] text-orange-600 shadow-sm dark:text-orange-400'
+                : 'text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]'
+            }`}
+          >
+            <span className="truncate">Course content</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={notesExpanded}
+            aria-controls={notesRegionId}
+            id={`${notesRegionId}-tab`}
+            onClick={() => {
+              if (!notesExpanded) openNotes();
+            }}
+            className={`flex min-h-11 min-w-0 flex-1 touch-manipulation items-center justify-center gap-1.5 rounded-lg px-2 text-sm font-semibold transition-colors sm:min-h-10 sm:px-3 ${
+              notesExpanded
+                ? 'bg-[var(--bg-secondary)] text-orange-600 shadow-sm dark:text-orange-400'
+                : 'text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]'
+            }`}
+          >
+            <StickyNote size={16} className="shrink-0 opacity-90" aria-hidden />
+            <span className="truncate">Notes</span>
+          </button>
         </div>
+        <p className="text-sm text-[var(--text-secondary)]">
+          {notesExpanded ? (
+            <span className="line-clamp-2 font-medium text-[var(--text-primary)]">{currentLesson.title}</span>
+          ) : (
+            <>
+              {course.modules.length} modules •{' '}
+              {course.modules.reduce((acc, m) => acc + m.lessons.length, 0)} lessons
+            </>
+          )}
+        </p>
       </div>
 
       <div className="relative flex min-h-0 flex-1 flex-col">
@@ -153,7 +205,8 @@ export function CoursePlayerSidebarPanels({
             <motion.div
               key="notes-overlay"
               id={notesRegionId}
-              role="region"
+              role="tabpanel"
+              aria-labelledby={`${notesRegionId}-tab`}
               aria-label={`Lesson notes for ${currentLesson.title}`}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -161,61 +214,31 @@ export function CoursePlayerSidebarPanels({
               transition={{ duration: 0.2, ease: 'easeOut' }}
               className="absolute inset-0 z-10 flex flex-col bg-[var(--bg-secondary)] shadow-[0_-4px_24px_rgba(0,0,0,0.12)] dark:shadow-[0_-4px_24px_rgba(0,0,0,0.35)]"
             >
-              <button
-                type="button"
-                aria-expanded={true}
-                aria-controls={notesRegionId}
-                onClick={() => {
-                  onNoteBlur?.();
-                  onNotesPanelClose?.();
-                  onNotesExpandedChange(false);
-                }}
-                className="flex w-full shrink-0 min-h-11 touch-manipulation items-center justify-between gap-2 border-b border-[var(--border-color)] px-3 py-2 text-left transition-colors hover:bg-[var(--hover-bg)] sm:min-h-[3.25rem] sm:px-4"
-                aria-label={`Collapse notes for ${currentLesson.title}`}
-              >
-                <StickyNote size={18} className="shrink-0 text-orange-500/90" aria-hidden />
-                <div className="min-w-0 flex-1">
-                  <span className="block text-sm font-bold text-[var(--text-primary)]">Notes</span>
-                  <p className="truncate text-xs text-[var(--text-muted)]">{currentLesson.title}</p>
-                </div>
-                <ChevronDown size={22} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-              </button>
-              <LessonNotesRichEditor
-                key={notesEditorKey}
-                lessonId={notesLessonId}
-                initialHtml={noteEditorInitialHtml}
-                onHtmlChange={onNoteTextChange}
-                onBlur={onNoteBlur}
-                aria-label={`Notes for ${currentLesson.title}`}
-              />
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                {currentLesson.videoOutlineNotes?.trim() &&
+                currentLesson.contentKind !== 'web' &&
+                currentLesson.contentKind !== 'quiz' ? (
+                  <LessonVideoOutlineNotes
+                    text={currentLesson.videoOutlineNotes}
+                    seekEnabled={typeof onVideoSeekSeconds === 'function'}
+                    onSeekSeconds={(sec) => onVideoSeekSeconds?.(sec)}
+                    playbackSeconds={notesPlaybackSeconds}
+                  />
+                ) : null}
+                <LessonNotesRichEditor
+                  key={notesEditorKey}
+                  lessonId={notesLessonId}
+                  initialHtml={noteEditorInitialHtml}
+                  onHtmlChange={onNoteTextChange}
+                  onBlur={onNoteBlur}
+                  playbackSeconds={notesPlaybackSeconds}
+                  aria-label={`Notes for ${currentLesson.title}`}
+                />
+              </div>
             </motion.div>
           ) : null}
         </AnimatePresence>
       </div>
-
-      {!notesExpanded ? (
-        <>
-          <div className="shrink-0 border-t border-[var(--border-color)]" aria-hidden />
-          <button
-            type="button"
-            aria-expanded={false}
-            aria-controls={notesRegionId}
-            onClick={() => onNotesExpandedChange(true)}
-            className="flex w-full min-h-11 touch-manipulation items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-[var(--hover-bg)]"
-          >
-            <StickyNote size={18} className="shrink-0 text-orange-500/90" aria-hidden />
-            <span className="min-w-0 flex-1">
-              <span className="block text-sm font-bold text-[var(--text-primary)]">Notes</span>
-              {previewShort ? (
-                <span className="line-clamp-1 text-xs text-[var(--text-muted)]">{previewShort}</span>
-              ) : (
-                <span className="text-xs text-[var(--text-muted)]">Tap to add notes for this lesson</span>
-              )}
-            </span>
-            <ChevronUp size={20} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-          </button>
-        </>
-      ) : null}
     </div>
   );
 }

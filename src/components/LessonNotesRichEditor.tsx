@@ -1,4 +1,4 @@
-import React, { type ReactNode, useEffect, useId, useState } from 'react';
+import React, { type ReactNode, useEffect, useMemo, useRef } from 'react';
 import { useEditor, EditorContent, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
@@ -10,15 +10,20 @@ import {
   Heading2,
   List,
   ListOrdered,
+  Minus,
   Undo2,
   Redo2,
 } from 'lucide-react';
-import { LessonNoteDivider, type LessonDividerStyle } from '../extensions/lessonNoteDivider';
+import { LessonNoteDivider } from '../extensions/lessonNoteDivider';
 import { LessonNoteListBehavior } from '../extensions/lessonNoteListBehavior';
 import { LessonNoteOrderedListMerge } from '../extensions/lessonNoteOrderedListMerge';
 import { LessonNoteParagraph } from '../extensions/lessonNoteParagraph';
 import { LessonNotePasteHtml } from '../extensions/lessonNotePasteHtml';
 import { LessonNoteClipboardExport } from '../extensions/lessonNoteClipboardExport';
+import {
+  LessonNoteTimestampHighlight,
+  NOTE_PLAYBACK_TICK_META,
+} from '../extensions/lessonNoteTimestampHighlight';
 import { migrateStoredNoteToHtml, normalizeLessonNoteHtmlForSave } from '../utils/lessonNoteHtml';
 
 export type LessonNotesRichEditorProps = {
@@ -27,6 +32,8 @@ export type LessonNotesRichEditorProps = {
   initialHtml: string;
   onHtmlChange: (html: string) => void;
   onBlur?: () => void;
+  /** Current lesson video time (seconds); timestamps in notes like `(1:20)` or `(0:43 - 1:45)` highlight while active. `null` disables. */
+  playbackSeconds?: number | null;
   'aria-label': string;
 };
 
@@ -59,38 +66,6 @@ function ToolbarButton({
     >
       {children}
     </button>
-  );
-}
-
-function DividerInsertControl({ editor }: { editor: Editor }) {
-  const selectId = useId();
-  const [selectKey, setSelectKey] = useState(0);
-
-  return (
-    <div className="flex min-h-9 items-center">
-      <label htmlFor={selectId} className="sr-only">
-        Insert divider line
-      </label>
-      <select
-        id={selectId}
-        key={selectKey}
-        aria-label="Insert divider line"
-        defaultValue=""
-        className="max-w-[9.5rem] min-h-9 min-w-0 cursor-pointer rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2 py-1.5 text-xs font-medium text-[var(--text-primary)] touch-manipulation sm:max-w-none sm:text-sm"
-        onChange={(e) => {
-          const v = e.target.value as LessonDividerStyle | '';
-          if (v === 'thin' || v === 'thick' || v === 'dotted') {
-            editor.chain().focus().insertContent({ type: 'horizontalRule', attrs: { dividerStyle: v } }).run();
-            setSelectKey((k) => k + 1);
-          }
-        }}
-      >
-        <option value="">Divider…</option>
-        <option value="thin">Thin line</option>
-        <option value="thick">Thick line</option>
-        <option value="dotted">Dotted line</option>
-      </select>
-    </div>
   );
 }
 
@@ -153,7 +128,12 @@ function FormatToolbar({ editor }: { editor: Editor | null }) {
         <ListOrdered size={17} aria-hidden />
       </ToolbarButton>
       <span className="mx-0.5 h-5 w-px shrink-0 bg-[var(--border-color)]" aria-hidden />
-      <DividerInsertControl editor={editor} />
+      <ToolbarButton
+        label="Insert divider line"
+        onClick={() => editor.chain().focus().setHorizontalRule().run()}
+      >
+        <Minus size={17} aria-hidden />
+      </ToolbarButton>
       <span className="mx-0.5 h-5 w-px shrink-0 bg-[var(--border-color)]" aria-hidden />
       <ToolbarButton label="Undo" onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()}>
         <Undo2 size={17} aria-hidden />
@@ -173,12 +153,25 @@ export function LessonNotesRichEditor({
   initialHtml,
   onHtmlChange,
   onBlur,
+  playbackSeconds = null,
   'aria-label': ariaLabel,
 }: LessonNotesRichEditorProps) {
+  const playbackSecondsRef = useRef<number | null>(null);
+  playbackSecondsRef.current = playbackSeconds ?? null;
+
+  const timestampHighlightExt = useMemo(
+    () =>
+      LessonNoteTimestampHighlight.configure({
+        getPlaybackSeconds: () => playbackSecondsRef.current ?? -1,
+      }),
+    []
+  );
+
   const editor = useEditor({
     extensions: [
       LessonNotePasteHtml,
       LessonNoteClipboardExport,
+      timestampHighlightExt,
       StarterKit.configure({
         heading: { levels: [2] },
         codeBlock: false,
@@ -223,6 +216,13 @@ export function LessonNotesRichEditor({
     const html = migrateStoredNoteToHtml(initialHtml);
     editor.commands.setContent(html, { emitUpdate: false });
   }, [editor, lessonId]);
+
+  useEffect(() => {
+    playbackSecondsRef.current = playbackSeconds ?? null;
+    if (!editor || editor.isDestroyed) return;
+    const { view } = editor;
+    view.dispatch(view.state.tr.setMeta(NOTE_PLAYBACK_TICK_META, true));
+  }, [editor, playbackSeconds]);
 
   const focusEditorFromShell = (e: React.PointerEvent) => {
     if (!editor || editor.isDestroyed) return;

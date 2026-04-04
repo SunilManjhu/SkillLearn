@@ -87,12 +87,12 @@ select:-webkit-autofill:focus {
   font-style: normal;
 }
 
-/* Divider reads as an underline for the line above — keep gap minimal. */
+/* Single thick divider — reads as an underline for the line above; keep gap minimal. */
 .lesson-notes-editor hr.lesson-note-divider {
   margin: 0.125rem 0 0.5rem;
   width: 100%;
   border: 0;
-  border-top: 1px solid var(--border-color);
+  border-top: 3px solid var(--border-color);
 }
 
 .lesson-notes-editor p:has(+ hr.lesson-note-divider),
@@ -100,10 +100,17 @@ select:-webkit-autofill:focus {
   margin-bottom: 0.125rem;
 }
 
-.lesson-notes-editor hr.lesson-note-divider--thick {
-  border-top-width: 3px;
+/* Lesson notes: `(M:SS)` / `(M:SS - M:SS)` spans while the video is in range (CoursePlayer playback). */
+.lesson-notes-editor .lesson-note-ts-active {
+  border-radius: 0.2em;
+  padding: 0 0.125em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  background: rgba(251, 191, 36, 0.38);
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.35);
 }
 
-.lesson-notes-editor hr.lesson-note-divider--dotted {
-  border-top-style: dotted;
+body.light .lesson-notes-editor .lesson-note-ts-active {
+  background: rgba(251, 191, 36, 0.45);
+  box-shadow: 0 0 0 1px rgba(217, 119, 6, 0.35);
 }

@@ -3886,6 +3886,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                                   webUrl: lesson.webUrl ?? '',
                                   videoUrl: '',
                                   quiz: undefined,
+                                  videoOutlineNotes: undefined,
                                 })
                               }
                               className="h-4 w-4 shrink-0 border-[var(--border-color)] text-orange-500"
@@ -3902,6 +3903,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                                   contentKind: 'quiz',
                                   webUrl: undefined,
                                   videoUrl: '',
+                                  videoOutlineNotes: undefined,
                                   quiz: {
                                     questions:
                                       lesson.quiz?.questions?.length && lesson.contentKind === 'quiz'
@@ -4242,6 +4244,29 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           className="w-full text-sm bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-2.5 py-1.5 resize-y sm:px-3 sm:py-2"
                           placeholder="Short description under the player"
                         />
+                      </label>
+                      <label className="block space-y-1">
+                        <span className="text-xs font-semibold text-[var(--text-secondary)]">
+                          Video outline for notes (optional)
+                        </span>
+                        <textarea
+                          value={lesson.videoOutlineNotes ?? ''}
+                          onChange={(e) =>
+                            updateLesson(mi, li, { videoOutlineNotes: e.target.value || undefined })
+                          }
+                          rows={5}
+                          className="w-full resize-y rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2.5 py-1.5 font-mono text-xs sm:px-3 sm:py-2 sm:text-sm"
+                          placeholder={
+                            'One line per beat. Include a timestamp learners will not see, e.g.\n' +
+                            'Intro and goals (0:00 - 0:45)\n' +
+                            'Key formula (1:20)'
+                          }
+                        />
+                        <p className="text-[11px] leading-snug text-[var(--text-muted)]">
+                          Use <code className="rounded bg-[var(--hover-bg)] px-1">(M:SS)</code> or{' '}
+                          <code className="rounded bg-[var(--hover-bg)] px-1">(M:SS - M:SS)</code> on each line.
+                          In the course player Notes panel, timestamps are hidden; tapping a line seeks the video.
+                        </p>
                       </label>
                       <div className="flex justify-end pt-1">
                         <button

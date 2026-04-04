@@ -122,6 +122,7 @@ function parseLesson(raw: unknown): Lesson | null {
   };
   if (typeof o.duration === 'string') lesson.duration = o.duration;
   if (typeof o.about === 'string') lesson.about = o.about;
+  if (typeof o.videoOutlineNotes === 'string') lesson.videoOutlineNotes = o.videoOutlineNotes;
   if (o.contentKind === 'quiz') {
     lesson.contentKind = 'quiz';
     lesson.videoUrl = videoUrl;

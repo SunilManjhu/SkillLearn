@@ -69,6 +69,11 @@ export interface Lesson {
   videoUrl: string;
   /** Shown under the player; updates per lesson. Omit for a short auto-generated blurb. */
   about?: string;
+  /**
+   * Optional multi-line outline for video lessons. Authors use `(M:SS)` or `(M:SS - M:SS)` per line;
+   * learners see text without timestamps and can tap a line to seek the player.
+   */
+  videoOutlineNotes?: string;
   /** Omit or `video` = default embedded lesson. `web` requires `webUrl`. `quiz` requires `quiz`. */
   contentKind?: LessonContentKind;
   /** Required when `contentKind === 'web'`. */

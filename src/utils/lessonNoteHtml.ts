@@ -1,7 +1,7 @@
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 
-/** Keep divider variants on `<hr>` after save/load. */
+/** Keep divider marker on `<hr>` after save/load (`data-divider-style` is always thick). */
 const PURIFY = {
   USE_PROFILES: { html: true } as const,
   ADD_ATTR: ['data-divider-style'],

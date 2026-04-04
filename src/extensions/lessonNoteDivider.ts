@@ -1,34 +1,28 @@
 import HorizontalRule from '@tiptap/extension-horizontal-rule';
 
-export type LessonDividerStyle = 'thin' | 'thick' | 'dotted';
+/** Lesson note dividers use one visual style only (thick line). */
+export type LessonDividerStyle = 'thick';
 
 /**
- * Horizontal rule with student-friendly variants (thin / thick / dotted), stored as
- * `<hr data-divider-style="…" class="lesson-note-divider--…">`.
+ * Horizontal rule for notes, stored as `<hr data-divider-style="thick" class="lesson-note-divider">`.
+ * Legacy thin/dotted values in saved HTML normalize to thick on load.
  */
 export const LessonNoteDivider = HorizontalRule.extend({
   addAttributes() {
     return {
       ...this.parent?.(),
       dividerStyle: {
-        default: 'thin' as LessonDividerStyle,
-        parseHTML: (element) => {
-          const d = element.getAttribute('data-divider-style');
-          if (d === 'thick' || d === 'dotted' || d === 'thin') return d;
-          return 'thin';
-        },
-        renderHTML: (attributes) => {
-          const style = (attributes.dividerStyle as LessonDividerStyle) || 'thin';
-          return {
-            'data-divider-style': style,
-            class: `lesson-note-divider lesson-note-divider--${style}`,
-          };
-        },
+        default: 'thick' as LessonDividerStyle,
+        parseHTML: () => 'thick' as const,
+        renderHTML: () => ({
+          'data-divider-style': 'thick',
+          class: 'lesson-note-divider',
+        }),
       },
     };
   },
 
-  /** No auto `---` / `***` rules — those eat lines that start with `--` (e.g. “-- Jyoti”); use the divider menu instead. */
+  /** No auto `---` / `***` rules — those eat lines that start with `--` (e.g. “-- Jyoti”); use the toolbar divider control instead. */
   addInputRules() {
     return [];
   },
