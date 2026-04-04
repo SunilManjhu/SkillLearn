@@ -71,3 +71,39 @@ select:-webkit-autofill:focus {
   /* Delay "re-autofill" flash; pairs with inset shadow above */
   transition: background-color 5000s ease-in-out 0s;
 }
+
+/* TipTap lesson notes: show placeholder only when the doc is empty (hint text is empty on other empty blocks). */
+.lesson-notes-editor p.is-empty[data-placeholder='']::before {
+  content: none;
+}
+
+.lesson-notes-editor p.is-empty::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  width: 100%;
+  color: var(--text-muted);
+  font-style: normal;
+}
+
+/* Divider reads as an underline for the line above — keep gap minimal. */
+.lesson-notes-editor hr.lesson-note-divider {
+  margin: 0.125rem 0 0.5rem;
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--border-color);
+}
+
+.lesson-notes-editor p:has(+ hr.lesson-note-divider),
+.lesson-notes-editor h2:has(+ hr.lesson-note-divider) {
+  margin-bottom: 0.125rem;
+}
+
+.lesson-notes-editor hr.lesson-note-divider--thick {
+  border-top-width: 3px;
+}
+
+.lesson-notes-editor hr.lesson-note-divider--dotted {
+  border-top-style: dotted;
+}

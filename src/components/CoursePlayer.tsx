@@ -1,8 +1,7 @@
-import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo, useId } from 'react';
 import { useDialogKeyboard } from '../hooks/useDialogKeyboard';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import {
-  Play,
   ChevronRight,
   ChevronDown,
   CheckCircle2,
@@ -50,7 +49,6 @@ import {
   isTrivialLessonProgress,
   getNextIncompleteLessonAfter,
   loadLessonProgressMap,
-  progressPercent,
   progressStorageKey,
   isCourseReadyToFinalize,
   syncProgressToFirestore,
@@ -70,6 +68,13 @@ import { useYoutubeResolvedSeconds } from '../hooks/useYoutubeResolvedSeconds';
 import { formatAuthError } from '../utils/authErrors';
 import { isVideoLesson, lessonBlocksVideoPlayback, lessonQuizDefinition, lessonWebHref } from '../utils/lessonContent';
 import { CourseQuizPanel } from './CourseQuizPanel';
+import { CoursePlayerSidebarPanels } from './CoursePlayerSidebarPanels';
+import {
+  createDebouncedLessonNoteSave,
+  flushLessonNote,
+  readLessonNoteText,
+} from '../utils/courseLessonNotes';
+import { migrateStoredNoteToHtml } from '../utils/lessonNoteHtml';
 
 /**
  * Frost + resume blocker wait this long after a user pause so sub‑100ms glitches don’t flash the UI.
@@ -267,6 +272,8 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   const playNextAfterEndRef = useRef(false);
   const courseRef = useRef(course);
   const lessonRef = useRef(currentLesson);
+  /** Flushes outgoing lesson notes and loads incoming lesson HTML (runs after debounced-notes hook assigns body). */
+  const prepareLessonNotesSwitchRef = useRef<(outgoingLessonId: string, incomingLesson: Lesson) => void>(() => {});
   const autoAdvanceRef = useRef(autoAdvance);
   const nativeProgressThrottleRef = useRef(0);
   /** Latest (t,d) per lesson so flush can persist if the element/API isn’t readable mid-transition. */
@@ -1411,6 +1418,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
       return;
     }
     playNextAfterEndRef.current = true;
+    prepareLessonNotesSwitchRef.current(lessonRef.current.id, next);
     setCurrentLesson(next);
   }, [flushCurrentLessonProgress, stopPlayback, scheduleFinalizeFromStorage, getMergedProgressSnapshot]);
 
@@ -1473,6 +1481,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     flushCurrentLessonProgress();
     stopPlayback();
     playNextAfterEndRef.current = false;
+    prepareLessonNotesSwitchRef.current(currentLesson.id, match);
     setCurrentLesson(match);
   }, [initialLesson?.id, course.id, currentLesson.id, flushCurrentLessonProgress, stopPlayback]);
 
@@ -2337,17 +2346,101 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
       showReplayCta
   );
 
+  const toggleModule = (id: string) => {
+    setExpandedModules((prev) => (prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]));
+  };
+
+  const notesAriaIdBase = useId();
+  const notesRegionDesktopId = `${notesAriaIdBase}-sidebar-desktop`;
+  const notesRegionMobileId = `${notesAriaIdBase}-sidebar-mobile`;
+  const notesRegionQuizMobileId = `${notesAriaIdBase}-sidebar-quiz-mobile`;
+
+  const [notesExpanded, setNotesExpanded] = useState(false);
+  const [lessonNoteText, setLessonNoteText] = useState('');
+  const [notesEditorNonce, setNotesEditorNonce] = useState(0);
+  /** Bumps on every lesson change so note editors remount even if lesson ids were duplicated. */
+  const [notesLessonEpoch, setNotesLessonEpoch] = useState(0);
+  const lessonNoteTextRef = useRef('');
+  const debouncedNotes = useMemo(
+    () => createDebouncedLessonNoteSave(course.id, progressUserId, 500),
+    [course.id, progressUserId]
+  );
+
+  prepareLessonNotesSwitchRef.current = (outgoingLessonId: string, incomingLesson: Lesson) => {
+    debouncedNotes.cancel();
+    flushLessonNote(course.id, progressUserId, outgoingLessonId, lessonNoteTextRef.current);
+    const html = migrateStoredNoteToHtml(readLessonNoteText(course.id, progressUserId, incomingLesson.id));
+    lessonNoteTextRef.current = html;
+    setLessonNoteText(html);
+    setNotesLessonEpoch((e) => e + 1);
+    setNotesEditorNonce(0);
+  };
+
   const selectLesson = (lesson: Lesson) => {
     if (lesson.id === currentLesson.id) return;
     flushCurrentLessonProgress();
     stopPlayback();
     playNextAfterEndRef.current = false;
+    prepareLessonNotesSwitchRef.current(currentLesson.id, lesson);
     setCurrentLesson(lesson);
   };
 
-  const toggleModule = (id: string) => {
-    setExpandedModules((prev) => (prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]));
-  };
+  const lessonNoteHtmlFromStorage = useMemo(
+    () => migrateStoredNoteToHtml(readLessonNoteText(course.id, progressUserId, currentLesson.id)),
+    [course.id, progressUserId, currentLesson.id, notesEditorNonce]
+  );
+
+  useLayoutEffect(() => {
+    setNotesEditorNonce(0);
+  }, [course.id, progressUserId, currentLesson.id]);
+
+  useLayoutEffect(() => {
+    setLessonNoteText(lessonNoteHtmlFromStorage);
+    lessonNoteTextRef.current = lessonNoteHtmlFromStorage;
+  }, [lessonNoteHtmlFromStorage]);
+
+  /**
+   * Do not flush on `currentLesson.id` cleanup — after `prepareLessonNotesSwitchRef` runs, `lessonNoteTextRef`
+   * already holds the *next* lesson’s HTML; a per-lesson cleanup would save it under the wrong id.
+   * Lesson switches flush in `prepareLessonNotesSwitchRef`; this only covers debounce identity changes + unmount.
+   */
+  useEffect(() => {
+    const cid = course.id;
+    const uid = progressUserId;
+    return () => {
+      debouncedNotes.cancel();
+      flushLessonNote(cid, uid, lessonRef.current.id, lessonNoteTextRef.current);
+    };
+  }, [course.id, progressUserId, debouncedNotes]);
+
+  const renderCourseSidebarPanels = (notesRegionId: string) => (
+    <CoursePlayerSidebarPanels
+      notesRegionId={notesRegionId}
+      course={course}
+      expandedModules={expandedModules}
+      onToggleModule={toggleModule}
+      onSelectLesson={selectLesson}
+      currentLesson={currentLesson}
+      progressByLesson={progressByLesson}
+      lessonDurationLabel={lessonDurationLabel}
+      notesExpanded={notesExpanded}
+      onNotesExpandedChange={setNotesExpanded}
+      noteText={lessonNoteText}
+      noteEditorInitialHtml={lessonNoteHtmlFromStorage}
+      notesEditorKey={`${currentLesson.id}-${notesLessonEpoch}-${notesEditorNonce}`}
+      notesLessonId={currentLesson.id}
+      onNoteTextChange={(v) => {
+        setLessonNoteText(v);
+        lessonNoteTextRef.current = v;
+        debouncedNotes.schedule(currentLesson.id, v);
+      }}
+      onNoteBlur={() => {
+        debouncedNotes.cancel();
+        flushLessonNote(course.id, progressUserId, currentLesson.id, lessonNoteTextRef.current);
+      }}
+      onNotesPanelClose={() => setNotesEditorNonce((n) => n + 1)}
+    />
+  );
 
   /** Mobile quiz: one page scroll — snap to top when lesson changes (no nested scroll container). */
   useLayoutEffect(() => {
@@ -2503,86 +2596,6 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
       </div>
 
       {!isQuizLessonRow ? lessonAboutMobileDetails : null}
-    </>
-  );
-
-  const courseOutlineBody = (
-    <>
-      <div className="border-b border-[var(--border-color)] p-4 sm:p-6">
-        <h2 className="text-lg font-bold text-[var(--text-primary)]">Course Content</h2>
-        <div className="mt-1 text-sm text-[var(--text-secondary)]">
-          {course.modules.length} modules • {course.modules.reduce((acc, m) => acc + m.lessons.length, 0)} lessons
-        </div>
-      </div>
-
-      <div className="divide-y divide-[var(--border-color)]">
-        {course.modules.map((module, idx) => (
-          <div key={module.id} className="flex flex-col">
-            <button
-              type="button"
-              onClick={() => toggleModule(module.id)}
-              className="flex items-center justify-between p-4 text-left transition-colors hover:bg-[var(--hover-bg)]"
-            >
-              <div className="flex items-center gap-3">
-                <span className="font-mono text-sm text-[var(--text-secondary)]">{String(idx + 1).padStart(2, '0')}</span>
-                <span className="text-sm font-semibold text-[var(--text-primary)]">{module.title}</span>
-              </div>
-              {expandedModules.includes(module.id) ? (
-                <ChevronDown size={18} className="text-[var(--text-secondary)]" />
-              ) : (
-                <ChevronRight size={18} className="text-[var(--text-secondary)]" />
-              )}
-            </button>
-
-            <AnimatePresence>
-              {expandedModules.includes(module.id) && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="overflow-hidden bg-black/5"
-                >
-                  {module.lessons.map((lesson) => {
-                    const pct = progressPercent(progressByLesson[lesson.id]);
-                    const done = isLessonPlaybackComplete(progressByLesson[lesson.id]);
-                    return (
-                      <button
-                        key={lesson.id}
-                        type="button"
-                        onClick={() => selectLesson(lesson)}
-                        className={`flex w-full flex-col gap-1.5 p-4 pl-12 text-left text-sm transition-colors hover:bg-[var(--hover-bg)] ${currentLesson.id === lesson.id ? 'bg-orange-500/10 text-orange-500' : 'text-[var(--text-secondary)]'}`}
-                      >
-                        <div className="flex min-w-0 items-center gap-3">
-                          {currentLesson.id === lesson.id ? (
-                            <Play size={14} fill="currentColor" className="shrink-0" />
-                          ) : done ? (
-                            <CheckCircle2 size={14} className="shrink-0 text-orange-500/80" />
-                          ) : (
-                            <CheckCircle2 size={14} className="shrink-0 text-gray-600" />
-                          )}
-                          <span className="min-w-0 flex-1 truncate font-medium">{lesson.title}</span>
-                          <span className="shrink-0 text-xs opacity-60">{lessonDurationLabel(lesson)}</span>
-                        </div>
-                        <div className="flex w-full items-center gap-2 pl-7">
-                          <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--hover-bg)]">
-                            <div
-                              className="h-full rounded-full bg-orange-500 transition-[width] duration-300"
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                          <span className="w-9 shrink-0 text-right text-[10px] tabular-nums text-[var(--text-muted)]">
-                            {pct}%
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        ))}
-      </div>
     </>
   );
 
@@ -3173,10 +3186,10 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
 
         {isQuizLessonRow ? (
           <aside
-            className="min-h-0 w-full shrink-0 border-t border-[var(--border-color)] bg-[var(--bg-secondary)] max-lg:overflow-visible lg:hidden"
-            aria-label="Course outline"
+            className="flex min-h-0 w-full min-h-[min(40vh,24rem)] shrink-0 flex-col border-t border-[var(--border-color)] bg-[var(--bg-secondary)] max-lg:overflow-visible lg:hidden"
+            aria-label="Course outline and notes"
           >
-            {courseOutlineBody}
+            {renderCourseSidebarPanels(notesRegionQuizMobileId)}
           </aside>
         ) : null}
 
@@ -3216,10 +3229,10 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
 
           {!isQuizLessonRow ? (
             <div
-              className="min-w-0 w-full border-t border-[var(--border-color)] bg-[var(--bg-secondary)] lg:hidden"
-              aria-label="Course content"
+              className="flex min-h-0 min-h-[min(40vh,24rem)] w-full min-w-0 flex-col border-t border-[var(--border-color)] bg-[var(--bg-secondary)] lg:hidden"
+              aria-label="Course content and notes"
             >
-              {courseOutlineBody}
+              {renderCourseSidebarPanels(notesRegionMobileId)}
             </div>
           ) : null}
         </div>
@@ -3633,12 +3646,14 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
         </div>
 
       <aside
-        className={`hidden w-full shrink-0 flex-col overflow-y-auto border-[var(--border-color)] bg-[var(--bg-secondary)] transition-colors duration-300 lg:flex lg:w-[400px] lg:min-w-0 lg:border-l lg:self-start lg:sticky ${
-          immersiveLayout ? 'lg:top-0 lg:max-h-[100dvh]' : 'lg:top-16 lg:max-h-[calc(100dvh-4rem)]'
+        className={`hidden w-full shrink-0 flex-col overflow-hidden border-[var(--border-color)] bg-[var(--bg-secondary)] transition-colors duration-300 lg:flex lg:w-[400px] lg:min-w-0 lg:border-l lg:self-start lg:sticky ${
+          immersiveLayout
+            ? 'lg:top-0 lg:h-[100dvh] lg:max-h-[100dvh]'
+            : 'lg:top-16 lg:h-[calc(100dvh-4rem)] lg:max-h-[calc(100dvh-4rem)]'
         }`}
-        aria-label="Course content"
+        aria-label="Course content and notes"
       >
-        {courseOutlineBody}
+        {renderCourseSidebarPanels(notesRegionDesktopId)}
       </aside>
     </div>
   );
