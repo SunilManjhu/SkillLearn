@@ -224,8 +224,20 @@ export function LessonNotesRichEditor({
     editor.commands.setContent(html, { emitUpdate: false });
   }, [editor, lessonId]);
 
+  const focusEditorFromShell = (e: React.PointerEvent) => {
+    if (!editor || editor.isDestroyed) return;
+    const target = e.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest('.ProseMirror, [contenteditable="true"]')) return;
+    if (target.closest('button, select, option, input, textarea, label')) return;
+    editor.chain().focus('end').run();
+  };
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div
+      className="flex min-h-0 flex-1 flex-col overflow-hidden"
+      onPointerDown={focusEditorFromShell}
+    >
       <FormatToolbar editor={editor} />
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
         <EditorContent editor={editor} className="h-full min-h-0 [&_.ProseMirror]:min-h-[min(40vh,12rem)]" />

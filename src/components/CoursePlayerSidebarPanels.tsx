@@ -163,6 +163,8 @@ export function CoursePlayerSidebarPanels({
             >
               <button
                 type="button"
+                aria-expanded={true}
+                aria-controls={notesRegionId}
                 onClick={() => {
                   onNoteBlur?.();
                   onNotesPanelClose?.();
@@ -171,11 +173,12 @@ export function CoursePlayerSidebarPanels({
                 className="flex w-full shrink-0 min-h-11 touch-manipulation items-center justify-between gap-2 border-b border-[var(--border-color)] px-3 py-2 text-left transition-colors hover:bg-[var(--hover-bg)] sm:min-h-[3.25rem] sm:px-4"
                 aria-label={`Collapse notes for ${currentLesson.title}`}
               >
+                <StickyNote size={18} className="shrink-0 text-orange-500/90" aria-hidden />
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">Notes</p>
-                  <p className="truncate text-sm font-semibold text-[var(--text-primary)]">{currentLesson.title}</p>
+                  <span className="block text-sm font-bold text-[var(--text-primary)]">Notes</span>
+                  <p className="truncate text-xs text-[var(--text-muted)]">{currentLesson.title}</p>
                 </div>
-                <ChevronDown size={22} className="shrink-0 text-[var(--text-secondary)]" aria-hidden />
+                <ChevronDown size={22} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
               </button>
               <LessonNotesRichEditor
                 key={notesEditorKey}
@@ -190,36 +193,29 @@ export function CoursePlayerSidebarPanels({
         </AnimatePresence>
       </div>
 
-      <div className="shrink-0 border-t border-[var(--border-color)]" aria-hidden />
-
-      <button
-        type="button"
-        aria-expanded={notesExpanded}
-        aria-controls={notesRegionId}
-        onClick={() => {
-          if (notesExpanded) {
-            onNoteBlur?.();
-            onNotesPanelClose?.();
-          }
-          onNotesExpandedChange(!notesExpanded);
-        }}
-        className="flex w-full min-h-11 touch-manipulation items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-[var(--hover-bg)]"
-      >
-        <StickyNote size={18} className="shrink-0 text-orange-500/90" aria-hidden />
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-bold text-[var(--text-primary)]">Notes</span>
-          {!notesExpanded && previewShort ? (
-            <span className="line-clamp-1 text-xs text-[var(--text-muted)]">{previewShort}</span>
-          ) : !notesExpanded ? (
-            <span className="text-xs text-[var(--text-muted)]">Tap to add notes for this lesson</span>
-          ) : null}
-        </span>
-        {notesExpanded ? (
-          <ChevronDown size={20} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-        ) : (
-          <ChevronUp size={20} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-        )}
-      </button>
+      {!notesExpanded ? (
+        <>
+          <div className="shrink-0 border-t border-[var(--border-color)]" aria-hidden />
+          <button
+            type="button"
+            aria-expanded={false}
+            aria-controls={notesRegionId}
+            onClick={() => onNotesExpandedChange(true)}
+            className="flex w-full min-h-11 touch-manipulation items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-[var(--hover-bg)]"
+          >
+            <StickyNote size={18} className="shrink-0 text-orange-500/90" aria-hidden />
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-bold text-[var(--text-primary)]">Notes</span>
+              {previewShort ? (
+                <span className="line-clamp-1 text-xs text-[var(--text-muted)]">{previewShort}</span>
+              ) : (
+                <span className="text-xs text-[var(--text-muted)]">Tap to add notes for this lesson</span>
+              )}
+            </span>
+            <ChevronUp size={20} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+          </button>
+        </>
+      ) : null}
     </div>
   );
 }
