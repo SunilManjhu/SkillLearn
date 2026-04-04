@@ -1839,24 +1839,39 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
       const savedYt = savedProgressForLessonRef.current(lessonRef.current.id);
       const alreadyCompleteYt = isLessonPlaybackComplete(savedYt);
       const shouldAutoplay = !alreadyCompleteYt;
+      const captionsOn = youtubeCaptionsEnabledRef.current;
+      /** Omit `cc_lang_pref` when CC off — YouTube can still show captions if only language is set. */
+      const playerVars: Record<string, string | number> = {
+        autoplay: shouldAutoplay ? 1 : 0,
+        cc_load_policy: captionsOn ? 1 : 0,
+        controls: 0,
+        disablekb: 1,
+        fs: 0,
+        modestbranding: 1,
+        rel: 0,
+      };
+      if (captionsOn) {
+        playerVars.cc_lang_pref = youtubeCaptionLangRef.current;
+      }
 
       ytPlayerRef.current = new window.YT.Player(el, {
         videoId,
         width: '100%',
         height: '100%',
-        playerVars: {
-          autoplay: shouldAutoplay ? 1 : 0,
-          cc_lang_pref: youtubeCaptionLangRef.current,
-          controls: 0,
-          disablekb: 1,
-          fs: 0,
-          modestbranding: 1,
-          rel: 0,
-        },
+        playerVars,
         events: {
           onReady: (ev) => {
             const player = ev.target;
-            applyYoutubeCaptionsModule(player, youtubeCaptionsEnabledRef.current, youtubeCaptionLangRef.current);
+            const lang = youtubeCaptionLangRef.current;
+            applyYoutubeCaptionsModule(player, youtubeCaptionsEnabledRef.current, lang);
+            if (!youtubeCaptionsEnabledRef.current) {
+              for (const ms of [120, 400, 1000, 2200]) {
+                window.setTimeout(() => {
+                  if (youtubeCaptionsEnabledRef.current) return;
+                  applyYoutubeCaptionsModule(player, false, lang);
+                }, ms);
+              }
+            }
             try {
               const volPref = readPlayerVolumePreference();
               const mutedPref = readPlayerMutedPreference();
@@ -1942,6 +1957,9 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
               setYtPauseBlurActive(false);
               if (hadPauseFrost) {
                 startUnpauseFrostLingerRef.current();
+              }
+              if (!youtubeCaptionsEnabledRef.current) {
+                applyYoutubeCaptionsModule(e.target, false, youtubeCaptionLangRef.current);
               }
             } else if (e.data === ps.PAUSED) {
               clearYtPauseUiTimer();

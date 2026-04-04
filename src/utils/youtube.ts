@@ -85,6 +85,7 @@ export function writeYoutubeCaptionLang(code: string): void {
   }
 }
 
+/** Captions default off; only `localStorage` value `'1'` turns them on (see `writeYoutubeCaptionsPreference`). */
 export function readYoutubeCaptionsPreference(): boolean {
   if (typeof window === 'undefined') return false;
   try {
@@ -170,6 +171,17 @@ export function applyYoutubeCaptionsModule(
         /* track may not apply until the captions module is ready */
       }
     } else {
+      /* Clear active track first; `cc_lang_pref` alone can leave captions visible until this runs. */
+      try {
+        player.setOption?.('captions', 'track', {});
+      } catch {
+        /* ignore */
+      }
+      try {
+        player.setOption?.('cc', 'track', {});
+      } catch {
+        /* ignore */
+      }
       try {
         player.unloadModule?.('captions');
       } catch {
@@ -223,16 +235,24 @@ export function labelForYoutubeCaptionLang(code: string): string {
  * in CoursePlayer except `autoplay`, which is set per instance.
  */
 export function youtubeEmbedSrcForVideoId(id: string): string {
-  const langPref =
-    typeof window !== 'undefined' ? readYoutubeCaptionLang() : YOUTUBE_CC_LANG_PREF;
+  const captionsOn =
+    typeof window !== 'undefined' ? readYoutubeCaptionsPreference() : false;
   const q = new URLSearchParams({
-    cc_lang_pref: langPref,
     controls: '0',
     disablekb: '1',
     fs: '0',
     modestbranding: '1',
     rel: '0',
   });
+  /** Omit `cc_lang_pref` when off — with some accounts it still nudges captions on even with cc_load_policy=0. */
+  if (captionsOn) {
+    const langPref =
+      typeof window !== 'undefined' ? readYoutubeCaptionLang() : YOUTUBE_CC_LANG_PREF;
+    q.set('cc_lang_pref', langPref);
+    q.set('cc_load_policy', '1');
+  } else {
+    q.set('cc_load_policy', '0');
+  }
   return `https://www.youtube.com/embed/${id}?${q.toString()}`;
 }
 
