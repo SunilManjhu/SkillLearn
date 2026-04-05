@@ -76,6 +76,8 @@ import {
 } from '../../utils/catalogDisplayNameConflicts';
 import { AdminDisplayNameConflictDialog } from './AdminDisplayNameConflictDialog';
 import { AdminCourseAiAssistant } from './AdminCourseAiAssistant';
+import { AdminLessonContentPreview } from './AdminLessonContentPreview';
+import { AdminVideoOutlineNotesField } from './AdminVideoOutlineNotesField';
 import {
   addCatalogCategoryExtra,
   CATALOG_CATEGORY_EXTRAS_CHANGED,
@@ -3853,6 +3855,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           </span>
                         </label>
                       </div>
+                      <div className="min-w-0 lg:flex lg:items-start lg:gap-4 xl:gap-6">
+                        <div className="min-w-0 flex-1 space-y-1.5 sm:space-y-2">
                       <div className="space-y-1.5 border-t border-[var(--border-color)]/60 pt-2 sm:space-y-2 sm:pt-3">
                         <span className="text-xs font-semibold text-[var(--text-secondary)]">Lesson content</span>
                         <div
@@ -4249,29 +4253,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           placeholder="Short description under the player"
                         />
                       </label>
-                      <label className="block space-y-1">
-                        <span className="text-xs font-semibold text-[var(--text-secondary)]">
-                          Video outline for notes (optional)
-                        </span>
-                        <textarea
-                          value={lesson.videoOutlineNotes ?? ''}
-                          onChange={(e) =>
-                            updateLesson(mi, li, { videoOutlineNotes: e.target.value || undefined })
-                          }
-                          rows={5}
-                          className="w-full resize-y rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2.5 py-1.5 font-mono text-xs sm:px-3 sm:py-2 sm:text-sm"
-                          placeholder={
-                            'One line per beat. Include a timestamp learners will not see, e.g.\n' +
-                            'Intro and goals (0:00 - 0:45)\n' +
-                            'Key formula (1:20)'
-                          }
-                        />
-                        <p className="text-[11px] leading-snug text-[var(--text-muted)]">
-                          Use <code className="rounded bg-[var(--hover-bg)] px-1">(M:SS)</code> or{' '}
-                          <code className="rounded bg-[var(--hover-bg)] px-1">(M:SS - M:SS)</code> on each line.
-                          In the course player Notes panel, timestamps are hidden; tapping a line seeks the video.
-                        </p>
-                      </label>
+                      <AdminVideoOutlineNotesField
+                        textareaId={`admin-lesson-outline-${mi}-${li}`}
+                        value={lesson.videoOutlineNotes ?? ''}
+                        onChange={(v) => updateLesson(mi, li, { videoOutlineNotes: v || undefined })}
+                      />
                       <div className="flex justify-end pt-1">
                         <button
                           type="button"
@@ -4281,6 +4267,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         >
                           Remove lesson
                         </button>
+                      </div>
+                        </div>
+                        <aside className="mt-4 w-full shrink-0 border-t border-[var(--border-color)]/60 pt-4 sm:mt-5 sm:pt-5 lg:sticky lg:top-3 lg:mt-0 lg:w-[min(17rem,32vw)] lg:max-w-[300px] lg:border-t-0 lg:border-l lg:border-[var(--border-color)]/60 lg:pt-0 lg:pl-4 xl:top-4">
+                          <AdminLessonContentPreview lesson={lesson} />
+                        </aside>
                       </div>
                         </>
                       )}
