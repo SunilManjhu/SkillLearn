@@ -1,6 +1,7 @@
 import React, { forwardRef } from 'react';
 import { Star, Clock } from 'lucide-react';
 import type { Course } from '../data/courses';
+import { useCourseStockThumbnail } from '../hooks/useCourseStockThumbnail';
 
 export interface CourseCardProps {
   course: Course;
@@ -19,6 +20,8 @@ export const CourseCard = forwardRef<HTMLDivElement, CourseCardProps>(
     { course, onClick, tabIndex = 0, onKeyDown, isFocused, showPrivateDraftBadge = false, draftBadgeLabel },
     ref
   ) => {
+    const { imageUrl, imageCreditTitle } = useCourseStockThumbnail(course);
+
     const handleKeyDown: React.KeyboardEventHandler<HTMLDivElement> = (e) => {
       onKeyDown?.(e);
       if (e.key === 'Enter' || e.key === ' ') {
@@ -40,8 +43,9 @@ export const CourseCard = forwardRef<HTMLDivElement, CourseCardProps>(
       >
         <div className="aspect-video overflow-hidden bg-black/20">
           <img
-            src={course.thumbnail}
+            src={imageUrl}
             alt=""
+            title={imageCreditTitle}
             className="h-full w-full object-cover transition-transform group-hover:scale-105"
           />
         </div>

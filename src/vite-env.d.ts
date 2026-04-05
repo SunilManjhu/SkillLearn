@@ -13,6 +13,8 @@ declare namespace NodeJS {
 
 interface ImportMetaEnv {
   readonly VITE_YOUTUBE_DATA_API_KEY?: string;
+  /** Optional: Pexels API key for royalty-free catalog thumbnails (https://www.pexels.com/api/). */
+  readonly VITE_PEXELS_API_KEY?: string;
 }
 
 interface ImportMeta {

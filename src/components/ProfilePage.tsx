@@ -15,8 +15,22 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, CheckCircle2, Trash2, Info } from 'lucide-react';
 import { AdminLabelInfoTip } from './admin/adminLabelInfoTip';
 import { useAdminActionToast } from './admin/useAdminActionToast';
+import { useCourseStockThumbnail } from '../hooks/useCourseStockThumbnail';
 
 const bioStorageKey = (uid: string) => `skilllearn-profile-bio:${uid}`;
+
+function ProfileCompletedCourseThumbnail({ course }: { course: Course }) {
+  const { imageUrl, imageCreditTitle } = useCourseStockThumbnail(course);
+  return (
+    <img
+      src={imageUrl}
+      alt=""
+      title={imageCreditTitle}
+      className="h-full w-full object-cover"
+      referrerPolicy="no-referrer"
+    />
+  );
+}
 
 /** Match Courses / Points / Certificates cells; used for stats row only. */
 const profilePrefStatCellClass =
@@ -731,12 +745,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                       >
                         <div className="flex gap-3 sm:contents">
                           <div className="h-12 w-20 shrink-0 overflow-hidden rounded-lg sm:h-10 sm:w-16">
-                            <img
-                              src={course.thumbnail}
-                              alt=""
-                              className="h-full w-full object-cover"
-                              referrerPolicy="no-referrer"
-                            />
+                            <ProfileCompletedCourseThumbnail course={course} />
                           </div>
                           <div className="min-w-0 flex-1 sm:flex sm:min-w-0 sm:flex-1 sm:items-start sm:gap-2">
                             <div className="min-w-0 flex-1">

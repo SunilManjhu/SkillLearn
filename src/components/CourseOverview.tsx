@@ -30,6 +30,7 @@ import {
   type CourseRating,
 } from '../utils/courseRating';
 import { useYoutubeResolvedSeconds } from '../hooks/useYoutubeResolvedSeconds';
+import { useCourseStockThumbnail } from '../hooks/useCourseStockThumbnail';
 import { scrollDocumentToTop } from '../utils/scrollDocumentToTop';
 import {
   loadCompletionTimestamps,
@@ -70,6 +71,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
   const progressUserId = user?.uid ?? null;
   const curriculumKey = courseLessonIdsKey(course);
   const { lessonDurationLabel } = useYoutubeResolvedSeconds(course);
+  const { imageUrl: heroImageUrl, imageCreditTitle: heroImageCreditTitle } = useCourseStockThumbnail(course);
   const reduceMotion = useReducedMotion();
   const collapseTransition = { duration: reduceMotion ? 0 : 0.28 };
   const modalTransition = { duration: reduceMotion ? 0 : 0.2 };
@@ -365,8 +367,9 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
       {/* Hero Section — min-height matches CourseCatalogLoadingSkeleton hero band */}
       <div className="relative flex min-h-56 w-full flex-col overflow-hidden md:min-h-72">
         <img
-          src={course.thumbnail}
+          src={heroImageUrl}
           alt={course.title}
+          title={heroImageCreditTitle}
           className="absolute inset-0 h-full w-full object-cover"
           fetchPriority="high"
           loading="eager"
