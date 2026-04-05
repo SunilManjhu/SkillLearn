@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { Search, Trash2, X } from 'lucide-react';
+import { GripVertical, Search, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { Course } from '../../data/courses';
 import { dedupeLabelsPreserveOrder } from '../../utils/courseTaxonomy';
@@ -19,8 +19,32 @@ import { normalizeCatalogSkillPresets } from '../../utils/catalogSkillPresetsSta
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { useDialogKeyboard } from '../../hooks/useDialogKeyboard';
 import { AdminLabelInfoTip } from './adminLabelInfoTip';
+import {
+  mergeUniverseWithAdminOrder,
+  orderInsertBefore,
+  orderWithoutLabel,
+  readCatalogTaxonomyAdminOrder,
+  writeCatalogTaxonomyAdminOrder,
+} from '../../utils/catalogTaxonomyAdminOrder';
 
 type TaxonomyKind = 'category' | 'skill';
+
+const TAXONOMY_DRAG_MIME = 'application/x-skilllearn-taxonomy';
+
+type TaxonomyDragPayload = { kind: TaxonomyKind; label: string };
+
+function readTaxonomyDragPayload(e: React.DragEvent): TaxonomyDragPayload | null {
+  try {
+    const raw = e.dataTransfer.getData(TAXONOMY_DRAG_MIME);
+    if (!raw) return null;
+    const o = JSON.parse(raw) as { kind?: string; label?: string };
+    if (o.kind !== 'category' && o.kind !== 'skill') return null;
+    if (typeof o.label !== 'string' || !o.label.trim()) return null;
+    return { kind: o.kind, label: o.label.trim() };
+  } catch {
+    return null;
+  }
+}
 
 function lower(s: string): string {
   return s.trim().toLowerCase();
@@ -102,7 +126,8 @@ function includesCI(haystack: string, needle: string): boolean {
   return lower(haystack).includes(lower(needle));
 }
 
-function uniqueCiSorted(list: readonly string[]): string[] {
+/** Dedupe case-insensitively; keep first-seen casing and source order (no alphabetical sort). */
+function uniqueCaseInsensitivePreserveOrder(list: readonly string[]): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
   for (const raw of list) {
@@ -113,7 +138,7 @@ function uniqueCiSorted(list: readonly string[]): string[] {
     seen.add(k);
     out.push(t);
   }
-  return out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  return out;
 }
 
 const Chip: React.FC<{
@@ -126,6 +151,8 @@ const Chip: React.FC<{
   onEditCancel: () => void;
   onRemove: () => void;
   disabled?: boolean;
+  /** When nested inside a drag row wrapper that already provides the outer chrome. */
+  frameless?: boolean;
 }> = ({
   label,
   editing,
@@ -136,10 +163,17 @@ const Chip: React.FC<{
   onEditCancel,
   onRemove,
   disabled,
+  frameless,
 }) => {
   const inputRef = useRef<HTMLInputElement | null>(null);
   return (
-    <div className="inline-flex max-w-full items-center gap-1 rounded-full border border-[var(--border-color)] bg-[var(--hover-bg)]/60 px-2.5 py-1.5">
+    <div
+      className={
+        frameless
+          ? 'inline-flex max-w-full items-center gap-1 px-1 py-1'
+          : 'inline-flex max-w-full items-center gap-1 rounded-full border border-[var(--border-color)] bg-[var(--hover-bg)]/60 px-2.5 py-1.5'
+      }
+    >
       {editing ? (
         <div className="flex min-h-8 items-center">
           <label className="sr-only" htmlFor={`admin-taxonomy-chip-edit-${label}`}>
@@ -204,6 +238,7 @@ function TaxonomySection({
   onAddEverywhere,
   onRenameEverywhere,
   onRemoveEverywhere,
+  onDragDrop,
 }: {
   title: string;
   tipId: string;
@@ -214,6 +249,7 @@ function TaxonomySection({
   onAddEverywhere: (name: string) => Promise<void>;
   onRenameEverywhere: (fromExact: string, toExact: string) => Promise<void>;
   onRemoveEverywhere: (name: string) => Promise<void>;
+  onDragDrop: (payload: TaxonomyDragPayload, targetKind: TaxonomyKind, beforeLabel: string | null) => void;
 }) {
   const [query, setQuery] = useState('');
   const [editingLabel, setEditingLabel] = useState<string | null>(null);
@@ -232,6 +268,8 @@ function TaxonomySection({
   }, [items, trimmed]);
 
   const showAdd = trimmed.length > 0 && exactMatch == null && editingLabel == null;
+
+  const dragEnabled = !busy && !trimmed && editingLabel == null;
 
   const commitAdd = async () => {
     const next = trimmed;
@@ -304,22 +342,100 @@ function TaxonomySection({
         {/* No explicit add button: Enter adds, Escape clears. */}
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div className="mt-4 flex flex-wrap items-stretch gap-2">
         {filtered.map((label) => (
-          <Chip
+          <div
             key={label.toLowerCase()}
-            label={label}
-            editing={editingLabel != null && lower(editingLabel) === lower(label)}
-            editValue={editingLabel != null && lower(editingLabel) === lower(label) ? editingValue : label}
-            onEditStart={() => startInlineEdit(label)}
-            onEditChange={setEditingValue}
-            onEditCommit={() => void commitInlineEdit()}
-            onEditCancel={cancelInlineEdit}
-            disabled={busy}
-            onRemove={() => void onRemoveEverywhere(label)}
-          />
+            className="inline-flex max-w-full min-w-0 items-stretch gap-1 rounded-full border border-[var(--border-color)] bg-[var(--hover-bg)]/40 pl-1 pr-0.5 py-0.5"
+            onDragOver={
+              dragEnabled
+                ? (e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                  }
+                : undefined
+            }
+            onDrop={
+              dragEnabled
+                ? (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const p = readTaxonomyDragPayload(e);
+                    if (!p) return;
+                    if (p.kind === kind && lower(p.label) === lower(label)) return;
+                    onDragDrop(p, kind, label);
+                  }
+                : undefined
+            }
+          >
+            <div
+              role="button"
+              tabIndex={dragEnabled ? 0 : -1}
+              draggable={dragEnabled}
+              onDragStart={
+                dragEnabled
+                  ? (e) => {
+                      e.dataTransfer.setData(TAXONOMY_DRAG_MIME, JSON.stringify({ kind, label }));
+                      e.dataTransfer.effectAllowed = 'move';
+                    }
+                  : undefined
+              }
+              className={
+                dragEnabled
+                  ? 'inline-flex min-h-11 min-w-11 shrink-0 cursor-grab touch-manipulation items-center justify-center rounded-full text-[var(--text-muted)] active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/35'
+                  : 'inline-flex min-h-11 min-w-11 shrink-0 cursor-not-allowed items-center justify-center rounded-full opacity-40'
+              }
+              aria-label={
+                kind === 'category'
+                  ? `Drag ${label} to reorder categories or move to Skills`
+                  : `Drag ${label} to reorder skills or move to Categories`
+              }
+              onKeyDown={(e) => {
+                if (!dragEnabled) return;
+                if (e.key === 'Enter' || e.key === ' ') e.preventDefault();
+              }}
+            >
+              <GripVertical size={18} aria-hidden />
+            </div>
+            <div className="min-w-0 self-center border-0 bg-transparent">
+              <Chip
+                label={label}
+                editing={editingLabel != null && lower(editingLabel) === lower(label)}
+                editValue={editingLabel != null && lower(editingLabel) === lower(label) ? editingValue : label}
+                onEditStart={() => startInlineEdit(label)}
+                onEditChange={setEditingValue}
+                onEditCommit={() => void commitInlineEdit()}
+                onEditCancel={cancelInlineEdit}
+                disabled={busy}
+                onRemove={() => void onRemoveEverywhere(label)}
+                frameless
+              />
+            </div>
+          </div>
         ))}
+        {dragEnabled && filtered.length > 0 ? (
+          <div
+            className="flex min-h-11 min-w-[min(100%,10rem)] flex-1 items-center justify-center rounded-xl border border-dashed border-[var(--border-color)]/70 bg-[var(--bg-secondary)]/30 px-3 text-center text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]"
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'move';
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const p = readTaxonomyDragPayload(e);
+              if (!p) return;
+              onDragDrop(p, kind, null);
+            }}
+          >
+            Drop to place last
+          </div>
+        ) : null}
       </div>
+
+      {trimmed ? (
+        <p className="mt-2 text-xs text-[var(--text-muted)]">Clear search to drag chips.</p>
+      ) : null}
 
       {trimmed && filtered.length === 0 ? (
         <p className="mt-4 text-xs text-[var(--text-muted)]">
@@ -365,6 +481,8 @@ export function AdminCatalogTaxonomyPanel({
     category: new Set(),
     skill: new Set(),
   }));
+  /** Bumps when admin display order (localStorage) changes so merged lists recompute. */
+  const [orderRevision, setOrderRevision] = useState(0);
 
   const applyPending = useCallback(
     (kind: TaxonomyKind, list: readonly string[]): string[] => {
@@ -395,15 +513,27 @@ export function AdminCatalogTaxonomyPanel({
     const preset = [...categoryPresets.mainPills, ...categoryPresets.moreTopics];
     const extras = readCatalogCategoryExtras();
     const discovered = taxonomy.topics.more;
-    return uniqueCiSorted(applyPending('category', [...preset, ...extras, ...discovered]));
-  }, [categoryPresets.mainPills, categoryPresets.moreTopics, taxonomy.topics.more, applyPending]);
+    const universe = uniqueCaseInsensitivePreserveOrder(
+      applyPending('category', [...preset, ...extras, ...discovered])
+    );
+    return mergeUniverseWithAdminOrder(universe, readCatalogTaxonomyAdminOrder('category'));
+  }, [
+    categoryPresets.mainPills,
+    categoryPresets.moreTopics,
+    taxonomy.topics.more,
+    applyPending,
+    orderRevision,
+  ]);
 
   const skillItems = useMemo(() => {
     const preset = [...skillPresets.mainPills, ...skillPresets.moreSkills];
     const extras = readCatalogSkillExtras();
     const discovered = taxonomy.skills.more;
-    return uniqueCiSorted(applyPending('skill', [...preset, ...extras, ...discovered]));
-  }, [skillPresets.mainPills, skillPresets.moreSkills, taxonomy.skills.more, applyPending]);
+    const universe = uniqueCaseInsensitivePreserveOrder(
+      applyPending('skill', [...preset, ...extras, ...discovered])
+    );
+    return mergeUniverseWithAdminOrder(universe, readCatalogTaxonomyAdminOrder('skill'));
+  }, [skillPresets.mainPills, skillPresets.moreSkills, taxonomy.skills.more, applyPending, orderRevision]);
 
   const updateCoursesEverywhere = async (kind: TaxonomyKind, from: string, to?: string) => {
     const fromK = lower(from);
@@ -458,6 +588,197 @@ export function AdminCatalogTaxonomyPanel({
     return { updated, failed };
   };
 
+  const saveCoursesConcurrently = useCallback(async (nextCourses: Course[]) => {
+    const CONCURRENCY = 6;
+    let failed: Course | null = null;
+    let i = 0;
+    const updated: Course[] = [];
+    const worker = async () => {
+      while (true) {
+        if (failed) return;
+        const idx = i;
+        i += 1;
+        const c = nextCourses[idx];
+        if (!c) return;
+        const ok = await onSaveCourse(c);
+        if (!ok) {
+          failed = c;
+          return;
+        }
+        updated.push(c);
+      }
+    };
+    const n = Math.min(CONCURRENCY, nextCourses.length);
+    await Promise.all(Array.from({ length: n }, () => worker()));
+    return { updated, failed };
+  }, [onSaveCourse]);
+
+  const performMigrate = useCallback(
+    async (
+      fromKind: TaxonomyKind,
+      label: string,
+      toKind: TaxonomyKind,
+      beforeLabel: string | null,
+      catOrdSnapshot: readonly string[],
+      skillOrdSnapshot: readonly string[]
+    ) => {
+      if (fromKind === toKind) return;
+      const k = lower(label);
+      const t = label.trim();
+      if (!t) return;
+
+      if (fromKind === 'category') {
+        if (removingWouldDeleteLastMainPill(categoryPresets.mainPills, t)) {
+          showActionToast(
+            'Can’t move the last “Popular topic” (main pill). Add another main topic under Topic presets first.',
+            'danger'
+          );
+          return;
+        }
+        const blocked = coursesWithOnlyThisCategory(publishedList, t);
+        if (blocked.length > 0) {
+          showActionToast(formatBlockedCategoryRemovalMessage(blocked, t), 'danger');
+          return;
+        }
+      } else if (removingWouldDeleteLastMainPill(skillPresets.mainPills, t)) {
+        showActionToast(
+          'Can’t move the last main skill pill. Add another main skill under Skill presets first.',
+          'danger'
+        );
+        return;
+      }
+
+      showActionToast('Updating…', 'neutral');
+      setBusy(true);
+      try {
+        let nextCourses: Course[] = [];
+        if (fromKind === 'category') {
+          nextCourses = publishedList
+            .map((c) => {
+              const cats = c.categories ?? [];
+              if (!cats.some((x) => lower(x) === k)) return null;
+              const nextCats = cats.filter((x) => lower(x) !== k);
+              if (nextCats.length === 0) return null;
+              const nextSkills = dedupeLabelsPreserveOrder([...(c.skills ?? []), t]);
+              return { ...c, categories: nextCats, skills: nextSkills } as Course;
+            })
+            .filter((x): x is Course => x != null);
+        } else {
+          nextCourses = publishedList
+            .map((c) => {
+              const skills = c.skills ?? [];
+              if (!skills.some((x) => lower(x) === k)) return null;
+              const nextSkills = skills.filter((x) => lower(x) !== k);
+              const nextCats = dedupeLabelsPreserveOrder([...(c.categories ?? []), t]);
+              return { ...c, categories: nextCats, skills: nextSkills } as Course;
+            })
+            .filter((x): x is Course => x != null);
+        }
+
+        if (nextCourses.length > 0) {
+          const courseUpdate = await saveCoursesConcurrently(nextCourses);
+          if (courseUpdate.failed) {
+            showActionToast(formatCourseSaveFailedMessage(fromKind, courseUpdate.failed), 'danger');
+            return;
+          }
+        }
+
+        let nextCatsState: CatalogCategoryPresetsState;
+        let nextSkillsState: CatalogSkillPresetsState;
+
+        if (fromKind === 'category') {
+          nextCatsState = normalizeCatalogCategoryPresets({
+            mainPills: categoryPresets.mainPills.filter((x) => lower(x) !== k),
+            moreTopics: categoryPresets.moreTopics.filter((x) => lower(x) !== k),
+          });
+          removeCatalogCategoryExtra(t);
+          const alreadySkill = [...skillPresets.mainPills, ...skillPresets.moreSkills].some((x) => lower(x) === k);
+          nextSkillsState = alreadySkill
+            ? normalizeCatalogSkillPresets(skillPresets)
+            : normalizeCatalogSkillPresets({
+                mainPills: skillPresets.mainPills,
+                moreSkills: dedupeLabelsPreserveOrder([...skillPresets.moreSkills, t]),
+              });
+        } else {
+          nextSkillsState = normalizeCatalogSkillPresets({
+            mainPills: skillPresets.mainPills.filter((x) => lower(x) !== k),
+            moreSkills: skillPresets.moreSkills.filter((x) => lower(x) !== k),
+          });
+          removeCatalogSkillExtra(t);
+          const alreadyCat = [...categoryPresets.mainPills, ...categoryPresets.moreTopics].some((x) => lower(x) === k);
+          nextCatsState = alreadyCat
+            ? normalizeCatalogCategoryPresets(categoryPresets)
+            : normalizeCatalogCategoryPresets({
+                mainPills: categoryPresets.mainPills,
+                moreTopics: dedupeLabelsPreserveOrder([...categoryPresets.moreTopics, t]),
+              });
+        }
+
+        await saveCatalogCategoryPresets(nextCatsState);
+        await saveCatalogSkillPresets(nextSkillsState);
+        onPresetsChanged({ categories: nextCatsState, skills: nextSkillsState });
+
+        const nextCatOrder =
+          fromKind === 'category'
+            ? orderWithoutLabel(catOrdSnapshot, t)
+            : orderInsertBefore(orderWithoutLabel(catOrdSnapshot, t), t, beforeLabel);
+        const nextSkillOrder =
+          fromKind === 'category'
+            ? orderInsertBefore(orderWithoutLabel(skillOrdSnapshot, t), t, beforeLabel)
+            : orderWithoutLabel(skillOrdSnapshot, t);
+
+        writeCatalogTaxonomyAdminOrder('category', nextCatOrder);
+        writeCatalogTaxonomyAdminOrder('skill', nextSkillOrder);
+        setOrderRevision((r) => r + 1);
+
+        await onRefreshList();
+        await onCatalogChanged();
+        const movedTo = toKind === 'skill' ? 'Skills' : 'Categories';
+        showActionToast(`Moved “${t}” to ${movedTo}.${formatUpdatedCoursesToastSuffix(nextCourses)}`);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [
+      publishedList,
+      categoryPresets,
+      skillPresets,
+      onPresetsChanged,
+      onRefreshList,
+      onCatalogChanged,
+      showActionToast,
+      saveCoursesConcurrently,
+    ]
+  );
+
+  const handleTaxonomyDragDrop = useCallback(
+    (payload: TaxonomyDragPayload, targetKind: TaxonomyKind, beforeLabel: string | null) => {
+      if (busy) return;
+      const { kind: srcKind, label } = payload;
+      if (beforeLabel && lower(beforeLabel) === lower(label)) return;
+
+      if (srcKind === targetKind) {
+        const next =
+          targetKind === 'category'
+            ? orderInsertBefore(categoryItems, label, beforeLabel)
+            : orderInsertBefore(skillItems, label, beforeLabel);
+        writeCatalogTaxonomyAdminOrder(targetKind, next);
+        setOrderRevision((r) => r + 1);
+        return;
+      }
+
+      void performMigrate(
+        srcKind,
+        label,
+        targetKind,
+        beforeLabel,
+        categoryItems,
+        skillItems
+      );
+    },
+    [busy, categoryItems, skillItems, performMigrate]
+  );
+
   const closeConfirm = useCallback(() => setConfirm(null), []);
 
   const performRemovalWork = async (kind: TaxonomyKind, label: string) => {
@@ -511,6 +832,8 @@ export function AdminCatalogTaxonomyPanel({
         await saveCatalogCategoryPresets(nextCats);
         removeCatalogCategoryExtra(label);
         onPresetsChanged({ categories: nextCats, skills: skillPresets });
+        const co = readCatalogTaxonomyAdminOrder('category');
+        if (co) writeCatalogTaxonomyAdminOrder('category', orderWithoutLabel(co, label));
       } else {
         const k = lower(label);
         const nextSkills = normalizeCatalogSkillPresets({
@@ -520,8 +843,11 @@ export function AdminCatalogTaxonomyPanel({
         await saveCatalogSkillPresets(nextSkills);
         removeCatalogSkillExtra(label);
         onPresetsChanged({ categories: categoryPresets, skills: nextSkills });
+        const so = readCatalogTaxonomyAdminOrder('skill');
+        if (so) writeCatalogTaxonomyAdminOrder('skill', orderWithoutLabel(so, label));
       }
 
+      setOrderRevision((r) => r + 1);
       await onRefreshList();
       await onCatalogChanged();
       showActionToast(`Removed ${label} everywhere.${formatUpdatedCoursesToastSuffix(courseUpdate.updated)}`);
@@ -624,6 +950,13 @@ export function AdminCatalogTaxonomyPanel({
         await saveCatalogCategoryPresets(nextCats);
         replaceCatalogCategoryExtra(from, to);
         onPresetsChanged({ categories: nextCats, skills: skillPresets });
+        const co = readCatalogTaxonomyAdminOrder('category');
+        if (co) {
+          writeCatalogTaxonomyAdminOrder(
+            'category',
+            co.map((x) => (lower(x) === lower(from) ? to : x))
+          );
+        }
       } else {
         const fk = lower(from);
         const nextSkills = normalizeCatalogSkillPresets({
@@ -633,8 +966,16 @@ export function AdminCatalogTaxonomyPanel({
         await saveCatalogSkillPresets(nextSkills);
         replaceCatalogSkillExtra(from, to);
         onPresetsChanged({ categories: categoryPresets, skills: nextSkills });
+        const so = readCatalogTaxonomyAdminOrder('skill');
+        if (so) {
+          writeCatalogTaxonomyAdminOrder(
+            'skill',
+            so.map((x) => (lower(x) === lower(from) ? to : x))
+          );
+        }
       }
 
+      setOrderRevision((r) => r + 1);
       await onRefreshList();
       await onCatalogChanged();
       showActionToast(`Renamed ${from} → ${to}.${formatUpdatedCoursesToastSuffix(courseUpdate.updated)}`);
@@ -661,6 +1002,11 @@ export function AdminCatalogTaxonomyPanel({
               Click × to remove from presets and extras. If no course uses the label, it removes immediately; otherwise
               you’ll see which courses use it before confirming.
             </li>
+            <li>
+              Drag the grip to reorder, drop on a chip to insert before it, or use the dashed “last” zone. Drag into
+              Skills to turn a category into a skill on every course that used it (blocked if it’s a course’s only
+              category or the last main topic pill).
+            </li>
           </>
         }
         kind="category"
@@ -671,6 +1017,7 @@ export function AdminCatalogTaxonomyPanel({
         onRemoveEverywhere={async (name) => {
           removeEverywhere('category', name);
         }}
+        onDragDrop={handleTaxonomyDragDrop}
       />
 
       <TaxonomySection
@@ -683,6 +1030,10 @@ export function AdminCatalogTaxonomyPanel({
               Removing deletes the skill from courses, presets, and extras. Unused skills remove in one step; if any
               course uses the skill, you’ll see the list before confirming.
             </li>
+            <li>
+              Drag the grip to reorder or drop into Categories to convert a skill into a category on each course that
+              had the skill (same insert-before and “last” zone behavior).
+            </li>
           </>
         }
         kind="skill"
@@ -693,6 +1044,7 @@ export function AdminCatalogTaxonomyPanel({
         onRemoveEverywhere={async (name) => {
           removeEverywhere('skill', name);
         }}
+        onDragDrop={handleTaxonomyDragDrop}
       />
 
       <AnimatePresence>

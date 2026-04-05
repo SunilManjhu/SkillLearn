@@ -13,6 +13,7 @@ import {
   Tags,
   Trash2,
   RefreshCw,
+  RotateCcw,
   Sparkles,
   X,
   ArrowDown,
@@ -1448,6 +1449,69 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     });
     showActionToast('Lesson deleted.');
   };
+
+  const baselineCourseSnapshot = useMemo((): Course | null => {
+    if (!baselineJson) return null;
+    try {
+      return JSON.parse(baselineJson) as Course;
+    } catch {
+      return null;
+    }
+  }, [baselineJson]);
+
+  const resetModuleFromBaseline = useCallback(
+    (mi: number) => {
+      const base = baselineCourseSnapshot;
+      if (!base) {
+        showActionToast('Save the course once to enable reset.', 'neutral');
+        return;
+      }
+      const src = base.modules[mi];
+      if (!src) {
+        showActionToast('No last-saved version for this module slot.', 'neutral');
+        return;
+      }
+      setDraft((d) => {
+        if (!d) return null;
+        const modules = [...d.modules];
+        modules[mi] = deepClone(src);
+        let next: Course = { ...d, modules };
+        next = ensureCourseLessonRowKeys(normalizeCourseTaxonomy(next));
+        return next;
+      });
+      showActionToast('Module reset to last saved.');
+    },
+    [baselineCourseSnapshot, showActionToast]
+  );
+
+  const resetLessonFromBaseline = useCallback(
+    (mi: number, li: number) => {
+      const base = baselineCourseSnapshot;
+      if (!base) {
+        showActionToast('Save the course once to enable reset.', 'neutral');
+        return;
+      }
+      const srcLesson = base.modules[mi]?.lessons[li];
+      if (!srcLesson) {
+        showActionToast('No last-saved version for this lesson slot.', 'neutral');
+        return;
+      }
+      setDraft((d) => {
+        if (!d) return null;
+        const modules = d.modules.map((m, i) => {
+          if (i !== mi) return m;
+          const lessons = [...m.lessons];
+          lessons[li] = deepClone(srcLesson);
+          return { ...m, lessons };
+        });
+        let next: Course = { ...d, modules };
+        next = ensureCourseLessonRowKeys(normalizeCourseTaxonomy(next));
+        return next;
+      });
+      showActionToast('Lesson reset to last saved.');
+    },
+    [baselineCourseSnapshot, showActionToast]
+  );
 
   const remapOpenLessonsAfterModuleSwap = (
     prev: Record<string, boolean>,
@@ -3535,7 +3599,46 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       </span>
                     </span>
                   </button>
-                  <div className="flex shrink-0 items-center gap-1">
+                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-0.5 sm:gap-1">
+                    <button
+                      type="button"
+                      disabled={busy || !draft || (baselineJson !== null && !isDirty)}
+                      onClick={() => void handleSave()}
+                      aria-busy={busy}
+                      aria-label={busy ? 'Saving course…' : 'Save course to catalog'}
+                      title={busy ? 'Saving…' : 'Save course to catalog'}
+                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-orange-500 hover:bg-orange-500/10 disabled:opacity-40"
+                    >
+                      {busy ? (
+                        <Loader2 size={18} className="shrink-0 animate-spin" aria-hidden />
+                      ) : (
+                        <Save size={18} aria-hidden />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={
+                        busy ||
+                        !baselineCourseSnapshot ||
+                        !baselineCourseSnapshot.modules[mi]
+                      }
+                      onClick={() => resetModuleFromBaseline(mi)}
+                      aria-label={`Reset module ${mi + 1} to last saved`}
+                      title="Reset this module to last saved"
+                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-30"
+                    >
+                      <RotateCcw size={18} aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeModule(mi)}
+                      disabled={draft.modules.length <= 1}
+                      className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-red-400 hover:bg-red-500/10 disabled:opacity-30"
+                      aria-label="Remove module"
+                      title="Remove module"
+                    >
+                      <Trash2 size={18} aria-hidden />
+                    </button>
                     <button
                       type="button"
                       data-module-reorder="up"
@@ -3579,15 +3682,6 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       aria-label="Move module down"
                     >
                       <ArrowDown size={18} aria-hidden />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => removeModule(mi)}
-                      disabled={draft.modules.length <= 1}
-                      className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg p-2 text-red-400 hover:bg-red-500/10 disabled:opacity-30"
-                      aria-label="Remove module"
-                    >
-                      <Trash2 size={16} />
                     </button>
                   </div>
                 </div>
@@ -3689,7 +3783,45 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             </span>
                           </span>
                         </button>
-                        <div className="flex shrink-0 flex-col gap-0.5 sm:flex-row sm:gap-1">
+                        <div className="flex shrink-0 flex-col gap-0.5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-0.5">
+                          <button
+                            type="button"
+                            disabled={busy || !draft || (baselineJson !== null && !isDirty)}
+                            onClick={() => void handleSave()}
+                            aria-busy={busy}
+                            aria-label={busy ? 'Saving course…' : 'Save course to catalog'}
+                            title={busy ? 'Saving…' : 'Save course to catalog'}
+                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-orange-500 hover:bg-orange-500/10 disabled:opacity-40"
+                          >
+                            {busy ? (
+                              <Loader2 size={18} className="shrink-0 animate-spin" aria-hidden />
+                            ) : (
+                              <Save size={18} aria-hidden />
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={
+                              busy ||
+                              !baselineCourseSnapshot?.modules[mi]?.lessons[li]
+                            }
+                            onClick={() => resetLessonFromBaseline(mi, li)}
+                            aria-label={`Reset lesson ${li + 1} in module ${mi + 1} to last saved`}
+                            title="Reset this lesson to last saved"
+                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]/40 disabled:opacity-30"
+                          >
+                            <RotateCcw size={18} aria-hidden />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeLesson(mi, li)}
+                            disabled={mod.lessons.length <= 1}
+                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-red-400 hover:bg-red-500/10 disabled:opacity-30"
+                            aria-label="Remove lesson"
+                            title="Remove lesson"
+                          >
+                            <Trash2 size={18} aria-hidden />
+                          </button>
                           <button
                             type="button"
                             data-lesson-reorder="up"
@@ -4258,16 +4390,6 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         value={lesson.videoOutlineNotes ?? ''}
                         onChange={(v) => updateLesson(mi, li, { videoOutlineNotes: v || undefined })}
                       />
-                      <div className="flex justify-end pt-1">
-                        <button
-                          type="button"
-                          onClick={() => removeLesson(mi, li)}
-                          disabled={mod.lessons.length <= 1}
-                          className="text-xs font-semibold text-red-400 hover:underline disabled:opacity-30"
-                        >
-                          Remove lesson
-                        </button>
-                      </div>
                         </div>
                         <aside className="mt-4 w-full shrink-0 border-t border-[var(--border-color)]/60 pt-4 sm:mt-5 sm:pt-5 lg:sticky lg:top-3 lg:mt-0 lg:w-[min(17rem,32vw)] lg:max-w-[300px] lg:border-t-0 lg:border-l lg:border-[var(--border-color)]/60 lg:pt-0 lg:pl-4 xl:top-4">
                           <AdminLessonContentPreview lesson={lesson} />

@@ -87,8 +87,10 @@ export function AdminVideoOutlineNotesField({ value, onChange, textareaId }: Adm
       />
       <p id={`${textareaId}-outline-help`} className="text-[11px] leading-snug text-[var(--text-muted)]">
         Use parentheses and colons: <code className="rounded bg-[var(--hover-bg)] px-1">(M:SS - M:SS)</code> (hyphen
-        or en dash). Learners see text without timestamps; tapping seeks. Single{' '}
-        <code className="rounded bg-[var(--hover-bg)] px-1">(M:SS)</code> works but a range is clearer.
+        or en dash). Two non-adjacent clips on the same bullet can use one pair of parentheses with a comma:{' '}
+        <code className="rounded bg-[var(--hover-bg)] px-1">(2:55 - 3:05, 4:44 - 5:05)</code>. Learners see text
+        without timestamps; tapping seeks. Single <code className="rounded bg-[var(--hover-bg)] px-1">(M:SS)</code>{' '}
+        works but a range is clearer.
       </p>
       {diagnostics.length > 0 ? (
         <ul

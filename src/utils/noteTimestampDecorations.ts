@@ -13,6 +13,31 @@ export const NOTE_TIMESTAMP_POINT_DURATION_SEC = 12;
 export const NOTE_TIMESTAMP_REGEX =
   /\(\s*(\d{1,2}):(\d{2})\s*(?:[-–—]\s*(\d{1,2}):(\d{2}))?\s*\)/g;
 
+/**
+ * Comma-separated ranges inside one pair of parentheses, e.g. `(2:55 - 3:05, 4:44 - 5:05)`.
+ * Requires at least two `M:SS - M:SS` segments (one comma). Single-range timestamps use {@link NOTE_TIMESTAMP_REGEX}.
+ *
+ * Structure: `\(\s*((?:pair)(?:\s*,\s*(?:pair))+)\s*\)` — note the `+` repeats (comma + pair), not `pair` alone.
+ */
+export const NOTE_TIMESTAMP_MULTI_RANGE_REGEX =
+  /\(\s*((?:\d{1,2}:\d{2}\s*[-–—]\s*\d{1,2}:\d{2})(?:\s*,\s*(?:\d{1,2}:\d{2}\s*[-–—]\s*\d{1,2}:\d{2}))+)\s*\)/g;
+
+/** Parse inner content of a {@link NOTE_TIMESTAMP_MULTI_RANGE_REGEX} match (full string including parens). */
+export function parseMultiRangeTimestampSpan(full: string): [string, string, string, string][] | null {
+  if (!full.startsWith('(') || !full.endsWith(')')) return null;
+  const inner = full.slice(1, -1).trim();
+  const parts = inner.split(',').map((p) => p.trim());
+  if (parts.length < 2) return null;
+  const pairRe = /^(\d{1,2}):(\d{2})\s*[-–—]\s*(\d{1,2}):(\d{2})$/;
+  const out: [string, string, string, string][] = [];
+  for (const p of parts) {
+    const m = pairRe.exec(p);
+    if (!m) return null;
+    out.push([m[1]!, m[2]!, m[3]!, m[4]!]);
+  }
+  return out;
+}
+
 function mmssToSeconds(min: string, sec: string): number {
   return parseInt(min, 10) * 60 + parseInt(sec, 10);
 }
@@ -77,6 +102,38 @@ export function buildTimestampDecorations(doc: Node, playbackSec: number): Decor
           })
         );
       }
+    }
+
+    NOTE_TIMESTAMP_MULTI_RANGE_REGEX.lastIndex = 0;
+    let mm: RegExpExecArray | null;
+    while ((mm = NOTE_TIMESTAMP_MULTI_RANGE_REGEX.exec(text)) !== null) {
+      const pairs = parseMultiRangeTimestampSpan(mm[0]);
+      if (!pairs) continue;
+      let active = false;
+      for (const [a, b, c, d] of pairs) {
+        const s0 = mmssToSeconds(a, b);
+        const s1 = mmssToSeconds(c, d);
+        const lo = Math.min(s0, s1);
+        const hi = Math.max(s0, s1);
+        if (playbackSec >= lo && playbackSec <= hi) {
+          active = true;
+          break;
+        }
+      }
+      if (!active) continue;
+      const from = pos + mm.index;
+      let to = from + mm[0].length;
+      const afterParen = text.slice(mm.index + mm[0].length);
+      const trail = /^:\s*/.exec(afterParen);
+      if (trail && !/\n/.test(trail[0])) {
+        to += trail[0].length;
+      }
+      const lineFrom = startOfEnclosingTextblock(doc, from);
+      decorations.push(
+        Decoration.inline(lineFrom, to, {
+          class: 'lesson-note-ts-active',
+        })
+      );
     }
   });
 
