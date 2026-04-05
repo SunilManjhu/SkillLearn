@@ -1275,7 +1275,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         questionPrompt: qq.prompt.trim(),
         choices: slots.map((s) => s.text),
       });
-      if (!res.ok) {
+      if (res.ok === false) {
         showActionToast(res.error, 'danger');
         return;
       }
@@ -2321,8 +2321,12 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
   /** Ref updated by PathBuilder via onPathsDirtyChange — read before opening catalog tab confirm. */
   const pathBuilderDirtyRef = useRef(false);
-  const courseDiscardTargetRef = useRef<'paths' | 'taxonomy' | 'categories' | 'catalog' | 'presets'>('paths');
-  const pathDiscardTargetRef = useRef<'catalog' | 'taxonomy' | 'categories' | 'presets'>('catalog');
+  const courseDiscardTargetRef = useRef<
+    'paths' | 'taxonomy' | 'categories' | 'catalog' | 'presets' | 'skillPresets'
+  >('paths');
+  const pathDiscardTargetRef = useRef<
+    'catalog' | 'taxonomy' | 'categories' | 'presets' | 'skillPresets'
+  >('catalog');
   const setPathBuilderDirty = useCallback(
     (dirty: boolean) => {
       pathBuilderDirtyRef.current = dirty;
@@ -4354,7 +4358,9 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           key={pathBuilderResetKey}
           publishedList={publishedList}
           coursesForPathTitleConflictCheck={courseRowsForTaxonomyPickers}
-          onRefreshPublishedList={refreshList}
+          onRefreshPublishedList={async () => {
+            await refreshList();
+          }}
           onCatalogChanged={onCatalogChanged}
           onPathsDirtyChange={setPathBuilderDirty}
           onPathsLoadingChange={setPathsListLoading}

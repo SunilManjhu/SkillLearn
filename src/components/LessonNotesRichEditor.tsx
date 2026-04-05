@@ -1,16 +1,18 @@
-import React, { type ReactNode, useEffect, useMemo, useRef } from 'react';
+import React, { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useEditor, EditorContent, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import Placeholder from '@tiptap/extension-placeholder';
 import {
   Bold,
+  ChevronDown,
   Italic,
   Underline as UnderlineIcon,
   Heading2,
   List,
   ListOrdered,
   Minus,
+  StickyNote,
   Undo2,
   Redo2,
 } from 'lucide-react';
@@ -34,6 +36,8 @@ export type LessonNotesRichEditorProps = {
   onBlur?: () => void;
   /** Current lesson video time (seconds); timestamps in notes like `(1:20)` or `(0:43 - 1:45)` highlight while active. `null` disables. */
   playbackSeconds?: number | null;
+  /** Fired when the Write notes disclosure opens or closes (mobile lesson meta visibility). */
+  onSectionOpenChange?: (open: boolean) => void;
   'aria-label': string;
 };
 
@@ -58,7 +62,7 @@ function ToolbarButton({
       aria-label={label}
       aria-pressed={active ?? false}
       title={label}
-      className={`inline-flex min-h-9 min-w-9 items-center justify-center rounded-md touch-manipulation disabled:pointer-events-none disabled:opacity-35 ${
+      className={`inline-flex shrink-0 min-h-9 min-w-9 max-lg:min-h-10 max-lg:min-w-10 items-center justify-center rounded-md touch-manipulation disabled:pointer-events-none disabled:opacity-35 ${
         active
           ? 'bg-orange-500/15 text-orange-600 dark:text-orange-400'
           : 'text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]'
@@ -74,7 +78,7 @@ function FormatToolbar({ editor }: { editor: Editor | null }) {
 
   return (
     <div
-      className="flex shrink-0 flex-wrap items-center gap-0.5 border-b border-[var(--border-color)] bg-[var(--bg-primary)]/40 px-2 py-1.5 sm:px-3"
+      className="flex shrink-0 flex-wrap items-center gap-0.5 border-b border-[var(--border-color)] bg-[var(--bg-primary)]/40 px-2 py-1.5 max-lg:w-full max-lg:flex-nowrap max-lg:justify-between max-lg:gap-0.5 max-lg:overflow-x-auto max-lg:overflow-y-hidden max-lg:overscroll-x-contain max-lg:px-2 max-lg:py-1.5 max-lg:touch-pan-x max-lg:[-ms-overflow-style:none] max-lg:[scrollbar-width:none] max-lg:[&_svg]:h-4 max-lg:[&_svg]:w-4 max-lg:[&::-webkit-scrollbar]:hidden lg:flex-wrap lg:px-3"
       role="toolbar"
       aria-label="Text formatting"
     >
@@ -99,7 +103,7 @@ function FormatToolbar({ editor }: { editor: Editor | null }) {
       >
         <UnderlineIcon size={17} aria-hidden />
       </ToolbarButton>
-      <span className="mx-0.5 h-5 w-px shrink-0 bg-[var(--border-color)]" aria-hidden />
+      <span className="mx-0.5 h-5 w-px shrink-0 bg-[var(--border-color)] max-lg:mx-px" aria-hidden />
       <ToolbarButton
         label={editor.isActive('heading', { level: 2 }) ? 'Normal text' : 'Heading'}
         active={editor.isActive('heading', { level: 2 })}
@@ -127,14 +131,14 @@ function FormatToolbar({ editor }: { editor: Editor | null }) {
       >
         <ListOrdered size={17} aria-hidden />
       </ToolbarButton>
-      <span className="mx-0.5 h-5 w-px shrink-0 bg-[var(--border-color)]" aria-hidden />
+      <span className="mx-0.5 h-5 w-px shrink-0 bg-[var(--border-color)] max-lg:mx-px" aria-hidden />
       <ToolbarButton
         label="Insert divider line"
         onClick={() => editor.chain().focus().setHorizontalRule().run()}
       >
         <Minus size={17} aria-hidden />
       </ToolbarButton>
-      <span className="mx-0.5 h-5 w-px shrink-0 bg-[var(--border-color)]" aria-hidden />
+      <span className="mx-0.5 h-5 w-px shrink-0 bg-[var(--border-color)] max-lg:mx-px" aria-hidden />
       <ToolbarButton label="Undo" onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()}>
         <Undo2 size={17} aria-hidden />
       </ToolbarButton>
@@ -154,8 +158,10 @@ export function LessonNotesRichEditor({
   onHtmlChange,
   onBlur,
   playbackSeconds = null,
+  onSectionOpenChange,
   'aria-label': ariaLabel,
 }: LessonNotesRichEditorProps) {
+  const [notesSectionOpen, setNotesSectionOpen] = useState(false);
   const playbackSecondsRef = useRef<number | null>(null);
   playbackSecondsRef.current = playbackSeconds ?? null;
 
@@ -196,7 +202,7 @@ export function LessonNotesRichEditor({
     editorProps: {
       attributes: {
         class:
-          'lesson-notes-editor ProseMirror min-h-[8rem] w-full max-w-full flex-1 select-text px-3 py-3 text-sm leading-relaxed text-[var(--text-primary)] focus:outline-none sm:px-4 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_h2]:mb-2 [&_h2]:mt-3 [&_h2]:text-base [&_h2]:font-bold [&_h2]:first:mt-0 [&_p]:mb-2 [&_p]:last:mb-0',
+          'lesson-notes-editor ProseMirror w-full max-w-full flex-1 select-text text-sm leading-relaxed text-[var(--text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/45 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)] max-lg:min-h-[min(52dvh,22rem)] max-lg:rounded-xl max-lg:border max-lg:border-[var(--border-color)] max-lg:bg-[var(--bg-primary)] max-lg:p-4 max-lg:text-[15px] max-lg:leading-relaxed lg:min-h-[min(40vh,12rem)] lg:px-4 lg:py-3 xl:min-h-[min(42vh,16rem)] [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_h2]:mb-2 [&_h2]:mt-3 [&_h2]:text-base [&_h2]:font-bold [&_h2]:first:mt-0 [&_p]:mb-2 [&_p]:last:mb-0',
         'aria-label': ariaLabel,
       },
       handleDOMEvents: {
@@ -224,6 +230,10 @@ export function LessonNotesRichEditor({
     view.dispatch(view.state.tr.setMeta(NOTE_PLAYBACK_TICK_META, true));
   }, [editor, playbackSeconds]);
 
+  useEffect(() => {
+    onSectionOpenChange?.(notesSectionOpen);
+  }, [notesSectionOpen, onSectionOpenChange]);
+
   const focusEditorFromShell = (e: React.PointerEvent) => {
     if (!editor || editor.isDestroyed) return;
     const target = e.target;
@@ -234,14 +244,36 @@ export function LessonNotesRichEditor({
   };
 
   return (
-    <div
-      className="flex min-h-0 flex-1 flex-col overflow-hidden"
-      onPointerDown={focusEditorFromShell}
-    >
-      <FormatToolbar editor={editor} />
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
-        <EditorContent editor={editor} className="h-full min-h-0 [&_.ProseMirror]:min-h-[min(40vh,12rem)]" />
-      </div>
+    <div className="flex min-h-0 min-w-0 flex-col max-lg:w-full max-lg:flex-none max-lg:overflow-visible lg:min-h-0 lg:flex-1 lg:overflow-hidden">
+      <details
+        className="group flex min-h-0 min-w-0 flex-col border-b border-[var(--border-color)] bg-[var(--bg-secondary)]/80 max-lg:flex-none max-lg:border-t max-lg:border-[var(--border-color)] max-lg:bg-[var(--bg-secondary)] max-lg:portrait:sticky max-lg:portrait:bottom-0 max-lg:portrait:z-[40] max-lg:portrait:shadow-[0_-4px_20px_rgba(0,0,0,0.12)] dark:max-lg:portrait:shadow-[0_-4px_24px_rgba(0,0,0,0.35)] max-lg:landscape:sticky max-lg:landscape:bottom-0 max-lg:landscape:z-40 max-lg:landscape:shadow-[0_-4px_20px_rgba(0,0,0,0.12)] dark:max-lg:landscape:shadow-[0_-4px_24px_rgba(0,0,0,0.35)] lg:min-h-0 lg:flex-1 lg:overflow-hidden lg:shadow-none"
+        open={notesSectionOpen}
+        onToggle={(e) => setNotesSectionOpen(e.currentTarget.open)}
+      >
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 bg-[var(--bg-secondary)] px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)] touch-manipulation sm:min-h-10 sm:px-4 [&::-webkit-details-marker]:hidden">
+          <span className="flex min-w-0 items-center gap-2 text-left leading-snug">
+            <StickyNote size={14} className="shrink-0 opacity-80" aria-hidden />
+            Write notes
+          </span>
+          <ChevronDown
+            size={18}
+            className="shrink-0 text-[var(--text-muted)] transition-transform duration-200 group-open:rotate-180"
+            aria-hidden
+          />
+        </summary>
+        <div
+          className="flex min-h-0 min-w-0 flex-col touch-manipulation lg:min-h-0 lg:flex-1 lg:overflow-hidden"
+          onPointerDown={focusEditorFromShell}
+        >
+          <FormatToolbar editor={editor} />
+          <div className="min-h-0 min-w-0 max-lg:overflow-visible max-lg:px-0.5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-y-contain">
+            <EditorContent
+              editor={editor}
+              className="h-full min-h-0 w-full max-lg:h-auto [&_.ProseMirror]:pb-6 lg:[&_.ProseMirror]:pb-8"
+            />
+          </div>
+        </div>
+      </details>
     </div>
   );
 }

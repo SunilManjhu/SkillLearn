@@ -98,6 +98,6 @@ Manual publish to the **correct** named database fixed production behavior in ca
 - `firestore.rules` — source of truth for security rules in git.
 - `firebase.json` — maps rules file + **named** database for CLI.
 - `firebase-applet-config.json` — `projectId`, `firestoreDatabaseId` used by the web app.
-- `package.json` → script `deploy:rules` — deploy command for this project.
+- `package.json` → script `deploy:rules`.
 
 For AI assistants: when the user changes `firestore.rules` or reports Firestore permission issues, remind them that rules must be **published to the named database** in `firebase-applet-config.json`, and point them to this document.

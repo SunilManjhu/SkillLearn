@@ -534,19 +534,22 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
       })),
     });
     setSaving(false);
-    if (result.ok) {
-      setSavedEnabled(enabled);
-      setSavedDefaultSec(draftDefaultSec);
-      setSavedSlides(cloneStoredSlides(draftSlides));
-      heroAdsAdminCache = {
-        enabled,
-        defaultSlideDurationSec: draftDefaultSec,
-        slides: cloneStoredSlides(draftSlides),
-      };
-      showActionToast('Home hero phone ads saved.');
-    } else {
-      setSaveErrorDialog({ code: result.code, message: result.message });
+    if (result.ok === false) {
+      setSaveErrorDialog({
+        code: result.code,
+        message: result.message ?? 'Could not save hero phone ads.',
+      });
+      return;
     }
+    setSavedEnabled(enabled);
+    setSavedDefaultSec(draftDefaultSec);
+    setSavedSlides(cloneStoredSlides(draftSlides));
+    heroAdsAdminCache = {
+      enabled,
+      defaultSlideDurationSec: draftDefaultSec,
+      slides: cloneStoredSlides(draftSlides),
+    };
+    showActionToast('Home hero phone ads saved.');
   };
 
   const handleDiscard = () => {

@@ -35,6 +35,10 @@ export type CoursePlayerSidebarPanelsProps = {
   notesPlaybackSeconds?: number | null;
   /** Seek embedded video (YouTube or native) when the learner taps an outline line. */
   onVideoSeekSeconds?: (seconds: number) => void;
+  /** Mobile: notify when video outline disclosure opens/closes (CoursePlayer hides lesson meta). */
+  onVideoOutlineOpenChange?: (open: boolean) => void;
+  /** Mobile: notify when Write notes disclosure opens/closes (CoursePlayer hides lesson meta). */
+  onWriteNotesOpenChange?: (open: boolean) => void;
 };
 
 /**
@@ -60,6 +64,8 @@ export function CoursePlayerSidebarPanels({
   notesRegionId,
   notesPlaybackSeconds = null,
   onVideoSeekSeconds,
+  onVideoOutlineOpenChange,
+  onWriteNotesOpenChange,
 }: CoursePlayerSidebarPanelsProps) {
   const openNotes = () => onNotesExpandedChange(true);
   const closeNotes = () => {
@@ -69,8 +75,8 @@ export function CoursePlayerSidebarPanels({
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="shrink-0 space-y-3 border-b border-[var(--border-color)] p-4 sm:p-6">
+    <div className="flex min-h-0 flex-1 flex-col max-lg:min-h-0 max-lg:portrait:h-auto max-lg:landscape:h-full">
+      <div className="shrink-0 space-y-2 border-b border-[var(--border-color)] px-3 py-3 sm:space-y-2.5 sm:px-4 sm:py-4">
         <div
           className="flex rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/60 p-1 dark:bg-black/20"
           role="tablist"
@@ -122,8 +128,13 @@ export function CoursePlayerSidebarPanels({
         </p>
       </div>
 
-      <div className="relative flex min-h-0 flex-1 flex-col">
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
+      <div className="relative flex min-h-0 flex-1 flex-col max-lg:min-h-0 max-lg:portrait:flex-none max-lg:portrait:w-full max-lg:portrait:overflow-visible">
+        {/* Desktop: playlist stays mounted under the overlay. Mobile: hide when Notes is open so notes use real flex height (absolute overlay had 0-height parent). */}
+        <div
+          className={`min-h-0 flex-1 overflow-y-auto overscroll-y-contain max-lg:min-h-[max(10rem,min(26dvh,14rem))] ${
+            notesExpanded ? 'max-lg:hidden' : ''
+          }`}
+        >
           <div className="divide-y divide-[var(--border-color)]">
             {course.modules.map((module, idx) => (
               <div key={module.id} className="flex flex-col">
@@ -212,9 +223,9 @@ export function CoursePlayerSidebarPanels({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2, ease: 'easeOut' }}
-              className="absolute inset-0 z-10 flex flex-col bg-[var(--bg-secondary)] shadow-[0_-4px_24px_rgba(0,0,0,0.12)] dark:shadow-[0_-4px_24px_rgba(0,0,0,0.35)]"
+              className="z-10 flex min-h-0 min-w-0 flex-col bg-[var(--bg-secondary)] max-lg:flex-none max-lg:min-h-0 max-lg:landscape:flex-1 max-lg:landscape:min-h-0 max-lg:landscape:overflow-y-auto max-lg:landscape:overscroll-y-contain max-lg:portrait:overflow-visible max-lg:pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] lg:absolute lg:inset-0 lg:overflow-hidden lg:shadow-[0_-4px_24px_rgba(0,0,0,0.12)] dark:lg:shadow-[0_-4px_24px_rgba(0,0,0,0.35)]"
             >
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden max-lg:flex-none max-lg:overflow-visible max-lg:portrait:overflow-visible max-lg:landscape:min-h-0 max-lg:landscape:flex-1 max-lg:landscape:overflow-hidden lg:min-h-0">
                 {currentLesson.videoOutlineNotes?.trim() &&
                 currentLesson.contentKind !== 'web' &&
                 currentLesson.contentKind !== 'quiz' ? (
@@ -223,17 +234,21 @@ export function CoursePlayerSidebarPanels({
                     seekEnabled={typeof onVideoSeekSeconds === 'function'}
                     onSeekSeconds={(sec) => onVideoSeekSeconds?.(sec)}
                     playbackSeconds={notesPlaybackSeconds}
+                    onOpenChange={onVideoOutlineOpenChange}
                   />
                 ) : null}
-                <LessonNotesRichEditor
-                  key={notesEditorKey}
-                  lessonId={notesLessonId}
-                  initialHtml={noteEditorInitialHtml}
-                  onHtmlChange={onNoteTextChange}
-                  onBlur={onNoteBlur}
-                  playbackSeconds={notesPlaybackSeconds}
-                  aria-label={`Notes for ${currentLesson.title}`}
-                />
+                <div className="min-h-0 flex-1 max-lg:portrait:flex-none max-lg:landscape:min-h-0 max-lg:landscape:flex-1 max-lg:shrink-0 max-lg:self-stretch max-lg:relative max-lg:z-0 lg:flex-1">
+                  <LessonNotesRichEditor
+                    key={notesEditorKey}
+                    lessonId={notesLessonId}
+                    initialHtml={noteEditorInitialHtml}
+                    onHtmlChange={onNoteTextChange}
+                    onBlur={onNoteBlur}
+                    playbackSeconds={notesPlaybackSeconds}
+                    aria-label={`Notes for ${currentLesson.title}`}
+                    onSectionOpenChange={onWriteNotesOpenChange}
+                  />
+                </div>
               </div>
             </motion.div>
           ) : null}

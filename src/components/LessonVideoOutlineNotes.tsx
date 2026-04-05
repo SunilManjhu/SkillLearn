@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useRef } from 'react';
-import { ListVideo } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, ListVideo } from 'lucide-react';
 import {
   formatSecondsAsMmSs,
   isPlaybackInVideoOutlineLine,
@@ -14,6 +14,8 @@ export type LessonVideoOutlineNotesProps = {
   seekEnabled: boolean;
   /** Current video time for highlighting while a line’s range is active; `null` disables. */
   playbackSeconds?: number | null;
+  /** Fired when the outline disclosure opens or closes (mobile lesson meta visibility). */
+  onOpenChange?: (open: boolean) => void;
 };
 
 function OutlineRow({
@@ -71,9 +73,12 @@ export function LessonVideoOutlineNotes({
   onSeekSeconds,
   seekEnabled,
   playbackSeconds = null,
+  onOpenChange,
 }: LessonVideoOutlineNotesProps) {
   const lines = useMemo(() => parseVideoOutlineNotes(text), [text]);
   const listRef = useRef<HTMLUListElement>(null);
+  /** Start collapsed on all breakpoints so lesson meta stays visible until the learner opens the outline. */
+  const [outlineOpen, setOutlineOpen] = useState(false);
 
   const pb = Number.isFinite(playbackSeconds) && playbackSeconds >= 0 ? playbackSeconds : null;
 
@@ -86,7 +91,12 @@ export function LessonVideoOutlineNotes({
   }, [lines, pb]);
 
   useEffect(() => {
+    onOpenChange?.(outlineOpen);
+  }, [outlineOpen, onOpenChange]);
+
+  useEffect(() => {
     if (activeLineIndex < 0) return;
+    setOutlineOpen(true);
     const root = listRef.current;
     if (!root) return;
     const el = root.querySelector<HTMLElement>('[data-outline-active="true"]');
@@ -97,14 +107,26 @@ export function LessonVideoOutlineNotes({
   if (lines.length === 0) return null;
 
   return (
-    <div className="shrink-0 border-b border-[var(--border-color)] bg-[var(--bg-secondary)]/80">
-      <div className="flex items-center gap-2 px-3 pb-1 pt-2.5 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)] sm:px-4">
-        <ListVideo size={14} className="shrink-0 opacity-80" aria-hidden />
-        <span>Video outline</span>
-      </div>
+    <div className="relative shrink-0 overflow-visible border-b border-[var(--border-color)] bg-[var(--bg-secondary)]/80 max-lg:z-20">
+      <details
+        className="group relative overflow-visible max-lg:z-20"
+        open={outlineOpen}
+        onToggle={(e) => setOutlineOpen(e.currentTarget.open)}
+      >
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 bg-[var(--bg-secondary)]/80 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)] touch-manipulation sm:min-h-10 sm:px-4 [&::-webkit-details-marker]:hidden">
+          <span className="flex min-w-0 items-center gap-2">
+            <ListVideo size={14} className="shrink-0 opacity-80" aria-hidden />
+            <span>Video outline</span>
+          </span>
+          <ChevronDown
+            size={18}
+            className="shrink-0 text-[var(--text-muted)] transition-transform duration-200 group-open:rotate-180"
+            aria-hidden
+          />
+        </summary>
       <ul
         ref={listRef}
-        className="max-h-[min(36vh,11rem)] space-y-0 overflow-y-auto overscroll-y-contain px-1 pb-2 sm:max-h-[min(40vh,12rem)]"
+        className="space-y-0 px-1 pb-2 pt-0.5 max-lg:max-h-[min(55dvh,22rem)] max-lg:min-h-0 max-lg:overflow-y-auto max-lg:overscroll-y-contain max-lg:rounded-b-xl max-lg:border-x max-lg:border-b max-lg:border-[var(--border-color)] max-lg:bg-[var(--bg-secondary)] lg:relative lg:max-h-[min(42vh,14rem)] lg:overflow-y-auto lg:overscroll-y-contain lg:rounded-none lg:border-0 lg:shadow-none"
       >
         {lines.map((line, i) => (
           <OutlineRow
@@ -116,6 +138,7 @@ export function LessonVideoOutlineNotes({
           />
         ))}
       </ul>
+      </details>
     </div>
   );
 }

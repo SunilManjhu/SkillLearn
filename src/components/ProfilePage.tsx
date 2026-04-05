@@ -848,7 +848,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                       const result = await onDeleteAccount();
                       setDeleteBusy(false);
                       if (!result.ok) {
-                        if (result.error) setDeleteError(result.error);
+                        if ('error' in result && result.error) setDeleteError(result.error);
                         return;
                       }
                       setShowDeleteConfirm(false);

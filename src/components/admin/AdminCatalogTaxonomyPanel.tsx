@@ -668,7 +668,9 @@ export function AdminCatalogTaxonomyPanel({
         busy={busy}
         onAddEverywhere={(name) => addEverywhere('category', name)}
         onRenameEverywhere={(from, to) => renameEverywhere('category', from, to)}
-        onRemoveEverywhere={(name) => removeEverywhere('category', name)}
+        onRemoveEverywhere={async (name) => {
+          removeEverywhere('category', name);
+        }}
       />
 
       <TaxonomySection
@@ -688,7 +690,9 @@ export function AdminCatalogTaxonomyPanel({
         busy={busy}
         onAddEverywhere={(name) => addEverywhere('skill', name)}
         onRenameEverywhere={(from, to) => renameEverywhere('skill', from, to)}
-        onRemoveEverywhere={(name) => removeEverywhere('skill', name)}
+        onRemoveEverywhere={async (name) => {
+          removeEverywhere('skill', name);
+        }}
       />
 
       <AnimatePresence>

@@ -2806,7 +2806,7 @@ export default function App() {
       return;
     }
 
-    if (snap.view === 'profile' || snap.view === 'settings') {
+    if (snap.view === 'profile' || (snap.view as string) === 'settings') {
       historySkipSyncRef.current = true;
       // snap.courseId is the certificate's course, not the underlay (e.g. user on Python player
       // viewing Web Dev cert). Do not overwrite selectedCourse / initialLesson here.
@@ -3176,7 +3176,9 @@ export default function App() {
                       ? `d:${row.course.id}:${row.adminPreviewOwnerUid ?? 'self'}`
                       : `p:${row.course.id}`
                   }
-                  ref={(el) => (courseRefs.current[index] = el)}
+                  ref={(el) => {
+                    courseRefs.current[index] = el;
+                  }}
                   course={row.course}
                   onClick={() => handleCourseRowClick(row, index)}
                   tabIndex={focusedCourseIndex === index || (focusedCourseIndex === -1 && index === 0) ? 0 : -1}

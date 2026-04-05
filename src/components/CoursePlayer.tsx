@@ -117,6 +117,28 @@ function formatYtSpeedLabel(rate: number): string {
   return `${rate}×`;
 }
 
+/** Subset of YT.Player (IFrame API) used in this component. */
+type YtPlayerApi = {
+  destroy: () => void;
+  getCurrentTime?: () => number;
+  getDuration?: () => number;
+  getPlayerState?: () => number;
+  pauseVideo?: () => void;
+  playVideo?: () => void;
+  seekTo?: (seconds: number, allowSeekAhead: boolean) => void;
+  getVolume?: () => number;
+  setVolume?: (v: number) => void;
+  mute?: () => void;
+  unMute?: () => void;
+  setPlaybackRate?: (rate: number) => void;
+  loadModule?: (name: string) => void;
+  unloadModule?: (name: string) => void;
+  setOption?: (module: string, option: string, value: unknown) => void;
+};
+
+/** Browser `setTimeout` id; avoid `ReturnType<typeof setTimeout>` (Node types use `Timeout`, DOM uses `number`). */
+type BrowserTimerHandle = number;
+
 interface CoursePlayerProps {
   course: Course;
   /** Called when every lesson has reached the true end of its video (same bar as the rating popup). */
@@ -266,14 +288,14 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const ytContainerRef = useRef<HTMLDivElement>(null);
-  const ytPlayerRef = useRef<{ destroy: () => void } | null>(null);
-  const ytPauseUiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const nativePauseUiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const unpauseFrostLingerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ytPlayerRef = useRef<YtPlayerApi | null>(null);
+  const ytPauseUiTimerRef = useRef<BrowserTimerHandle | null>(null);
+  const nativePauseUiTimerRef = useRef<BrowserTimerHandle | null>(null);
+  const unpauseFrostLingerTimerRef = useRef<BrowserTimerHandle | null>(null);
   const videoAreaRef = useRef<HTMLDivElement>(null);
   /** Pull focus out of cross-origin iframe so parent (e.g. Navbar Esc) receives key events. */
   const pauseResumeOverlayRef = useRef<HTMLDivElement>(null);
-  const chromeHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const chromeHideTimerRef = useRef<BrowserTimerHandle | null>(null);
   /** True when any pointer is inside the video area (for keyboard chrome + hover interaction). */
   const videoAreaPointerInsideRef = useRef(false);
   /** Set after `clearChromeHideTimer` exists; used by window keydown (arrow seek) registered earlier in the hook list. */
@@ -516,10 +538,10 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     }
   }, [youtubeEmbedUrl]);
 
-  const ytOverlayClickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ytOverlayClickTimerRef = useRef<BrowserTimerHandle | null>(null);
   /** Mobile double-tap ±5s seek (matches desktop arrow keys). */
   const mobileDoubleTapSeekRef = useRef<{ t: number; zone: 'left' | 'right' } | null>(null);
-  const mobileDoubleTapResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mobileDoubleTapResetTimeoutRef = useRef<BrowserTimerHandle | null>(null);
 
   const clearYoutubeOverlayClickTimer = useCallback(() => {
     if (ytOverlayClickTimerRef.current) {
@@ -1085,7 +1107,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
 
   const scheduleTouchChromeHide = useCallback(() => {
     clearChromeHideTimer();
-    chromeHideTimerRef.current = setTimeout(() => {
+    chromeHideTimerRef.current = window.setTimeout(() => {
       if (!mediaPausedRef.current) setChromeVisible(false);
     }, TOUCH_CHROME_IDLE_MS);
   }, [clearChromeHideTimer]);
@@ -2049,7 +2071,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
             }
           },
         },
-      });
+      }) as YtPlayerApi;
     });
 
     return () => {
@@ -2530,10 +2552,29 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   const notesRegionMobileId = `${notesAriaIdBase}-sidebar-mobile`;
   const notesRegionQuizMobileId = `${notesAriaIdBase}-sidebar-quiz-mobile`;
 
+  /**
+   * Mobile and desktop asides are both in the DOM (responsive `hidden` / `lg:flex`). Mounting
+   * `CoursePlayerSidebarPanels` in both duplicated the notes editor and showed "Write notes" twice.
+   */
+  const [isLgSidebarViewport, setIsLgSidebarViewport] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches
+  );
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const sync = () => setIsLgSidebarViewport(mq.matches);
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
+
   const [notesExpanded, setNotesExpanded] = useState(false);
+  /** Mobile portrait: hide lesson meta under video while notes video outline or Write notes section is open. */
+  const [mobileVideoOutlineOpen, setMobileVideoOutlineOpen] = useState(false);
+  const [mobileWriteNotesOpen, setMobileWriteNotesOpen] = useState(false);
   const setNotesExpandedRef = useRef(setNotesExpanded);
   setNotesExpandedRef.current = setNotesExpanded;
-  const outlineNotesAutoOpenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const outlineNotesAutoOpenTimerRef = useRef<BrowserTimerHandle | null>(null);
   const clearOutlineNotesAutoOpenTimerRef = useRef<() => void>(() => {});
   const scheduleVideoOutlineNotesAutoOpenRef = useRef<() => void>(() => {});
   const collapseNotesOnVideoEndRef = useRef<() => void>(() => {});
@@ -2629,6 +2670,18 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     clearOutlineNotesAutoOpenTimer();
   }, [currentLesson.id, clearOutlineNotesAutoOpenTimer]);
 
+  useEffect(() => {
+    if (!notesExpanded) {
+      setMobileVideoOutlineOpen(false);
+      setMobileWriteNotesOpen(false);
+    }
+  }, [notesExpanded]);
+
+  useEffect(() => {
+    setMobileVideoOutlineOpen(false);
+    setMobileWriteNotesOpen(false);
+  }, [currentLesson.id]);
+
   const notesPlaybackHighlightSeconds =
     blocksVideoPlayback
       ? null
@@ -2659,7 +2712,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     [blocksVideoPlayback, commitYtSeek, mergeProgress, youtubeEmbedUrl]
   );
 
-  const renderCourseSidebarPanels = (notesRegionId: string) => (
+  const renderCourseSidebarPanels = (notesRegionId: string, syncWriteNotesLessonMeta = false) => (
     <CoursePlayerSidebarPanels
       notesRegionId={notesRegionId}
       course={course}
@@ -2687,6 +2740,8 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
       onNotesPanelClose={() => setNotesEditorNonce((n) => n + 1)}
       notesPlaybackSeconds={notesPlaybackHighlightSeconds}
       onVideoSeekSeconds={blocksVideoPlayback ? undefined : seekVideoFromNotes}
+      onVideoOutlineOpenChange={setMobileVideoOutlineOpen}
+      onWriteNotesOpenChange={syncWriteNotesLessonMeta ? setMobileWriteNotesOpen : undefined}
     />
   );
 
@@ -3401,10 +3456,10 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
 
         {isQuizLessonRow ? (
           <aside
-            className="flex min-h-0 w-full min-h-[min(40vh,24rem)] shrink-0 flex-col border-t border-[var(--border-color)] bg-[var(--bg-secondary)] max-lg:overflow-visible lg:hidden"
+            className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden border-t border-[var(--border-color)] bg-[var(--bg-secondary)] max-lg:min-h-[max(15rem,36dvh)] max-lg:portrait:min-h-0 lg:hidden"
             aria-label="Course outline and notes"
           >
-            {renderCourseSidebarPanels(notesRegionQuizMobileId)}
+            {!isLgSidebarViewport ? renderCourseSidebarPanels(notesRegionQuizMobileId, true) : null}
           </aside>
         ) : null}
 
@@ -3412,11 +3467,11 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
           className={
             isQuizLessonRow
               ? 'contents'
-              : 'max-lg:portrait:flex max-lg:portrait:min-h-0 max-lg:portrait:w-full max-lg:portrait:flex-1 max-lg:portrait:flex-col max-lg:portrait:overflow-y-auto max-lg:portrait:overscroll-y-contain lg:contents'
+              : 'max-lg:portrait:flex max-lg:portrait:min-h-0 max-lg:portrait:w-full max-lg:portrait:flex-1 max-lg:portrait:flex-col max-lg:portrait:overflow-y-auto max-lg:portrait:overscroll-y-contain max-lg:landscape:flex max-lg:landscape:min-h-0 max-lg:landscape:w-full max-lg:landscape:flex-1 max-lg:landscape:flex-col max-lg:landscape:overflow-hidden lg:contents'
           }
         >
           <div
-            className={`w-full max-w-4xl min-w-0 px-2.5 py-2 sm:px-4 sm:py-3 lg:px-5 lg:py-4 ${isQuizKindLesson ? 'max-lg:hidden' : ''}`}
+            className={`w-full max-w-4xl min-w-0 shrink-0 px-2.5 py-2 sm:px-4 sm:py-3 lg:px-5 lg:py-4 max-lg:portrait:py-1.5 ${isQuizKindLesson ? 'max-lg:hidden' : ''} ${notesExpanded && (mobileVideoOutlineOpen || mobileWriteNotesOpen) ? 'max-lg:portrait:hidden' : ''}`}
           >
             {isQuizKindLesson ? (
               <>
@@ -3444,10 +3499,10 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
 
           {!isQuizLessonRow ? (
             <div
-              className="flex min-h-0 min-h-[min(40vh,24rem)] w-full min-w-0 flex-col border-t border-[var(--border-color)] bg-[var(--bg-secondary)] lg:hidden"
+              className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden border-t border-[var(--border-color)] bg-[var(--bg-secondary)] max-lg:min-h-[max(15rem,36dvh)] max-lg:portrait:min-h-0 max-lg:landscape:overflow-hidden max-lg:portrait:flex-none max-lg:portrait:shrink-0 max-lg:portrait:overflow-visible lg:hidden"
               aria-label="Course content and notes"
             >
-              {renderCourseSidebarPanels(notesRegionMobileId)}
+              {!isLgSidebarViewport ? renderCourseSidebarPanels(notesRegionMobileId, true) : null}
             </div>
           ) : null}
         </div>
@@ -3861,14 +3916,14 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
         </div>
 
       <aside
-        className={`hidden w-full shrink-0 flex-col overflow-hidden border-[var(--border-color)] bg-[var(--bg-secondary)] transition-colors duration-300 lg:flex lg:w-[400px] lg:min-w-0 lg:border-l lg:self-start lg:sticky ${
+        className={`hidden w-full shrink-0 flex-col overflow-hidden border-[var(--border-color)] bg-[var(--bg-secondary)] transition-colors duration-300 lg:flex lg:w-[min(460px,42vw)] lg:min-w-[min(320px,100%)] lg:max-w-[520px] lg:border-l lg:self-start lg:sticky ${
           immersiveLayout
             ? 'lg:top-0 lg:h-[100dvh] lg:max-h-[100dvh]'
             : 'lg:top-16 lg:h-[calc(100dvh-4rem)] lg:max-h-[calc(100dvh-4rem)]'
         }`}
         aria-label="Course content and notes"
       >
-        {renderCourseSidebarPanels(notesRegionDesktopId)}
+        {isLgSidebarViewport ? renderCourseSidebarPanels(notesRegionDesktopId) : null}
       </aside>
     </div>
   );

@@ -87,6 +87,14 @@ select:-webkit-autofill:focus {
   font-style: normal;
 }
 
+@media (max-width: 1023px) {
+  .lesson-notes-editor p.is-empty::before {
+    color: var(--text-secondary);
+    font-size: 0.9375rem;
+    line-height: 1.45;
+  }
+}
+
 /* Single thick divider — reads as an underline for the line above; keep gap minimal. */
 .lesson-notes-editor hr.lesson-note-divider {
   margin: 0.125rem 0 0.5rem;

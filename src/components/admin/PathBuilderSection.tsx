@@ -2496,7 +2496,9 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
   useImperativeHandle(
     ref,
     () => ({
-      reloadPaths: () => reloadPathsFromServer(),
+      reloadPaths: async () => {
+        await reloadPathsFromServer();
+      },
     }),
     [reloadPathsFromServer]
   );

@@ -281,7 +281,8 @@ export function CourseQuizPanel({
           if (carried.type === 'mcq') {
             const normalized: McqResult = {
               ...carried,
-              truthIndex: carried.truthIndex ?? coerceQuizIndex(q.correctIndex) ?? 0,
+              truthIndex:
+                carried.truthIndex ?? (q.type === 'mcq' ? coerceQuizIndex(q.correctIndex) ?? 0 : 0),
             };
             out.push(normalized);
             perQuestion.push({
@@ -339,10 +340,10 @@ export function CourseQuizPanel({
           const graded = await gradeFreeformAnswer({
             apiKey: apiKey!,
             questionPrompt: q.prompt,
-            rubric: q.rubric ?? '',
+            rubric: q.type === 'freeform' ? q.rubric ?? '' : '',
             studentAnswer,
           });
-          if (!graded.ok) {
+          if (graded.ok === false) {
             setError(graded.error);
             setSubmitting(false);
             return;
@@ -379,17 +380,21 @@ export function CourseQuizPanel({
           if (!hintUsedById[q.id]) continue;
           if (q.type === 'mcq' && r.type === 'mcq') {
             revealUpdates[q.id] = q.choices[r.truthIndex] ?? '';
-          } else if (apiKey) {
-            const rev = await revealFreeformModelAnswer({
-              apiKey,
-              questionPrompt: q.prompt,
-              rubric: q.rubric ?? '',
-            });
-            revealUpdates[q.id] = rev.ok
-              ? rev.answer
-              : q.rubric?.trim() || 'Review the lesson for the main ideas, then try again.';
-          } else {
-            revealUpdates[q.id] = q.rubric?.trim() || 'Review the lesson and try again with more specific detail.';
+          } else if (q.type === 'freeform' && r.type === 'freeform') {
+            const rubric = q.rubric ?? '';
+            if (apiKey) {
+              const rev = await revealFreeformModelAnswer({
+                apiKey,
+                questionPrompt: q.prompt,
+                rubric,
+              });
+              revealUpdates[q.id] = rev.ok
+                ? rev.answer
+                : rubric.trim() || 'Review the lesson for the main ideas, then try again.';
+            } else {
+              revealUpdates[q.id] =
+                rubric.trim() || 'Review the lesson and try again with more specific detail.';
+            }
           }
         }
       }
@@ -478,13 +483,13 @@ export function CourseQuizPanel({
             choices: q.choices,
             selectedChoiceText: wrongText,
           });
-          if (!pr.ok) {
+          if (pr.ok === false) {
             setHintErrById((prev) => ({ ...prev, [q.id]: pr.error }));
-            return;
+          } else {
+            const hintBody = pr.probe.trim() ? pr.probe : STATIC_MCQ_HINT;
+            setHintTextById((prev) => ({ ...prev, [q.id]: hintBody }));
+            setHintUsedById((prev) => ({ ...prev, [q.id]: true }));
           }
-          const hintBody = pr.probe.trim() ? pr.probe : STATIC_MCQ_HINT;
-          setHintTextById((prev) => ({ ...prev, [q.id]: hintBody }));
-          setHintUsedById((prev) => ({ ...prev, [q.id]: true }));
         } else if (q.type === 'freeform' && r.type === 'freeform') {
           if (!apiKey) {
             setHintTextById((prev) => ({ ...prev, [q.id]: STATIC_FREEFORM_HINT }));
@@ -500,13 +505,13 @@ export function CourseQuizPanel({
             score: r.score,
             graderFeedback: r.feedback,
           });
-          if (!pr.ok) {
+          if (pr.ok === false) {
             setHintErrById((prev) => ({ ...prev, [q.id]: pr.error }));
-            return;
+          } else {
+            const hintBody = pr.probe.trim() ? pr.probe : STATIC_FREEFORM_HINT;
+            setHintTextById((prev) => ({ ...prev, [q.id]: hintBody }));
+            setHintUsedById((prev) => ({ ...prev, [q.id]: true }));
           }
-          const hintBody = pr.probe.trim() ? pr.probe : STATIC_FREEFORM_HINT;
-          setHintTextById((prev) => ({ ...prev, [q.id]: hintBody }));
-          setHintUsedById((prev) => ({ ...prev, [q.id]: true }));
         }
       } finally {
         setHintLoadingById((prev) => {

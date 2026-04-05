@@ -397,8 +397,10 @@ export const Navbar: React.FC<NavbarProps> = ({
     <>
     <nav className="fixed top-0 left-0 right-0 z-50 flex min-h-16 items-center justify-between gap-2 overflow-visible border-b border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 transition-colors duration-300 sm:gap-3 sm:px-4 md:px-6">
       <div className="flex min-w-0 flex-1 items-center gap-2 md:gap-6 lg:gap-8">
-        <button 
-          ref={el => navItemsRef.current[0] = el}
+        <button
+          ref={(el) => {
+            navItemsRef.current[0] = el;
+          }}
           onKeyDown={(e) => handleTopLevelKeyDown(e, 0)}
           tabIndex={focusedNavIndex === 0 ? 0 : -1}
           className={`flex items-center gap-2 transition-opacity focus:outline-none focus:ring-2 focus:ring-orange-500 rounded-sm ${activeView === 'home' ? 'opacity-100' : 'opacity-70 hover:opacity-100'}`}
@@ -438,8 +440,10 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Learning Paths dropdown */}
           <div className="relative">
-            <button 
-              ref={el => navItemsRef.current[2] = el}
+            <button
+              ref={(el) => {
+                navItemsRef.current[2] = el;
+              }}
               onKeyDown={(e) => handleTopLevelKeyDown(e, 2, 'paths')}
               onClick={() => {
                 setOpenDropdown(openDropdown === 'paths' ? null : 'paths');
@@ -489,8 +493,10 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Skills Dropdown */}
           <div className="relative">
-            <button 
-              ref={el => navItemsRef.current[3] = el}
+            <button
+              ref={(el) => {
+                navItemsRef.current[3] = el;
+              }}
               onKeyDown={(e) => handleTopLevelKeyDown(e, 3, 'skills')}
               onClick={() => {
                 setOpenDropdown(openDropdown === 'skills' ? null : 'skills');
@@ -524,8 +530,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </div>
 
-          <button 
-            ref={el => navItemsRef.current[4] = el}
+          <button
+            ref={(el) => {
+              navItemsRef.current[4] = el;
+            }}
             onClick={() => {
               setOpenDropdown(null);
               setFocusedItemIndex(-1);

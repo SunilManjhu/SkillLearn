@@ -1,11 +1,12 @@
 import DOMPurify from 'dompurify';
+import type { Config } from 'dompurify';
 import { marked } from 'marked';
 
 /** Keep divider marker on `<hr>` after save/load (`data-divider-style` is always thick). */
-const PURIFY = {
-  USE_PROFILES: { html: true } as const,
+const PURIFY: Config = {
+  USE_PROFILES: { html: true },
   ADD_ATTR: ['data-divider-style'],
-} as const;
+};
 
 function escapeHtml(s: string): string {
   return s

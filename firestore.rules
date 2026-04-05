@@ -343,6 +343,23 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    /** Legacy fields from removed Cloud Functions alerts; owners may keep them but not change them. */
+    function userProfileDocKeys() {
+      return ['role', 'displayName', 'email', 'lastClientSessionAt', 'lastAuthAlertSentAt'];
+    }
+
+    function userProfileLegacySessionUnchanged() {
+      return (!(('lastClientSessionAt' in resource.data)) && !(('lastClientSessionAt' in request.resource.data))) ||
+        (('lastClientSessionAt' in resource.data) && ('lastClientSessionAt' in request.resource.data) &&
+          request.resource.data.lastClientSessionAt == resource.data.lastClientSessionAt);
+    }
+
+    function userProfileLegacyAlertSentUnchanged() {
+      return (!(('lastAuthAlertSentAt' in resource.data)) && !(('lastAuthAlertSentAt' in request.resource.data))) ||
+        (('lastAuthAlertSentAt' in resource.data) && ('lastAuthAlertSentAt' in request.resource.data) &&
+          request.resource.data.lastAuthAlertSentAt == resource.data.lastAuthAlertSentAt);
+    }
+
     match /users/{userId} {
       allow read: if isAuthenticated();
       allow create: if
@@ -352,9 +369,14 @@ service cloud.firestore {
           (isAdmin() && request.resource.data.role in ['user', 'admin', 'creator'])
         );
       allow update: if isAuthenticated() &&
-        hasOnlyAllowedFields(['role', 'displayName', 'email']) &&
         (
-          (isOwner(userId) && request.resource.data.role == resource.data.role) ||
+          (
+            isOwner(userId) &&
+            request.resource.data.role == resource.data.role &&
+            request.resource.data.keys().hasOnly(userProfileDocKeys()) &&
+            userProfileLegacySessionUnchanged() &&
+            userProfileLegacyAlertSentUnchanged()
+          ) ||
           isAdmin()
         );
       // Account deletion: remove Firestore profile before Firebase Auth `deleteUser` (Auth alone does not delete this doc).
