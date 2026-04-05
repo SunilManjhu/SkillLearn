@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ListVideo } from 'lucide-react';
 import {
   formatSecondsAsMmSs,
@@ -16,6 +16,15 @@ export type LessonVideoOutlineNotesProps = {
   playbackSeconds?: number | null;
   /** Fired when the outline disclosure opens or closes (mobile lesson meta visibility). */
   onOpenChange?: (open: boolean) => void;
+  /**
+   * Desktop (lg+): controlled disclosure + accordion with Write notes (see `CoursePlayerSidebarPanels`).
+   */
+  desktopOpen?: boolean;
+  onDesktopUserSetOpen?: (open: boolean) => void;
+  /** Playback highlight: expand outline without closing Write notes. */
+  onDesktopAutoExpandOutline?: () => void;
+  /** Desktop: outline block grows with available sidebar height when open. */
+  desktopFillColumn?: boolean;
 };
 
 function OutlineRow({
@@ -74,11 +83,19 @@ export function LessonVideoOutlineNotes({
   seekEnabled,
   playbackSeconds = null,
   onOpenChange,
+  desktopOpen,
+  onDesktopUserSetOpen,
+  onDesktopAutoExpandOutline,
+  desktopFillColumn = false,
 }: LessonVideoOutlineNotesProps) {
   const lines = useMemo(() => parseVideoOutlineNotes(text), [text]);
   const listRef = useRef<HTMLUListElement>(null);
+  const detailsRef = useRef<HTMLDetailsElement>(null);
   /** Start collapsed on all breakpoints so lesson meta stays visible until the learner opens the outline. */
-  const [outlineOpen, setOutlineOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+
+  const desktopControlled = typeof onDesktopUserSetOpen === 'function' && typeof desktopOpen === 'boolean';
+  const outlineOpen = desktopControlled ? desktopOpen : internalOpen;
 
   const pb = Number.isFinite(playbackSeconds) && playbackSeconds >= 0 ? playbackSeconds : null;
 
@@ -94,26 +111,68 @@ export function LessonVideoOutlineNotes({
     onOpenChange?.(outlineOpen);
   }, [outlineOpen, onOpenChange]);
 
+  /** Keep native `<details>` in sync with React `open` (desktop controlled); avoids toggle fighting the browser. */
+  useLayoutEffect(() => {
+    const el = detailsRef.current;
+    if (!el || !desktopControlled) return;
+    if (el.open !== outlineOpen) el.open = outlineOpen;
+  }, [outlineOpen, desktopControlled]);
+
+  const prevActiveLineIndexRef = useRef<number>(-1);
+
   useEffect(() => {
-    if (activeLineIndex < 0) return;
-    setOutlineOpen(true);
+    if (activeLineIndex < 0) {
+      prevActiveLineIndexRef.current = -1;
+      return;
+    }
+    if (desktopControlled) {
+      onDesktopAutoExpandOutline?.();
+    } else {
+      setInternalOpen(true);
+    }
     const root = listRef.current;
     if (!root) return;
     const el = root.querySelector<HTMLElement>('[data-outline-active="true"]');
     if (!el) return;
-    el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  }, [activeLineIndex]);
+    const lineChanged = prevActiveLineIndexRef.current !== activeLineIndex;
+    prevActiveLineIndexRef.current = activeLineIndex;
+    if (!lineChanged) return;
+    el.scrollIntoView({ block: 'nearest', behavior: desktopControlled ? 'auto' : 'smooth' });
+  }, [activeLineIndex, desktopControlled, onDesktopAutoExpandOutline]);
+
+  const onDetailsToggle = (e: React.SyntheticEvent<HTMLDetailsElement>) => {
+    if (desktopControlled) return;
+    setInternalOpen(e.currentTarget.open);
+  };
+
+  const onDesktopSummaryClick = (e: React.MouseEvent) => {
+    if (!desktopControlled) return;
+    e.preventDefault();
+    onDesktopUserSetOpen?.(!outlineOpen);
+  };
 
   if (lines.length === 0) return null;
 
   return (
-    <div className="relative shrink-0 overflow-visible border-b border-[var(--border-color)] bg-[var(--bg-secondary)]/80 max-lg:z-20">
+    <div
+      className={`relative overflow-visible border-b border-[var(--border-color)] bg-[var(--bg-secondary)]/80 max-lg:z-20 max-lg:shrink-0 ${
+        desktopFillColumn
+          ? 'lg:flex lg:min-h-0 lg:flex-1 lg:flex-col'
+          : 'shrink-0 lg:shrink-0'
+      }`}
+    >
       <details
-        className="group relative overflow-visible max-lg:z-20"
+        ref={detailsRef}
+        className={`group relative overflow-visible max-lg:z-20 ${
+          desktopFillColumn ? 'lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-hidden' : ''
+        }`}
         open={outlineOpen}
-        onToggle={(e) => setOutlineOpen(e.currentTarget.open)}
+        onToggle={onDetailsToggle}
       >
-        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 bg-[var(--bg-secondary)]/80 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)] touch-manipulation sm:min-h-10 sm:px-4 [&::-webkit-details-marker]:hidden">
+        <summary
+          className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 bg-[var(--bg-secondary)]/80 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)] touch-manipulation sm:min-h-10 sm:px-4 [&::-webkit-details-marker]:hidden"
+          onClick={onDesktopSummaryClick}
+        >
           <span className="flex min-w-0 items-center gap-2">
             <ListVideo size={14} className="shrink-0 opacity-80" aria-hidden />
             <span>Video outline</span>
@@ -126,7 +185,11 @@ export function LessonVideoOutlineNotes({
         </summary>
       <ul
         ref={listRef}
-        className="space-y-0 px-1 pb-2 pt-0.5 max-lg:max-h-[min(55dvh,22rem)] max-lg:min-h-0 max-lg:overflow-y-auto max-lg:overscroll-y-contain max-lg:rounded-b-xl max-lg:border-x max-lg:border-b max-lg:border-[var(--border-color)] max-lg:bg-[var(--bg-secondary)] lg:relative lg:max-h-[min(42vh,14rem)] lg:overflow-y-auto lg:overscroll-y-contain lg:rounded-none lg:border-0 lg:shadow-none"
+        className={`space-y-0 px-1 pb-2 pt-0.5 max-lg:max-h-[min(55dvh,22rem)] max-lg:min-h-0 max-lg:overflow-y-auto max-lg:overscroll-y-contain max-lg:rounded-b-xl max-lg:border-x max-lg:border-b max-lg:border-[var(--border-color)] max-lg:bg-[var(--bg-secondary)] lg:relative lg:overflow-y-auto lg:overscroll-y-contain lg:rounded-none lg:border-0 lg:shadow-none ${
+          desktopFillColumn
+            ? 'lg:max-h-none lg:min-h-0 lg:flex-1'
+            : 'lg:max-h-[min(42vh,14rem)]'
+        }`}
       >
         {lines.map((line, i) => (
           <OutlineRow

@@ -1,4 +1,4 @@
-import React, { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import React, { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useEditor, EditorContent, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
@@ -38,6 +38,11 @@ export type LessonNotesRichEditorProps = {
   playbackSeconds?: number | null;
   /** Fired when the Write notes disclosure opens or closes (mobile lesson meta visibility). */
   onSectionOpenChange?: (open: boolean) => void;
+  /** Desktop (lg+): controlled disclosure; used with accordion against Video outline. */
+  desktopOpen?: boolean;
+  onDesktopUserSetOpen?: (open: boolean) => void;
+  /** Desktop: notes block uses remaining sidebar height when open. */
+  desktopFillColumn?: boolean;
   'aria-label': string;
 };
 
@@ -159,9 +164,15 @@ export function LessonNotesRichEditor({
   onBlur,
   playbackSeconds = null,
   onSectionOpenChange,
+  desktopOpen,
+  onDesktopUserSetOpen,
+  desktopFillColumn = false,
   'aria-label': ariaLabel,
 }: LessonNotesRichEditorProps) {
-  const [notesSectionOpen, setNotesSectionOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const desktopControlled = typeof onDesktopUserSetOpen === 'function' && typeof desktopOpen === 'boolean';
+  const notesSectionOpen = desktopControlled ? desktopOpen : internalOpen;
+  const detailsRef = useRef<HTMLDetailsElement>(null);
   const playbackSecondsRef = useRef<number | null>(null);
   playbackSecondsRef.current = playbackSeconds ?? null;
 
@@ -234,6 +245,23 @@ export function LessonNotesRichEditor({
     onSectionOpenChange?.(notesSectionOpen);
   }, [notesSectionOpen, onSectionOpenChange]);
 
+  useLayoutEffect(() => {
+    const el = detailsRef.current;
+    if (!el || !desktopControlled) return;
+    if (el.open !== notesSectionOpen) el.open = notesSectionOpen;
+  }, [notesSectionOpen, desktopControlled]);
+
+  const onNotesDetailsToggle = (e: React.SyntheticEvent<HTMLDetailsElement>) => {
+    if (desktopControlled) return;
+    setInternalOpen(e.currentTarget.open);
+  };
+
+  const onDesktopNotesSummaryClick = (e: React.MouseEvent) => {
+    if (!desktopControlled) return;
+    e.preventDefault();
+    onDesktopUserSetOpen?.(!notesSectionOpen);
+  };
+
   const focusEditorFromShell = (e: React.PointerEvent) => {
     if (!editor || editor.isDestroyed) return;
     const target = e.target;
@@ -244,13 +272,23 @@ export function LessonNotesRichEditor({
   };
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-col max-lg:w-full max-lg:flex-none max-lg:overflow-visible lg:min-h-0 lg:flex-1 lg:overflow-hidden">
+    <div
+      className={`flex min-h-0 min-w-0 flex-col max-lg:w-full max-lg:flex-none max-lg:overflow-visible lg:min-h-0 lg:overflow-hidden ${
+        desktopFillColumn ? 'lg:flex-1 lg:min-h-0 lg:flex-col' : 'lg:flex-1'
+      }`}
+    >
       <details
-        className="group flex min-h-0 min-w-0 flex-col border-b border-[var(--border-color)] bg-[var(--bg-secondary)]/80 max-lg:flex-none max-lg:border-t max-lg:border-[var(--border-color)] max-lg:bg-[var(--bg-secondary)] max-lg:portrait:sticky max-lg:portrait:bottom-0 max-lg:portrait:z-[40] max-lg:portrait:shadow-[0_-4px_20px_rgba(0,0,0,0.12)] dark:max-lg:portrait:shadow-[0_-4px_24px_rgba(0,0,0,0.35)] max-lg:landscape:sticky max-lg:landscape:bottom-0 max-lg:landscape:z-40 max-lg:landscape:shadow-[0_-4px_20px_rgba(0,0,0,0.12)] dark:max-lg:landscape:shadow-[0_-4px_24px_rgba(0,0,0,0.35)] lg:min-h-0 lg:flex-1 lg:overflow-hidden lg:shadow-none"
+        ref={detailsRef}
+        className={`group flex min-h-0 min-w-0 flex-col border-b border-[var(--border-color)] bg-[var(--bg-secondary)]/80 max-lg:flex-none max-lg:border-t max-lg:border-[var(--border-color)] max-lg:bg-[var(--bg-secondary)] max-lg:portrait:sticky max-lg:portrait:bottom-0 max-lg:portrait:z-[40] max-lg:portrait:shadow-[0_-4px_20px_rgba(0,0,0,0.12)] dark:max-lg:portrait:shadow-[0_-4px_24px_rgba(0,0,0,0.35)] max-lg:landscape:sticky max-lg:landscape:bottom-0 max-lg:landscape:z-40 max-lg:landscape:shadow-[0_-4px_20px_rgba(0,0,0,0.12)] dark:max-lg:landscape:shadow-[0_-4px_24px_rgba(0,0,0,0.35)] lg:shadow-none ${
+          desktopFillColumn ? 'lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-hidden' : 'lg:min-h-0 lg:flex-1 lg:overflow-hidden'
+        }`}
         open={notesSectionOpen}
-        onToggle={(e) => setNotesSectionOpen(e.currentTarget.open)}
+        onToggle={onNotesDetailsToggle}
       >
-        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 bg-[var(--bg-secondary)] px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)] touch-manipulation sm:min-h-10 sm:px-4 [&::-webkit-details-marker]:hidden">
+        <summary
+          className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 bg-[var(--bg-secondary)] px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)] touch-manipulation sm:min-h-10 sm:px-4 [&::-webkit-details-marker]:hidden"
+          onClick={onDesktopNotesSummaryClick}
+        >
           <span className="flex min-w-0 items-center gap-2 text-left leading-snug">
             <StickyNote size={14} className="shrink-0 opacity-80" aria-hidden />
             Write notes
@@ -262,11 +300,19 @@ export function LessonNotesRichEditor({
           />
         </summary>
         <div
-          className="flex min-h-0 min-w-0 flex-col touch-manipulation lg:min-h-0 lg:flex-1 lg:overflow-hidden"
+          className={`flex min-h-0 min-w-0 flex-col touch-manipulation lg:min-h-0 lg:overflow-hidden ${
+            desktopFillColumn ? 'lg:flex-1 lg:min-h-0' : 'lg:flex-1'
+          }`}
           onPointerDown={focusEditorFromShell}
         >
           <FormatToolbar editor={editor} />
-          <div className="min-h-0 min-w-0 max-lg:overflow-visible max-lg:px-0.5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-y-contain">
+          <div
+            className={`min-h-0 min-w-0 max-lg:overflow-visible max-lg:px-0.5 lg:min-h-0 lg:overflow-y-auto lg:overscroll-y-contain ${
+              desktopFillColumn
+                ? 'lg:flex-1 lg:min-h-0 lg:[&_.lesson-notes-editor]:!min-h-0 lg:[&_.lesson-notes-editor]:flex-1'
+                : 'lg:flex-1'
+            }`}
+          >
             <EditorContent
               editor={editor}
               className="h-full min-h-0 w-full max-lg:h-auto [&_.ProseMirror]:pb-6 lg:[&_.ProseMirror]:pb-8"

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useLayoutEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CheckCircle2, ChevronDown, ChevronRight, Play, StickyNote } from 'lucide-react';
 import type { Course, Lesson } from '../data/courses';
@@ -67,6 +67,48 @@ export function CoursePlayerSidebarPanels({
   onVideoOutlineOpenChange,
   onWriteNotesOpenChange,
 }: CoursePlayerSidebarPanelsProps) {
+  const [isLgViewport, setIsLgViewport] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches
+  );
+  useLayoutEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const sync = () => setIsLgViewport(mq.matches);
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
+
+  /** Desktop: accordion when opening one disclosure; playback can still auto-expand outline while notes stay open. */
+  const [lgOutlineOpen, setLgOutlineOpen] = useState(false);
+  const [lgNotesOpen, setLgNotesOpen] = useState(false);
+
+  useLayoutEffect(() => {
+    setLgOutlineOpen(false);
+    setLgNotesOpen(false);
+  }, [currentLesson.id]);
+
+  const handleDesktopOutlineUserSetOpen = useCallback((open: boolean) => {
+    setLgOutlineOpen(open);
+    if (open) setLgNotesOpen(false);
+  }, []);
+
+  const handleDesktopNotesUserSetOpen = useCallback((open: boolean) => {
+    setLgNotesOpen(open);
+    if (open) setLgOutlineOpen(false);
+  }, []);
+
+  const handleDesktopAutoExpandOutline = useCallback(() => {
+    setLgOutlineOpen(true);
+  }, []);
+
+  const hasVideoOutline =
+    Boolean(currentLesson.videoOutlineNotes?.trim()) &&
+    currentLesson.contentKind !== 'web' &&
+    currentLesson.contentKind !== 'quiz';
+
+  const outlineDesktopFill = Boolean(isLgViewport && hasVideoOutline && lgOutlineOpen);
+  const notesDesktopFill = Boolean(isLgViewport && lgNotesOpen);
+
   const openNotes = () => onNotesExpandedChange(true);
   const closeNotes = () => {
     onNoteBlur?.();
@@ -226,18 +268,32 @@ export function CoursePlayerSidebarPanels({
               className="z-10 flex min-h-0 min-w-0 flex-col bg-[var(--bg-secondary)] max-lg:flex-none max-lg:min-h-0 max-lg:landscape:flex-1 max-lg:landscape:min-h-0 max-lg:landscape:overflow-y-auto max-lg:landscape:overscroll-y-contain max-lg:portrait:overflow-visible max-lg:pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] lg:absolute lg:inset-0 lg:overflow-hidden lg:shadow-[0_-4px_24px_rgba(0,0,0,0.12)] dark:lg:shadow-[0_-4px_24px_rgba(0,0,0,0.35)]"
             >
               <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden max-lg:flex-none max-lg:overflow-visible max-lg:portrait:overflow-visible max-lg:landscape:min-h-0 max-lg:landscape:flex-1 max-lg:landscape:overflow-hidden lg:min-h-0">
-                {currentLesson.videoOutlineNotes?.trim() &&
-                currentLesson.contentKind !== 'web' &&
-                currentLesson.contentKind !== 'quiz' ? (
+                {hasVideoOutline ? (
                   <LessonVideoOutlineNotes
-                    text={currentLesson.videoOutlineNotes}
+                    text={currentLesson.videoOutlineNotes!}
                     seekEnabled={typeof onVideoSeekSeconds === 'function'}
                     onSeekSeconds={(sec) => onVideoSeekSeconds?.(sec)}
                     playbackSeconds={notesPlaybackSeconds}
-                    onOpenChange={onVideoOutlineOpenChange}
+                    onOpenChange={isLgViewport ? undefined : onVideoOutlineOpenChange}
+                    {...(isLgViewport
+                      ? {
+                          desktopOpen: lgOutlineOpen,
+                          onDesktopUserSetOpen: handleDesktopOutlineUserSetOpen,
+                          onDesktopAutoExpandOutline: handleDesktopAutoExpandOutline,
+                          desktopFillColumn: outlineDesktopFill,
+                        }
+                      : {})}
                   />
                 ) : null}
-                <div className="min-h-0 flex-1 max-lg:portrait:flex-none max-lg:landscape:min-h-0 max-lg:landscape:flex-1 max-lg:shrink-0 max-lg:self-stretch max-lg:relative max-lg:z-0 lg:flex-1">
+                <div
+                  className={`min-h-0 flex-1 max-lg:portrait:flex-none max-lg:landscape:min-h-0 max-lg:landscape:flex-1 max-lg:shrink-0 max-lg:self-stretch max-lg:relative max-lg:z-0 ${
+                    isLgViewport
+                      ? lgNotesOpen
+                        ? 'lg:min-h-0 lg:flex-1'
+                        : 'lg:shrink-0 lg:flex-none'
+                      : 'lg:flex-1'
+                  }`}
+                >
                   <LessonNotesRichEditor
                     key={notesEditorKey}
                     lessonId={notesLessonId}
@@ -247,6 +303,13 @@ export function CoursePlayerSidebarPanels({
                     playbackSeconds={notesPlaybackSeconds}
                     aria-label={`Notes for ${currentLesson.title}`}
                     onSectionOpenChange={onWriteNotesOpenChange}
+                    {...(isLgViewport
+                      ? {
+                          desktopOpen: lgNotesOpen,
+                          onDesktopUserSetOpen: handleDesktopNotesUserSetOpen,
+                          desktopFillColumn: notesDesktopFill,
+                        }
+                      : {})}
                   />
                 </div>
               </div>
