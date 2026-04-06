@@ -115,6 +115,7 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
     }
     const walk = (n: MindmapTreeNode) => {
       if (n.kind === 'course' && n.courseId && catalogSet.has(n.courseId)) out.add(n.courseId);
+      if (n.kind === 'module' && n.courseId && catalogSet.has(n.courseId)) out.add(n.courseId);
       if (n.kind === 'lesson' && n.courseId && catalogSet.has(n.courseId)) out.add(n.courseId);
       for (const ch of n.children) walk(ch);
     };

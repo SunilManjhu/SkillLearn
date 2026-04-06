@@ -128,6 +128,9 @@ function parseLesson(raw: unknown): Lesson | null {
     lesson.videoUrl = videoUrl;
     const quiz = parseQuizDefinition(o.quiz);
     if (quiz && quiz.questions.length > 0) lesson.quiz = quiz;
+  } else if (o.contentKind === 'divider') {
+    lesson.contentKind = 'divider';
+    lesson.videoUrl = '';
   } else {
     if (o.contentKind === 'web') lesson.contentKind = 'web';
     if (typeof o.webUrl === 'string') lesson.webUrl = o.webUrl;

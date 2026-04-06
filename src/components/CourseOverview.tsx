@@ -41,6 +41,7 @@ import { buildCertificateId } from '../utils/certificateFirestore';
 import type { User as FirebaseUser } from '../firebase';
 import type { AuthProfileSnapshot } from '../utils/authProfileCache';
 import { formatAuthError } from '../utils/authErrors';
+import { isPlayableCatalogLesson } from '../utils/lessonContent';
 
 type OverviewUser = FirebaseUser | AuthProfileSnapshot;
 
@@ -213,6 +214,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
   };
 
   const requestLessonPlay = (lesson: Lesson) => {
+    if (!isPlayableCatalogLesson(lesson)) return;
     if (user) {
       onStartCourse(lesson);
       return;
@@ -696,6 +698,17 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                       >
                         <div className="bg-[var(--bg-primary)]/50">
                           {module.lessons.map((lesson) => {
+                            if (lesson.contentKind === 'divider') {
+                              return (
+                                <div
+                                  key={lesson.id}
+                                  id={`course-lesson-${lesson.id}`}
+                                  className="border-t border-[var(--border-color)]/60 px-4 py-3 pl-6 text-left text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)] sm:pl-12 md:pl-16"
+                                >
+                                  {lesson.title.trim() || 'Section'}
+                                </div>
+                              );
+                            }
                             const lessonComplete = isLessonPlaybackComplete(progressMap[lesson.id]);
                             const pct = progressPercent(progressMap[lesson.id]);
                             return (

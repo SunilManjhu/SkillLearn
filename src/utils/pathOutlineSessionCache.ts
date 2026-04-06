@@ -7,7 +7,7 @@ type StoredPayload = { uid: string | null; outlines: Record<string, MindmapTreeN
 
 let lastPublishedInMemory: StoredPayload | null = null;
 
-const NODE_KINDS = new Set(['label', 'course', 'lesson', 'link', 'divider']);
+const NODE_KINDS = new Set(['label', 'course', 'lesson', 'link', 'divider', 'module']);
 
 function validateMindmapTreeNode(x: unknown, depth: number): x is MindmapTreeNode {
   if (depth > MAX_NODE_DEPTH) return false;
@@ -18,6 +18,7 @@ function validateMindmapTreeNode(x: unknown, depth: number): x is MindmapTreeNod
   if (o.kind !== undefined && (typeof o.kind !== 'string' || !NODE_KINDS.has(o.kind))) return false;
   if (o.courseId !== undefined && typeof o.courseId !== 'string') return false;
   if (o.lessonId !== undefined && typeof o.lessonId !== 'string') return false;
+  if (o.moduleId !== undefined && typeof o.moduleId !== 'string') return false;
   if (o.externalUrl !== undefined && typeof o.externalUrl !== 'string') return false;
   if (o.locked !== undefined && typeof o.locked !== 'boolean') return false;
   if (o.visibleToRoles !== undefined) {

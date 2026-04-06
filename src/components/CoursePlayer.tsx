@@ -64,7 +64,13 @@ import {
 } from '../utils/courseRating';
 import { useYoutubeResolvedSeconds } from '../hooks/useYoutubeResolvedSeconds';
 import { formatAuthError } from '../utils/authErrors';
-import { lessonBlocksVideoPlayback, lessonQuizDefinition, lessonWebHref } from '../utils/lessonContent';
+import {
+  isPlayableCatalogLesson,
+  lessonBlocksVideoPlayback,
+  lessonQuizDefinition,
+  lessonWebHref,
+} from '../utils/lessonContent';
+import { firstPlayableLesson, nextPlayableLessonAfter } from '../utils/courseLessons';
 import { CourseQuizPanel } from './CourseQuizPanel';
 import { CoursePlayerSidebarPanels } from './CoursePlayerSidebarPanels';
 import {
@@ -96,8 +102,31 @@ const POINTER_PAUSED_IDLE_HIDE_MS = 3000;
 const VIDEO_OUTLINE_NOTES_AUTO_OPEN_MS = 1000;
 
 function lessonHasVideoOutlineNotes(lesson: Lesson): boolean {
-  if (lesson.contentKind === 'web' || lesson.contentKind === 'quiz') return false;
+  if (lesson.contentKind === 'web' || lesson.contentKind === 'quiz' || lesson.contentKind === 'divider') {
+    return false;
+  }
   return Boolean(lesson.videoOutlineNotes?.trim());
+}
+
+function resolvePlayableLessonForPlayer(
+  course: Course,
+  progressByLesson: Record<string, LessonProgress>,
+  preferred?: Lesson
+): Lesson {
+  const fromDividerOrPlayable = (l: Lesson | undefined): Lesson | null => {
+    if (!l) return null;
+    if (isPlayableCatalogLesson(l)) return l;
+    return nextPlayableLessonAfter(course, l.id) ?? firstPlayableLesson(course) ?? null;
+  };
+  const direct = fromDividerOrPlayable(preferred);
+  if (direct) return direct;
+  for (const mod of course.modules) {
+    for (const lesson of mod.lessons) {
+      if (!isPlayableCatalogLesson(lesson)) continue;
+      if (!isLessonPlaybackComplete(progressByLesson[lesson.id])) return lesson;
+    }
+  }
+  return firstPlayableLesson(course) ?? course.modules[0]!.lessons[0]!;
 }
 
 function formatYtClock(totalSeconds: number): string {
@@ -170,18 +199,8 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   const progressUserId = user?.uid ?? null;
   const { setYoutubeResolvedSeconds, lessonDurationLabel } = useYoutubeResolvedSeconds(course);
   const [currentLesson, setCurrentLesson] = useState<Lesson>(() => {
-    if (initialLesson) return initialLesson;
     const m = loadLessonProgressMap(course.id, progressUserId);
-    // Find first lesson that is not complete to resume
-    for (const mod of course.modules) {
-      for (const lesson of mod.lessons) {
-        if (!isLessonPlaybackComplete(m[lesson.id])) {
-          return lesson;
-        }
-      }
-    }
-    // If all complete, start from the beginning
-    return course.modules[0].lessons[0];
+    return resolvePlayableLessonForPlayer(course, m, initialLesson);
   });
   const [expandedModules, setExpandedModules] = useState<string[]>(() => {
     // Expand the module containing the current lesson
@@ -387,7 +406,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   const isQuizKindLesson = currentLesson.contentKind === 'quiz';
   const quizDefinition = useMemo(() => lessonQuizDefinition(currentLesson), [currentLesson]);
   const isQuizLessonRow = isQuizKindLesson && quizDefinition != null;
-  const blocksVideoPlayback = isWebLessonRow || isQuizKindLesson;
+  const blocksVideoPlayback = lessonBlocksVideoPlayback(currentLesson);
   const activeVideoUrl = blocksVideoPlayback
     ? ''
     : customVideoUrl || userSuggestion || currentLesson.videoUrl;
@@ -1667,8 +1686,14 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     if (fromParent === prevParent) return;
     initialLessonIdFromParentRef.current = fromParent;
     if (fromParent === undefined) return;
-    const match = courseRef.current.modules.flatMap((m) => m.lessons).find((l) => l.id === fromParent);
-    if (!match || match.id === currentLesson.id) return;
+    const matchRaw = courseRef.current.modules.flatMap((m) => m.lessons).find((l) => l.id === fromParent);
+    if (!matchRaw || matchRaw.id === currentLesson.id) return;
+    const merged = {
+      ...loadLessonProgressMap(courseRef.current.id, progressUserId),
+      ...progressByLessonRef.current,
+    };
+    const match = resolvePlayableLessonForPlayer(courseRef.current, merged, matchRaw);
+    if (match.id === currentLesson.id) return;
     flushCurrentLessonProgress();
     stopPlayback();
     playNextAfterEndRef.current = false;
@@ -2600,6 +2625,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   };
 
   const selectLesson = (lesson: Lesson) => {
+    if (!isPlayableCatalogLesson(lesson)) return;
     if (lesson.id === currentLesson.id) return;
     flushCurrentLessonProgress();
     stopPlayback();

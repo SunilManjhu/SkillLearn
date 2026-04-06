@@ -10,6 +10,9 @@ import { lessonWebHref, lessonQuizDefinition } from '../../utils/lessonContent';
  * Styled like a small phone-style frame, similar to home hero phone ads preview.
  */
 export function AdminLessonContentPreview({ lesson }: { lesson: Lesson }) {
+  if (lesson.contentKind === 'divider') {
+    return null;
+  }
   const isVideo = lesson.contentKind !== 'web' && lesson.contentKind !== 'quiz';
   const webHref = lesson.contentKind === 'web' ? lessonWebHref(lesson) : null;
   const quizDef = lesson.contentKind === 'quiz' ? lessonQuizDefinition(lesson) : null;

@@ -78,6 +78,10 @@ export function validateCourseDraft(c: Course): string | null {
       }
     }
     if (!m.lessons.length) return 'Each module needs at least one lesson.';
+    const playableInModule = m.lessons.filter((les) => les.contentKind !== 'divider').length;
+    if (playableInModule === 0) {
+      return `Module ${mi + 1}: Add at least one playable lesson (video, external page, or quiz), not only section dividers.`;
+    }
     for (let li = 0; li < m.lessons.length; li += 1) {
       const l = m.lessons[li];
       if (!l.id.trim()) return `Module ${mi + 1}, Lesson ${li + 1}: Lesson ID is required.`;
@@ -100,6 +104,8 @@ export function validateCourseDraft(c: Course): string | null {
       } else if (l.contentKind === 'quiz') {
         const qe = validateLessonQuiz(l, mi, li);
         if (qe) return qe;
+      } else if (l.contentKind === 'divider') {
+        /* heading only */
       } else if (!l.videoUrl.trim() || !l.videoUrl.startsWith('http')) {
         return `Module ${mi + 1}, Lesson ${li + 1}: Video URL is required and must start with http.`;
       }

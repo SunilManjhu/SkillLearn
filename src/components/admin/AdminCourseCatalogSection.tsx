@@ -1,9 +1,11 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   BookOpen,
+  ClipboardList,
   Copy,
+  Globe,
   Info,
   Loader2,
   Plus,
@@ -12,11 +14,14 @@ import {
   SlidersHorizontal,
   Tags,
   Trash2,
+  Minus,
   RefreshCw,
   RotateCcw,
   Sparkles,
+  Video,
   X,
   ArrowDown,
+  ArrowRightLeft,
   ArrowUp,
   ChevronDown,
   ChevronRight,
@@ -49,7 +54,7 @@ import {
   remapStructuredCourseModuleLessonIdsByOrder,
 } from '../../utils/courseStructuredIds';
 import { validateCourseDraft, validateLessonQuiz } from '../../utils/courseDraftValidation';
-import { lessonWebHref } from '../../utils/lessonContent';
+import { isPlayableCatalogLesson, lessonWebHref } from '../../utils/lessonContent';
 import {
   listPublishedCourseDocumentIds,
   loadPublishedCoursesFromFirestore,
@@ -199,6 +204,31 @@ function nextLessonIdInModule(course: Course, moduleIndex: number): string {
   return `${prefix}L${mod.lessons.length + 1}`;
 }
 
+/** Structured: C1M1D1, C1M1D2 for section dividers only (separate from L{n} lesson ids). */
+function nextDividerIdInModule(course: Course, moduleIndex: number): string {
+  const mod = course.modules[moduleIndex];
+  if (!mod) return 'D1';
+  const prefix = mod.id;
+  const re = new RegExp(`^${escapeRegex(prefix)}D(\\d+)$`);
+  let maxN = 0;
+  let found = false;
+  for (const l of mod.lessons) {
+    const dm = re.exec(l.id);
+    if (dm) {
+      found = true;
+      maxN = Math.max(maxN, parseInt(dm[1], 10));
+    }
+  }
+  if (found) return `${prefix}D${maxN + 1}`;
+  const dividerCount = mod.lessons.filter((x) => x.contentKind === 'divider').length;
+  return `${prefix}D${dividerCount + 1}`;
+}
+
+/** Legacy: stable unique id for dividers (never uses l{n} lesson id space). */
+function nextDividerIdLegacy(): string {
+  return `divider-${crypto.randomUUID()}`;
+}
+
 function emptyCourse(docId: string): Course {
   const structured = isStructuredCourseId(docId);
   const mid = structured ? `${docId}M1` : 'm1';
@@ -313,6 +343,415 @@ function computeModuleSwapDraft(
     next = remapStructuredCourseModuleLessonIdsByOrder(next);
   }
   return { next, pair: { a: mi, b: ni } };
+}
+
+function applyCopyModuleAt(
+  course: Course,
+  sourceMi: number,
+  insertAt: number
+): { next: Course; newModuleIndex: number } | null {
+  const src = course.modules[sourceMi];
+  if (!src) return null;
+  const at = Math.max(0, Math.min(insertAt, course.modules.length));
+  const clone = deepClone(src) as Module;
+  const lessonsWithKeys = clone.lessons.map(
+    (les) =>
+      ({
+        ...les,
+        __adminRowKey: crypto.randomUUID(),
+      }) as LessonWithAdminKey
+  );
+  const cloneWithKeys: Module = { ...clone, lessons: lessonsWithKeys as Lesson[] };
+  const modules = [...course.modules.slice(0, at), cloneWithKeys, ...course.modules.slice(at)];
+  let next: Course = { ...course, modules };
+  if (isStructuredCourseId(next.id)) {
+    next = remapStructuredCourseModuleLessonIdsByOrder(next);
+  } else {
+    const newMid = nextModuleIdLegacy(next.modules);
+    next = {
+      ...next,
+      modules: next.modules.map((m, i) => (i === at ? { ...m, id: newMid } : m)),
+    };
+    for (let j = 0; j < next.modules[at]!.lessons.length; j += 1) {
+      const les = next.modules[at]!.lessons[j]!;
+      const newLid = isPlayableCatalogLesson(les) ? nextLessonIdLegacy(next) : nextDividerIdLegacy();
+      next = {
+        ...next,
+        modules: next.modules.map((m, i) =>
+          i !== at
+            ? m
+            : {
+                ...m,
+                lessons: m.lessons.map((l, jj) => (jj === j ? { ...l, id: newLid } : l)),
+              }
+        ),
+      };
+    }
+  }
+  return { next, newModuleIndex: at };
+}
+
+function applyMoveModuleAt(
+  course: Course,
+  sourceMi: number,
+  insertAtInWithout: number
+): { next: Course; moduleIndex: number } | null {
+  if (course.modules.length <= 1) return null;
+  if (sourceMi < 0 || sourceMi >= course.modules.length) return null;
+  const extracted = course.modules[sourceMi]!;
+  const without = course.modules.filter((_, i) => i !== sourceMi);
+  const at = Math.max(0, Math.min(insertAtInWithout, without.length));
+  const modules = [...without.slice(0, at), extracted, ...without.slice(at)];
+  let next: Course = { ...course, modules };
+  if (isStructuredCourseId(next.id)) {
+    next = remapStructuredCourseModuleLessonIdsByOrder(next);
+  }
+  return { next, moduleIndex: at };
+}
+
+function applyCopyLessonAt(
+  course: Course,
+  sourceMi: number,
+  sourceLi: number,
+  targetMi: number,
+  insertAt: number
+): { next: Course; mi: number; li: number } | null {
+  const src = course.modules[sourceMi]?.lessons[sourceLi];
+  if (!src) return null;
+  if (targetMi < 0 || targetMi >= course.modules.length) return null;
+  const at = Math.max(0, Math.min(insertAt, course.modules[targetMi]!.lessons.length));
+  const clone = deepClone(src) as LessonWithAdminKey;
+  clone.__adminRowKey = crypto.randomUUID();
+  const modules = course.modules.map((m, i) => {
+    if (i !== targetMi) return m;
+    const lessons = [...m.lessons];
+    lessons.splice(at, 0, clone);
+    return { ...m, lessons };
+  });
+  let next: Course = { ...course, modules };
+  if (isStructuredCourseId(next.id)) {
+    next = remapStructuredCourseModuleLessonIdsByOrder(next);
+  } else {
+    next = {
+      ...next,
+      modules: next.modules.map((m, i) => {
+        if (i !== targetMi) return m;
+        return {
+          ...m,
+          lessons: m.lessons.map((les, j) => {
+            if (j !== at) return les;
+            return {
+              ...les,
+              id: isPlayableCatalogLesson(les) ? nextLessonIdLegacy(next) : nextDividerIdLegacy(),
+            };
+          }),
+        };
+      }),
+    };
+  }
+  return { next, mi: targetMi, li: at };
+}
+
+function applyMoveLessonAt(
+  course: Course,
+  fromMi: number,
+  fromLi: number,
+  toMi: number,
+  toInsertAt: number
+): { next: Course; mi: number; li: number } | null {
+  if (toMi < 0 || toMi >= course.modules.length) return null;
+  const sourceMod = course.modules[fromMi];
+  if (!sourceMod || !sourceMod.lessons[fromLi]) return null;
+  if (sourceMod.lessons.length <= 1) return null;
+  const sourceAfterRemove = sourceMod.lessons.filter((_, j) => j !== fromLi);
+  if (!sourceAfterRemove.some(isPlayableCatalogLesson)) return null;
+
+  const moved = deepClone(sourceMod.lessons[fromLi]!) as LessonWithAdminKey;
+
+  const modulesWithout = course.modules.map((m, i) => {
+    if (i !== fromMi) return m;
+    return { ...m, lessons: m.lessons.filter((_, j) => j !== fromLi) };
+  });
+
+  let insertAt = Math.max(0, Math.min(toInsertAt, modulesWithout[toMi]!.lessons.length));
+  if (fromMi === toMi && fromLi < insertAt) {
+    insertAt -= 1;
+  }
+
+  let lessonToInsert: Lesson = moved;
+  if (!isStructuredCourseId(course.id) && fromMi !== toMi) {
+    const tempCourse: Course = { ...course, modules: modulesWithout };
+    lessonToInsert = {
+      ...moved,
+      id: isPlayableCatalogLesson(moved)
+        ? nextLessonIdLegacy(tempCourse)
+        : nextDividerIdLegacy(),
+    };
+  }
+
+  const finalModules = modulesWithout.map((m, i) => {
+    if (i !== toMi) return m;
+    const lessons = [...m.lessons];
+    lessons.splice(insertAt, 0, lessonToInsert);
+    return { ...m, lessons };
+  });
+
+  let next: Course = { ...course, modules: finalModules };
+  if (isStructuredCourseId(next.id)) {
+    next = remapStructuredCourseModuleLessonIdsByOrder(next);
+  }
+  return { next, mi: toMi, li: insertAt };
+}
+
+function newSeededDefaultPlayableCatalogLesson(): LessonWithAdminKey {
+  return {
+    id: '',
+    title: '',
+    videoUrl: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
+    __adminRowKey: crypto.randomUUID(),
+  } as LessonWithAdminKey;
+}
+
+/**
+ * Remove a section divider at `li`, keep rows above in the current module, insert a new module after it with rows
+ * below (divider label becomes the new module title). Seeds a default video lesson when either side would otherwise
+ * lack a playable row (same rules as adding a module / validation).
+ */
+function applySplitDividerIntoNewModule(
+  course: Course,
+  mi: number,
+  li: number
+): { next: Course; newModuleIndex: number } | null {
+  const mod = course.modules[mi];
+  if (!mod || !mod.lessons[li] || mod.lessons[li].contentKind !== 'divider') return null;
+
+  const moduleTitleFromDivider = mod.lessons[li]!.title.trim();
+
+  const originalBeforeLen = mod.lessons.slice(0, li).length;
+  let beforeSrc = mod.lessons.slice(0, li);
+  let afterSrc = mod.lessons.slice(li + 1);
+
+  const beforeWasEmptyNeedsSeed = originalBeforeLen === 0;
+  if (beforeWasEmptyNeedsSeed) {
+    beforeSrc = [newSeededDefaultPlayableCatalogLesson()];
+  } else if (!beforeSrc.some(isPlayableCatalogLesson)) {
+    return null;
+  }
+
+  if (!afterSrc.some(isPlayableCatalogLesson)) {
+    afterSrc = [newSeededDefaultPlayableCatalogLesson(), ...afterSrc];
+  }
+
+  const beforeLessons: LessonWithAdminKey[] = beforeSrc.map((les) => {
+    const c = deepClone(les) as LessonWithAdminKey;
+    if (!c.__adminRowKey) c.__adminRowKey = crypto.randomUUID();
+    return c;
+  });
+
+  const afterLessons: LessonWithAdminKey[] = afterSrc.map(
+    (les) =>
+      ({
+        ...deepClone(les),
+        __adminRowKey: crypto.randomUUID(),
+      }) as LessonWithAdminKey
+  );
+
+  const updatedCurrent: Module = {
+    ...mod,
+    lessons: beforeLessons as Lesson[],
+  };
+  const newModule: Module = {
+    id: '',
+    title: moduleTitleFromDivider,
+    lessons: afterLessons as Lesson[],
+  };
+
+  const modules = [...course.modules.slice(0, mi), updatedCurrent, newModule, ...course.modules.slice(mi + 1)];
+  let next: Course = { ...course, modules };
+  const newModuleIndex = mi + 1;
+
+  if (isStructuredCourseId(next.id)) {
+    next = remapStructuredCourseModuleLessonIdsByOrder(next);
+    return { next, newModuleIndex };
+  }
+
+  const newMid = nextModuleIdLegacy(next.modules);
+  next = {
+    ...next,
+    modules: next.modules.map((m, i) => (i === newModuleIndex ? { ...m, id: newMid } : m)),
+  };
+
+  for (let j = 0; j < next.modules[newModuleIndex]!.lessons.length; j += 1) {
+    const les = next.modules[newModuleIndex]!.lessons[j]!;
+    const newLid = isPlayableCatalogLesson(les) ? nextLessonIdLegacy(next) : nextDividerIdLegacy();
+    next = {
+      ...next,
+      modules: next.modules.map((m, i) =>
+        i !== newModuleIndex
+          ? m
+          : {
+              ...m,
+              lessons: m.lessons.map((l, jj) => (jj === j ? { ...l, id: newLid } : l)),
+            }
+      ),
+    };
+  }
+
+  if (beforeWasEmptyNeedsSeed) {
+    const newLid = nextLessonIdLegacy(next);
+    next = {
+      ...next,
+      modules: next.modules.map((m, i) =>
+        i !== mi
+          ? m
+          : {
+              ...m,
+              lessons: m.lessons.map((l, jj) => (jj === 0 ? { ...l, id: newLid } : l)),
+            }
+      ),
+    };
+  }
+
+  return { next, newModuleIndex };
+}
+
+function catalogLessonRowSummary(lesson: Lesson): string {
+  const t =
+    lesson.title?.trim() ||
+    (lesson.contentKind === 'divider' ? 'Untitled divider' : 'Untitled lesson');
+  return lesson.contentKind === 'divider' ? `Divider — ${t}` : `Lesson — ${t}`;
+}
+
+function catalogLessonInsertOptionLabel(mod: Module, insertAt: number): string {
+  const L = mod.lessons.length;
+  if (L === 0) return 'Only position in this module';
+  if (insertAt === 0) {
+    const first = mod.lessons[0]!;
+    return `Before ${catalogLessonRowSummary(first)}`;
+  }
+  if (insertAt >= L) {
+    const last = mod.lessons[L - 1]!;
+    return `After ${catalogLessonRowSummary(last)}`;
+  }
+  const before = mod.lessons[insertAt - 1]!;
+  const after = mod.lessons[insertAt]!;
+  return `After ${catalogLessonRowSummary(before)} · before ${catalogLessonRowSummary(after)}`;
+}
+
+function catalogModuleTitleLine(mod: Module, indexOneBased: number): string {
+  const id = mod.id.trim() || '—';
+  const title = mod.title.trim() || 'Untitled module';
+  return `Module ${indexOneBased}: ${id} — ${title}`;
+}
+
+const ADMIN_CATALOG_KIND_BADGE_BASE =
+  'inline-flex min-h-11 min-w-[3.25rem] shrink-0 touch-manipulation items-center justify-center rounded-md px-3.5 text-[10px] font-bold uppercase leading-none transition-colors focus:outline-none sm:h-7 sm:min-h-0';
+
+/** Amber — section dividers (Path builder uses the same tone for divider branches). */
+const ADMIN_CATALOG_BRANCH_KIND_BADGE_CLASS = `${ADMIN_CATALOG_KIND_BADGE_BASE} hover:ring-2 hover:ring-amber-500/40 focus:ring-2 focus:ring-amber-500/40 bg-amber-500/15 text-amber-800 dark:text-amber-300`;
+
+/** Violet — module row badge (structural grouping). */
+const ADMIN_CATALOG_MODULE_BADGE_CLASS = `${ADMIN_CATALOG_KIND_BADGE_BASE} hover:ring-2 hover:ring-violet-500/40 focus:ring-2 focus:ring-violet-500/40 bg-violet-500/15 text-violet-800 dark:text-violet-300`;
+
+/** Sky — playable lesson row badge (distinct from module + divider). */
+const ADMIN_CATALOG_LESSON_BADGE_CLASS = `${ADMIN_CATALOG_KIND_BADGE_BASE} hover:ring-2 hover:ring-sky-500/40 focus:ring-2 focus:ring-sky-500/40 bg-sky-500/15 text-sky-800 dark:text-sky-300`;
+
+function catalogLessonBranchKindModalLabel(lesson: Lesson): string {
+  if (lesson.contentKind === 'divider') return 'Divider';
+  if (lesson.contentKind === 'web') return 'External page';
+  if (lesson.contentKind === 'quiz') return 'Quiz';
+  return 'Video';
+}
+
+/** Compact dashed chip + md+ hover rail (shared by Add module / Add branch). */
+const ADMIN_CATALOG_INSERT_CHIP_BTN_PERSIST =
+  'flex w-full min-w-0 max-w-full min-h-11 touch-manipulation items-center justify-center gap-1.5 rounded-md border border-dashed border-[var(--border-color)]/50 bg-[var(--bg-secondary)]/25 px-4 py-1.5 text-[11px] font-semibold text-[var(--text-muted)] opacity-90 transition-[background-color,border-color,color,opacity] duration-150 ease-out hover:border-orange-500/50 hover:bg-orange-500/15 hover:text-orange-600 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 dark:hover:bg-orange-500/20 dark:hover:text-orange-300 sm:px-6';
+
+/** md+: collapsed strip expands on hover/focus-within (pushes rows). Use hover:/focus-within: on this node, not group-hover (same element as group/ins). */
+const CATALOG_INSERT_OUTER_EXPAND_HOVER =
+  'max-md:overflow-visible max-md:py-0.5 md:overflow-hidden md:py-0 md:transition-[max-height] md:duration-200 md:ease-out md:max-h-3 md:hover:max-h-[4.25rem] md:focus-within:max-h-[4.25rem]';
+
+/** md+: chip hidden until gutter opens (avoids dashed border clipped to a “hairline”). */
+const ADMIN_CATALOG_INSERT_CHIP_BTN_EXPAND_ROW = `${ADMIN_CATALOG_INSERT_CHIP_BTN_PERSIST} md:opacity-0 md:pointer-events-none md:transition-opacity md:duration-200 md:group-hover/ins:pointer-events-auto md:group-hover/ins:opacity-100 md:group-focus-within/ins:pointer-events-auto md:group-focus-within/ins:opacity-100`;
+
+/** Lesson list: `pl-3` aligns with module border-l. */
+const CATALOG_LESSON_INSERT_OUTER_HOVER =
+  `group/ins relative z-0 mb-0 min-w-0 min-h-0 ${CATALOG_INSERT_OUTER_EXPAND_HOVER}`;
+const CATALOG_LESSON_INSERT_OUTER_PERSIST =
+  'group/ins relative z-0 mb-0 min-w-0 overflow-visible py-0.5';
+const CATALOG_LESSON_INSERT_INNER_HOVER =
+  'flex w-full pl-3 max-md:!pl-0 items-center justify-center md:min-h-0 md:py-1.5';
+const CATALOG_LESSON_INSERT_INNER_PERSIST = 'flex w-full pl-3 max-md:!pl-0 justify-center';
+
+function CatalogLessonInsertSlot({
+  persistVisibleOnMd,
+  ariaLabel,
+  onClick,
+}: {
+  persistVisibleOnMd: boolean;
+  ariaLabel: string;
+  onClick: () => void;
+}) {
+  const title = 'Adds a row inside this module at this position among its items.';
+  return (
+    <div
+      className={persistVisibleOnMd ? CATALOG_LESSON_INSERT_OUTER_PERSIST : CATALOG_LESSON_INSERT_OUTER_HOVER}
+      title={persistVisibleOnMd ? undefined : title}
+    >
+      <div className={persistVisibleOnMd ? CATALOG_LESSON_INSERT_INNER_PERSIST : CATALOG_LESSON_INSERT_INNER_HOVER}>
+        <button
+          type="button"
+          title={persistVisibleOnMd ? title : undefined}
+          onClick={onClick}
+          aria-label={ariaLabel}
+          className={persistVisibleOnMd ? ADMIN_CATALOG_INSERT_CHIP_BTN_PERSIST : ADMIN_CATALOG_INSERT_CHIP_BTN_EXPAND_ROW}
+        >
+          <Plus size={14} className="shrink-0 opacity-90" aria-hidden />
+          <span>Add branch here</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Course-level module list: no extra indent (unlike lesson rows under border-l). */
+const CATALOG_MODULE_INSERT_OUTER_HOVER =
+  `group/ins relative z-0 mb-0 min-w-0 min-h-0 ${CATALOG_INSERT_OUTER_EXPAND_HOVER}`;
+const CATALOG_MODULE_INSERT_OUTER_PERSIST =
+  'group/ins relative z-0 mb-0 min-w-0 overflow-visible py-0.5';
+const CATALOG_MODULE_INSERT_INNER_HOVER =
+  'flex w-full max-md:!pl-0 items-center justify-center md:min-h-0 md:py-1.5';
+const CATALOG_MODULE_INSERT_INNER_PERSIST = 'flex w-full max-md:!pl-0 justify-center';
+
+function CatalogModuleInsertSlot({
+  persistVisibleOnMd,
+  ariaLabel,
+  onClick,
+}: {
+  persistVisibleOnMd: boolean;
+  ariaLabel: string;
+  onClick: () => void;
+}) {
+  const title = 'Adds a new module at this position in the course outline.';
+  return (
+    <div
+      className={persistVisibleOnMd ? CATALOG_MODULE_INSERT_OUTER_PERSIST : CATALOG_MODULE_INSERT_OUTER_HOVER}
+      title={persistVisibleOnMd ? undefined : title}
+    >
+      <div className={persistVisibleOnMd ? CATALOG_MODULE_INSERT_INNER_PERSIST : CATALOG_MODULE_INSERT_INNER_HOVER}>
+        <button
+          type="button"
+          title={persistVisibleOnMd ? title : undefined}
+          onClick={onClick}
+          aria-label={ariaLabel}
+          className={persistVisibleOnMd ? ADMIN_CATALOG_INSERT_CHIP_BTN_PERSIST : ADMIN_CATALOG_INSERT_CHIP_BTN_EXPAND_ROW}
+        >
+          <Plus size={14} className="shrink-0 opacity-90" aria-hidden />
+          <span>Add module here</span>
+        </button>
+      </div>
+    </div>
+  );
 }
 
 /** Admin merged catalog: disambiguate published vs creator draft rows (same `course.id` can exist in both). */
@@ -495,6 +934,19 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const [courseDetailsOpen, setCourseDetailsOpen] = useState(false);
   const [openModules, setOpenModules] = useState<Record<number, boolean>>({});
   const [openLessons, setOpenLessons] = useState<Record<string, boolean>>({});
+  /** Section divider row: “Change branch type” modal (same flow as Path builder). */
+  const [changeLessonKindModal, setChangeLessonKindModal] = useState<{ mi: number; li: number } | null>(null);
+  /** Insert lesson or section divider after choosing in “Add branch” modal. */
+  const [addLessonBranchModal, setAddLessonBranchModal] = useState<{ mi: number; insertAt: number } | null>(null);
+  /** Copy/move placement for modules or lesson rows (Path builder–style). */
+  const [catalogPlaceModal, setCatalogPlaceModal] = useState<
+    { kind: 'module'; sourceMi: number } | { kind: 'lesson'; sourceMi: number; sourceLi: number } | null
+  >(null);
+  const [catalogPlaceMode, setCatalogPlaceMode] = useState<'copy' | 'move'>('copy');
+  const [catalogLessonTargetMi, setCatalogLessonTargetMi] = useState(0);
+  const [catalogLessonInsertIdx, setCatalogLessonInsertIdx] = useState(0);
+  const [catalogModuleCopyInsertIdx, setCatalogModuleCopyInsertIdx] = useState(0);
+  const [catalogModuleMoveInsertIdx, setCatalogModuleMoveInsertIdx] = useState(0);
   /** After adding a module, open that exact index once draft state is committed. */
   const pendingOpenNewModuleIndexRef = useRef<number | null>(null);
   /** After adding a lesson, open that exact lesson once draft state is committed. */
@@ -1221,7 +1673,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         const lessons = m.lessons.map((lesson, j) => (j === li ? { ...lesson, ...patch } : lesson));
         return { ...m, lessons };
       });
-      return { ...d, modules };
+      let next: Course = { ...d, modules };
+      if (isStructuredCourseId(d.id) && patch.contentKind !== undefined) {
+        next = remapStructuredCourseModuleLessonIdsByOrder(next);
+      }
+      return next;
     });
   };
 
@@ -1362,38 +1818,61 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     });
   };
 
-  const addModule = () => {
+  /** Insert a new module at `insertIndex` (0 = before the first module; `length` = append). */
+  const addModuleAt = (insertIndex: number) => {
     setDraft((d) => {
       if (!d) return null;
-      const newModuleIndex = d.modules.length;
-      pendingOpenNewModuleIndexRef.current = newModuleIndex;
-      pendingOpenNewLessonKeyRef.current = `${newModuleIndex}:0`;
-      pendingScrollToNewModuleTitleMiRef.current = newModuleIndex;
+      const idx = Math.max(0, Math.min(insertIndex, d.modules.length));
+      pendingOpenNewModuleIndexRef.current = idx;
+      pendingOpenNewLessonKeyRef.current = `${idx}:0`;
+      pendingScrollToNewModuleTitleMiRef.current = idx;
       const structured = isStructuredCourseId(d.id);
       const mid = structured ? nextModuleIdForCourse(d) : nextModuleIdLegacy(d.modules);
       const lid = structured ? `${mid}L1` : nextLessonIdLegacy(d);
-      return {
-        ...d,
-        modules: [
-          ...d.modules,
+      const newModule = {
+        id: mid,
+        title: '',
+        lessons: [
           {
-            id: mid,
+            id: lid,
             title: '',
-            lessons: [
-              {
-                id: lid,
-                title: '',
-                videoUrl: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
-                __adminRowKey: crypto.randomUUID(),
-              } as LessonWithAdminKey,
-            ],
-          },
+            videoUrl: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
+            __adminRowKey: crypto.randomUUID(),
+          } as LessonWithAdminKey,
         ],
       };
+      const modules = [...d.modules.slice(0, idx), newModule, ...d.modules.slice(idx)];
+      let next: Course = { ...d, modules };
+      if (structured) {
+        next = remapStructuredCourseModuleLessonIdsByOrder(next);
+      }
+      return next;
     });
-    // Focus editing on the newly added module.
     setCourseDetailsOpen(false);
   };
+
+  const splitDividerIntoNewModuleAt = useCallback(
+    (mi: number, li: number) => {
+      const d = draftRef.current;
+      if (!d?.modules[mi]?.lessons[li] || d.modules[mi].lessons[li].contentKind !== 'divider') return;
+      const r = applySplitDividerIntoNewModule(d, mi, li);
+      if (!r) {
+        showActionToast(
+          'Cannot create a module here unless there is at least one playable lesson above this divider.',
+          'danger'
+        );
+        return;
+      }
+      setDraft(r.next);
+      setCourseDetailsOpen(false);
+      setOpenLessons({});
+      pendingOpenNewModuleIndexRef.current = r.newModuleIndex;
+      pendingScrollToNewModuleTitleMiRef.current = r.newModuleIndex;
+      setOpenModules({ [r.newModuleIndex]: true });
+      showActionToast('New module created; lessons below the divider moved into it.');
+    },
+    [showActionToast]
+  );
 
   const removeModule = (mi: number) => {
     if (!draft || draft.modules.length <= 1) return;
@@ -1404,46 +1883,173 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     showActionToast('Module deleted.');
   };
 
-  const addLesson = (mi: number) => {
+  /** Insert a new lesson or section divider at `insertAt` (0 = before the first; default / `length` = append). */
+  const addLesson = (mi: number, insertAt?: number, kind: 'lesson' | 'divider' = 'lesson') => {
     setDraft((d) => {
       if (!d) return null;
       const targetModule = d.modules[mi];
       if (!targetModule) return d;
-      const newLi = targetModule.lessons.length;
-      pendingOpenNewLessonKeyRef.current = `${mi}:${newLi}`;
-      pendingScrollToNewLessonTitleRef.current = { mi, li: newLi };
-      const lid = isStructuredCourseId(d.id)
-        ? nextLessonIdInModule(d, mi)
-        : nextLessonIdLegacy(d);
-      const modules = d.modules.map((m, i) => {
-        if (i !== mi) return m;
-        return {
-          ...m,
-          lessons: [
-            ...m.lessons,
-            {
+      const len = targetModule.lessons.length;
+      const at =
+        insertAt === undefined ? len : Math.max(0, Math.min(insertAt, len));
+      pendingOpenNewLessonKeyRef.current = `${mi}:${at}`;
+      pendingScrollToNewLessonTitleRef.current = { mi, li: at };
+      const structured = isStructuredCourseId(d.id);
+      const lid =
+        kind === 'divider'
+          ? structured
+            ? nextDividerIdInModule(d, mi)
+            : nextDividerIdLegacy()
+          : structured
+            ? nextLessonIdInModule(d, mi)
+            : nextLessonIdLegacy(d);
+      const newLesson =
+        kind === 'divider'
+          ? ({
+              id: lid,
+              title: '',
+              videoUrl: '',
+              contentKind: 'divider' as const,
+              __adminRowKey: crypto.randomUUID(),
+            } as LessonWithAdminKey)
+          : ({
               id: lid,
               title: '',
               videoUrl: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
               __adminRowKey: crypto.randomUUID(),
-            } as LessonWithAdminKey,
-          ],
-        };
+            } as LessonWithAdminKey);
+      const modules = d.modules.map((m, i) => {
+        if (i !== mi) return m;
+        const lessons = [...m.lessons];
+        lessons.splice(at, 0, newLesson);
+        return { ...m, lessons };
       });
-      return { ...d, modules };
+      let next: Course = { ...d, modules };
+      if (structured) {
+        next = remapStructuredCourseModuleLessonIdsByOrder(next);
+      }
+      return next;
     });
   };
+
+  const openCatalogPlaceForModule = useCallback((sourceMi: number) => {
+    const d = draftRef.current;
+    if (!d?.modules[sourceMi]) return;
+    const len = d.modules.length;
+    setCatalogPlaceMode('copy');
+    setCatalogModuleCopyInsertIdx(Math.min(sourceMi + 1, len));
+    const wo = len - 1;
+    setCatalogModuleMoveInsertIdx(Math.min(sourceMi, Math.max(0, wo)));
+    setCatalogPlaceModal({ kind: 'module', sourceMi });
+  }, []);
+
+  const openCatalogPlaceForLesson = useCallback((sourceMi: number, sourceLi: number) => {
+    const d = draftRef.current;
+    if (!d?.modules[sourceMi]?.lessons[sourceLi]) return;
+    setCatalogPlaceMode('copy');
+    setCatalogLessonTargetMi(sourceMi);
+    setCatalogLessonInsertIdx(d.modules[sourceMi].lessons.length);
+    setCatalogPlaceModal({ kind: 'lesson', sourceMi, sourceLi });
+  }, []);
+
+  const closeCatalogPlaceModal = useCallback(() => setCatalogPlaceModal(null), []);
+
+  const commitCatalogPlace = useCallback(() => {
+    const d = draftRef.current;
+    if (!d || !catalogPlaceModal) return;
+    if (catalogPlaceModal.kind === 'module') {
+      const smi = catalogPlaceModal.sourceMi;
+      if (catalogPlaceMode === 'copy') {
+        const r = applyCopyModuleAt(d, smi, catalogModuleCopyInsertIdx);
+        if (!r) {
+          showActionToast('Could not copy module.', 'danger');
+          return;
+        }
+        setDraft(r.next);
+        setOpenLessons({});
+        pendingOpenNewModuleIndexRef.current = r.newModuleIndex;
+        pendingScrollToNewModuleTitleMiRef.current = r.newModuleIndex;
+        setOpenModules({ [r.newModuleIndex]: true });
+        showActionToast('Module copied.');
+      } else {
+        const r = applyMoveModuleAt(d, smi, catalogModuleMoveInsertIdx);
+        if (!r) {
+          showActionToast('Could not move module.', 'danger');
+          return;
+        }
+        setDraft(r.next);
+        setOpenLessons({});
+        setOpenModules({ [r.moduleIndex]: true });
+        showActionToast('Module moved.');
+      }
+    } else {
+      const { sourceMi, sourceLi } = catalogPlaceModal;
+      if (catalogPlaceMode === 'copy') {
+        const r = applyCopyLessonAt(
+          d,
+          sourceMi,
+          sourceLi,
+          catalogLessonTargetMi,
+          catalogLessonInsertIdx
+        );
+        if (!r) {
+          showActionToast('Could not copy branch.', 'danger');
+          return;
+        }
+        setDraft(r.next);
+        pendingOpenNewLessonKeyRef.current = `${r.mi}:${r.li}`;
+        pendingScrollToNewLessonTitleRef.current = { mi: r.mi, li: r.li };
+        setOpenModules({ [r.mi]: true });
+        setOpenLessons({ [`${r.mi}:${r.li}`]: true });
+        showActionToast('Branch copied.');
+      } else {
+        const r = applyMoveLessonAt(
+          d,
+          sourceMi,
+          sourceLi,
+          catalogLessonTargetMi,
+          catalogLessonInsertIdx
+        );
+        if (!r) {
+          showActionToast(
+            'Could not move branch. Each module must keep at least one playable lesson (video, page, or quiz).',
+            'danger'
+          );
+          return;
+        }
+        setDraft(r.next);
+        pendingOpenNewLessonKeyRef.current = `${r.mi}:${r.li}`;
+        pendingScrollToNewLessonTitleRef.current = { mi: r.mi, li: r.li };
+        setOpenModules({ [r.mi]: true });
+        setOpenLessons({ [`${r.mi}:${r.li}`]: true });
+        showActionToast('Branch moved.');
+      }
+    }
+    setCatalogPlaceModal(null);
+  }, [
+    catalogPlaceModal,
+    catalogPlaceMode,
+    catalogLessonTargetMi,
+    catalogLessonInsertIdx,
+    catalogModuleCopyInsertIdx,
+    catalogModuleMoveInsertIdx,
+    showActionToast,
+  ]);
 
   const removeLesson = (mi: number, li: number) => {
     if (!draft) return;
     const target = draft.modules[mi];
     if (!target || target.lessons.length <= 1) return;
+    const wouldRemain = target.lessons.filter((_, j) => j !== li);
+    if (!wouldRemain.some(isPlayableCatalogLesson)) return;
     setDraft((d) => {
       if (!d) return null;
       const modules = d.modules.map((m, i) => {
         if (i !== mi) return m;
         if (m.lessons.length <= 1) return m;
-        return { ...m, lessons: m.lessons.filter((_, j) => j !== li) };
+        const nextLessons = m.lessons.filter((_, j) => j !== li);
+        if (!nextLessons.some(isPlayableCatalogLesson)) return m;
+        return { ...m, lessons: nextLessons };
       });
       return { ...d, modules };
     });
@@ -1635,52 +2241,6 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     applyReorderViewportScrollAndFocus(row, job, REORDER_DATA_ATTR_SELECTORS.module);
   }, [moduleReorderLayoutTick]);
 
-  const moveLessonToModule = (mi: number, li: number, targetMi: number) => {
-    if (targetMi === mi) return;
-    let opened: { targetMi: number; newLi: number } | null = null;
-    setDraft((d) => {
-      if (!d) return null;
-      if (targetMi < 0 || targetMi >= d.modules.length) return d;
-      const source = d.modules[mi];
-      if (!source || source.lessons.length <= 1 || !source.lessons[li]) return d;
-
-      const moved = { ...source.lessons[li]! };
-      const modulesWithout = d.modules.map((m, i) => {
-        if (i !== mi) return m;
-        return { ...m, lessons: m.lessons.filter((_, j) => j !== li) };
-      });
-
-      let lessonToInsert = moved;
-      if (!isStructuredCourseId(d.id)) {
-        const tempCourse: Course = { ...d, modules: modulesWithout };
-        lessonToInsert = { ...moved, id: nextLessonIdLegacy(tempCourse) };
-      }
-
-      const finalModules = modulesWithout.map((m, i) => {
-        if (i !== targetMi) return m;
-        return { ...m, lessons: [...m.lessons, lessonToInsert] };
-      });
-
-      let next: Course = { ...d, modules: finalModules };
-      if (isStructuredCourseId(next.id)) {
-        next = remapStructuredCourseModuleLessonIdsByOrder(next);
-      }
-      const newLi = next.modules[targetMi]!.lessons.length - 1;
-      opened = { targetMi, newLi };
-      return next;
-    });
-    if (!opened) {
-      showActionToast(
-        'Could not move lesson. Add another lesson to this module first—each module must keep at least one.',
-        'danger'
-      );
-      return;
-    }
-    setOpenModules({ [opened.targetMi]: true });
-    setOpenLessons({ [`${opened.targetMi}:${opened.newLi}`]: true });
-    showActionToast('Lesson moved to the other module.');
-  };
-
   const toggleModuleOpen = (mi: number) => {
     setOpenModules((prev) => {
       const nextOpen = !prev[mi];
@@ -1764,7 +2324,10 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     const pos = pendingScrollToNewLessonTitleRef.current;
     if (!pos || !draft) return;
     const { mi, li } = pos;
-    if (!openModules[mi] || !openLessons[`${mi}:${li}`]) return;
+    const rowLesson = draft.modules[mi]?.lessons[li];
+    const lessonBodyOpen =
+      !!openLessons[`${mi}:${li}`] || rowLesson?.contentKind === 'divider';
+    if (!openModules[mi] || !lessonBodyOpen) return;
     let frames = 0;
     const tryFocus = () => {
       const el = document.getElementById(`admin-lesson-title-${mi}-${li}`);
@@ -1834,7 +2397,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         const l = m.lessons[li];
         const lessonKey = `${mi}:${li}`;
         const openKeys = li === 0 ? [lessonKey] : [`${mi}:0`, lessonKey];
-        if (!l.id.trim()) {
+        if (!l.id.trim() && l.contentKind !== 'divider') {
           return {
             targetId: `admin-lesson-id-${mi}-${li}`,
             scope: 'module',
@@ -1884,6 +2447,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               lessonKeys: openKeys,
             };
           }
+        } else if (l.contentKind === 'divider') {
+          /* heading only */
         } else if (!l.videoUrl.trim() || !l.videoUrl.startsWith('http')) {
           return {
             targetId: `admin-lesson-url-${mi}-${li}`,
@@ -1940,13 +2505,13 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       for (let li = 0; li < m.lessons.length; li += 1) {
         const l = m.lessons[li];
         const key = `${mi}:${li}`;
-        if (!l.id.trim()) out.lessonId.add(key);
+        if (!l.id.trim() && l.contentKind !== 'divider') out.lessonId.add(key);
         if (!l.title.trim()) out.lessonTitle.add(key);
         if (l.contentKind === 'web') {
           if (!lessonWebHref(l)) out.lessonWebUrl.add(key);
         } else if (l.contentKind === 'quiz') {
           if (validateLessonQuiz(l, mi, li)) out.lessonQuiz.add(key);
-        } else if (!l.videoUrl.trim() || !l.videoUrl.startsWith('http')) {
+        } else if (l.contentKind !== 'divider' && (!l.videoUrl.trim() || !l.videoUrl.startsWith('http'))) {
           out.videoUrl.add(key);
         }
       }
@@ -2382,7 +2947,10 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       subTabSwitchConfirmOpen ||
       pathSubTabSwitchConfirmOpen ||
       courseLeaveDialog !== null ||
-      courseTitleConflict !== null
+      courseTitleConflict !== null ||
+      changeLessonKindModal !== null ||
+      addLessonBranchModal !== null ||
+      catalogPlaceModal !== null
   );
 
   /** Ref updated by PathBuilder via onPathsDirtyChange — read before opening catalog tab confirm. */
@@ -2637,6 +3205,67 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     onPrimaryAction: () => void confirmDeletePublished(),
   });
 
+  const closeChangeLessonKindModal = useCallback(() => setChangeLessonKindModal(null), []);
+
+  useDialogKeyboard({
+    open: changeLessonKindModal !== null,
+    onClose: closeChangeLessonKindModal,
+  });
+
+  const closeAddLessonBranchModal = useCallback(() => setAddLessonBranchModal(null), []);
+
+  useDialogKeyboard({
+    open: addLessonBranchModal !== null,
+    onClose: closeAddLessonBranchModal,
+  });
+
+  useDialogKeyboard({
+    open: catalogPlaceModal !== null,
+    onClose: closeCatalogPlaceModal,
+  });
+
+  useEffect(() => {
+    if (!draft || catalogPlaceModal?.kind !== 'lesson') return;
+    const m = draft.modules[catalogLessonTargetMi];
+    if (!m) return;
+    setCatalogLessonInsertIdx((prev) => Math.min(prev, m.lessons.length));
+  }, [catalogLessonTargetMi, draft, catalogPlaceModal?.kind]);
+
+  useEffect(() => {
+    if (!catalogPlaceModal || catalogPlaceModal.kind !== 'module' || !draft) return;
+    const n = draft.modules.length;
+    if (catalogPlaceMode === 'copy') {
+      setCatalogModuleCopyInsertIdx((p) => Math.min(Math.max(0, p), n));
+    } else {
+      const wo = Math.max(0, n - 1);
+      setCatalogModuleMoveInsertIdx((p) => Math.min(Math.max(0, p), wo));
+    }
+  }, [catalogPlaceModal, catalogPlaceMode, draft?.modules.length, draft]);
+
+  useEffect(() => {
+    if (!catalogPlaceModal || !draft) return;
+    if (catalogPlaceModal.kind === 'module') {
+      if (!draft.modules[catalogPlaceModal.sourceMi]) setCatalogPlaceModal(null);
+    } else {
+      const { sourceMi, sourceLi } = catalogPlaceModal;
+      if (!draft.modules[sourceMi]?.lessons[sourceLi]) setCatalogPlaceModal(null);
+    }
+  }, [draft, catalogPlaceModal]);
+
+  useEffect(() => {
+    if (!changeLessonKindModal || !draft) return;
+    const { mi, li } = changeLessonKindModal;
+    const row = draft.modules[mi]?.lessons[li];
+    if (!row) setChangeLessonKindModal(null);
+  }, [draft, changeLessonKindModal]);
+
+  useEffect(() => {
+    if (!addLessonBranchModal || !draft) return;
+    const { mi, insertAt } = addLessonBranchModal;
+    const mod = draft.modules[mi];
+    if (!mod || insertAt < 0 || insertAt > mod.lessons.length) setAddLessonBranchModal(null);
+  }, [draft, addLessonBranchModal]);
+
   useEffect(() => {
     pendingOpenNewModuleIndexRef.current = null;
     pendingOpenNewLessonKeyRef.current = null;
@@ -2710,8 +3339,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     const id = pendingScrollTargetIdRef.current;
     if (!id) return;
     const rafId = requestAnimationFrame(() => {
-      const el = document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement | null;
-      if (!el) return;
+      const el = document.getElementById(id);
+      if (!(el instanceof HTMLElement)) return;
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       el.focus({ preventScroll: true });
       pendingScrollTargetIdRef.current = null;
@@ -2971,7 +3600,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     </li>
                     <li>
                       Ids: modules <code className="text-orange-500/90">C1M1</code>, lessons{' '}
-                      <code className="text-orange-500/90">C1M1L1</code>.
+                      <code className="text-orange-500/90">C1M1L1</code>, section dividers{' '}
+                      <code className="text-orange-500/90">C1M1D1</code> (not L).
                     </li>
                   </ul>
                 </div>
@@ -3499,11 +4129,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             )}
           </div>
 
-          <div className="space-y-2.5 sm:space-y-4">
-            <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="space-y-0">
+            <div className="relative z-20 mb-2.5 flex flex-wrap items-start gap-2 pb-1 sm:mb-4 sm:pb-2">
               <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
                 <h3 className="text-xs font-semibold text-[var(--text-secondary)]">Modules and lessons</h3>
-                <span ref={modulesTipsWrapRef} className="relative inline-flex shrink-0 items-center gap-1">
+                <span ref={modulesTipsWrapRef} className="relative z-10 inline-flex shrink-0 items-center gap-1">
                   <button
                     ref={modulesTipBtnRef}
                     type="button"
@@ -3534,7 +4164,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           ? modulesTipFixedTop >= 0
                             ? 'fixed z-[120] left-3 right-3 w-auto max-w-none translate-x-0 overflow-y-auto overflow-x-hidden overscroll-y-contain [-webkit-overflow-scrolling:touch] touch-pan-y max-h-[calc(100dvh-var(--admin-tip-top)-env(safe-area-inset-bottom,0px)-0.75rem)] rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-3.5 text-left text-sm leading-relaxed text-[var(--text-primary)] shadow-xl pointer-events-auto outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40'
                             : 'hidden'
-                          : 'absolute left-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] max-w-sm rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-3 text-left text-xs leading-snug text-[var(--text-primary)] shadow-lg pointer-events-auto'
+                          : 'absolute left-0 top-full z-[100] mt-2 w-[min(22rem,calc(100vw-2rem))] max-w-sm rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-3 text-left text-xs leading-snug text-[var(--text-primary)] shadow-lg pointer-events-auto'
                     }
                     style={
                       modulesTipsOpen && tipsNarrowViewport && modulesTipFixedTop >= 0
@@ -3544,61 +4174,135 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   >
                     <ul className="list-disc space-y-1.5 pl-4 text-[var(--text-muted)] marker:text-orange-500/70 sm:space-y-1">
                       <li>Modules group lessons.</li>
-                      <li>Reorder: row ↑/↓, or Arrow keys when a reorder control is focused.</li>
                       <li>
-                        <strong className="font-semibold text-[var(--text-secondary)]">Move to module…</strong>: if it’s
-                        the only lesson in that module, add another lesson there first.
+                        <strong className="font-semibold text-[var(--text-secondary)]">Add module here</strong> before the
+                        first module and between modules. On desktop, when the course already has modules, hover or focus
+                        the gap between module cards to reveal the control.
                       </li>
                       <li>
-                        Structured ids (<code className="text-orange-500/90">C1</code>…): ids renumber when you reorder.
+                        <strong className="font-semibold text-[var(--text-secondary)]">Add branch here</strong> at the start
+                        and between rows (on desktop, hover or focus the gap between rows to reveal the control when the
+                        module has lessons) — then pick <strong className="font-semibold text-[var(--text-secondary)]">Lesson</strong> or{' '}
+                        <strong className="font-semibold text-[var(--text-secondary)]">Section divider</strong> (heading
+                        only in the outline, not playable).
+                      </li>
+                      <li>Reorder: row ↑/↓, or Arrow keys when a reorder control is focused.</li>
+                      <li>
+                        <strong className="font-semibold text-[var(--text-secondary)]">Copy</strong> on a lesson or
+                        module opens <strong className="font-semibold text-[var(--text-secondary)]">Copy or move</strong>{' '}
+                        — duplicate anywhere or move to another module and position (source module must keep at least one
+                        playable lesson when you move).
+                      </li>
+                      <li>
+                        Structured ids (<code className="text-orange-500/90">C1</code>…): playable lessons use{' '}
+                        <code className="text-orange-500/90">…M1L1</code>, section dividers use{' '}
+                        <code className="text-orange-500/90">…M1D1</code> (not L). Ids renumber when you reorder.
                       </li>
                     </ul>
                   </div>
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={addModule}
-                className="inline-flex min-h-11 touch-manipulation items-center gap-1.5 rounded-lg px-2.5 text-sm font-bold text-orange-500 hover:bg-orange-500/10 hover:text-orange-400 active:opacity-90 sm:text-xs"
-              >
-                <Plus size={16} className="shrink-0" aria-hidden /> Add module
-              </button>
             </div>
 
+            <CatalogModuleInsertSlot
+              persistVisibleOnMd={draft.modules.length === 0}
+              ariaLabel="Add module here before the first module"
+              onClick={() => addModuleAt(0)}
+            />
+
             {draft.modules.map((mod, mi) => (
+              <Fragment key={`module-slot-${mi}`}>
               <div
-                key={`module-slot-${mi}`}
                 data-admin-module-index={mi}
-                className="space-y-2.5 border-b border-[var(--border-color)]/40 pb-4 last:border-b-0 last:pb-0 sm:space-y-4 sm:pb-5"
+                className={`space-y-1.5 pb-0 sm:space-y-2 ${
+                  mi === 0 ? 'pt-0.5 sm:pt-1' : ''
+                }`}
               >
-                <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--border-color)]/40 pb-2 sm:pb-3">
-                  <button
-                    type="button"
-                    onClick={() => toggleModuleOpen(mi)}
-                    className="flex min-h-11 min-w-0 flex-1 items-start gap-1.5 rounded-lg py-0.5 text-left hover:bg-[var(--hover-bg)]/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 sm:gap-2 sm:py-1"
-                    aria-expanded={!!openModules[mi]}
-                    aria-label={`Module ${mi + 1}: ${mod.id.trim() || 'no id'} - ${mod.title.trim() || 'Untitled module'}, ${mod.lessons.length} lesson${mod.lessons.length === 1 ? '' : 's'}. ${openModules[mi] ? 'Collapse' : 'Expand'} module`}
-                  >
-                    <span className="mt-0.5 shrink-0" aria-hidden>
-                      {openModules[mi] ? (
-                        <ChevronDown size={14} className="text-[var(--text-secondary)]" />
-                      ) : (
-                        <ChevronRight size={14} className="text-[var(--text-secondary)]" />
-                      )}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block min-w-0 truncate text-sm font-bold text-[var(--text-primary)]">
-                        <span className="font-mono text-orange-500/90">{mod.id.trim() || '—'}</span>
-                        <span> - {mod.title.trim() || 'Untitled module'}</span>
-                      </span>
-                      <span className="mt-0.5 text-[11px] font-medium tabular-nums text-[var(--text-muted)] sm:text-xs sm:font-normal">
-                        Module {mi + 1}
-                        <span aria-hidden> . </span>
+                <div
+                  className={`flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 ${
+                    openModules[mi] ? 'pb-1.5 sm:pb-2' : ''
+                  }`}
+                >
+                  <div className="flex min-h-11 min-w-0 flex-1 items-center gap-1.5 md:min-h-10 sm:gap-2">
+                    <button
+                      type="button"
+                      className={ADMIN_CATALOG_MODULE_BADGE_CLASS}
+                      title={openModules[mi] ? 'Collapse module lessons' : 'Expand module lessons'}
+                      aria-expanded={!!openModules[mi]}
+                      aria-label={`${openModules[mi] ? 'Collapse' : 'Expand'} module ${mi + 1} (${mod.id.trim() || 'no id'}). ${mod.lessons.length} lesson${mod.lessons.length === 1 ? '' : 's'}.`}
+                      onClick={() => {
+                        const wasOpen = !!openModules[mi];
+                        toggleModuleOpen(mi);
+                        if (!wasOpen) {
+                          requestAnimationFrame(() => {
+                            requestAnimationFrame(() => {
+                              document.getElementById(`admin-module-title-${mi}`)?.focus({ preventScroll: false });
+                            });
+                          });
+                        }
+                      }}
+                    >
+                      Module
+                    </button>
+                    <div className="flex min-w-0 min-h-11 flex-1 flex-col gap-0.5 md:min-h-10">
+                      <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 sm:gap-x-2">
+                        <span
+                          id={`admin-module-id-${mi}`}
+                          tabIndex={-1}
+                          className={`shrink-0 rounded-md px-1.5 py-1 font-mono text-sm font-semibold tabular-nums text-orange-500/90 outline-none sm:px-2 ${
+                            showValidationHints && fieldErrors.moduleId.has(mi)
+                              ? 'ring-2 ring-red-500 ring-offset-1 ring-offset-[var(--bg-secondary)]'
+                              : ''
+                          }`}
+                          aria-label="Module ID (assigned automatically)"
+                        >
+                          {mod.id.trim() || '—'}
+                        </span>
+                        <span className="shrink-0 text-[var(--text-muted)]" aria-hidden>
+                          -
+                        </span>
+                        <input
+                          id={`admin-module-title-${mi}`}
+                          value={mod.title}
+                          onChange={(e) => updateModule(mi, { title: e.target.value })}
+                          aria-label="Module title"
+                          placeholder="e.g. HTML & CSS fundamentals — section title in the syllabus"
+                          className={`min-w-0 flex-1 basis-[min(100%,10rem)] rounded-md border bg-[var(--bg-primary)] px-1.5 py-1 text-sm font-semibold leading-snug text-[var(--text-primary)] sm:basis-0 sm:px-2 sm:py-1 ${
+                            showValidationHints && fieldErrors.moduleTitle.has(mi)
+                              ? 'border-red-500'
+                              : 'border-[var(--border-color)]'
+                          }`}
+                        />
+                        <span className="hidden shrink-0 text-[10px] font-medium leading-none tabular-nums text-[var(--text-muted)] md:inline md:text-[11px]">
+                          {mod.lessons.length}{' '}
+                          {mod.lessons.length === 1 ? 'lesson' : 'lessons'}
+                          <span aria-hidden> · </span>
+                          {mi + 1} of {draft.modules.length} in course
+                        </span>
+                      </div>
+                      <p className="text-[10px] font-medium leading-tight tabular-nums text-[var(--text-muted)] md:hidden">
                         {mod.lessons.length}{' '}
                         {mod.lessons.length === 1 ? 'lesson' : 'lessons'}
-                      </span>
-                    </span>
-                  </button>
+                        <span aria-hidden> · </span>
+                        {mi + 1} of {draft.modules.length} in course
+                      </p>
+                      {(showValidationHints &&
+                        (fieldErrors.moduleId.has(mi) || fieldErrors.moduleTitle.has(mi))) && (
+                        <div className="space-y-0.5 text-[10px]">
+                          {fieldErrors.moduleId.has(mi) && (
+                            <p className="text-red-400">Module ID is required.</p>
+                          )}
+                          {fieldErrors.moduleTitle.has(mi) && (
+                            <p className="text-red-400">
+                              {!mod.title.trim()
+                                ? 'Module title is required.'
+                                : 'Module title must be unique in this course.'}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                   <div className="flex shrink-0 flex-wrap items-center justify-end gap-0.5 sm:gap-1">
                     <button
                       type="button"
@@ -3607,7 +4311,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       aria-busy={busy}
                       aria-label={busy ? 'Saving course…' : 'Save course to catalog'}
                       title={busy ? 'Saving…' : 'Save course to catalog'}
-                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-orange-500 hover:bg-orange-500/10 disabled:opacity-40"
+                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-orange-500 hover:bg-orange-500/10 disabled:opacity-40 md:min-h-9 md:min-w-9"
                     >
                       {busy ? (
                         <Loader2 size={18} className="shrink-0 animate-spin" aria-hidden />
@@ -3625,15 +4329,25 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       onClick={() => resetModuleFromBaseline(mi)}
                       aria-label={`Reset module ${mi + 1} to last saved`}
                       title="Reset this module to last saved"
-                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-30"
+                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-30 md:min-h-9 md:min-w-9"
                     >
                       <RotateCcw size={18} aria-hidden />
                     </button>
                     <button
                       type="button"
+                      disabled={busy || !draft}
+                      onClick={() => openCatalogPlaceForModule(mi)}
+                      aria-label={`Copy or move module ${mi + 1}`}
+                      title="Copy or move module — choose destination in the dialog"
+                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-30 md:min-h-9 md:min-w-9"
+                    >
+                      <Copy size={18} aria-hidden />
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => removeModule(mi)}
                       disabled={draft.modules.length <= 1}
-                      className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-red-400 hover:bg-red-500/10 disabled:opacity-30"
+                      className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-red-400 hover:bg-red-500/10 disabled:opacity-30 md:min-h-9 md:min-w-9"
                       aria-label="Remove module"
                       title="Remove module"
                     >
@@ -3656,7 +4370,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         }
                       }}
                       disabled={mi === 0}
-                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-30"
+                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-30 md:min-h-9 md:min-w-9"
                       aria-label="Move module up"
                     >
                       <ArrowUp size={18} aria-hidden />
@@ -3678,7 +4392,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         }
                       }}
                       disabled={mi >= draft.modules.length - 1}
-                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-30"
+                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-30 md:min-h-9 md:min-w-9"
                       aria-label="Move module down"
                     >
                       <ArrowDown size={18} aria-hidden />
@@ -3688,101 +4402,93 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
                 {openModules[mi] && (
                 <>
-                <div className="mt-1 space-y-2.5 border-l border-[var(--border-color)]/50 pl-3 sm:mt-2 sm:space-y-4 sm:pl-4">
-                <div className="flex flex-row flex-wrap items-end gap-x-2 gap-y-2 sm:gap-x-3">
-                  <label className="flex min-w-0 flex-[1_1_11rem] max-w-full flex-col gap-1 sm:max-w-[16rem]">
-                    <span className="whitespace-nowrap text-xs font-semibold text-[var(--text-secondary)]">
-                      Module ID
-                    </span>
-                    <input
-                      id={`admin-module-id-${mi}`}
-                      value={mod.id}
-                      onChange={(e) => updateModule(mi, { id: e.target.value })}
-                      className={`box-border w-full min-w-0 rounded-lg border bg-[var(--bg-primary)] px-2.5 py-1.5 font-mono text-sm sm:px-3 sm:py-2 ${
-                        showValidationHints && fieldErrors.moduleId.has(mi)
-                          ? 'border-red-500'
-                          : 'border-[var(--border-color)]'
-                      }`}
-                    />
-                    <span
-                      className={`min-h-[16px] text-[11px] ${
-                        showValidationHints && fieldErrors.moduleId.has(mi)
-                          ? 'text-red-400'
-                          : 'text-transparent'
-                      }`}
-                    >
-                      Module ID is required.
-                    </span>
-                  </label>
-                  <label className="flex min-w-0 flex-[3_1_12rem] flex-col gap-1">
-                    <span className="text-xs font-semibold text-[var(--text-secondary)]">Module title</span>
-                    <input
-                      id={`admin-module-title-${mi}`}
-                      value={mod.title}
-                      onChange={(e) => updateModule(mi, { title: e.target.value })}
-                      className={`w-full text-sm bg-[var(--bg-primary)] border rounded-lg px-2.5 py-1.5 sm:px-3 sm:py-2 ${
-                        showValidationHints && fieldErrors.moduleTitle.has(mi)
-                          ? 'border-red-500'
-                          : 'border-[var(--border-color)]'
-                      }`}
-                      placeholder="e.g. HTML & CSS fundamentals — section title in the syllabus"
-                    />
-                    <span
-                      className={`min-h-[16px] text-[11px] ${
-                        showValidationHints && fieldErrors.moduleTitle.has(mi)
-                          ? 'text-red-400'
-                          : 'text-transparent'
-                      }`}
-                    >
-                      {!mod.title.trim()
-                        ? 'Module title is required.'
-                        : showValidationHints && fieldErrors.moduleTitle.has(mi)
-                          ? 'Module title must be unique in this course.'
-                          : ''}
-                    </span>
-                  </label>
-                </div>
-
-                <div className="space-y-2 border-l border-[var(--border-color)]/40 pl-2 sm:space-y-3 sm:pl-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-secondary)] sm:text-xs">
-                    Lessons in this module
-                  </p>
-                  <div className="divide-y divide-[var(--border-color)]/40">
+                <div className="mt-0.5 space-y-0 border-l border-[var(--border-color)]/50 pl-2 sm:mt-1 sm:pl-3">
+                  <CatalogLessonInsertSlot
+                    persistVisibleOnMd={mod.lessons.length === 0}
+                    ariaLabel="Add branch here before the first row in this module"
+                    onClick={() => setAddLessonBranchModal({ mi, insertAt: 0 })}
+                  />
+                  <div>
                   {mod.lessons.map((lesson, li) => {
                     const lessonRowKey = lessonRowDomKey(lesson, mi, li);
                     return (
+                    <Fragment key={lessonRowKey}>
                     <div
-                      key={lessonRowKey}
                       data-admin-lesson-row={lessonRowKey}
                       data-lesson-mi={mi}
                       data-lesson-li={li}
-                      className="space-y-2 py-3 first:pt-0 sm:space-y-3 sm:py-4 sm:first:pt-1"
+                      className="space-y-1.5 py-0 sm:space-y-2"
                     >
                       <div className="flex w-full min-w-0 items-center gap-1.5 sm:gap-2">
-                        <button
-                          type="button"
-                          onClick={() => toggleLessonOpen(mi, li)}
-                          className="flex min-h-11 min-w-0 flex-1 items-start gap-1.5 rounded-lg py-0.5 text-left -mx-0.5 px-0.5 hover:bg-[var(--bg-primary)]/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 sm:gap-2 sm:py-1 sm:-mx-1 sm:px-1"
-                          aria-expanded={!!openLessons[`${mi}:${li}`]}
-                          aria-label={`Lesson ${li + 1}: ${lesson.id.trim() || 'no id'} - ${lesson.title.trim() || 'Untitled lesson'}. ${openLessons[`${mi}:${li}`] ? 'Collapse' : 'Expand'} lesson`}
-                        >
-                          <span className="mt-0.5 shrink-0" aria-hidden>
-                            {openLessons[`${mi}:${li}`] ? (
-                              <ChevronDown size={14} className="text-[var(--text-secondary)]" />
-                            ) : (
-                              <ChevronRight size={14} className="text-[var(--text-secondary)]" />
-                            )}
-                          </span>
-                          <span className="min-w-0 flex-1">
-                            <span className="block min-w-0 truncate text-sm font-bold text-[var(--text-primary)]">
+                        {lesson.contentKind === 'divider' ? (
+                          <div
+                            className="flex min-h-11 min-w-0 flex-1 items-center gap-1.5 rounded-lg py-0 -mx-0.5 px-0.5 md:min-h-10 sm:gap-2 sm:py-0.5 sm:-mx-1 sm:px-1"
+                            role="group"
+                            aria-label="Section divider row"
+                          >
+                            <button
+                              type="button"
+                              onClick={() => splitDividerIntoNewModuleAt(mi, li)}
+                              className={ADMIN_CATALOG_BRANCH_KIND_BADGE_CLASS}
+                              title="New module here — divider label becomes the module title; rows below move into it"
+                              aria-label="Turn divider into a new module; content below moves to that module"
+                            >
+                              Divider
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setChangeLessonKindModal({ mi, li })}
+                              className="inline-flex min-h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40 md:min-h-9 md:min-w-9"
+                              title="Change branch type (video, external page, or quiz)"
+                              aria-label="Change branch type"
+                            >
+                              <SlidersHorizontal size={18} aria-hidden />
+                            </button>
+                            <input
+                              id={`admin-lesson-title-${mi}-${li}`}
+                              value={lesson.title}
+                              onChange={(e) => updateLesson(mi, li, { title: e.target.value })}
+                              className={`min-w-0 flex-1 rounded-md border bg-[var(--bg-primary)] px-2 py-1 text-sm text-[var(--text-primary)] sm:px-2.5 sm:py-1.5 ${
+                                showValidationHints && fieldErrors.lessonTitle.has(`${mi}:${li}`)
+                                  ? 'border-red-500'
+                                  : 'border-[var(--border-color)]'
+                              }`}
+                              placeholder="e.g. Part 2 — shown as a heading in the syllabus"
+                              aria-label="Divider label"
+                            />
+                          </div>
+                        ) : (
+                        <div className="flex min-h-11 min-w-0 flex-1 items-center gap-1.5 md:min-h-10 sm:gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setChangeLessonKindModal({ mi, li })}
+                            className={ADMIN_CATALOG_LESSON_BADGE_CLASS}
+                            title="Change branch type"
+                            aria-label={`Change branch type, now ${catalogLessonBranchKindModalLabel(lesson)}`}
+                          >
+                            Lesson
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => toggleLessonOpen(mi, li)}
+                            className="flex min-h-11 min-w-0 flex-1 items-center gap-1.5 rounded-lg py-0 text-left -mx-0.5 px-0.5 hover:bg-[var(--bg-primary)]/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 md:min-h-10 sm:gap-2 sm:py-0.5 sm:-mx-1 sm:px-1"
+                            aria-expanded={!!openLessons[`${mi}:${li}`]}
+                            aria-label={`Lesson ${li + 1}: ${lesson.id.trim() || 'no id'} - ${lesson.title.trim() || 'Untitled lesson'}. ${openLessons[`${mi}:${li}`] ? 'Collapse' : 'Expand'} lesson`}
+                          >
+                            <span className="shrink-0" aria-hidden>
+                              {openLessons[`${mi}:${li}`] ? (
+                                <ChevronDown size={14} className="text-[var(--text-secondary)]" />
+                              ) : (
+                                <ChevronRight size={14} className="text-[var(--text-secondary)]" />
+                              )}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate text-sm font-bold text-[var(--text-primary)]">
                               <span className="font-mono text-orange-500/90">{lesson.id.trim() || '—'}</span>
                               <span> - {lesson.title.trim() || 'Untitled lesson'}</span>
                             </span>
-                            <span className="mt-0.5 block text-[11px] font-medium text-[var(--text-muted)] sm:text-xs sm:font-normal">
-                              Lesson {li + 1}
-                            </span>
-                          </span>
-                        </button>
+                          </button>
+                        </div>
+                        )}
                         <div className="flex shrink-0 flex-col gap-0.5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-0.5">
                           <button
                             type="button"
@@ -3791,7 +4497,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             aria-busy={busy}
                             aria-label={busy ? 'Saving course…' : 'Save course to catalog'}
                             title={busy ? 'Saving…' : 'Save course to catalog'}
-                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-orange-500 hover:bg-orange-500/10 disabled:opacity-40"
+                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-orange-500 hover:bg-orange-500/10 disabled:opacity-40 md:min-h-9 md:min-w-9"
                           >
                             {busy ? (
                               <Loader2 size={18} className="shrink-0 animate-spin" aria-hidden />
@@ -3808,15 +4514,34 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             onClick={() => resetLessonFromBaseline(mi, li)}
                             aria-label={`Reset lesson ${li + 1} in module ${mi + 1} to last saved`}
                             title="Reset this lesson to last saved"
-                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]/40 disabled:opacity-30"
+                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]/40 disabled:opacity-30 md:min-h-9 md:min-w-9"
                           >
                             <RotateCcw size={18} aria-hidden />
                           </button>
                           <button
                             type="button"
+                            disabled={busy || !draft}
+                            onClick={() => openCatalogPlaceForLesson(mi, li)}
+                            aria-label={
+                              lesson.contentKind === 'divider'
+                                ? 'Copy or move divider'
+                                : `Copy or move lesson ${li + 1}`
+                            }
+                            title="Copy or move branch — choose destination in the dialog"
+                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]/40 disabled:opacity-30 md:min-h-9 md:min-w-9"
+                          >
+                            <Copy size={18} aria-hidden />
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => removeLesson(mi, li)}
-                            disabled={mod.lessons.length <= 1}
-                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-red-400 hover:bg-red-500/10 disabled:opacity-30"
+                            disabled={
+                              mod.lessons.length <= 1 ||
+                              !mod.lessons
+                                .filter((_, j) => j !== li)
+                                .some(isPlayableCatalogLesson)
+                            }
+                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-red-400 hover:bg-red-500/10 disabled:opacity-30 md:min-h-9 md:min-w-9"
                             aria-label="Remove lesson"
                             title="Remove lesson"
                           >
@@ -3854,7 +4579,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                               }
                             }}
                             disabled={li === 0}
-                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]/40 disabled:opacity-30"
+                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]/40 disabled:opacity-30 md:min-h-9 md:min-w-9"
                             aria-label="Move lesson up"
                           >
                             <ArrowUp size={18} aria-hidden />
@@ -3891,51 +4616,18 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                               }
                             }}
                             disabled={li >= mod.lessons.length - 1}
-                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]/40 disabled:opacity-30"
+                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]/40 disabled:opacity-30 md:min-h-9 md:min-w-9"
                             aria-label="Move lesson down"
                           >
                             <ArrowDown size={18} aria-hidden />
                           </button>
                         </div>
                       </div>
-                      {draft.modules.length > 1 && (
-                        <div className="space-y-1 pt-0.5 sm:pt-1">
-                          <label className="block min-w-0">
-                            <span className="sr-only">Move lesson to another module</span>
-                            <select
-                              value=""
-                              disabled={mod.lessons.length <= 1}
-                              onChange={(e) => {
-                                const v = e.target.value;
-                                if (!v) return;
-                                const t = Number(v);
-                                if (Number.isInteger(t)) moveLessonToModule(mi, li, t);
-                                e.target.value = '';
-                              }}
-                              className="box-border min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2.5 py-1.5 text-sm text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40 sm:px-3 sm:py-2"
-                              aria-label="Move lesson to another module"
-                            >
-                              <option value="">Move to module…</option>
-                              {draft.modules.map((tm, mj) =>
-                                mj === mi ? null : (
-                                  <option key={mj} value={String(mj)}>
-                                    Module {mj + 1}: {tm.id.trim() || '—'} - {tm.title.trim() || 'Untitled module'}
-                                  </option>
-                                )
-                              )}
-                            </select>
-                          </label>
-                          {mod.lessons.length <= 1 ? (
-                            <p className="text-[11px] leading-snug text-[var(--text-muted)]">
-                              Add another lesson here first—each module must keep at least one.
-                            </p>
-                          ) : null}
-                        </div>
-                      )}
-                      {openLessons[`${mi}:${li}`] && (
+                      {(openLessons[`${mi}:${li}`] || lesson.contentKind === 'divider') && (
                         <>
-                      <div className="flex flex-row flex-wrap items-end gap-x-2 gap-y-2 sm:gap-x-3">
-                        <label className="flex min-w-0 flex-[1_1_11rem] max-w-full flex-col gap-1 sm:max-w-[16rem]">
+                      <div className="flex flex-row flex-wrap items-end gap-x-1.5 gap-y-1.5 sm:gap-x-2">
+                        {lesson.contentKind !== 'divider' ? (
+                        <label className="flex min-w-0 flex-[1_1_11rem] max-w-full flex-col gap-0.5 sm:max-w-[16rem]">
                           <span className="whitespace-nowrap text-xs font-semibold text-[var(--text-secondary)]">
                             Lesson ID
                           </span>
@@ -3959,7 +4651,20 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             Lesson ID is required.
                           </span>
                         </label>
-                        <label className="flex min-w-0 flex-[3_1_12rem] flex-col gap-1">
+                        ) : null}
+                        {lesson.contentKind === 'divider' ? (
+                          showValidationHints &&
+                          (!lesson.title.trim() || fieldErrors.lessonTitle.has(`${mi}:${li}`)) ? (
+                            <div className="w-full min-w-0">
+                              <span className="block text-[11px] text-red-400">
+                                {!lesson.title.trim()
+                                  ? 'Divider label is required.'
+                                  : 'This label must be unique in this course.'}
+                              </span>
+                            </div>
+                          ) : null
+                        ) : (
+                        <label className="flex min-w-0 flex-[3_1_12rem] flex-col gap-0.5">
                           <span className="text-xs font-semibold text-[var(--text-secondary)]">Lesson title</span>
                           <input
                             id={`admin-lesson-title-${mi}-${li}`}
@@ -3986,10 +4691,12 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                                 : ''}
                           </span>
                         </label>
+                        )}
                       </div>
+                      {lesson.contentKind !== 'divider' ? (
                       <div className="min-w-0 lg:flex lg:items-start lg:gap-4 xl:gap-6">
                         <div className="min-w-0 flex-1 space-y-1.5 sm:space-y-2">
-                      <div className="space-y-1.5 border-t border-[var(--border-color)]/60 pt-2 sm:space-y-2 sm:pt-3">
+                      <div className="space-y-1 border-t border-[var(--border-color)]/60 pt-1.5 sm:space-y-1.5 sm:pt-2">
                         <span className="text-xs font-semibold text-[var(--text-secondary)]">Lesson content</span>
                         <div
                           className="flex flex-wrap gap-x-3 gap-y-2 sm:gap-4"
@@ -4056,10 +4763,28 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             />
                             Quiz
                           </label>
+                          <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-[var(--text-primary)] sm:gap-2 sm:text-sm">
+                            <input
+                              type="radio"
+                              name={`admin-lesson-kind-${mi}-${li}`}
+                              checked={false}
+                              onChange={() =>
+                                updateLesson(mi, li, {
+                                  contentKind: 'divider',
+                                  webUrl: undefined,
+                                  quiz: undefined,
+                                  videoUrl: '',
+                                  videoOutlineNotes: undefined,
+                                })
+                              }
+                              className="h-4 w-4 shrink-0 border-[var(--border-color)] text-orange-500"
+                            />
+                            Section divider
+                          </label>
                         </div>
                         <p className="text-[11px] leading-snug text-[var(--text-muted)]">
                           Video uses the embedded player. External page opens in a new tab. Quiz: multiple-choice and
-                          open-ended questions with AI grading in the player.
+                          open-ended questions with AI grading in the player. Use <strong className="font-semibold text-[var(--text-secondary)]">Section divider</strong> for a non-playable heading in the outline.
                         </p>
                       </div>
                       {lesson.contentKind === 'web' ? (
@@ -4366,6 +5091,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           </span>
                         </label>
                       )}
+                      <>
                       <label className="block space-y-1">
                         <span className="text-xs font-semibold text-[var(--text-secondary)]">Duration label (optional)</span>
                         <input
@@ -4390,29 +5116,35 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         value={lesson.videoOutlineNotes ?? ''}
                         onChange={(v) => updateLesson(mi, li, { videoOutlineNotes: v || undefined })}
                       />
+                      </>
                         </div>
                         <aside className="mt-4 w-full shrink-0 border-t border-[var(--border-color)]/60 pt-4 sm:mt-5 sm:pt-5 lg:sticky lg:top-3 lg:mt-0 lg:w-[min(17rem,32vw)] lg:max-w-[300px] lg:border-t-0 lg:border-l lg:border-[var(--border-color)]/60 lg:pt-0 lg:pl-4 xl:top-4">
                           <AdminLessonContentPreview lesson={lesson} />
                         </aside>
                       </div>
+                      ) : null}
                         </>
                       )}
                     </div>
+                    <CatalogLessonInsertSlot
+                      persistVisibleOnMd={false}
+                      ariaLabel={`Add branch here after row ${li + 1} in this module`}
+                      onClick={() => setAddLessonBranchModal({ mi, insertAt: li + 1 })}
+                    />
+                    </Fragment>
                   );
                   })}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => addLesson(mi)}
-                    className="min-h-11 touch-manipulation rounded-lg px-1 pt-1 text-left text-xs font-bold text-orange-500 hover:bg-orange-500/5 hover:text-orange-400 sm:min-h-0 sm:px-0 sm:pt-0 sm:hover:bg-transparent"
-                  >
-                    + Add lesson
-                  </button>
-                </div>
                 </div>
                 </>
                 )}
               </div>
+              <CatalogModuleInsertSlot
+                persistVisibleOnMd={false}
+                ariaLabel={`Add module here after module ${mi + 1}`}
+                onClick={() => addModuleAt(mi + 1)}
+              />
+              </Fragment>
             ))}
           </div>
           </div>
@@ -4653,6 +5385,515 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           </div>
         )}
       </AnimatePresence>
+
+      <AnimatePresence>
+        {changeLessonKindModal && draft && (
+          <div
+            className="fixed inset-0 z-[102] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+            role="presentation"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) closeChangeLessonKindModal();
+            }}
+          >
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="admin-lesson-change-kind-title"
+              initial={{ y: 24, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 24, opacity: 0 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              className="flex max-h-[min(90dvh,640px)] w-full max-w-lg flex-col rounded-t-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl sm:max-h-[min(85dvh,560px)] sm:rounded-2xl"
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-color)] px-4 py-3">
+                <span className="w-10 shrink-0" aria-hidden />
+                <h2
+                  id="admin-lesson-change-kind-title"
+                  className="min-w-0 flex-1 text-center text-base font-bold text-[var(--text-primary)] sm:text-lg"
+                >
+                  Change branch type
+                </h2>
+                <button
+                  type="button"
+                  className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-lg text-sm font-semibold text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
+                  onClick={closeChangeLessonKindModal}
+                >
+                  Cancel
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
+                <p className="mb-3 text-xs leading-relaxed text-[var(--text-muted)]">
+                  {draft.modules[changeLessonKindModal.mi]?.lessons[changeLessonKindModal.li]?.contentKind ===
+                  'divider' ? (
+                    <>
+                      For <span className="font-semibold text-[var(--text-secondary)]">New module</span>, use the
+                      Divider control on the row. Here you can switch this row to a playable type. On structured
+                      courses, ids renumber after you change type.
+                    </>
+                  ) : (
+                    <>
+                      Pick a new type for this row. On structured courses, lesson and divider ids renumber after you
+                      change type.
+                    </>
+                  )}
+                </p>
+                <div className="flex flex-col gap-3">
+                  <button
+                    type="button"
+                    className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
+                    onClick={() => {
+                      const { mi: m, li: l } = changeLessonKindModal;
+                      const cur = draftRef.current?.modules[m]?.lessons[l];
+                      updateLesson(m, l, {
+                        contentKind: undefined,
+                        webUrl: undefined,
+                        quiz: undefined,
+                        videoUrl: cur?.videoUrl?.trim()
+                          ? cur.videoUrl
+                          : 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
+                      });
+                      closeChangeLessonKindModal();
+                    }}
+                  >
+                    <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
+                      <Video size={20} className="shrink-0 text-orange-500" aria-hidden />
+                      Video
+                      <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Embedded player</span>
+                    </span>
+                    <span className="pl-8 text-xs text-[var(--text-muted)]">
+                      YouTube or other URL in the lesson editor after you switch.
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
+                    onClick={() => {
+                      const { mi: m, li: l } = changeLessonKindModal;
+                      const cur = draftRef.current?.modules[m]?.lessons[l];
+                      updateLesson(m, l, {
+                        contentKind: 'web',
+                        webUrl: cur?.webUrl ?? '',
+                        videoUrl: '',
+                        quiz: undefined,
+                        videoOutlineNotes: undefined,
+                      });
+                      closeChangeLessonKindModal();
+                    }}
+                  >
+                    <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
+                      <Globe size={20} className="shrink-0 text-orange-500" aria-hidden />
+                      External page
+                      <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">New tab</span>
+                    </span>
+                    <span className="pl-8 text-xs text-[var(--text-muted)]">
+                      Blog post, article, or any page — learners open it from the player.
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
+                    onClick={() => {
+                      const { mi: m, li: l } = changeLessonKindModal;
+                      const cur = draftRef.current?.modules[m]?.lessons[l];
+                      updateLesson(m, l, {
+                        contentKind: 'quiz',
+                        webUrl: undefined,
+                        videoUrl: '',
+                        videoOutlineNotes: undefined,
+                        quiz: {
+                          questions:
+                            cur?.quiz?.questions?.length && cur.contentKind === 'quiz'
+                              ? cur.quiz.questions
+                              : [createDefaultMcqQuestion()],
+                        },
+                      });
+                      closeChangeLessonKindModal();
+                    }}
+                  >
+                    <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
+                      <ClipboardList size={20} className="shrink-0 text-orange-500" aria-hidden />
+                      Quiz
+                      <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">In-player</span>
+                    </span>
+                    <span className="pl-8 text-xs text-[var(--text-muted)]">
+                      Multiple-choice and open-ended questions with AI grading in the player.
+                    </span>
+                  </button>
+                  {(() => {
+                    const row = draft.modules[changeLessonKindModal.mi]?.lessons[changeLessonKindModal.li];
+                    if (!row || row.contentKind === 'divider') return null;
+                    return (
+                      <button
+                        type="button"
+                        className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
+                        onClick={() => {
+                          const { mi: m, li: l } = changeLessonKindModal;
+                          updateLesson(m, l, {
+                            contentKind: 'divider',
+                            webUrl: undefined,
+                            quiz: undefined,
+                            videoUrl: '',
+                            videoOutlineNotes: undefined,
+                          });
+                          closeChangeLessonKindModal();
+                        }}
+                      >
+                        <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
+                          <Minus size={20} className="shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+                          Section divider
+                          <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Heading only</span>
+                        </span>
+                        <span className="pl-8 text-xs text-[var(--text-muted)]">
+                          Non-playable subheading in the course outline and player sidebar.
+                        </span>
+                      </button>
+                    );
+                  })()}
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {addLessonBranchModal && draft && (
+          <div
+            className="fixed inset-0 z-[102] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+            role="presentation"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) closeAddLessonBranchModal();
+            }}
+          >
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="admin-add-lesson-branch-title"
+              initial={{ y: 24, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 24, opacity: 0 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              className="flex max-h-[min(90dvh,520px)] w-full max-w-lg flex-col rounded-t-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl sm:max-h-[min(85dvh,480px)] sm:rounded-2xl"
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-color)] px-4 py-3">
+                <span className="w-10 shrink-0" aria-hidden />
+                <h2
+                  id="admin-add-lesson-branch-title"
+                  className="min-w-0 flex-1 text-center text-base font-bold text-[var(--text-primary)] sm:text-lg"
+                >
+                  Add branch
+                </h2>
+                <button
+                  type="button"
+                  className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-lg text-sm font-semibold text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
+                  onClick={closeAddLessonBranchModal}
+                >
+                  Cancel
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
+                <p className="mb-3 text-xs leading-relaxed text-[var(--text-muted)]">
+                  Choose what to insert in module{' '}
+                  <span className="font-semibold text-[var(--text-secondary)]">{addLessonBranchModal.mi + 1}</span> at this
+                  position in the list.
+                </p>
+                <div className="flex flex-col gap-3">
+                  <button
+                    type="button"
+                    className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
+                    onClick={() => {
+                      const { mi, insertAt } = addLessonBranchModal;
+                      addLesson(mi, insertAt, 'lesson');
+                      closeAddLessonBranchModal();
+                    }}
+                  >
+                    <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
+                      <BookOpen size={20} className="shrink-0 text-orange-500" aria-hidden />
+                      Lesson
+                      <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Playable</span>
+                    </span>
+                    <span className="pl-8 text-xs text-[var(--text-muted)]">
+                      Video, external page, or quiz — set content type in the editor after adding.
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
+                    onClick={() => {
+                      const { mi, insertAt } = addLessonBranchModal;
+                      addLesson(mi, insertAt, 'divider');
+                      closeAddLessonBranchModal();
+                    }}
+                  >
+                    <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
+                      <Minus size={20} className="shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+                      Section divider
+                      <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Heading only</span>
+                    </span>
+                    <span className="pl-8 text-xs text-[var(--text-muted)]">
+                      Non-playable subheading in the course outline and player sidebar.
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {catalogPlaceModal && draft ? (
+        <div
+          className="fixed inset-0 z-[103] flex items-end justify-center bg-black/50 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeCatalogPlaceModal();
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="catalog-place-modal-title"
+            className="flex max-h-[min(90dvh,560px)] w-full max-w-lg flex-col rounded-t-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl sm:rounded-2xl"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-color)] px-4 py-3">
+              <h2
+                id="catalog-place-modal-title"
+                className="min-w-0 flex-1 text-center text-base font-bold text-[var(--text-primary)] sm:text-lg"
+              >
+                {catalogPlaceModal.kind === 'module' ? 'Copy or move module' : 'Copy or move branch'}
+              </h2>
+              <button
+                type="button"
+                className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-lg text-sm font-semibold text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
+                onClick={closeCatalogPlaceModal}
+              >
+                Cancel
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
+              <div className="mb-3 flex gap-1 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/40 p-1">
+                <button
+                  type="button"
+                  onClick={() => setCatalogPlaceMode('copy')}
+                  className={`flex min-h-11 flex-1 touch-manipulation items-center justify-center gap-1.5 rounded-lg px-2 text-xs font-bold sm:text-sm ${
+                    catalogPlaceMode === 'copy'
+                      ? 'bg-orange-500 text-white shadow-sm'
+                      : 'text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]'
+                  }`}
+                >
+                  <Copy size={16} className="shrink-0 opacity-90" aria-hidden />
+                  Copy
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCatalogPlaceMode('move')}
+                  disabled={
+                    catalogPlaceModal.kind === 'module'
+                      ? draft.modules.length <= 1
+                      : false
+                  }
+                  className={`flex min-h-11 flex-1 touch-manipulation items-center justify-center gap-1.5 rounded-lg px-2 text-xs font-bold sm:text-sm ${
+                    catalogPlaceMode === 'move'
+                      ? 'bg-orange-500 text-white shadow-sm'
+                      : 'text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]'
+                  } disabled:opacity-40`}
+                >
+                  <ArrowRightLeft size={16} className="shrink-0 opacity-90" aria-hidden />
+                  Move
+                </button>
+              </div>
+
+              {catalogPlaceModal.kind === 'module' ? (
+                <>
+                  <p className="mb-3 text-xs leading-relaxed text-[var(--text-muted)]">
+                    {catalogPlaceMode === 'copy' ? (
+                      <>
+                        Copying{' '}
+                        <strong className="text-[var(--text-secondary)]">
+                          {catalogModuleTitleLine(
+                            draft.modules[catalogPlaceModal.sourceMi]!,
+                            catalogPlaceModal.sourceMi + 1
+                          )}
+                        </strong>
+                        . A duplicate with new row keys (and renumbered ids on structured courses) will be inserted —
+                        pick where it should appear.
+                      </>
+                    ) : (
+                      <>
+                        Moving{' '}
+                        <strong className="text-[var(--text-secondary)]">
+                          {catalogModuleTitleLine(
+                            draft.modules[catalogPlaceModal.sourceMi]!,
+                            catalogPlaceModal.sourceMi + 1
+                          )}
+                        </strong>
+                        . Module and lesson ids stay tied to order on structured courses; choose the new position.
+                      </>
+                    )}
+                  </p>
+                  <div>
+                    <label
+                      className="block text-xs font-semibold text-[var(--text-secondary)]"
+                      htmlFor="catalog-place-module-slot"
+                    >
+                      {catalogPlaceMode === 'copy' ? 'Position in course' : 'Position after removal'}
+                    </label>
+                    <p id="catalog-place-module-slot-hint" className="mt-1 text-[11px] leading-snug text-[var(--text-muted)]">
+                      {catalogPlaceMode === 'copy'
+                        ? 'Order among all modules in this draft.'
+                        : 'Order among the remaining modules (this one is taken out first, then placed here).'}
+                    </p>
+                    <select
+                      id="catalog-place-module-slot"
+                      aria-describedby="catalog-place-module-slot-hint"
+                      className="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                      value={
+                        catalogPlaceMode === 'copy'
+                          ? catalogModuleCopyInsertIdx
+                          : catalogModuleMoveInsertIdx
+                      }
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        if (catalogPlaceMode === 'copy') setCatalogModuleCopyInsertIdx(v);
+                        else setCatalogModuleMoveInsertIdx(v);
+                      }}
+                    >
+                      {catalogPlaceMode === 'copy'
+                        ? Array.from({ length: draft.modules.length + 1 }, (_, i) => (
+                            <option key={i} value={i}>
+                              {i === 0
+                                ? `Before ${catalogModuleTitleLine(draft.modules[0]!, 1)}`
+                                : i >= draft.modules.length
+                                  ? `After ${catalogModuleTitleLine(
+                                      draft.modules[draft.modules.length - 1]!,
+                                      draft.modules.length
+                                    )}`
+                                  : `After ${catalogModuleTitleLine(
+                                      draft.modules[i - 1]!,
+                                      i
+                                    )} · before ${catalogModuleTitleLine(draft.modules[i]!, i + 1)}`}
+                            </option>
+                          ))
+                        : (() => {
+                            const smi = catalogPlaceModal.sourceMi;
+                            const without = draft.modules.filter((_, j) => j !== smi);
+                            return Array.from({ length: without.length + 1 }, (_, i) => (
+                              <option key={i} value={i}>
+                                {without.length === 0
+                                  ? 'Only position'
+                                  : i === 0
+                                    ? `Before ${catalogModuleTitleLine(without[0]!, 1)}`
+                                    : i >= without.length
+                                      ? `After ${catalogModuleTitleLine(
+                                          without[without.length - 1]!,
+                                          without.length
+                                        )}`
+                                      : `After ${catalogModuleTitleLine(without[i - 1]!, i)} · before ${catalogModuleTitleLine(
+                                          without[i]!,
+                                          i + 1
+                                        )}`}
+                              </option>
+                            ));
+                          })()}
+                    </select>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {(() => {
+                    const { sourceMi, sourceLi } = catalogPlaceModal;
+                    const srcLes = draft.modules[sourceMi]!.lessons[sourceLi]!;
+                    const summary = catalogLessonRowSummary(srcLes);
+                    const targetMod = draft.modules[catalogLessonTargetMi]!;
+                    const liMax = targetMod.lessons.length;
+                    const liClamped = Math.min(catalogLessonInsertIdx, liMax);
+                    return (
+                      <>
+                        <p className="mb-3 text-xs leading-relaxed text-[var(--text-muted)]">
+                          {catalogPlaceMode === 'copy' ? (
+                            <>
+                              Copying <strong className="text-[var(--text-secondary)]">{summary}</strong>. A duplicate
+                              with a new row key (and renumbered ids on structured courses) will be inserted — pick the
+                              module and position.
+                            </>
+                          ) : (
+                            <>
+                              Moving <strong className="text-[var(--text-secondary)]">{summary}</strong>. Choose the
+                              module and position; the source module must keep at least one playable lesson.
+                            </>
+                          )}
+                        </p>
+                        <div className="space-y-3">
+                          <div>
+                            <label
+                              className="block text-xs font-semibold text-[var(--text-secondary)]"
+                              htmlFor="catalog-place-lesson-module"
+                            >
+                              Module
+                            </label>
+                            <select
+                              id="catalog-place-lesson-module"
+                              className="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                              value={catalogLessonTargetMi}
+                              onChange={(e) => setCatalogLessonTargetMi(Number(e.target.value))}
+                            >
+                              {draft.modules.map((m, mj) => (
+                                <option key={mj} value={mj}>
+                                  {catalogModuleTitleLine(m, mj + 1)}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label
+                              className="block text-xs font-semibold text-[var(--text-secondary)]"
+                              htmlFor="catalog-place-lesson-slot"
+                            >
+                              Position in module
+                            </label>
+                            <p
+                              id="catalog-place-lesson-slot-hint"
+                              className="mt-1 text-[11px] leading-snug text-[var(--text-muted)]"
+                            >
+                              Order among rows in the selected module (including the row you are moving when it is the
+                              same module).
+                            </p>
+                            <select
+                              id="catalog-place-lesson-slot"
+                              aria-describedby="catalog-place-lesson-slot-hint"
+                              className="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                              value={liClamped}
+                              onChange={(e) => setCatalogLessonInsertIdx(Number(e.target.value))}
+                            >
+                              {Array.from({ length: liMax + 1 }, (_, i) => (
+                                <option key={i} value={i}>
+                                  {catalogLessonInsertOptionLabel(targetMod, i)}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </>
+              )}
+
+              <button
+                type="button"
+                onClick={() => void commitCatalogPlace()}
+                className="mt-5 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600"
+              >
+                {catalogPlaceMode === 'copy' ? 'Place copy' : 'Move here'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <AnimatePresence>
         {deleteDialogOpen && draft && (

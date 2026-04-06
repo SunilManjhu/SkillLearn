@@ -1,4 +1,5 @@
 import type { Course, Lesson } from '../data/courses';
+import { isPlayableCatalogLesson } from './lessonContent';
 
 export function flattenLessons(course: Course): Lesson[] {
   const flat: Lesson[] = [];
@@ -6,6 +7,27 @@ export function flattenLessons(course: Course): Lesson[] {
     flat.push(...mod.lessons);
   }
   return flat;
+}
+
+export function firstPlayableLesson(course: Course): Lesson | undefined {
+  for (const mod of course.modules) {
+    for (const l of mod.lessons) {
+      if (isPlayableCatalogLesson(l)) return l;
+    }
+  }
+  return undefined;
+}
+
+/** Next playable lesson in catalog order after `currentId`, or null. */
+export function nextPlayableLessonAfter(course: Course, currentId: string): Lesson | null {
+  const flat = flattenLessons(course);
+  const i = flat.findIndex((l) => l.id === currentId);
+  if (i < 0) return null;
+  for (let j = i + 1; j < flat.length; j++) {
+    const l = flat[j]!;
+    if (isPlayableCatalogLesson(l)) return l;
+  }
+  return null;
 }
 
 export function getLastLessonInCourse(course: Course): Lesson | undefined {

@@ -1,5 +1,8 @@
-/** `video` (default): embedded player from `videoUrl`. `web`: open `webUrl` in a new tab. `quiz`: in-player quiz. */
-export type LessonContentKind = 'video' | 'web' | 'quiz';
+/**
+ * `video` (default): embedded player from `videoUrl`. `web`: open `webUrl` in a new tab. `quiz`: in-player quiz.
+ * `divider`: syllabus-only heading in the module list; not playable (uses `title` as the label).
+ */
+export type LessonContentKind = 'video' | 'web' | 'quiz' | 'divider';
 
 export const MAX_QUIZ_QUESTIONS = 20;
 export const MAX_QUIZ_CHOICES = 10;
@@ -74,7 +77,7 @@ export interface Lesson {
    * learners see text without timestamps and can tap a line to seek the player.
    */
   videoOutlineNotes?: string;
-  /** Omit or `video` = default embedded lesson. `web` requires `webUrl`. `quiz` requires `quiz`. */
+  /** Omit or `video` = default embedded lesson. `web` requires `webUrl`. `quiz` requires `quiz`. `divider` = section heading only. */
   contentKind?: LessonContentKind;
   /** Required when `contentKind === 'web'`. */
   webUrl?: string;

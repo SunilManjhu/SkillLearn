@@ -1,5 +1,6 @@
 import { Course, Lesson } from '../data/courses';
 import { flattenLessons } from './courseLessons';
+import { isPlayableCatalogLesson } from './lessonContent';
 import {
   clearCourseCompletionTimestamp,
   loadCompletionTimestamps,
@@ -125,8 +126,11 @@ export function savedProgressLooksFinished(p: LessonProgress | undefined): boole
 }
 
 export function isCourseComplete(course: Course, progressByLesson: Record<string, LessonProgress>): boolean {
-  return course.modules.every(module =>
-    module.lessons.every(lesson => isLessonPlaybackComplete(progressByLesson[lesson.id]))
+  return course.modules.every((module) =>
+    module.lessons.every(
+      (lesson) =>
+        !isPlayableCatalogLesson(lesson) || isLessonPlaybackComplete(progressByLesson[lesson.id])
+    )
   );
 }
 
@@ -144,12 +148,19 @@ export function getCourseLessonProgressSummaryFromMap(
   course: Course,
   progressByLesson: Record<string, LessonProgress>
 ): CourseLessonProgressSummary {
-  const totalLessons = course.modules.reduce((acc, m) => acc + m.lessons.length, 0);
+  const totalLessons = course.modules.reduce(
+    (acc, m) => acc + m.lessons.filter((l) => isPlayableCatalogLesson(l)).length,
+    0
+  );
   if (totalLessons === 0) {
     return { totalLessons: 0, completedLessons: 0, percent: 0 };
   }
   const completedLessons = course.modules.reduce(
-    (acc, m) => acc + m.lessons.filter((l) => isLessonPlaybackComplete(progressByLesson[l.id])).length,
+    (acc, m) =>
+      acc +
+      m.lessons.filter(
+        (l) => isPlayableCatalogLesson(l) && isLessonPlaybackComplete(progressByLesson[l.id])
+      ).length,
     0
   );
   const percent = Math.min(100, Math.round((completedLessons / totalLessons) * 100));
@@ -173,6 +184,7 @@ export function getFirstIncompleteLesson(
 ): Lesson | null {
   for (const module of course.modules) {
     for (const lesson of module.lessons) {
+      if (!isPlayableCatalogLesson(lesson)) continue;
       if (!isLessonPlaybackComplete(progressByLesson[lesson.id])) {
         return lesson;
       }
@@ -188,7 +200,8 @@ export function getResumeOrStartLesson(
 ): Lesson | null {
   const next = getFirstIncompleteLesson(course, progressByLesson);
   if (next) return next;
-  const first = course.modules[0]?.lessons[0];
+  const first =
+    course.modules[0]?.lessons.find((l) => isPlayableCatalogLesson(l)) ?? course.modules[0]?.lessons[0];
   return first ?? null;
 }
 
@@ -206,6 +219,7 @@ export function getNextIncompleteLessonAfter(
   if (i < 0) return null;
   for (let j = i + 1; j < flat.length; j++) {
     const l = flat[j]!;
+    if (!isPlayableCatalogLesson(l)) continue;
     if (!isLessonPlaybackComplete(progressByLesson[l.id])) {
       return l;
     }
@@ -218,6 +232,7 @@ export function hasResumableCourseProgress(course: Course, progressByLesson: Rec
   if (isCourseComplete(course, progressByLesson)) return false;
   for (const module of course.modules) {
     for (const lesson of module.lessons) {
+      if (!isPlayableCatalogLesson(lesson)) continue;
       const p = progressByLesson[lesson.id];
       if (!p) continue;
       if (isLessonPlaybackComplete(p)) return true;

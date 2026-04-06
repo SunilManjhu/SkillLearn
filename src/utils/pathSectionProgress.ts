@@ -7,6 +7,7 @@ export function collectCourseIdsInSubtree(root: MindmapTreeNode): Set<string> {
   const ids = new Set<string>();
   const walk = (n: MindmapTreeNode) => {
     if (n.kind === 'course' && n.courseId) ids.add(n.courseId);
+    if (n.kind === 'module' && n.courseId) ids.add(n.courseId);
     if (n.kind === 'lesson' && n.courseId) ids.add(n.courseId);
     for (const ch of n.children) walk(ch);
   };

@@ -101,8 +101,9 @@ function buildNestedBranchSiblingMap(sectionRoots: MindmapTreeNode[]): Map<strin
   return map;
 }
 
-function nodeKind(n: MindmapTreeNode): 'label' | 'course' | 'lesson' | 'link' | 'divider' {
+function nodeKind(n: MindmapTreeNode): 'label' | 'course' | 'lesson' | 'link' | 'divider' | 'module' {
   if (n.kind === 'divider') return 'divider';
+  if (n.kind === 'module' && n.courseId && n.moduleId) return 'module';
   if (n.kind === 'course' && n.courseId) return 'course';
   if (n.kind === 'lesson' && n.courseId && n.lessonId) return 'lesson';
   if (n.kind === 'link' && n.externalUrl) return 'link';
@@ -120,7 +121,7 @@ function resolveActions(
   lessonId?: string;
 } {
   const k = nodeKind(node);
-  if (k === 'divider') {
+  if (k === 'divider' || k === 'module') {
     return {
       canOpenCourse: false,
       canOpenLesson: false,
@@ -657,7 +658,8 @@ function OutlineNode({
 }) {
   const label = node.label.trim() || node.id;
   const nk = nodeKind(node);
-  const isLabelRow = nk === 'label';
+  /** Top-level `module` sections use the same chrome as text labels. */
+  const isLabelRow = nk === 'label' || nk === 'module';
   const safeLinkHref =
     nk === 'link' && node.externalUrl ? normalizeExternalHref(node.externalUrl) : null;
 

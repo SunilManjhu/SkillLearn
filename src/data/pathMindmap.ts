@@ -2,7 +2,7 @@
 
 export const PATH_MINDMAP_CENTER_LABEL = 'Learning Path' as const;
 
-export type MindmapNodeKind = 'label' | 'course' | 'lesson' | 'link' | 'divider';
+export type MindmapNodeKind = 'label' | 'course' | 'lesson' | 'link' | 'divider' | 'module';
 
 /** Who may see an outline row in the learner UI. Omit on a node = visible to both (default). */
 export type PathOutlineAudienceRole = 'user' | 'admin';
@@ -14,6 +14,8 @@ export type MindmapTreeNode = {
   kind?: MindmapNodeKind;
   courseId?: string;
   lessonId?: string;
+  /** `kind: 'module'` — catalog module id (`Module.id`); children should be `lesson` rows for this course in this module. */
+  moduleId?: string;
   /** When true, learners see an explicit “locked” message (e.g. empty section not yet available). */
   locked?: boolean;
   /** `kind: 'link'` — opens in a new tab in the path outline (blog, article, etc.). */
@@ -67,8 +69,9 @@ export function mindmapNodeVisibleToViewer(
   return r.includes('user');
 }
 
-function nodeKindForFlatten(n: MindmapTreeNode): 'label' | 'course' | 'lesson' | 'link' | 'divider' {
+function nodeKindForFlatten(n: MindmapTreeNode): 'label' | 'course' | 'lesson' | 'link' | 'divider' | 'module' {
   if (n.kind === 'divider') return 'divider';
+  if (n.kind === 'module' && n.courseId && n.moduleId) return 'module';
   if (n.kind === 'course' && n.courseId) return 'course';
   if (n.kind === 'lesson' && n.courseId && n.lessonId) return 'lesson';
   if (n.kind === 'link' && n.externalUrl) return 'link';
@@ -88,6 +91,18 @@ export function flattenSectionChildrenForOutline(children: MindmapTreeNode[]): M
         continue;
       }
       const nk = nodeKindForFlatten(n);
+      if (nk === 'module') {
+        const div: MindmapTreeNode = {
+          id: `mod-div-${n.id}`,
+          label: n.label.trim() || 'Module',
+          children: [],
+          kind: 'divider',
+        };
+        if (n.visibleToRoles) div.visibleToRoles = n.visibleToRoles;
+        out.push(div);
+        if (n.children.length > 0) walk(n.children);
+        continue;
+      }
       if (nk === 'label' && n.children.length > 0) {
         const div: MindmapTreeNode = {
           id: `legacy-div-${n.id}`,
@@ -168,7 +183,15 @@ export function normalizeMindmapNode(raw: unknown): MindmapTreeNode | null {
   }
   const base: MindmapTreeNode = { id: o.id, label: o.label, children: parsedChildren };
   let node: MindmapTreeNode;
-  if (o.kind === 'course' && typeof o.courseId === 'string' && o.courseId.length > 0) {
+  if (
+    o.kind === 'module' &&
+    typeof o.courseId === 'string' &&
+    o.courseId.length > 0 &&
+    typeof o.moduleId === 'string' &&
+    o.moduleId.length > 0
+  ) {
+    node = { ...base, kind: 'module', courseId: o.courseId, moduleId: o.moduleId };
+  } else if (o.kind === 'course' && typeof o.courseId === 'string' && o.courseId.length > 0) {
     node = { ...base, kind: 'course', courseId: o.courseId };
   } else if (
     o.kind === 'lesson' &&
@@ -217,6 +240,7 @@ export function collectCourseIdsFromMindmapTree(nodes: MindmapTreeNode[]): Set<s
   const walk = (ns: MindmapTreeNode[]) => {
     for (const n of ns) {
       if (n.kind === 'course' && n.courseId) out.add(n.courseId);
+      if (n.kind === 'module' && n.courseId) out.add(n.courseId);
       if (n.kind === 'lesson' && n.courseId) out.add(n.courseId);
       if (n.children.length > 0) walk(n.children);
     }
@@ -230,6 +254,7 @@ export function removeCourseIdFromMindmapBranchList(nodes: MindmapTreeNode[], co
   const out: MindmapTreeNode[] = [];
   for (const n of nodes) {
     if (n.kind === 'course' && n.courseId === courseId) continue;
+    if (n.kind === 'module' && n.courseId === courseId) continue;
     if (n.kind === 'lesson' && n.courseId === courseId) continue;
     const children = removeCourseIdFromMindmapBranchList(n.children, courseId);
     out.push({ ...n, children });

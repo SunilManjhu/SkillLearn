@@ -18,6 +18,7 @@ import {
   ArrowRightLeft,
   GraduationCap,
   Link2,
+  Layers,
   Loader2,
   Plus,
   Route,
@@ -30,7 +31,7 @@ import {
 import { AnimatePresence, motion } from 'motion/react';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { useDialogKeyboard } from '../../hooks/useDialogKeyboard';
-import type { Course, Lesson } from '../../data/courses';
+import type { Course, Lesson, Module } from '../../data/courses';
 import { formatCourseTaxonomyForSearch } from '../../utils/courseTaxonomy';
 import {
   compactVisibleToRolesForPersist,
@@ -85,7 +86,7 @@ function arrayMove<T>(list: T[], from: number, to: number): T[] {
   return next;
 }
 
-/** Tree node for path outline — synced to `pathMindmap` on save. Two levels only: top-level sections and sub-rows under each section (sub-rows cannot nest further). */
+/** Tree node for path outline — synced to `pathMindmap` on save. Two levels only: top-level sections (label or module) and sub-rows (sub-rows cannot nest further). */
 type PathBranchNode =
   | {
       id: string;
@@ -96,6 +97,14 @@ type PathBranchNode =
       visibleToRoles?: PathOutlineAudienceRole[];
     }
   | { id: string; kind: 'divider'; label: string; children: PathBranchNode[]; visibleToRoles?: PathOutlineAudienceRole[] }
+  | {
+      id: string;
+      kind: 'module';
+      courseId: string;
+      moduleId: string;
+      children: PathBranchNode[];
+      visibleToRoles?: PathOutlineAudienceRole[];
+    }
   | { id: string; kind: 'course'; courseId: string; children: PathBranchNode[]; visibleToRoles?: PathOutlineAudienceRole[] }
   | {
       id: string;
@@ -113,6 +122,20 @@ type PathBranchNode =
       children: PathBranchNode[];
       visibleToRoles?: PathOutlineAudienceRole[];
     };
+
+function courseModuleById(course: Course | undefined, moduleId: string): Module | undefined {
+  return course?.modules.find((m) => m.id === moduleId);
+}
+
+function lessonBelongsToCourseModule(
+  course: Course | undefined,
+  moduleId: string,
+  lessonId: string
+): boolean {
+  const mod = courseModuleById(course, moduleId);
+  if (!mod) return false;
+  return mod.lessons.some((l) => l.id === lessonId);
+}
 
 function pathBranchVisibilityToMindmapFields(
   n: PathBranchNode
@@ -133,12 +156,23 @@ function pathBranchVisibilityFromMindmap(
 }
 
 /** Promote legacy nested rows into section-level dividers + flat siblings (admin “Flatten”). */
-function flattenPathBranchSectionChildren(nodes: PathBranchNode[]): PathBranchNode[] {
+function flattenPathBranchSectionChildren(nodes: PathBranchNode[], publishedList: Course[]): PathBranchNode[] {
   const out: PathBranchNode[] = [];
   const walk = (ns: PathBranchNode[]) => {
     for (const n of ns) {
       if (n.kind === 'divider') {
         out.push({ ...n, children: [] });
+        continue;
+      }
+      if (n.kind === 'module' && n.children.length > 0) {
+        out.push({
+          id: newMindmapNodeId(),
+          kind: 'divider',
+          label: branchNodeDisplayLabel(n, publishedList).trim() || 'Module',
+          children: [],
+          ...(n.visibleToRoles ? { visibleToRoles: n.visibleToRoles } : {}),
+        });
+        walk(n.children);
         continue;
       }
       if (n.kind === 'label' && n.children.length > 0) {
@@ -167,22 +201,59 @@ function flattenPathBranchSectionChildren(nodes: PathBranchNode[]): PathBranchNo
 function collectPathBranchStructureIssues(roots: PathBranchNode[], publishedList: Course[]): string[] {
   const issues: string[] = [];
   for (const root of roots) {
-    if (root.kind !== 'label') {
+    if (root.kind !== 'label' && root.kind !== 'module') {
       const display = branchNodeDisplayLabel(root, publishedList);
       if (root.kind === 'divider') {
         issues.push('A divider cannot be a top-level section — move it under a section or delete it.');
       } else {
         issues.push(
-          `Top-level rows must be text labels (sections). “${display}” is a ${root.kind} row — use Change type to convert it to a text label, or remove it and add a section first.`
+          `Top-level rows must be a text section or a course module. “${display}” is a ${root.kind} row — use Change type, or add a section / module at the top level first.`
         );
       }
     }
     const secLabel = branchNodeDisplayLabel(root, publishedList);
-    for (const row of root.children) {
-      if (row.children.length > 0) {
-        issues.push(
-          `Under “${secLabel}”, “${branchNodeDisplayLabel(row, publishedList)}” has nested rows. Paths must be section → flat list only—flatten or remove nesting.`
-        );
+    if (root.kind === 'module') {
+      const course = publishedList.find((c) => c.id === root.courseId);
+      const mod = courseModuleById(course, root.moduleId);
+      if (!course) {
+        issues.push(`Module row “${secLabel}” uses an unknown course (id: ${root.courseId}).`);
+      } else if (!mod) {
+        issues.push(`Module row “${secLabel}” does not match any module in that course.`);
+      }
+      for (const row of root.children) {
+        if (row.children.length > 0) {
+          issues.push(
+            `Under module “${secLabel}”, “${branchNodeDisplayLabel(row, publishedList)}” has nested rows — only a flat list of lessons is allowed.`
+          );
+        }
+        if (row.kind !== 'lesson') {
+          issues.push(
+            `Under module “${secLabel}”, only lesson rows are allowed (not ${row.kind}). Remove or change “${branchNodeDisplayLabel(row, publishedList)}”.`
+          );
+          continue;
+        }
+        if (row.courseId !== root.courseId) {
+          issues.push(
+            `Lesson “${branchNodeDisplayLabel(row, publishedList)}” under module “${secLabel}” must belong to the same course as that module.`
+          );
+        } else if (!lessonBelongsToCourseModule(course, root.moduleId, row.lessonId)) {
+          issues.push(
+            `Lesson “${branchNodeDisplayLabel(row, publishedList)}” is not in module “${secLabel}”.`
+          );
+        }
+      }
+    } else {
+      for (const row of root.children) {
+        if (row.children.length > 0) {
+          issues.push(
+            `Under “${secLabel}”, “${branchNodeDisplayLabel(row, publishedList)}” has nested rows. Paths must be section → flat list only—flatten or remove nesting.`
+          );
+        }
+        if (row.kind === 'module') {
+          issues.push(
+            `Course modules belong at the top level only — move “${branchNodeDisplayLabel(row, publishedList)}” out from under “${secLabel}”.`
+          );
+        }
       }
     }
   }
@@ -197,6 +268,7 @@ function isRootBranchId(roots: PathBranchNode[], id: string): boolean {
 function updateNodeChildren(n: PathBranchNode, children: PathBranchNode[]): PathBranchNode {
   if (n.kind === 'divider') return { ...n, children: [] };
   if (n.kind === 'label') return { ...n, children };
+  if (n.kind === 'module') return { ...n, children };
   if (n.kind === 'course') return { ...n, children };
   if (n.kind === 'link') return { ...n, children };
   return { ...n, children };
@@ -206,7 +278,7 @@ function collectCourseIdsFromTree(nodes: PathBranchNode[]): string[] {
   const out: string[] = [];
   function walk(ns: PathBranchNode[]) {
     for (const n of ns) {
-      if (n.kind === 'course' || n.kind === 'lesson') {
+      if (n.kind === 'course' || n.kind === 'module' || n.kind === 'lesson') {
         if (!out.includes(n.courseId)) out.push(n.courseId);
       }
       if (n.kind !== 'divider') walk(n.children);
@@ -339,6 +411,19 @@ function branchNodeToMindmap(n: PathBranchNode, publishedList: Course[]): Mindma
       ...v,
     };
   }
+  if (n.kind === 'module') {
+    const c = publishedList.find((x) => x.id === n.courseId);
+    const mod = courseModuleById(c, n.moduleId);
+    return {
+      id: n.id,
+      label: mod?.title?.trim() || n.moduleId,
+      children,
+      kind: 'module',
+      courseId: n.courseId,
+      moduleId: n.moduleId,
+      ...v,
+    };
+  }
   if (n.kind === 'label') {
     return {
       id: n.id,
@@ -401,6 +486,12 @@ function branchNodeDisplayLabel(n: PathBranchNode, publishedList: Course[]): str
   if (n.kind === 'label') return n.label || 'Untitled';
   if (n.kind === 'divider') return n.label.trim() || 'Divider';
   if (n.kind === 'link') return n.label.trim() || n.href || 'Link';
+  if (n.kind === 'module') {
+    const c = publishedList.find((x) => x.id === n.courseId);
+    const mod = courseModuleById(c, n.moduleId);
+    if (c && mod) return `${c.title} · ${mod.title?.trim() || n.moduleId}`;
+    return mod?.title?.trim() || n.moduleId || n.courseId;
+  }
   if (n.kind === 'course') return publishedList.find((c) => c.id === n.courseId)?.title ?? n.courseId;
   const c = publishedList.find((x) => x.id === n.courseId);
   let t = n.lessonId;
@@ -460,6 +551,9 @@ function remapBranchSubtreeIds(node: PathBranchNode): PathBranchNode {
     const id = newMindmapNodeId();
     if (n.kind === 'divider') {
       return { ...n, id, children: [] };
+    }
+    if (n.kind === 'module') {
+      return { ...n, id, children: n.children.map(walk) };
     }
     return { ...n, id, children: n.children.map(walk) };
   };
@@ -573,7 +667,7 @@ function PlaceDuplicateBranchModal({
 
   const parentOptions = useMemo(() => {
     const opts: { id: string | null; label: string }[] = [];
-    if (sourceSnapshot.kind === 'label') {
+    if (sourceSnapshot.kind === 'label' || sourceSnapshot.kind === 'module') {
       opts.push({ id: null, label: 'Top of outline' });
     }
     if (topLevelOnly) return opts;
@@ -965,6 +1059,16 @@ function mindmapNodeToPathBranch(n: MindmapTreeNode): PathBranchNode {
   if (n.kind === 'divider') {
     return { id: n.id, kind: 'divider', label: n.label, children: [], ...vis };
   }
+  if (n.kind === 'module' && n.courseId && n.moduleId) {
+    return {
+      id: n.id,
+      kind: 'module',
+      courseId: n.courseId,
+      moduleId: n.moduleId,
+      children,
+      ...vis,
+    };
+  }
   if (n.kind === 'course' && n.courseId) {
     return { id: n.id, kind: 'course', courseId: n.courseId, children, ...vis };
   }
@@ -991,7 +1095,16 @@ function mindmapNodeToPathBranch(n: MindmapTreeNode): PathBranchNode {
   };
 }
 
-type BranchModalStep = 'kind' | 'label' | 'divider' | 'course' | 'linkForm' | 'lessonCourse' | 'lessonPick';
+type BranchModalStep =
+  | 'kind'
+  | 'label'
+  | 'divider'
+  | 'course'
+  | 'linkForm'
+  | 'lessonCourse'
+  | 'lessonPick'
+  | 'moduleCourse'
+  | 'modulePick';
 
 function AddPathBranchModal({
   open,
@@ -1005,6 +1118,8 @@ function AddPathBranchModal({
   changeTypeRootRowLabelOnly = false,
   allowSectionDivider = false,
   replaceSource = null,
+  lessonAddContext = null,
+  showModuleInKindPicker = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -1014,7 +1129,7 @@ function AddPathBranchModal({
   contextHint?: string;
   mode?: 'add' | 'changeType';
   /** When `mode === 'add'`, skip the kind picker and open the matching step. */
-  addPreset?: 'label' | 'course' | 'link' | 'divider';
+  addPreset?: 'label' | 'course' | 'link' | 'divider' | 'module';
   /** Top-level outline: section labels only — default to label step; Back from label closes (no course/link kind picker). */
   topLevelOutlineAdd?: boolean;
   /** Root-row change type: only converting to a text label (no course/link/lesson/divider picker). */
@@ -1023,6 +1138,10 @@ function AddPathBranchModal({
   allowSectionDivider?: boolean;
   /** When changing an existing row’s type: keep id, visibility, and children when allowed. */
   replaceSource?: PathBranchNode | null;
+  /** Under a module row: skip to picking a lesson in that module only. */
+  lessonAddContext?: { courseId: string; moduleId: string } | null;
+  /** Show “Course module” in the kind step (top-level sections only). */
+  showModuleInKindPicker?: boolean;
 }) {
   const [step, setStep] = useState<BranchModalStep>('kind');
   const [query, setQuery] = useState('');
@@ -1030,6 +1149,7 @@ function AddPathBranchModal({
   const [linkLabelInput, setLinkLabelInput] = useState('');
   const [linkHrefInput, setLinkHrefInput] = useState('');
   const [lessonCourse, setLessonCourse] = useState<Course | null>(null);
+  const [moduleCoursePick, setModuleCoursePick] = useState<Course | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -1037,6 +1157,13 @@ function AddPathBranchModal({
     setLabelInput('');
     setLinkLabelInput('');
     setLinkHrefInput('');
+    setModuleCoursePick(null);
+    if (lessonAddContext) {
+      const c = catalogCourses.find((x) => x.id === lessonAddContext.courseId) ?? null;
+      setLessonCourse(c);
+      setStep('lessonPick');
+      return;
+    }
     if (mode === 'changeType' && replaceSource) {
       setLessonCourse(null);
       if (changeTypeRootRowLabelOnly) {
@@ -1063,10 +1190,12 @@ function AddPathBranchModal({
         }
       }
     } else {
-      if (addPreset === 'label' || (topLevelOutlineAdd && addPreset == null)) {
+      if (addPreset === 'label') {
         setStep('label');
       } else if (addPreset === 'divider') {
         setStep('divider');
+      } else if (addPreset === 'module') {
+        setStep('moduleCourse');
       } else if (addPreset === 'course') {
         setStep('course');
       } else if (addPreset === 'link') {
@@ -1085,6 +1214,7 @@ function AddPathBranchModal({
     replaceSource,
     topLevelOutlineAdd,
     changeTypeRootRowLabelOnly,
+    lessonAddContext,
   ]);
 
   useDialogKeyboard({ open, onClose });
@@ -1109,12 +1239,29 @@ function AddPathBranchModal({
     if (!lessonCourse) return [] as { moduleTitle: string; lesson: Lesson }[];
     const rows: { moduleTitle: string; lesson: Lesson }[] = [];
     for (const mod of lessonCourse.modules) {
+      if (lessonAddContext && mod.id !== lessonAddContext.moduleId) continue;
       for (const lesson of mod.lessons) {
+        if (lesson.contentKind === 'divider') continue;
         rows.push({ moduleTitle: mod.title, lesson });
       }
     }
     return rows;
-  }, [lessonCourse]);
+  }, [lessonCourse, lessonAddContext]);
+
+  const filteredModules = useMemo(() => {
+    if (!moduleCoursePick) return [] as Module[];
+    const q = query.trim().toLowerCase();
+    let mods = moduleCoursePick.modules.filter((m) => m.lessons.length > 0);
+    if (q) {
+      mods = mods.filter(
+        (m) =>
+          m.title.toLowerCase().includes(q) ||
+          m.id.toLowerCase().includes(q) ||
+          m.lessons.some((l) => (l.title || l.id).toLowerCase().includes(q))
+      );
+    }
+    return mods;
+  }, [moduleCoursePick, query]);
 
   const filteredLessons = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -1193,6 +1340,19 @@ function AddPathBranchModal({
     onClose();
   };
 
+  const commitModule = (course: Course, mod: Module) => {
+    const ch = replaceSource ? pathBranchChildrenAfterTypeChange(replaceSource, 'module') : [];
+    onCommit({
+      id: replaceSource?.id ?? newMindmapNodeId(),
+      kind: 'module',
+      courseId: course.id,
+      moduleId: mod.id,
+      children: ch,
+      ...visPatch,
+    });
+    onClose();
+  };
+
   const commitWebLink = () => {
     const t = linkLabelInput.trim();
     const hrefNorm = normalizeExternalHref(linkHrefInput);
@@ -1235,8 +1395,13 @@ function AddPathBranchModal({
               aria-label="Back"
               onClick={() => {
                 setQuery('');
-                if (step === 'course') {
+                if (step === 'course' || step === 'moduleCourse') {
                   setStep('kind');
+                  return;
+                }
+                if (step === 'modulePick') {
+                  setModuleCoursePick(null);
+                  setStep('moduleCourse');
                   return;
                 }
                 if (step === 'lessonCourse') {
@@ -1274,6 +1439,8 @@ function AddPathBranchModal({
             {step === 'divider' && 'Section divider'}
             {step === 'linkForm' && 'Web link'}
             {step === 'course' && 'Choose course'}
+            {step === 'moduleCourse' && 'Choose course (module)'}
+            {step === 'modulePick' && moduleCoursePick && `Module — ${moduleCoursePick.title}`}
             {step === 'lessonCourse' && 'Choose course (other)'}
             {step === 'lessonPick' && lessonCourse && `Lesson — ${lessonCourse.title}`}
           </h2>
@@ -1322,6 +1489,26 @@ function AddPathBranchModal({
                   Section title or topic (e.g. &quot;Foundations&quot;) — no catalog link yet.
                 </span>
               </button>
+              {showModuleInKindPicker ? (
+                <button
+                  type="button"
+                  disabled={!canLink}
+                  className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)] disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={() => {
+                    setStep('moduleCourse');
+                    setQuery('');
+                  }}
+                >
+                  <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
+                    <Layers size={20} className="shrink-0 text-indigo-500" aria-hidden />
+                    Course module
+                    <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Top level</span>
+                  </span>
+                  <span className="pl-8 text-xs text-[var(--text-muted)]">
+                    A catalog module as a section; add only lessons from that module underneath.
+                  </span>
+                </button>
+              ) : null}
               <button
                 type="button"
                 disabled={!canLink}
@@ -1513,7 +1700,7 @@ function AddPathBranchModal({
             </div>
           )}
 
-          {(step === 'course' || step === 'lessonCourse') && (
+          {(step === 'course' || step === 'lessonCourse' || step === 'moduleCourse') && (
             <div className="space-y-2">
               <input
                 type="search"
@@ -1538,7 +1725,11 @@ function AddPathBranchModal({
                         className="flex w-full min-h-11 items-center gap-2 rounded-lg border border-transparent px-2 py-2 text-left text-sm hover:bg-[var(--hover-bg)]"
                         onClick={() => {
                           if (step === 'course') commitCourse(c);
-                          else {
+                          else if (step === 'moduleCourse') {
+                            setModuleCoursePick(c);
+                            setQuery('');
+                            setStep('modulePick');
+                          } else {
                             setLessonCourse(c);
                             setQuery('');
                             setStep('lessonPick');
@@ -1554,6 +1745,43 @@ function AddPathBranchModal({
               )}
             </div>
           )}
+
+          {step === 'modulePick' && moduleCoursePick ? (
+            <div className="space-y-2">
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search modules or lessons…"
+                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm"
+                autoFocus
+              />
+              {filteredModules.length === 0 ? (
+                <p className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)]/50 px-3 py-6 text-center text-sm text-[var(--text-muted)]">
+                  {moduleCoursePick.modules.every((m) => m.lessons.length === 0)
+                    ? 'This course has no lessons in any module yet.'
+                    : 'No modules match your search.'}
+                </p>
+              ) : (
+                <ul className="max-h-[min(50dvh,320px)] space-y-1 overflow-y-auto overscroll-contain pr-1">
+                  {filteredModules.map((m) => (
+                    <li key={m.id}>
+                      <button
+                        type="button"
+                        className="flex w-full min-h-11 flex-col items-start rounded-lg border border-transparent px-2 py-2 text-left text-sm hover:bg-[var(--hover-bg)]"
+                        onClick={() => commitModule(moduleCoursePick, m)}
+                      >
+                        <span className="font-medium">{m.title?.trim() || m.id}</span>
+                        <span className="text-[10px] text-[var(--text-muted)]">
+                          {m.lessons.length} lesson{m.lessons.length === 1 ? '' : 's'}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ) : null}
 
           {step === 'lessonPick' && lessonCourse ? (
             <div className="space-y-2">
@@ -1601,6 +1829,8 @@ function pathBranchKindBadgeShortLabel(kind: PathBranchNode['kind']): string {
       return 'Label';
     case 'divider':
       return 'Divider';
+    case 'module':
+      return 'Module';
     case 'course':
       return 'Course';
     case 'link':
@@ -1850,11 +2080,13 @@ function PathBranchRow({
       ? 'bg-orange-500/15 text-orange-600 dark:text-orange-400'
       : b.kind === 'divider'
         ? 'bg-amber-500/15 text-amber-800 dark:text-amber-300'
-        : b.kind === 'course'
-          ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
-          : b.kind === 'link'
-            ? 'bg-violet-500/15 text-violet-600 dark:text-violet-400'
-            : 'bg-teal-500/15 text-teal-600 dark:text-teal-400';
+        : b.kind === 'module'
+          ? 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-400'
+          : b.kind === 'course'
+            ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
+            : b.kind === 'link'
+              ? 'bg-violet-500/15 text-violet-600 dark:text-violet-400'
+              : 'bg-teal-500/15 text-teal-600 dark:text-teal-400';
 
   const rowDivider =
     depth === 0
@@ -2316,7 +2548,8 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
         kind: 'add';
         parentId: string | null;
         insertIndex?: number;
-        preset?: 'label' | 'course' | 'link' | 'divider';
+        preset?: 'label' | 'course' | 'link' | 'divider' | 'module';
+        lessonAddContext?: { courseId: string; moduleId: string };
       }
     | { kind: 'changeType'; nodeId: string }
     | { kind: 'duplicatePlace'; sourceSnapshot: PathBranchNode; sourceParentId: string | null };
@@ -2618,6 +2851,30 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     return findBranchNode(pathBranchTree, branchModal.nodeId);
   }, [branchModal, pathBranchTree]);
 
+  const addPathBranchModalAllowDivider = useMemo(() => {
+    if (branchModal.kind === 'add' && branchModal.parentId != null) {
+      return findBranchNode(pathBranchTree, branchModal.parentId)?.kind === 'label';
+    }
+    if (branchModal.kind === 'changeType') {
+      const pid = findParentIdOfBranch(pathBranchTree, branchModal.nodeId);
+      if (pid == null) return false;
+      return findBranchNode(pathBranchTree, pid)?.kind === 'label';
+    }
+    return false;
+  }, [branchModal, pathBranchTree]);
+
+  const addPathBranchModalShowModuleKind = useMemo(() => {
+    if (branchModal.kind === 'add') return branchModal.parentId == null;
+    if (branchModal.kind === 'changeType') return isRootBranchId(pathBranchTree, branchModal.nodeId);
+    return false;
+  }, [branchModal, pathBranchTree]);
+
+  const addPathBranchModalChangeTypeRootLabelOnly = useMemo(() => {
+    if (branchModal.kind !== 'changeType' || !isRootBranchId(pathBranchTree, branchModal.nodeId)) return false;
+    const src = changeTypeSource;
+    return src?.kind === 'course' || src?.kind === 'lesson' || src?.kind === 'link';
+  }, [branchModal, pathBranchTree, changeTypeSource]);
+
   useEffect(() => {
     if (branchModal.kind !== 'changeType') return;
     if (!findBranchNode(pathBranchTree, branchModal.nodeId)) {
@@ -2628,7 +2885,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
   const branchModalContextHint = useMemo(() => {
     if (branchModal.kind === 'changeType') {
       if (isRootBranchId(pathBranchTree, branchModal.nodeId)) {
-        return 'Top-level rows must stay section labels. Enter the section title below; nested rows are kept when you confirm.';
+        return 'Top-level rows are a section label or a course module. Pick a new type; nested rows stay when the new type allows.';
       }
       return 'Pick a new type. Nested rows are removed if you choose a section divider; otherwise they stay when the new type allows.';
     }
@@ -2638,9 +2895,12 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
           ? ' Inserts at the position you chose in the list.'
           : '';
       if (branchModal.parentId == null) {
-        return `Top level: each row is a section with a flat list inside.${pos}`;
+        return `Top level: add a section label or a course module, then use Add branch here inside it.${pos}`;
       }
       const p = findBranchNode(pathBranchTree, branchModal.parentId);
+      if (p?.kind === 'module') {
+        return `Under module: ${branchNodeDisplayLabel(p, publishedList)} — pick a lesson from this module only.${pos}`;
+      }
       return p
         ? `Inside section: ${branchNodeDisplayLabel(p, publishedList)}.${pos}`
         : `Inside section.${pos}`;
@@ -3281,7 +3541,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                       setPathBranchTree((roots) =>
                         roots.map((sec) => ({
                           ...sec,
-                          children: flattenPathBranchSectionChildren(sec.children),
+                          children: flattenPathBranchSectionChildren(sec.children, publishedList),
                         }))
                       )
                     }
@@ -3302,9 +3562,10 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                   <div className="rounded-xl border border-dashed border-orange-500/35 bg-orange-500/[0.07] px-4 py-6 sm:px-6">
                     <p className="text-center text-sm font-semibold text-[var(--text-primary)]">Start your outline</p>
                     <p className="mt-2 text-center text-xs leading-relaxed text-[var(--text-muted)]">
-                      Top-level rows are <strong className="text-[var(--text-secondary)]">sections</strong> (a label
-                      only). After you add one, use <strong className="text-[var(--text-secondary)]">Add branch here</strong>{' '}
-                      inside it to attach courses, lessons, links, or dividers.
+                      Top-level rows are a <strong className="text-[var(--text-secondary)]">section label</strong> or a{' '}
+                      <strong className="text-[var(--text-secondary)]">course module</strong>. Under a label, add courses,
+                      lessons, links, or dividers. Under a module, add <strong className="text-[var(--text-secondary)]">only lessons</strong>{' '}
+                      from that module.
                     </p>
                     <div className="mt-4 flex flex-col gap-2">
                       <button
@@ -3318,14 +3579,28 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                           Section label
                         </span>
                         <span className="pl-[1.625rem] text-xs text-[var(--text-muted)]">
-                          Topic or module heading for this block of the path
+                          Free-text heading; add courses, lessons, or links underneath
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!!pathMindmapLoading && pathSelector !== '__new__'}
+                        onClick={() => setBranchModal({ kind: 'add', parentId: null, preset: 'module' })}
+                        className="flex min-h-12 w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-left transition-colors hover:border-orange-500/40 hover:bg-[var(--hover-bg)] disabled:opacity-40"
+                      >
+                        <span className="flex w-full items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
+                          <Layers size={18} className="shrink-0 text-indigo-500" aria-hidden />
+                          Course module
+                        </span>
+                        <span className="pl-[1.625rem] text-xs text-[var(--text-muted)]">
+                          Pick a catalog module; only its lessons can go under this row
                         </span>
                       </button>
                     </div>
                     <p className="mt-4 text-center text-[11px] leading-relaxed text-[var(--text-muted)]">
-                      More top-level sections: <strong className="text-[var(--text-secondary)]">Add top-level section here</strong>{' '}
-                      between rows. Nested content always uses <strong className="text-[var(--text-secondary)]">Add branch here</strong>{' '}
-                      inside a section.
+                      More top-level rows: <strong className="text-[var(--text-secondary)]">Add top-level section here</strong>{' '}
+                      between rows. Under a module, use <strong className="text-[var(--text-secondary)]">Add branch here</strong>{' '}
+                      for lessons only.
                     </p>
                   </div>
                 ) : (
@@ -3338,13 +3613,29 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                       expandedBranchIds={expandedBranchIds}
                       onToggleCollapse={toggleBranchCollapse}
                       onBranchRowFocus={focusBranchRow}
-                      onInsertBranchAt={(pid, insertIndex) =>
+                      onInsertBranchAt={(pid, insertIndex) => {
+                        const roots = pathBranchTreeRef.current;
+                        if (pid != null) {
+                          const parent = findBranchNode(roots, pid);
+                          if (parent?.kind === 'module') {
+                            setBranchModal({
+                              kind: 'add',
+                              parentId: pid,
+                              insertIndex,
+                              lessonAddContext: {
+                                courseId: parent.courseId,
+                                moduleId: parent.moduleId,
+                              },
+                            });
+                            return;
+                          }
+                        }
                         setBranchModal(
                           pid == null
-                            ? { kind: 'add', parentId: null, insertIndex, preset: 'label' }
+                            ? { kind: 'add', parentId: null, insertIndex }
                             : { kind: 'add', parentId: pid, insertIndex }
-                        )
-                      }
+                        );
+                      }}
                       onRemove={handleRemoveBranch}
                       onCopyBranch={handleDuplicateBranch}
                       onMove={moveBranchAmongSiblings}
@@ -3398,14 +3689,10 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
             contextHint={branchModalContextHint}
             addPreset={branchModal.kind === 'add' ? branchModal.preset : undefined}
             topLevelOutlineAdd={branchModal.kind === 'add' && branchModal.parentId == null}
-            changeTypeRootRowLabelOnly={
-              branchModal.kind === 'changeType' && isRootBranchId(pathBranchTree, branchModal.nodeId)
-            }
-            allowSectionDivider={
-              (branchModal.kind === 'add' && branchModal.parentId != null) ||
-              (branchModal.kind === 'changeType' &&
-                findParentIdOfBranch(pathBranchTree, branchModal.nodeId) != null)
-            }
+            changeTypeRootRowLabelOnly={addPathBranchModalChangeTypeRootLabelOnly}
+            allowSectionDivider={addPathBranchModalAllowDivider}
+            lessonAddContext={branchModal.kind === 'add' ? branchModal.lessonAddContext ?? null : null}
+            showModuleInKindPicker={addPathBranchModalShowModuleKind}
             replaceSource={changeTypeSource}
             mode={branchModal.kind === 'changeType' ? 'changeType' : 'add'}
             onCommit={(branch) => {
@@ -3441,8 +3728,12 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                 const roots = pathBranchTreeRef.current;
                 if (payload.mode === 'copy') {
                   const br = payload.branch;
-                  if (parentId === null && br.kind !== 'label') {
-                    showActionToast('Only section labels can be placed at the top level.', 'danger');
+                  if (parentId === null && br.kind !== 'label' && br.kind !== 'module') {
+                    showActionToast('Only section labels or course modules can be placed at the top level.', 'danger');
+                    return;
+                  }
+                  if (br.kind === 'module' && parentId !== null) {
+                    showActionToast('Course modules can only be placed at the top level.', 'danger');
                     return;
                   }
                   if (duplicateSubtreeRequiresTopLevelOnly(br) && parentId !== null) {
@@ -3479,8 +3770,12 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                   showActionToast('Cannot move a branch inside its own nested rows.', 'danger');
                   return;
                 }
-                if (parentId === null && snap.kind !== 'label') {
-                  showActionToast('Only section labels can be placed at the top level.', 'danger');
+                if (parentId === null && snap.kind !== 'label' && snap.kind !== 'module') {
+                  showActionToast('Only section labels or course modules can be placed at the top level.', 'danger');
+                  return;
+                }
+                if (snap.kind === 'module' && parentId !== null) {
+                  showActionToast('Course modules can only be placed at the top level.', 'danger');
                   return;
                 }
                 if (duplicateSubtreeRequiresTopLevelOnly(snap) && parentId !== null) {

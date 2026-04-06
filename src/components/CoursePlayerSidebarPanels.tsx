@@ -207,6 +207,17 @@ export function CoursePlayerSidebarPanels({
                       className="overflow-hidden bg-black/5"
                     >
                       {module.lessons.map((lesson) => {
+                        if (lesson.contentKind === 'divider') {
+                          return (
+                            <div
+                              key={lesson.id}
+                              role="presentation"
+                              className="border-t border-[var(--border-color)]/60 px-4 py-2.5 pl-12 text-left text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]"
+                            >
+                              {lesson.title.trim() || 'Section'}
+                            </div>
+                          );
+                        }
                         const pct = progressPercent(progressByLesson[lesson.id]);
                         const done = isLessonPlaybackComplete(progressByLesson[lesson.id]);
                         return (

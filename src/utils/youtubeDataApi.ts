@@ -93,6 +93,9 @@ export function lessonDurationLabel(
     if (lesson.duration?.trim()) return lesson.duration.trim();
     return 'Quiz';
   }
+  if (lesson.contentKind === 'divider') {
+    return '';
+  }
   const sec = youtubeResolvedSeconds[lesson.id];
   if (sec && sec > 0) return formatSecondsAsLessonClock(sec);
   if (lesson.duration) return lesson.duration;
