@@ -74,6 +74,11 @@ import {
   REORDER_DATA_ATTR_SELECTORS,
 } from '../../utils/reorderScrollViewport';
 import { scrollDisclosureRowToTop } from '../../utils/scrollDisclosureRowToTop';
+import {
+  ADMIN_INSERT_STRIP_CHIP_BTN_EXPAND_ROW,
+  ADMIN_INSERT_STRIP_CHIP_BTN_PERSIST,
+  ADMIN_INSERT_STRIP_OUTER_EXPAND_HOVER,
+} from './adminInsertStripClasses';
 
 function deepClone<T>(x: T): T {
   return JSON.parse(JSON.stringify(x)) as T;
@@ -1130,7 +1135,7 @@ function AddPathBranchModal({
   mode?: 'add' | 'changeType';
   /** When `mode === 'add'`, skip the kind picker and open the matching step. */
   addPreset?: 'label' | 'course' | 'link' | 'divider' | 'module';
-  /** Top-level outline: section labels only — default to label step; Back from label closes (no course/link kind picker). */
+  /** Top-level outline add: kind step is Text label + Section only; Back from label/divider closes. */
   topLevelOutlineAdd?: boolean;
   /** Root-row change type: only converting to a text label (no course/link/lesson/divider picker). */
   changeTypeRootRowLabelOnly?: boolean;
@@ -1434,7 +1439,8 @@ function AddPathBranchModal({
             id="path-branch-modal-title"
             className="min-w-0 flex-1 text-center text-base font-bold text-[var(--text-primary)] sm:text-lg"
           >
-            {step === 'kind' && (mode === 'changeType' ? 'Change branch type' : 'Add a branch')}
+            {step === 'kind' &&
+              (mode === 'changeType' ? 'Change branch type' : topLevelOutlineAdd ? 'Add top-level section' : 'Add a branch')}
             {step === 'label' && (replacing ? 'Text label' : 'Label')}
             {step === 'divider' && 'Section divider'}
             {step === 'linkForm' && 'Web link'}
@@ -1461,6 +1467,45 @@ function AddPathBranchModal({
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
           {step === 'kind' && (
             <div className="flex flex-col gap-3">
+              {mode === 'add' && topLevelOutlineAdd ? (
+                <>
+                  <p className="text-xs leading-relaxed text-[var(--text-muted)]">
+                    Top-level outline rows are either a <strong className="text-[var(--text-secondary)]">text label</strong>{' '}
+                    (section you can open and add courses, links, or lessons under) or a{' '}
+                    <strong className="text-[var(--text-secondary)]">section</strong> heading (non-playable divider). Use{' '}
+                    <strong className="text-[var(--text-secondary)]">Add branch here</strong> under a label for catalog items.
+                  </p>
+                  <button
+                    type="button"
+                    className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
+                    onClick={() => setStep('label')}
+                  >
+                    <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
+                      <Type size={20} className="shrink-0 text-orange-500" aria-hidden />
+                      Text label
+                      <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Section group</span>
+                    </span>
+                    <span className="pl-8 text-xs text-[var(--text-muted)]">
+                      Collapsible section title (e.g. &quot;Foundations&quot;) — add courses, links, and lessons inside.
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
+                    onClick={() => setStep('divider')}
+                  >
+                    <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
+                      <Minus size={20} className="shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+                      Section
+                      <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Heading only</span>
+                    </span>
+                    <span className="pl-8 text-xs text-[var(--text-muted)]">
+                      Non-collapsible subheading in the path outline — not a group; no nested rows.
+                    </span>
+                  </button>
+                </>
+              ) : (
+                <>
               <p className="text-xs leading-relaxed text-[var(--text-muted)]">
                 {mode === 'changeType' ? (
                   <>
@@ -1585,6 +1630,8 @@ function AddPathBranchModal({
                   Publish at least one course in the <strong className="text-[var(--text-secondary)]">Catalog</strong>{' '}
                   tab to add <strong className="text-[var(--text-secondary)]">Whole course</strong> branches.
                 </p>
+              )}
+                </>
               )}
             </div>
           )}
@@ -1884,28 +1931,30 @@ function PathBranchInsertSlot({
     depth > 0 ? ({ paddingLeft: `${Math.min(depth, 8) * 0.75}rem` } as const) : undefined;
   return (
     <li
-      className={`group/ins relative min-w-0 list-none overflow-visible py-0.5 ${
-        persistVisibleOnMd ? '' : 'md:h-0 md:py-0'
-      }`}
+      className={
+        persistVisibleOnMd
+          ? 'group/ins relative z-0 min-w-0 list-none overflow-visible py-0.5'
+          : `group/ins relative z-0 min-h-0 min-w-0 list-none ${ADMIN_INSERT_STRIP_OUTER_EXPAND_HOVER}`
+      }
+      title={persistVisibleOnMd ? undefined : title}
     >
-      {/* md+: zero list height; hover/focus hit strip straddles the gap between rows */}
       <div
         className={
-          (persistVisibleOnMd
-            ? 'w-full'
-            : 'w-full md:pointer-events-auto md:absolute md:inset-x-0 md:top-0 md:z-[5] md:flex md:min-h-11 md:-translate-y-1/2 md:items-center md:justify-center') +
-          ' max-md:!pl-0'
+          persistVisibleOnMd
+            ? 'flex w-full max-md:!pl-0 items-center justify-center'
+            : 'flex w-full max-md:!pl-0 items-center justify-center md:min-h-0 md:py-1.5'
         }
         style={pad}
       >
         <button
           type="button"
-          title={title}
+          title={persistVisibleOnMd ? title : undefined}
+          aria-label={label}
           onClick={() => onInsertBranchAt(parentId, insertIndex)}
           className={
             persistVisibleOnMd
-              ? 'flex w-full min-h-10 touch-manipulation items-center justify-center gap-1.5 rounded-lg border border-dashed border-[var(--border-color)]/50 bg-[var(--bg-secondary)]/25 px-2 text-[11px] font-semibold text-[var(--text-muted)] opacity-90 transition-all duration-150 ease-out hover:border-orange-500/45 hover:bg-orange-500/10 hover:text-orange-600 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 dark:hover:text-orange-400'
-              : 'flex w-full min-h-10 touch-manipulation items-center justify-center gap-1.5 rounded-lg border border-dashed border-[var(--border-color)]/50 bg-[var(--bg-secondary)]/25 px-2 text-[11px] font-semibold text-[var(--text-muted)] opacity-90 transition-all duration-150 ease-out hover:border-orange-500/45 hover:bg-orange-500/10 hover:text-orange-600 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 dark:hover:text-orange-400 md:h-0 md:min-h-0 md:overflow-hidden md:border-transparent md:bg-transparent md:opacity-0 md:shadow-none md:pointer-events-none md:ring-0 md:group-hover/ins:pointer-events-auto md:group-hover/ins:h-auto md:group-hover/ins:min-h-10 md:group-hover/ins:overflow-visible md:group-hover/ins:border-[var(--border-color)]/50 md:group-hover/ins:bg-[var(--bg-secondary)]/25 md:group-hover/ins:opacity-100 md:group-focus-within/ins:pointer-events-auto md:group-focus-within/ins:h-auto md:group-focus-within/ins:min-h-10 md:group-focus-within/ins:overflow-visible md:group-focus-within/ins:border-[var(--border-color)]/50 md:group-focus-within/ins:bg-[var(--bg-secondary)]/25 md:group-focus-within/ins:opacity-100 md:focus-visible:pointer-events-auto md:focus-visible:h-auto md:focus-visible:min-h-10 md:focus-visible:overflow-visible md:focus-visible:border-[var(--border-color)]/50 md:focus-visible:bg-[var(--bg-secondary)]/25 md:focus-visible:opacity-100'
+              ? ADMIN_INSERT_STRIP_CHIP_BTN_PERSIST
+              : ADMIN_INSERT_STRIP_CHIP_BTN_EXPAND_ROW
           }
         >
           <Plus size={14} className="shrink-0 opacity-90" aria-hidden />

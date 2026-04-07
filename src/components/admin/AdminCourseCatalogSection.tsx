@@ -39,6 +39,11 @@ import { AdminCatalogCategoriesPanel } from './AdminCatalogCategoriesPanel';
 import { AdminCatalogCategoryPresetsPanel } from './AdminCatalogCategoryPresetsPanel';
 import { AdminCatalogSkillPresetsPanel } from './AdminCatalogSkillPresetsPanel';
 import { AdminCatalogTaxonomyPanel } from './AdminCatalogTaxonomyPanel';
+import {
+  ADMIN_INSERT_STRIP_CHIP_BTN_EXPAND_ROW as ADMIN_CATALOG_INSERT_CHIP_BTN_EXPAND_ROW,
+  ADMIN_INSERT_STRIP_CHIP_BTN_PERSIST as ADMIN_CATALOG_INSERT_CHIP_BTN_PERSIST,
+  ADMIN_INSERT_STRIP_OUTER_EXPAND_HOVER as CATALOG_INSERT_OUTER_EXPAND_HOVER,
+} from './adminInsertStripClasses';
 import type { Course, Lesson, Module, QuizQuestion, QuizQuestionMcq } from '../../data/courses';
 import {
   MAX_QUIZ_CHOICES,
@@ -662,17 +667,6 @@ function catalogLessonBranchKindModalLabel(lesson: Lesson): string {
   if (lesson.contentKind === 'quiz') return 'Quiz';
   return 'Video';
 }
-
-/** Compact dashed chip + md+ hover rail (shared by Add module / Add branch). */
-const ADMIN_CATALOG_INSERT_CHIP_BTN_PERSIST =
-  'flex w-full min-w-0 max-w-full min-h-11 touch-manipulation items-center justify-center gap-1.5 rounded-md border border-dashed border-[var(--border-color)]/50 bg-[var(--bg-secondary)]/25 px-4 py-1.5 text-[11px] font-semibold text-[var(--text-muted)] opacity-90 transition-[background-color,border-color,color,opacity] duration-150 ease-out hover:border-orange-500/50 hover:bg-orange-500/15 hover:text-orange-600 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 dark:hover:bg-orange-500/20 dark:hover:text-orange-300 sm:px-6';
-
-/** md+: collapsed strip expands on hover/focus-within (pushes rows). Use hover:/focus-within: on this node, not group-hover (same element as group/ins). */
-const CATALOG_INSERT_OUTER_EXPAND_HOVER =
-  'max-md:overflow-visible max-md:py-0.5 md:overflow-hidden md:py-0 md:transition-[max-height] md:duration-200 md:ease-out md:max-h-3 md:hover:max-h-[4.25rem] md:focus-within:max-h-[4.25rem]';
-
-/** md+: chip hidden until gutter opens (avoids dashed border clipped to a “hairline”). */
-const ADMIN_CATALOG_INSERT_CHIP_BTN_EXPAND_ROW = `${ADMIN_CATALOG_INSERT_CHIP_BTN_PERSIST} md:opacity-0 md:pointer-events-none md:transition-opacity md:duration-200 md:group-hover/ins:pointer-events-auto md:group-hover/ins:opacity-100 md:group-focus-within/ins:pointer-events-auto md:group-focus-within/ins:opacity-100`;
 
 /** Lesson list: `pl-3` aligns with module border-l. */
 const CATALOG_LESSON_INSERT_OUTER_HOVER =
