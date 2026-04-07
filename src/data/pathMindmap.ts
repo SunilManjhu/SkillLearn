@@ -69,7 +69,10 @@ export function mindmapNodeVisibleToViewer(
   return r.includes('user');
 }
 
-/** Hide course-linked rows when the course is not in the learner-visible catalog (e.g. platform draft). */
+/**
+ * Hide course-linked rows when the course is not in the learner-visible catalog (e.g. platform `catalogPublished === false`).
+ * Pass `null` to skip this filter (e.g. admins previewing a path). Path `catalogPublished` is handled separately in the app shell.
+ */
 export function mindmapNodeCatalogVisible(
   node: MindmapTreeNode,
   catalogVisibleCourseIds: ReadonlySet<string> | null

@@ -40,6 +40,7 @@ import { formatCourseTaxonomyForSearch } from '../../utils/courseTaxonomy';
 import {
   compactVisibleToRolesForPersist,
   mindmapDocumentWithCenterChildren,
+  mindmapNodeVisibleToViewer,
   newMindmapNodeId,
   type MindmapTreeNode,
   type PathOutlineAudienceRole,
@@ -305,6 +306,65 @@ function mergeCourseIdsFromBranches(draft: LearningPath, roots: PathBranchNode[]
     return fromTree;
   }
   return [...draft.courseIds];
+}
+
+/** Same visibility as learner outline: Show off or Admin-only → not “shown” to learners for publish rules. */
+function pathBranchVisibleToLearner(n: PathBranchNode): boolean {
+  const p = compactVisibleToRolesForPersist(n.visibleToRoles);
+  const node: MindmapTreeNode = {
+    id: n.id,
+    label: '',
+    children: [],
+    ...(p !== undefined ? { visibleToRoles: p } : {}),
+  };
+  return mindmapNodeVisibleToViewer(node, false);
+}
+
+/**
+ * Unpublished catalog courses on learner-visible outline rows (unique by id, outline order).
+ * Empty outline tree: merged course ids are treated as learner-visible (legacy flat path list).
+ */
+function collectLearnerVisibleUnpublishedCourses(
+  roots: PathBranchNode[],
+  publishedList: Course[],
+  mergedCourseIdsWhenNoTree: string[]
+): Course[] {
+  const seen = new Set<string>();
+  const out: Course[] = [];
+  const addIfEligible = (row: Course | undefined) => {
+    if (!row || isCourseCatalogPublished(row) || seen.has(row.id)) return;
+    seen.add(row.id);
+    out.push(row);
+  };
+
+  if (roots.length > 0) {
+    const walk = (ns: PathBranchNode[]) => {
+      for (const n of ns) {
+        if (n.kind === 'course' || n.kind === 'module' || n.kind === 'lesson') {
+          if (pathBranchVisibleToLearner(n)) {
+            addIfEligible(publishedList.find((c) => c.id === n.courseId));
+          }
+        }
+        if (n.kind !== 'divider') walk(n.children);
+      }
+    };
+    walk(roots);
+    return out;
+  }
+  for (const cid of mergedCourseIdsWhenNoTree) {
+    addIfEligible(publishedList.find((c) => c.id === cid));
+  }
+  return out;
+}
+
+function formatPathPublishBlockedByCoursesMessage(courses: Course[]): string {
+  if (courses.length === 0) return '';
+  const lines = courses.map((c, i) => `${i + 1}. ${c.title.trim() || c.id}`).join('\n');
+  const intro =
+    courses.length === 1
+      ? 'The course below is not published to the Catalog. Remove it from the path, turn Show off for that row, or publish it before publishing this path:'
+      : 'The courses below are not published to the Catalog. Remove them from the path, turn Show off for those rows, or publish them before publishing this path:';
+  return `${intro}\n${lines}`;
 }
 
 function addChildAtParent(
@@ -1982,7 +2042,7 @@ const PATH_BRANCH_OUTLINE_ROW_GRID =
 
 /** Hover / long-press tip for the catalog outline visibility checkbox column. */
 const PATH_BRANCH_SHOW_COLUMN_TIP =
-  'When on, this row appears in the catalog path outline (and learner views that use it). Use the audience menu to limit who sees it there. When off, the row is hidden from that outline for everyone, including admins—you can still edit it here.';
+  'When off, the row is hidden from the path outline for everyone (including admins). When on, use the audience menu for User vs Admin-only. For course or lesson rows, learners only see them if that course is also published in the Catalog tab—draft courses stay hidden from learners even when Show is on. Admins viewing a path in the app see all rows that are shown to User or Admin.';
 
 /** Matches link row + branch row: small label above title field (nested / narrow viewports). */
 const PATH_BRANCH_TITLE_FIELD_LABEL_CLASS =
@@ -2574,11 +2634,8 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     ref
   ) {
   const isCreatorPaths = pathPersistence?.kind === 'creator';
-  const catalogCoursesForPathPicker = useMemo(
-    () =>
-      isCreatorPaths ? publishedList : publishedList.filter((c) => isCourseCatalogPublished(c)),
-    [isCreatorPaths, publishedList]
-  );
+  /** Platform paths may reference draft catalog courses; learners only see those rows after the course is catalog-published. */
+  const catalogCoursesForPathPicker = useMemo(() => publishedList, [publishedList]);
   const { showActionToast, actionToast } = useAdminActionToast();
   const [pathTitleConflict, setPathTitleConflict] = useState<TitleConflictHit | null>(null);
   const [paths, setPaths] = useState<LearningPath[]>([]);
@@ -2904,6 +2961,23 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
       publishDirty;
     return metaDirty || branchesDirty;
   }, [pathDraft, pathBaselineJson, pathBranchTree, pathBranchTreeBaselineJson, branchesDirty]);
+
+  const platformPathMergedCourseIds = useMemo(
+    () => (pathDraft ? mergeCourseIdsFromBranches(pathDraft, pathBranchTree) : []),
+    [pathDraft, pathBranchTree]
+  );
+
+  /** Unpublished courses on learner-visible rows (or flat path list) — blocks publishing the path. */
+  const platformPathLearnerVisibleUnpublishedCourses = useMemo(() => {
+    if (isCreatorPaths || !pathDraft) return [];
+    return collectLearnerVisibleUnpublishedCourses(
+      pathBranchTree,
+      publishedList,
+      platformPathMergedCourseIds
+    );
+  }, [isCreatorPaths, pathDraft, pathBranchTree, publishedList, platformPathMergedCourseIds]);
+
+  const platformPathHasUnpublishedCourse = platformPathLearnerVisibleUnpublishedCourses.length > 0;
 
   const sortedPaths = useMemo(
     () =>
@@ -3267,12 +3341,13 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
         );
         return;
       }
-      if (!isCreatorPaths && !isCourseCatalogPublished(row)) {
+    }
+
+    if (!isCreatorPaths && isLearningPathCatalogPublished(pathDraft)) {
+      const blocked = collectLearnerVisibleUnpublishedCourses(pathBranchTree, publishedList, mergedCourseIds);
+      if (blocked.length > 0) {
         setShowPathCourseRequiredHint(false);
-        showActionToast(
-          `“${row.title.trim() || cid}” is not published to the catalog yet. Publish it in the Catalog tab or remove it from the path.`,
-          'danger'
-        );
+        showActionToast(formatPathPublishBlockedByCoursesMessage(blocked), 'danger');
         return;
       }
     }
@@ -3401,7 +3476,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
               <li>
                 {isCreatorPaths
                   ? 'Add courses from the Catalog tab to the outline — path rows only offer courses you have created there.'
-                  : 'Use published courses in the outline—add or publish them in the Catalog tab first.'}
+                  : 'Add any course from the live catalog. Learners only see course/lesson rows when the course is published in the Catalog tab and Show is on for that row.'}
               </li>
             </AdminLabelInfoTip>
             <div className="flex min-w-0 items-stretch gap-2">
@@ -3497,10 +3572,26 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
               <div className="flex min-w-0 items-center gap-2">
                 <button
                   type="button"
-                  disabled={pathBusy || !pathDraft || (pathBaselineJson !== null && !pathDirty)}
+                  disabled={
+                    pathBusy ||
+                    !pathDraft ||
+                    (pathBaselineJson !== null && !pathDirty) ||
+                    (!isCreatorPaths &&
+                      isLearningPathCatalogPublished(pathDraft) &&
+                      platformPathHasUnpublishedCourse)
+                  }
                   onClick={() => void handleSavePath()}
                   aria-busy={pathBusy}
-                  title={pathBusy ? 'Saving…' : 'Save path and outline'}
+                  title={
+                    !isCreatorPaths &&
+                    pathDraft &&
+                    isLearningPathCatalogPublished(pathDraft) &&
+                    platformPathHasUnpublishedCourse
+                      ? 'Fix learner-visible unpublished courses, or unpublish this path before saving'
+                      : pathBusy
+                        ? 'Saving…'
+                        : 'Save path and outline'
+                  }
                   aria-label={pathBusy ? 'Saving…' : 'Save path to catalog'}
                   className="inline-flex min-h-11 shrink-0 touch-manipulation items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-40 sm:px-5"
                 >
@@ -3545,6 +3636,13 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                       checked={isLearningPathCatalogPublished(pathDraft)}
                       onChange={(e) => {
                         const on = e.target.checked;
+                        if (on && platformPathHasUnpublishedCourse) {
+                          showActionToast(
+                            formatPathPublishBlockedByCoursesMessage(platformPathLearnerVisibleUnpublishedCourses),
+                            'danger'
+                          );
+                          return;
+                        }
                         setPathDraft((d) => {
                           if (!d) return d;
                           if (on) {
@@ -3566,6 +3664,11 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                   >
                     <li>When on, learners see this path in the navbar and path menu.</li>
                     <li>When off, it stays hidden there while you keep editing.</li>
+                    <li>
+                      Any outline row <strong className="font-semibold text-[var(--text-secondary)]">shown to learners</strong>{' '}
+                      (Show on, not admin-only) must use a course that is published in the Catalog tab. Unpublished
+                      courses are fine if Show is off or the row is administrators only.
+                    </li>
                   </AdminLabelInfoTip>
                 </div>
               ) : null}
@@ -3593,6 +3696,17 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
             </div>
           </div>
         </div>
+        {!isCreatorPaths &&
+        pathDraft &&
+        isLearningPathCatalogPublished(pathDraft) &&
+        platformPathHasUnpublishedCourse ? (
+          <p
+            className="whitespace-pre-line rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-900 dark:text-amber-100/90 sm:text-sm"
+            role="status"
+          >
+            {formatPathPublishBlockedByCoursesMessage(platformPathLearnerVisibleUnpublishedCourses)}
+          </p>
+        ) : null}
       </div>
 
       {!pathDraft && !pathsLoading ? (
@@ -3655,7 +3769,8 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                   <li>
                     <strong className="font-semibold text-[var(--text-secondary)]">Show</strong> off hides the row for
                     everyone. On: <strong className="font-semibold text-[var(--text-secondary)]">User</strong> or{' '}
-                    <strong className="font-semibold text-[var(--text-secondary)]">Administrators only</strong>.
+                    <strong className="font-semibold text-[var(--text-secondary)]">Administrators only</strong>. Course
+                    rows: learners need catalog publish too.
                   </li>
                 </AdminLabelInfoTip>
               </div>

@@ -3194,8 +3194,8 @@ export default function App() {
             <LearnerPathMindmapPanel
               pathId={selectedLearningPathId}
               pathTitle={pathHeroTitle ?? (pathTitleLoading ? 'Learning path' : selectedLearningPathId)}
-              catalogCourses={browseVisibleCatalogCourses}
-              catalogVisibleCourseIds={browseVisibleCourseIdSet}
+              catalogCourses={isAdminUser ? catalogCourses : browseVisibleCatalogCourses}
+              catalogVisibleCourseIds={isAdminUser ? null : browseVisibleCourseIdSet}
               progressUserId={user?.uid ?? null}
               progressSnapshotVersion={pathProgressSnapshot + remoteProfileDataVersion}
               viewerIsAdmin={isAdminUser}
