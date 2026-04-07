@@ -11,11 +11,14 @@ import React, {
 } from 'react';
 import { flushSync } from 'react-dom';
 import {
+  AlertCircle,
+  CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Copy,
   ArrowRightLeft,
+  Globe,
   GraduationCap,
   Link2,
   Layers,
@@ -32,6 +35,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { useDialogKeyboard } from '../../hooks/useDialogKeyboard';
 import type { Course, Lesson, Module } from '../../data/courses';
+import { isCourseCatalogPublished } from '../../data/courses';
 import { formatCourseTaxonomyForSearch } from '../../utils/courseTaxonomy';
 import {
   compactVisibleToRolesForPersist,
@@ -41,6 +45,7 @@ import {
   type PathOutlineAudienceRole,
 } from '../../data/pathMindmap';
 import type { LearningPath } from '../../data/learningPaths';
+import { isLearningPathCatalogPublished } from '../../data/learningPaths';
 import { firstAvailableStructuredLearningPathIdFromDocIds } from '../../utils/learningPathStructuredIds';
 import {
   deleteLearningPath,
@@ -1115,6 +1120,7 @@ function AddPathBranchModal({
   open,
   onClose,
   catalogCourses,
+  catalogCoursesForLabels,
   onCommit,
   contextHint,
   mode = 'add',
@@ -1128,7 +1134,10 @@ function AddPathBranchModal({
 }: {
   open: boolean;
   onClose: () => void;
+  /** Courses allowed when adding/linking branches (excludes platform-catalog drafts). */
   catalogCourses: readonly Course[];
+  /** Full list for labels and resolving rows that already reference a draft course. Defaults to `catalogCourses`. */
+  catalogCoursesForLabels?: readonly Course[];
   onCommit: (branch: PathBranchNode) => void;
   /** Where the new node will attach (top level vs nested). */
   contextHint?: string;
@@ -1148,6 +1157,7 @@ function AddPathBranchModal({
   /** Show “Course module” in the kind step (top-level sections only). */
   showModuleInKindPicker?: boolean;
 }) {
+  const labelCatalog = catalogCoursesForLabels ?? catalogCourses;
   const [step, setStep] = useState<BranchModalStep>('kind');
   const [query, setQuery] = useState('');
   const [labelInput, setLabelInput] = useState('');
@@ -1164,7 +1174,7 @@ function AddPathBranchModal({
     setLinkHrefInput('');
     setModuleCoursePick(null);
     if (lessonAddContext) {
-      const c = catalogCourses.find((x) => x.id === lessonAddContext.courseId) ?? null;
+      const c = labelCatalog.find((x) => x.id === lessonAddContext.courseId) ?? null;
       setLessonCourse(c);
       setStep('lessonPick');
       return;
@@ -1176,7 +1186,7 @@ function AddPathBranchModal({
         if (replaceSource.kind === 'label' || replaceSource.kind === 'divider') {
           setLabelInput(replaceSource.label);
         } else {
-          setLabelInput(branchNodeDisplayLabel(replaceSource, [...catalogCourses]).trim());
+          setLabelInput(branchNodeDisplayLabel(replaceSource, [...labelCatalog]).trim());
         }
         if (replaceSource.kind === 'link') {
           setLinkLabelInput(replaceSource.label);
@@ -1214,6 +1224,7 @@ function AddPathBranchModal({
     open,
     mode,
     catalogCourses,
+    labelCatalog,
     addPreset,
     allowSectionDivider,
     replaceSource,
@@ -2563,6 +2574,11 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     ref
   ) {
   const isCreatorPaths = pathPersistence?.kind === 'creator';
+  const catalogCoursesForPathPicker = useMemo(
+    () =>
+      isCreatorPaths ? publishedList : publishedList.filter((c) => isCourseCatalogPublished(c)),
+    [isCreatorPaths, publishedList]
+  );
   const { showActionToast, actionToast } = useAdminActionToast();
   const [pathTitleConflict, setPathTitleConflict] = useState<TitleConflictHit | null>(null);
   const [paths, setPaths] = useState<LearningPath[]>([]);
@@ -2879,10 +2895,13 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     const treeBaseline = JSON.parse(pathBranchTreeBaselineJson) as PathBranchNode[];
     const mergedNow = mergeCourseIdsFromBranches(pathDraft, pathBranchTree);
     const mergedBaseline = mergeCourseIdsFromBranches(baselineParsed, treeBaseline);
+    const publishDirty =
+      isLearningPathCatalogPublished(pathDraft) !== isLearningPathCatalogPublished(baselineParsed);
     const metaDirty =
       pathDraft.title !== baselineParsed.title ||
       (pathDraft.description ?? '') !== (baselineParsed.description ?? '') ||
-      JSON.stringify(mergedNow) !== JSON.stringify(mergedBaseline);
+      JSON.stringify(mergedNow) !== JSON.stringify(mergedBaseline) ||
+      publishDirty;
     return metaDirty || branchesDirty;
   }, [pathDraft, pathBaselineJson, pathBranchTree, pathBranchTreeBaselineJson, branchesDirty]);
 
@@ -2966,7 +2985,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     const reserveIds = pathSelector === '__new__' && pathDraft?.id ? [pathDraft.id] : [];
     const docIds = await pathDocumentIdsForAllocation();
     const newId = firstAvailableStructuredLearningPathIdFromDocIds(docIds, reserveIds);
-    const fresh: LearningPath = { id: newId, title: '', courseIds: [] };
+    const fresh: LearningPath = { id: newId, title: '', courseIds: [], catalogPublished: false };
     setShowPathCourseRequiredHint(false);
     setPathBranchTree([]);
     setPathBranchTreeBaselineJson('[]');
@@ -3014,6 +3033,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
         id: newId,
         title: t.endsWith(' (copy)') ? t : `${t} (copy)`,
         courseIds: [...sourcePath.courseIds],
+        catalogPublished: false,
       };
       const newTree = remapPathBranchForest(sourceTree);
       setShowPathCourseRequiredHint(false);
@@ -3236,12 +3256,21 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     }
 
     for (const cid of mergedCourseIds) {
-      if (!publishedList.some((c) => c.id === cid)) {
+      const row = publishedList.find((c) => c.id === cid);
+      if (!row) {
         setShowPathCourseRequiredHint(false);
         showActionToast(
           isCreatorPaths
             ? `Course "${cid}" is not in your course list. Add it in the Catalog tab first.`
             : `Course "${cid}" is not in the published catalog. Remove it or publish the course first.`,
+          'danger'
+        );
+        return;
+      }
+      if (!isCreatorPaths && !isCourseCatalogPublished(row)) {
+        setShowPathCourseRequiredHint(false);
+        showActionToast(
+          `“${row.title.trim() || cid}” is not published to the catalog yet. Publish it in the Catalog tab or remove it from the path.`,
           'danger'
         );
         return;
@@ -3460,41 +3489,108 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                 Actions
               </span>
             </div>
-            <div className="flex flex-nowrap items-center gap-2 overflow-x-auto pb-0.5 [-webkit-overflow-scrolling:touch]">
-              <button
-                type="button"
-                disabled={pathBusy || !pathDraft || !pathDirty}
-                onClick={() => void handleSavePath()}
-                aria-busy={pathBusy}
-                aria-label={pathBusy ? 'Saving…' : 'Save path to catalog'}
-                className="inline-flex min-h-11 shrink-0 touch-manipulation items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-40 sm:px-5"
+            <div
+              className="flex min-w-0 flex-nowrap items-center justify-start gap-2 overflow-x-auto pb-0.5 [-webkit-overflow-scrolling:touch] md:justify-end"
+              role="group"
+              aria-label="Path actions"
+            >
+              <div className="flex min-w-0 items-center gap-2">
+                <button
+                  type="button"
+                  disabled={pathBusy || !pathDraft || (pathBaselineJson !== null && !pathDirty)}
+                  onClick={() => void handleSavePath()}
+                  aria-busy={pathBusy}
+                  title={pathBusy ? 'Saving…' : 'Save path and outline'}
+                  aria-label={pathBusy ? 'Saving…' : 'Save path to catalog'}
+                  className="inline-flex min-h-11 shrink-0 touch-manipulation items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-40 sm:px-5"
+                >
+                  {pathBusy ? (
+                    <Loader2 size={18} className="shrink-0 animate-spin" aria-hidden />
+                  ) : (
+                    <Save size={18} className="shrink-0" aria-hidden />
+                  )}
+                  <span>{pathBusy ? 'Saving…' : 'Save'}</span>
+                </button>
+                {pathDraft && pathDirty ? (
+                  <span
+                    role="status"
+                    className="inline-flex size-11 shrink-0 items-center justify-center text-amber-600 dark:text-amber-400"
+                    title="Unsaved changes"
+                  >
+                    <AlertCircle size={20} strokeWidth={2} aria-hidden />
+                    <span className="sr-only">Unsaved changes</span>
+                  </span>
+                ) : pathDraft && !pathDirty && pathSelector !== '__new__' ? (
+                  <span
+                    role="status"
+                    className="inline-flex size-11 shrink-0 items-center justify-center text-emerald-600 dark:text-emerald-400"
+                    title="All changes saved"
+                  >
+                    <CheckCircle2 size={20} strokeWidth={2} aria-hidden />
+                    <span className="sr-only">All changes saved</span>
+                  </span>
+                ) : null}
+              </div>
+              {!isCreatorPaths && pathDraft ? (
+                <div className="flex items-center gap-1 border-l border-[var(--border-color)]/70 pl-3">
+                  <label
+                    htmlFor="admin-path-catalog-publish-checkbox"
+                    className="flex min-h-11 cursor-pointer touch-manipulation items-center gap-1.5 rounded-lg px-0.5"
+                    title="Published in path picker and navbar"
+                  >
+                    <Globe size={16} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+                    <input
+                      id="admin-path-catalog-publish-checkbox"
+                      type="checkbox"
+                      checked={isLearningPathCatalogPublished(pathDraft)}
+                      onChange={(e) => {
+                        const on = e.target.checked;
+                        setPathDraft((d) => {
+                          if (!d) return d;
+                          if (on) {
+                            const { catalogPublished: _removed, ...rest } = d;
+                            return { ...rest } as LearningPath;
+                          }
+                          return { ...d, catalogPublished: false };
+                        });
+                      }}
+                      className="h-4 w-4 shrink-0 rounded border-[var(--border-color)] accent-orange-500"
+                      aria-label="Published in learning path picker and navbar"
+                    />
+                  </label>
+                  <AdminLabelInfoTip
+                    controlOnly
+                    tipId="admin-path-catalog-publish-tips"
+                    tipRegionAriaLabel="Published path visibility"
+                    tipSubject="Published in path picker"
+                  >
+                    <li>When on, learners see this path in the navbar and path menu.</li>
+                    <li>When off, it stays hidden there while you keep editing.</li>
+                  </AdminLabelInfoTip>
+                </div>
+              ) : null}
+              <div
+                className="flex items-center border-l-2 border-red-500/25 pl-3 md:pl-4"
+                role="group"
+                aria-label="Destructive actions"
               >
-                {pathBusy ? <Loader2 size={18} className="animate-spin" aria-hidden /> : <Save size={18} aria-hidden />}
-                Save
-              </button>
-              <button
-                type="button"
-                disabled={pathBusy || !pathDraft}
-                onClick={requestDeletePath}
-                aria-label="Delete path from catalog"
-                className="inline-flex min-h-11 shrink-0 touch-manipulation items-center justify-center gap-2 rounded-xl border border-red-500/40 px-4 py-2 text-sm font-semibold text-red-500 hover:bg-red-500/10 dark:text-red-400 disabled:opacity-40 sm:px-5"
-              >
-                <Trash2 size={18} aria-hidden />
-                Delete
-              </button>
+                <button
+                  type="button"
+                  disabled={pathBusy || !pathDraft}
+                  onClick={requestDeletePath}
+                  title={
+                    pathDraft && paths.some((p) => p.id === pathDraft.id)
+                      ? 'Permanently remove this path from the catalog'
+                      : 'Discard unsaved new path'
+                  }
+                  aria-label="Delete path from catalog"
+                  className="inline-flex min-h-11 touch-manipulation items-center justify-center gap-2 rounded-md border-2 border-red-500/50 bg-transparent px-3 py-2 text-sm font-semibold text-red-500 hover:bg-red-500/10 dark:text-red-400 disabled:opacity-40"
+                >
+                  <Trash2 size={17} className="shrink-0" aria-hidden />
+                  <span className="max-sm:sr-only">Delete</span>
+                </button>
+              </div>
             </div>
-            {pathDraft && pathDirty ? (
-              <p
-                className="text-xs font-medium text-amber-800 dark:text-amber-200"
-                role="status"
-              >
-                Unsaved changes
-              </p>
-            ) : pathDraft && !pathDirty && pathSelector !== '__new__' ? (
-              <p className="text-xs text-[var(--text-muted)]" role="status">
-                All changes saved
-              </p>
-            ) : null}
           </div>
         </div>
       </div>
@@ -3734,7 +3830,8 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
               (branchModal.kind === 'changeType' && changeTypeSource != null)
             }
             onClose={() => setBranchModal({ kind: 'closed' })}
-            catalogCourses={publishedList}
+            catalogCourses={catalogCoursesForPathPicker}
+            catalogCoursesForLabels={publishedList}
             contextHint={branchModalContextHint}
             addPreset={branchModal.kind === 'add' ? branchModal.preset : undefined}
             topLevelOutlineAdd={branchModal.kind === 'add' && branchModal.parentId == null}

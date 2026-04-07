@@ -108,6 +108,16 @@ export interface Course {
   /** Skill tags (multi), e.g. React, Python. */
   skills: string[];
   modules: Module[];
+  /**
+   * Platform catalog visibility for documents in `publishedCourses`. When `false`, the course is a draft: hidden from
+   * learner browse, path outlines, and path builder pickers until published. Omit or `undefined` = visible (legacy).
+   */
+  catalogPublished?: boolean;
+}
+
+/** True when the course should appear in learner catalog, paths, and path link pickers (`publishedCourses` only). */
+export function isCourseCatalogPublished(course: Course): boolean {
+  return course.catalogPublished !== false;
 }
 
 /** Empty: course catalog and lesson content load from Firestore only (`publishedCourses`, creator drafts). */

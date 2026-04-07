@@ -473,6 +473,7 @@ service cloud.firestore {
         data.skills is list && data.skills.size() <= 40 &&
         data.modules is list &&
         (!('authorBio' in data) || (data.authorBio is string && data.authorBio.size() < 20000)) &&
+        (!('catalogPublished' in data) || data.catalogPublished is bool) &&
         (!('updatedAt' in data) || data.updatedAt is timestamp);
     }
 
@@ -481,6 +482,7 @@ service cloud.firestore {
         data.title is string && data.title.size() > 0 && data.title.size() < 500 &&
         data.courseIds is list && data.courseIds.size() <= 100 &&
         (!('description' in data) || (data.description is string && data.description.size() < 20000)) &&
+        (!('catalogPublished' in data) || data.catalogPublished is bool) &&
         (!('updatedAt' in data) || data.updatedAt is timestamp) &&
         (!('pathMindmap' in data) || data.pathMindmap is map);
     }

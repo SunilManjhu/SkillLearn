@@ -69,6 +69,17 @@ export function mindmapNodeVisibleToViewer(
   return r.includes('user');
 }
 
+/** Hide course-linked rows when the course is not in the learner-visible catalog (e.g. platform draft). */
+export function mindmapNodeCatalogVisible(
+  node: MindmapTreeNode,
+  catalogVisibleCourseIds: ReadonlySet<string> | null
+): boolean {
+  if (!catalogVisibleCourseIds) return true;
+  const cid = node.courseId;
+  if (!cid) return true;
+  return catalogVisibleCourseIds.has(cid);
+}
+
 function nodeKindForFlatten(n: MindmapTreeNode): 'label' | 'course' | 'lesson' | 'link' | 'divider' | 'module' {
   if (n.kind === 'divider') return 'divider';
   if (n.kind === 'module' && n.courseId && n.moduleId) return 'module';
@@ -130,14 +141,20 @@ export function flattenSectionChildrenForOutline(children: MindmapTreeNode[]): M
 /** Top-level sections and each section’s flat rows, visibility-filtered for the current viewer. */
 export function filterOutlineBranchesForViewer(
   branches: MindmapTreeNode[],
-  viewerIsAdmin: boolean
+  viewerIsAdmin: boolean,
+  catalogVisibleCourseIds?: ReadonlySet<string> | null
 ): MindmapTreeNode[] {
+  const cat = catalogVisibleCourseIds ?? null;
   return branches
-    .filter((sec) => mindmapNodeVisibleToViewer(sec, viewerIsAdmin))
+    .filter(
+      (sec) =>
+        mindmapNodeVisibleToViewer(sec, viewerIsAdmin) && mindmapNodeCatalogVisible(sec, cat)
+    )
     .map((sec) => ({
       ...sec,
-      children: flattenSectionChildrenForOutline(sec.children).filter((row) =>
-        mindmapNodeVisibleToViewer(row, viewerIsAdmin)
+      children: flattenSectionChildrenForOutline(sec.children).filter(
+        (row) =>
+          mindmapNodeVisibleToViewer(row, viewerIsAdmin) && mindmapNodeCatalogVisible(row, cat)
       ),
     }));
 }

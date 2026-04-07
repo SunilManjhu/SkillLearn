@@ -30,6 +30,8 @@ export type LearnerPathMindmapPanelProps = {
   progressSnapshotVersion: number;
   /** Firestore `users/{uid}.role === 'admin'` — controls outline rows restricted to admins only. */
   viewerIsAdmin?: boolean;
+  /** Course ids visible in browse catalog; course-linked outline rows for other ids are hidden regardless of path “Show”. */
+  catalogVisibleCourseIds?: ReadonlySet<string> | null;
   /** When true, omit the in-panel title block (parent renders path chrome per docs/learning-path-course-list.md §7). */
   suppressPathHeader?: boolean;
   /** Ordered `courseIds` — themed flat rows; section titles and section dividers come from the mindmap when available. */
@@ -50,6 +52,7 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
   progressUserId,
   progressSnapshotVersion,
   viewerIsAdmin = false,
+  catalogVisibleCourseIds = null,
   suppressPathHeader = false,
   pathCourseIds = [],
   mindmapOutlineChildren: branches,
@@ -61,8 +64,11 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
   const [expandedPathBlockKey, setExpandedPathBlockKey] = useState<string | null>(null);
 
   const filteredBranchesForViewer = useMemo(
-    () => (branches === null ? [] : filterOutlineBranchesForViewer(branches, viewerIsAdmin)),
-    [branches, viewerIsAdmin]
+    () =>
+      branches === null
+        ? []
+        : filterOutlineBranchesForViewer(branches, viewerIsAdmin, catalogVisibleCourseIds),
+    [branches, viewerIsAdmin, catalogVisibleCourseIds]
   );
 
   const pathCourseIdsForLayout = useMemo(
@@ -377,6 +383,7 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
           progressUserId={progressUserId}
           progressSnapshotVersion={outlineProgressVersion}
           viewerIsAdmin={viewerIsAdmin}
+          catalogVisibleCourseIds={catalogVisibleCourseIds}
         />
       ) : (
         <p className="rounded-xl border border-dashed border-[var(--border-color)] bg-[var(--bg-primary)]/40 px-4 py-8 text-center text-sm text-[var(--text-muted)]">

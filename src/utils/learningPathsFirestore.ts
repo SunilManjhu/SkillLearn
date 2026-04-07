@@ -42,13 +42,23 @@ export function docToLearningPath(id: string, data: Record<string, unknown>): Le
   if (typeof data.description === 'string' && data.description.length > 0) {
     path.description = data.description;
   }
+  if ('catalogPublished' in data) {
+    if (typeof data.catalogPublished !== 'boolean') return null;
+    path.catalogPublished = data.catalogPublished;
+  }
   return path;
 }
 
+/**
+ * Full-document save: always write `catalogPublished` as a boolean so `setDoc` does not drop draft `false`
+ * when the in-memory path omits the field (treated as published).
+ */
 export function pathToFirestorePayload(path: LearningPath): Record<string, unknown> {
-  const { id: _id, ...rest } = path;
+  const { id: _id, catalogPublished: _cp, ...rest } = path;
+  const catalogPublished = path.catalogPublished !== false;
   return {
     ...rest,
+    catalogPublished,
     updatedAt: serverTimestamp(),
   };
 }

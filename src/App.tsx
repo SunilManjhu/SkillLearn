@@ -16,8 +16,8 @@ import { ContactForm } from './components/ContactForm';
 import { DemoLearningAgent } from './components/DemoLearningAgent';
 import { useLearningAssistantFabVisible } from './hooks/useLearningAssistantFabVisible';
 import { useNotificationsSiteEnabled } from './hooks/useNotificationsSiteEnabled';
-import { Course, Lesson } from './data/courses';
-import type { LearningPath } from './data/learningPaths';
+import { Course, Lesson, isCourseCatalogPublished } from './data/courses';
+import { type LearningPath, isLearningPathCatalogPublished } from './data/learningPaths';
 import { AdminPage } from './components/AdminPage';
 import { CreatorPage } from './components/CreatorPage';
 import {
@@ -670,6 +670,22 @@ export default function App() {
     () => combinedCatalogRows.map((r) => r.course),
     [combinedCatalogRows]
   );
+  /** Learner browse + path outline: exclude platform-catalog drafts (`publishedCourses` with `catalogPublished === false`). */
+  const browseVisibleCatalogRows = useMemo(
+    () =>
+      combinedCatalogRows.filter(
+        (r) => r.fromCreatorDraft || isCourseCatalogPublished(r.course)
+      ),
+    [combinedCatalogRows]
+  );
+  const browseVisibleCatalogCourses = useMemo(
+    () => browseVisibleCatalogRows.map((r) => r.course),
+    [browseVisibleCatalogRows]
+  );
+  const browseVisibleCourseIdSet = useMemo(
+    () => new Set(browseVisibleCatalogRows.map((r) => r.course.id)),
+    [browseVisibleCatalogRows]
+  );
   /**
    * False on cold load when neither published nor creator session snapshots exist — block
    * overview/player until Firestore catches up. Session caches avoid empty-then-pop-in.
@@ -720,13 +736,22 @@ export default function App() {
    * Learning Paths dropdown: omit creator-studio draft rows for **admin-only** accounts (admins who are not
    * creators), matching the rule that private creator catalog entries are not surfaced in public browse chrome.
    * Creators (including admin+creator) still see their drafts; admin inventory “Creator preview” paths stay.
+   * Platform `learningPaths` rows respect `catalogPublished` for **everyone** (including admins), same as
+   * unpublished courses in Course Library — use Admin → Paths to edit drafts not shown here.
    */
   const navbarCatalogPathRows = useMemo(() => {
     const adminOnlyNoCreatorStudio =
       adminAccessResolved && isAdminUser && !isCreatorUser;
-    if (!adminOnlyNoCreatorStudio) return combinedCatalogPathRows;
-    return combinedCatalogPathRows.filter(
-      (r) => Boolean(r.adminPreviewOwnerUid?.trim()) || !r.fromCreatorDraft
+    let rows = combinedCatalogPathRows;
+    if (adminOnlyNoCreatorStudio) {
+      rows = rows.filter(
+        (r) => Boolean(r.adminPreviewOwnerUid?.trim()) || !r.fromCreatorDraft
+      );
+    }
+    return rows.filter(
+      (r) =>
+        r.fromCreatorDraft ||
+        isLearningPathCatalogPublished(learningPathStripDraftFlag(r))
     );
   }, [combinedCatalogPathRows, adminAccessResolved, isAdminUser, isCreatorUser]);
   /** `users` docs with role admin; loaded when signed-in user is admin (for delete-account copy). */
@@ -1962,9 +1987,13 @@ export default function App() {
 
   const moreCategories = useMemo(() => {
     // Derived via shared taxonomy builder (presets + extras + discovered-from-courses), excluding main.
-    const t = buildCatalogTaxonomy({ courses: catalogCourses, topicPresets: categoryPresets, skillPresets });
+    const t = buildCatalogTaxonomy({
+      courses: browseVisibleCatalogCourses,
+      topicPresets: categoryPresets,
+      skillPresets,
+    });
     return t.topics.more;
-  }, [catalogCourses, categoryFilterRevision, categoryPresets, skillPresets]);
+  }, [browseVisibleCatalogCourses, categoryFilterRevision, categoryPresets, skillPresets]);
 
   /** Browse menu categories — same sources as Course Library (main pills + More), excluding “All”. */
   const catalogBrowseCategories = useMemo(
@@ -1973,9 +2002,13 @@ export default function App() {
   );
 
   const moreSkills = useMemo(() => {
-    const t = buildCatalogTaxonomy({ courses: catalogCourses, topicPresets: categoryPresets, skillPresets });
+    const t = buildCatalogTaxonomy({
+      courses: browseVisibleCatalogCourses,
+      topicPresets: categoryPresets,
+      skillPresets,
+    });
     return t.skills.more;
-  }, [catalogCourses, categoryPresets, skillFilterRevision, skillPresets]);
+  }, [browseVisibleCatalogCourses, categoryPresets, skillFilterRevision, skillPresets]);
 
   const catalogBrowseSkills = useMemo(
     () => [...skillPresets.mainPills, ...moreSkills],
@@ -1984,7 +2017,7 @@ export default function App() {
 
   const filteredCatalogRows = useMemo(
     () =>
-      combinedCatalogRows.filter((row) => {
+      browseVisibleCatalogRows.filter((row) => {
         const course = row.course;
         const rawPathCourseIds =
           selectedLearningPathId != null ? activeLearningPath?.courseIds : null;
@@ -2012,7 +2045,7 @@ export default function App() {
         return courseMatchesLibraryFilters(course, libraryFilters);
       }),
     [
-      combinedCatalogRows,
+      browseVisibleCatalogRows,
       selectedLearningPathId,
       activeLearningPath,
       pathMindmapOutlineChildren,
@@ -3108,7 +3141,8 @@ export default function App() {
             <LearnerPathMindmapPanel
               pathId={selectedLearningPathId}
               pathTitle={pathHeroTitle ?? (pathTitleLoading ? 'Learning path' : selectedLearningPathId)}
-              catalogCourses={catalogCourses}
+              catalogCourses={browseVisibleCatalogCourses}
+              catalogVisibleCourseIds={browseVisibleCourseIdSet}
               progressUserId={user?.uid ?? null}
               progressSnapshotVersion={pathProgressSnapshot + remoteProfileDataVersion}
               viewerIsAdmin={isAdminUser}

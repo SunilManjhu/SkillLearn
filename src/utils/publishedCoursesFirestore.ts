@@ -204,6 +204,9 @@ export function docToCourse(id: string, data: Record<string, unknown>): Course |
     modules,
   };
   if (typeof data.authorBio === 'string') course.authorBio = data.authorBio;
+  if (data.catalogPublished === false) {
+    course.catalogPublished = false;
+  }
   return normalizeCourseTaxonomy(course);
 }
 
@@ -268,11 +271,18 @@ function stripUndefinedDeep(value: unknown): unknown {
   return out;
 }
 
+/**
+ * Persists full course shape to `publishedCourses` / `creatorCourses`.
+ * Always writes `catalogPublished` as a boolean so a full `setDoc` never drops a draft (`false`) when the in-memory
+ * course omits the field (treated as published).
+ */
 export function courseToFirestorePayload(course: Course): Record<string, unknown> {
   const { id: _id, ...rest } = course;
   const cleaned = stripUndefinedDeep(rest) as Record<string, unknown>;
+  const catalogPublished = course.catalogPublished !== false;
   return {
     ...cleaned,
+    catalogPublished,
     updatedAt: serverTimestamp(),
   };
 }

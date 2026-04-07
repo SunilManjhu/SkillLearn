@@ -1146,6 +1146,8 @@ export type PathMindmapOutlineProps = {
   progressSnapshotVersion: number;
   /** When true, rows restricted to `admin` in the outline document are shown; non-admins only see `user` rows. */
   viewerIsAdmin?: boolean;
+  /** Course ids allowed in the outline (e.g. learner browse list). Omit to show all linked courses. */
+  catalogVisibleCourseIds?: ReadonlySet<string> | null;
 };
 
 export const PathMindmapOutline: React.FC<PathMindmapOutlineProps> = ({
@@ -1158,6 +1160,7 @@ export const PathMindmapOutline: React.FC<PathMindmapOutlineProps> = ({
   progressUserId,
   progressSnapshotVersion,
   viewerIsAdmin = false,
+  catalogVisibleCourseIds = null,
 }) => {
   const [sectionExpanded, setSectionExpanded] = useState<Record<string, boolean>>({});
   const [branchExpanded, setBranchExpanded] = useState<Record<string, boolean>>({});
@@ -1188,8 +1191,8 @@ export const PathMindmapOutline: React.FC<PathMindmapOutlineProps> = ({
   }, [pathId, sectionExpanded, branchExpanded]);
 
   const branchesForViewer = useMemo(
-    () => filterOutlineBranchesForViewer(branches, viewerIsAdmin),
-    [branches, viewerIsAdmin]
+    () => filterOutlineBranchesForViewer(branches, viewerIsAdmin, catalogVisibleCourseIds),
+    [branches, viewerIsAdmin, catalogVisibleCourseIds]
   );
 
   const nestedBranchSiblingMap = useMemo(

@@ -2,10 +2,13 @@ import React, { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useR
 import { flushSync } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import {
+  AlertCircle,
   BookOpen,
+  CheckCircle2,
   ClipboardList,
   Copy,
   Globe,
+  Hash,
   Info,
   Loader2,
   Plus,
@@ -30,6 +33,7 @@ import {
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { useDialogKeyboard } from '../../hooks/useDialogKeyboard';
 import { useAdminActionToast } from './useAdminActionToast';
+import { AdminLabelInfoTip } from './adminLabelInfoTip';
 import {
   PathBuilderSection,
   type PathBuilderSectionHandle,
@@ -50,6 +54,7 @@ import {
   MAX_QUIZ_QUESTIONS,
   createDefaultFreeformQuestion,
   createDefaultMcqQuestion,
+  isCourseCatalogPublished,
 } from '../../data/courses';
 import {
   STRUCTURED_COURSE_ID_RE,
@@ -1485,6 +1490,18 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     return false;
   }, [selector, isAdminMergedCatalog, publishedList, creatorDraftRows]);
 
+  /** Live-catalog (`publishedCourses`) rows only — not creator-studio drafts or merged “creator” selector rows. */
+  const showPlatformCatalogPublishToggle = useMemo(() => {
+    if (isCreatorCatalog) return false;
+    if (!draft) return false;
+    if (isAdminMergedCatalog) {
+      if (selector === '__new__') return true;
+      const p = parseAdminCatalogCourseSelector(selector);
+      return p.kind === 'published';
+    }
+    return true;
+  }, [isCreatorCatalog, draft, isAdminMergedCatalog, selector]);
+
   /** Union Firestore course doc ids + in-memory list so new C{n} skips every occupied id. Creators also reserve published `publishedCourses` ids. */
   const courseDocumentIdsForAllocation = useCallback(async (): Promise<string[]> => {
     const fromState = publishedList.map((c) => c.id);
@@ -1536,7 +1553,9 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         const docIds = await courseDocumentIdsForAllocation();
         const newId = firstAvailableStructuredCourseIdFromDocIds(docIds, reserveIds);
         const fresh = emptyCourse(newId);
-        const keyed = ensureCourseLessonRowKeys(fresh);
+        const withPublish =
+          catalogPersistence?.kind === 'creator' ? fresh : { ...fresh, catalogPublished: false };
+        const keyed = ensureCourseLessonRowKeys(withPublish);
         setDraft(keyed);
         setBaselineJson(draftJsonForBaseline(keyed));
         return;
@@ -2751,6 +2770,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     const docIds = await courseDocumentIdsForAllocation();
     const newId = firstAvailableStructuredCourseIdFromDocIds(docIds, reserveDraftCn);
     const copy = remapCourseToStructuredIds(deepClone(fromEditor), newId);
+    copy.catalogPublished = false;
     const t = fromEditor.title.trim();
     copy.title = t.endsWith(' (copy)') ? t : `${t} (copy)`;
     pendingFocusCourseTitleRef.current = true;
@@ -3517,9 +3537,9 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       <div ref={courseCatalogEditorRef} className="space-y-4">
         <div className="space-y-3">
         <div className="min-w-0 overflow-x-auto overflow-y-visible [-webkit-overflow-scrolling:touch] pb-0.5">
-        <div className="grid w-full min-w-[720px] grid-cols-[minmax(0,1.5fr)_minmax(0,0.85fr)_minmax(0,0.85fr)_auto] items-start gap-x-3 gap-y-3">
-          <div className="flex min-w-0 flex-col gap-1">
-            <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+        <div className="grid w-full min-w-[min(100%,920px)] grid-cols-[minmax(0,1fr)_minmax(6.75rem,7.5rem)_auto] items-center gap-x-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-h-6 min-w-0 shrink-0 flex-wrap items-center gap-x-1.5 gap-y-1">
               <label
                 htmlFor="admin-catalog-course-select"
                 className="text-xs font-semibold leading-none text-[var(--text-secondary)]"
@@ -3601,14 +3621,13 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 </div>
               </span>
             </div>
-            <div className="flex min-w-0 items-stretch gap-2">
             <select
               id="admin-catalog-course-select"
               value={selector}
               onFocus={openCourseCatalogOnce}
               onMouseDown={openCourseCatalogOnce}
               onChange={onCourseSelectChange}
-              className="box-border min-h-11 min-w-0 flex-1 touch-manipulation rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] sm:text-sm"
+              className="box-border min-h-11 min-w-0 flex-1 touch-manipulation rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] sm:min-w-[7rem] sm:text-sm"
             >
               <option value="" disabled>
                 {!catalogRequested
@@ -3628,112 +3647,164 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 </>
               )}
             </select>
+            <div
+              className="box-border flex w-max max-w-full shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm font-mono text-[var(--text-primary)] md:px-2.5"
+              aria-live="polite"
+              title="Document ID"
+            >
+              <Hash size={16} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+              {draft ? (
+                <span className="text-orange-500/90">{draft.id}</span>
+              ) : (
+                <span className="text-[var(--text-muted)]">—</span>
+              )}
+            </div>
             {selector !== '__new__' && (
               <button
                 type="button"
                 disabled={listLoading || !selector || !selectionIsExistingCatalogCourse}
                 onClick={requestDuplicateOrConfirm}
-                title="Clone the selected course into a new draft with a new document ID"
+                title="Duplicate as new draft — clone into a new document ID"
                 aria-label="Duplicate as new draft"
-                className="inline-flex shrink-0 items-center justify-center rounded-lg border border-[var(--border-color)] px-2.5 min-h-[42px] min-w-[42px] hover:bg-[var(--hover-bg)] disabled:pointer-events-none disabled:opacity-40"
+                className="inline-flex size-11 shrink-0 touch-manipulation items-center justify-center rounded-lg border border-[var(--border-color)] hover:bg-[var(--hover-bg)] disabled:pointer-events-none disabled:opacity-40"
               >
                 <Copy size={18} aria-hidden />
               </button>
             )}
-            </div>
-          </div>
-          <div className="contents min-w-0">
-            <div className="flex min-w-0 flex-col gap-1">
-              <div className="flex min-h-6 min-w-0 items-center">
-                <span className="text-xs font-semibold leading-none text-[var(--text-secondary)]">
-                  Document ID
-                </span>
-              </div>
-              <div
-                className="box-border flex min-h-[42px] w-full min-w-0 items-center rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm font-mono text-[var(--text-primary)] md:px-3"
-                aria-live="polite"
-              >
-                {draft ? (
-                  <span className="truncate text-orange-500/90">{draft.id}</span>
-                ) : (
-                  <span className="text-[var(--text-muted)]">—</span>
-                )}
-              </div>
-            </div>
-            <div className="flex min-w-0 flex-col gap-1">
-              <div className="flex min-h-6 min-w-0 items-center">
-                <label
-                  htmlFor="admin-catalog-course-level"
-                  className="text-xs font-semibold leading-none text-[var(--text-secondary)]"
-                >
-                  Level
-                </label>
-              </div>
-              <select
-                id="admin-catalog-course-level"
-                value={draft?.level ?? ''}
-                disabled={!draft}
-                onChange={(e) =>
-                  draft && updateDraft({ level: e.target.value as Course['level'] })
-                }
-                className="box-border w-full min-w-0 min-h-[42px] rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50 md:px-3"
-              >
-                {!draft && (
-                  <option value="" disabled>
-                    —
-                  </option>
-                )}
-                <option value="Beginner">Beginner</option>
-                <option value="Intermediate">Intermediate</option>
-                <option value="Advanced">Advanced</option>
-                <option value="Proficient">Proficient</option>
-              </select>
-            </div>
           </div>
 
-        <div className="flex min-w-0 w-full flex-col gap-1 md:w-auto md:max-w-full">
-          <div className="flex min-h-6 min-w-0 items-center">
-            <span className="text-xs font-semibold leading-none text-[var(--text-secondary)] max-md:sr-only">
-              Actions
+          <div className="flex min-w-0 items-center gap-1.5">
+            <label htmlFor="admin-catalog-course-level" className="sr-only">
+              Level
+            </label>
+            <span className="inline-flex shrink-0 text-[var(--text-muted)]" title="Level">
+              <SlidersHorizontal size={16} aria-hidden />
             </span>
-          </div>
-          <div className="flex flex-nowrap items-center gap-2 overflow-x-auto pb-0.5 [-webkit-overflow-scrolling:touch]">
-            <button
-              type="button"
-              disabled={busy || !draft || (baselineJson !== null && !isDirty)}
-              onClick={() => void handleSave()}
-              aria-busy={busy}
-              aria-label={busy ? 'Saving…' : 'Save course to catalog'}
-              className="inline-flex min-h-11 shrink-0 touch-manipulation items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-40 sm:px-5"
+            <select
+              id="admin-catalog-course-level"
+              value={draft?.level ?? ''}
+              disabled={!draft}
+              aria-label="Course level"
+              title="Course level"
+              onChange={(e) =>
+                draft && updateDraft({ level: e.target.value as Course['level'] })
+              }
+              className="box-border min-h-11 min-w-0 w-full flex-1 rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {busy ? (
-                <Loader2 size={18} className="shrink-0 animate-spin" aria-hidden />
-              ) : (
-                <Save size={18} className="shrink-0" aria-hidden />
+              {!draft && (
+                <option value="" disabled>
+                  —
+                </option>
               )}
-              Save
-            </button>
-            <button
-              type="button"
-              disabled={busy || !draft || !selectionIsExistingCatalogCourse}
-              onClick={() => void requestDeleteCourse()}
-              aria-label="Delete course from catalog"
-              className="inline-flex min-h-11 shrink-0 touch-manipulation items-center justify-center gap-2 rounded-xl border border-red-500/40 px-4 py-2 text-sm font-bold text-red-400 hover:bg-red-500/10 disabled:opacity-40 sm:px-5"
-            >
-              <Trash2 size={18} className="shrink-0" aria-hidden />
-              Delete
-            </button>
+              <option value="Beginner">Beginner</option>
+              <option value="Intermediate">Intermediate</option>
+              <option value="Advanced">Advanced</option>
+              <option value="Proficient">Proficient</option>
+            </select>
           </div>
-          {draft && isDirty ? (
-            <p className="text-xs font-medium text-amber-800 dark:text-amber-200" role="status">
-              Unsaved changes
-            </p>
-          ) : draft && !isDirty && selector !== '__new__' ? (
-            <p className="text-xs text-[var(--text-muted)]" role="status">
-              All changes saved
-            </p>
-          ) : null}
-        </div>
+
+          <div
+            className="flex min-w-0 shrink-0 flex-nowrap items-center justify-end gap-2"
+            role="group"
+            aria-label="Course actions"
+          >
+            <div className="flex min-w-0 items-center gap-2">
+              <button
+                type="button"
+                disabled={busy || !draft || (baselineJson !== null && !isDirty)}
+                onClick={() => void handleSave()}
+                aria-busy={busy}
+                title={busy ? 'Saving…' : 'Save changes to the catalog'}
+                aria-label={busy ? 'Saving…' : 'Save course to catalog'}
+                className="inline-flex min-h-11 shrink-0 touch-manipulation items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-40"
+              >
+                {busy ? (
+                  <Loader2 size={18} className="shrink-0 animate-spin" aria-hidden />
+                ) : (
+                  <Save size={18} className="shrink-0" aria-hidden />
+                )}
+                <span>{busy ? 'Saving…' : 'Save'}</span>
+              </button>
+              {draft && isDirty ? (
+                <span
+                  role="status"
+                  className="inline-flex size-11 shrink-0 items-center justify-center text-amber-600 dark:text-amber-400"
+                  title="Unsaved changes"
+                >
+                  <AlertCircle size={20} strokeWidth={2} aria-hidden />
+                  <span className="sr-only">Unsaved changes</span>
+                </span>
+              ) : draft && !isDirty && selector !== '__new__' ? (
+                <span
+                  role="status"
+                  className="inline-flex size-11 shrink-0 items-center justify-center text-emerald-600 dark:text-emerald-400"
+                  title="All changes saved"
+                >
+                  <CheckCircle2 size={20} strokeWidth={2} aria-hidden />
+                  <span className="sr-only">All changes saved</span>
+                </span>
+              ) : null}
+            </div>
+            {showPlatformCatalogPublishToggle && draft ? (
+              <div className="flex items-center gap-1 border-l border-[var(--border-color)]/70 pl-3">
+                <label
+                  htmlFor="admin-catalog-publish-checkbox"
+                  className="flex min-h-11 cursor-pointer touch-manipulation items-center gap-1.5 rounded-lg px-0.5"
+                  title="Published in catalog and learning paths"
+                >
+                  <Globe size={16} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+                  <input
+                    id="admin-catalog-publish-checkbox"
+                    type="checkbox"
+                    checked={isCourseCatalogPublished(draft)}
+                    onChange={(e) => {
+                      const on = e.target.checked;
+                      setDraft((d) => {
+                        if (!d) return d;
+                        if (on) {
+                          const { catalogPublished: _removed, ...rest } = d;
+                          return { ...rest } as Course;
+                        }
+                        return { ...d, catalogPublished: false };
+                      });
+                    }}
+                    className="h-4 w-4 shrink-0 rounded border-[var(--border-color)] accent-orange-500"
+                    aria-label="Published in course catalog and learning paths"
+                  />
+                </label>
+                <AdminLabelInfoTip
+                  controlOnly
+                  tipId="admin-catalog-publish-tips"
+                  tipRegionAriaLabel="Published in catalog and paths"
+                  tipSubject="Published in catalog and paths"
+                >
+                  <li>
+                    When on, learners see this course in Browse, path outlines, and path link pickers.
+                  </li>
+                  <li>
+                    When off, it stays hidden there even if a path row is set to Show for learners.
+                  </li>
+                </AdminLabelInfoTip>
+              </div>
+            ) : null}
+            <div
+              className="flex items-center border-l-2 border-red-500/25 pl-3 md:pl-4"
+              role="group"
+              aria-label="Destructive actions"
+            >
+              <button
+                type="button"
+                disabled={busy || !draft || !selectionIsExistingCatalogCourse}
+                onClick={() => void requestDeleteCourse()}
+                title="Permanently remove this course from the catalog"
+                aria-label="Delete course from catalog"
+                className="inline-flex min-h-11 touch-manipulation items-center justify-center gap-2 rounded-md border-2 border-red-500/50 bg-transparent px-3 py-2 text-sm font-semibold text-red-500 hover:bg-red-500/10 dark:text-red-400 disabled:opacity-40"
+              >
+                <Trash2 size={17} className="shrink-0" aria-hidden />
+                <span className="max-sm:sr-only">Delete</span>
+              </button>
+            </div>
+          </div>
         </div>
         </div>
         </div>
