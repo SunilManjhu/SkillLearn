@@ -1,6 +1,6 @@
 # Learning path course list (flat dark UI)
 
-This document is the **canonical spec** for the SkillStream learning-path course row layout. Use it as a **reference in prompts** for designers, LLMs, or future you—paste a short pointer like:
+This document is the **canonical spec** for the i-Golden learning-path course row layout. Use it as a **reference in prompts** for designers, LLMs, or future you—paste a short pointer like:
 
 > Follow `docs/learning-path-course-list.md` for layout, tokens, and behavior.
 
@@ -99,7 +99,7 @@ Per course, in **path order**:
 | `duration`       | Display string from catalog (e.g. course duration)   |
 | `difficulty`     | Level label (e.g. `course.level`)                    |
 
-In SkillStream, **status** and **percent** are derived from stored lesson progress and shared rules with the path outline (`getLearningPathCourseRowStatus`, `getCourseLessonProgressSummary`).
+In i-Golden, **status** and **percent** are derived from stored lesson progress and shared rules with the path outline (`getLearningPathCourseRowStatus`, `getCourseLessonProgressSummary`).
 
 ---
 

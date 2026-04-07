@@ -246,7 +246,7 @@ function emptyCourse(docId: string): Course {
   return {
     id: docId,
     title: '',
-    author: 'SkillStream Academy',
+    author: 'i-Golden Academy',
     thumbnail: 'https://picsum.photos/seed/course/800/450',
     description: '',
     level: 'Beginner',

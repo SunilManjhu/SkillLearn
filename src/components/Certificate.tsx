@@ -98,7 +98,7 @@ export const Certificate: React.FC<CertificateProps> = ({
   const shareUrl = `${window.location.origin}${window.location.pathname}?cert_id=${certificateId}&cert_course=${course.id}&cert_user=${encodeURIComponent(userName)}&cert_date=${date}`;
   
   const handleLinkedInShare = () => {
-    const title = encodeURIComponent(`I just completed "${course.title}" on SkillStream!`);
+    const title = encodeURIComponent(`I just completed "${course.title}" on i-Golden!`);
     const linkedInUrl = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`;
     window.open(linkedInUrl, '_blank', 'width=600,height=600');
   };
@@ -117,10 +117,10 @@ export const Certificate: React.FC<CertificateProps> = ({
 
   const handleSystemShare = useCallback(async () => {
     if (!canWebShare) return;
-    const text = `I just completed "${course.title}" on SkillStream!`;
+    const text = `I just completed "${course.title}" on i-Golden!`;
     try {
       await navigator.share({
-        title: 'SkillStream certificate',
+        title: 'i-Golden certificate',
         text,
         url: shareUrl,
       });
@@ -294,11 +294,13 @@ export const Certificate: React.FC<CertificateProps> = ({
           <div className="flex w-full min-w-0 flex-col items-center justify-between gap-4 sm:flex-row sm:items-start">
             <div className="flex items-center gap-2">
               <div className="flex h-7 w-7 items-center justify-center rounded-sm bg-slate-900 text-sm font-bold text-white sm:h-8 sm:w-8">S</div>
-              <span className="font-montserrat text-[10px] font-bold tracking-[0.2em] text-slate-900 sm:text-xs">SKILLSTREAM</span>
+              <span className="font-montserrat text-[10px] font-bold tracking-[0.2em] text-slate-900 sm:text-xs">
+                i Golden
+              </span>
             </div>
             <div className="text-center sm:text-right">
               <p className="font-montserrat text-[9px] font-bold uppercase tracking-widest text-slate-400 sm:text-[10px]">Official Certification</p>
-              <p className="font-montserrat text-[8px] text-slate-400 sm:text-[9px]">Verify at skillstream.com/verify</p>
+              <p className="font-montserrat text-[8px] text-slate-400 sm:text-[9px]">Verify at i-golden.com/verify</p>
             </div>
           </div>
 
@@ -376,7 +378,7 @@ export const Certificate: React.FC<CertificateProps> = ({
               >
                 {isVerified === false ? <ShieldAlert size={14} className="shrink-0" /> : <ShieldCheck size={14} className="shrink-0" />}
                 <span className="min-w-0 break-words font-montserrat text-[9px] font-bold sm:text-[10px]">
-                  {isVerified === false ? 'UNVERIFIED RECORD' : 'SKILLSTREAM ACADEMY'}
+                  {isVerified === false ? 'UNVERIFIED RECORD' : 'i Golden Academy'}
                 </span>
               </div>
             </div>
@@ -395,7 +397,7 @@ export const Certificate: React.FC<CertificateProps> = ({
           </div>
           <h2 className="text-2xl font-bold text-[var(--text-primary)]">Ready to build your own skills?</h2>
           <p className="text-[var(--text-secondary)] max-w-xl mx-auto">
-            Join {userName} and millions of others learning on SkillStream. Get access to 7,000+ expert-led courses.
+            Join {userName} and millions of others learning on i-Golden. Get access to 7,000+ expert-led courses.
           </p>
           <div className="flex justify-center gap-4">
             <a

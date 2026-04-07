@@ -248,7 +248,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     const onPointerDownCapture = (event: PointerEvent) => {
       const t = event.target;
       if (!(t instanceof Element)) return;
-      if (!t.closest('[data-skillstream-video-area]')) return;
+      if (!t.closest('[data-igolden-video-area]')) return;
       closeMenusFromVideoInteraction();
     };
     document.addEventListener('pointerdown', onPointerDownCapture, true);
@@ -398,6 +398,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     <nav className="fixed top-0 left-0 right-0 z-50 flex min-h-16 items-center justify-between gap-2 overflow-visible border-b border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 transition-colors duration-300 sm:gap-3 sm:px-4 md:px-6">
       <div className="flex min-w-0 flex-1 items-center gap-2 md:gap-6 lg:gap-8">
         <button
+          type="button"
           ref={(el) => {
             navItemsRef.current[0] = el;
           }}
@@ -405,9 +406,30 @@ export const Navbar: React.FC<NavbarProps> = ({
           tabIndex={focusedNavIndex === 0 ? 0 : -1}
           className={`flex items-center gap-2 transition-opacity focus:outline-none focus:ring-2 focus:ring-orange-500 rounded-sm ${activeView === 'home' ? 'opacity-100' : 'opacity-70 hover:opacity-100'}`}
           onClick={() => onNavigate('home')}
+          aria-label="i Golden, home"
         >
-          <div className={`w-8 h-8 rounded-sm flex items-center justify-center font-bold text-white transition-colors ${activeView === 'home' ? 'bg-orange-500' : 'bg-[var(--text-muted)]'}`}>S</div>
-          <span className={`text-xl font-bold tracking-tighter hidden sm:block transition-colors ${activeView === 'home' ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>SKILLSTREAM</span>
+          <div
+            className={`flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-sm transition-colors ${activeView === 'home' ? 'bg-orange-500' : 'bg-[var(--text-muted)]'}`}
+          >
+            <img
+              src={`${import.meta.env.BASE_URL}i-golden-mark.svg`}
+              alt=""
+              width={32}
+              height={32}
+              decoding="async"
+              className="size-8 object-cover"
+            />
+          </div>
+          <span className="hidden min-w-0 flex-col items-start sm:flex">
+            <span
+              className={`text-xl font-bold tracking-tighter transition-colors ${activeView === 'home' ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}
+            >
+              i Golden
+            </span>
+            <span className="hidden max-w-[11rem] text-[0.625rem] font-semibold leading-snug tracking-wide text-[var(--text-muted)] lg:block lg:max-w-[13rem]">
+              Learn Today. Lead Tomorrow.
+            </span>
+          </span>
         </button>
         
         <div

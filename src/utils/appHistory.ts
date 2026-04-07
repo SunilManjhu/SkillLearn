@@ -3,7 +3,7 @@
 import type { Course, Lesson } from '../data/courses';
 import { pickCourseRowForHistoryPayload, type CatalogCourseRow } from './learnerCatalogMerge';
 
-export const APP_HISTORY_KEY = 'skillstreamApp' as const;
+export const APP_HISTORY_KEY = 'igoldenApp' as const;
 
 export type AppHistoryView =
   | 'home'

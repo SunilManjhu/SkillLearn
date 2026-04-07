@@ -2,7 +2,7 @@
 
 This file is a **manual test checklist** to run after UI/navigation changes. Keep it updated when you add features or change routing.
 
-**Scope:** SkillStream web app (mobile-first).  
+**Scope:** i-Golden web app (mobile-first).  
 **Goal:** Catch regressions quickly (routing, layout, responsive behavior, key flows).
 
 ---

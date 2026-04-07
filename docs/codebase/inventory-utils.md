@@ -34,7 +34,7 @@ Alphabetical. Each module is **pure logic, Firestore I/O, or cross-cutting helpe
 
 ## `src/utils/authProfileCache.ts`
 
-- **Role:** **localStorage** cache of display name/photo/uid for instant navbar paint before `onAuthStateChanged` finishes. Key **`skillstream.auth.profile.v1`** — the same key is read by [`index.html`](../../index.html) for **theme** first paint (see `uiThemePreference`).
+- **Role:** **localStorage** cache of display name/photo/uid for instant navbar paint before `onAuthStateChanged` finishes. Key **`igolden.auth.profile.v1`** — the same key is read by [`index.html`](../../index.html) for **theme** first paint (see `uiThemePreference`).
 - **Primary exports:** `AuthProfileSnapshot`, `readCachedAuthProfile`, `writeCachedAuthProfile`, `clearCachedAuthProfile`.
 - **Used by:** `App.tsx`, `uiThemePreference.ts`, resume/deep-link helpers.
 

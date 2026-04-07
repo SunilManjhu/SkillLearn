@@ -75,7 +75,7 @@ import {
   AlertTriangle,
   LayoutGrid,
 } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import {
   auth,
   db,
@@ -203,7 +203,7 @@ function readAlertsMutedFromStorage(uid: string): boolean {
 
 type ModerationBellDismissed = { reports: boolean; suggestions: boolean; contact: boolean };
 
-const moderationBellDismissedStorageKey = (uid: string) => `skillstream-moderation-bell-dismissed:${uid}`;
+const moderationBellDismissedStorageKey = (uid: string) => `igolden-moderation-bell-dismissed:${uid}`;
 
 function readModerationBellDismissedFromStorage(uid: string): ModerationBellDismissed {
   if (typeof localStorage === 'undefined') {
@@ -484,15 +484,15 @@ function PlayerSignInGate({
   );
 }
 
-const SKILLSTREAM_GUEST_WELCOME_READ_KEY = 'skillstream_guest_welcome_read';
-const SKILLSTREAM_GUEST_WELCOME_DISMISSED_KEY = 'skillstream_guest_welcome_dismissed';
+const IGOLDEN_GUEST_WELCOME_READ_KEY = 'igolden_guest_welcome_read';
+const IGOLDEN_GUEST_WELCOME_DISMISSED_KEY = 'igolden_guest_welcome_dismissed';
 
 function readGuestWelcomePersistedState(): { read: boolean; dismissed: boolean } {
   if (typeof localStorage === 'undefined') return { read: false, dismissed: false };
   try {
     return {
-      read: localStorage.getItem(SKILLSTREAM_GUEST_WELCOME_READ_KEY) === '1',
-      dismissed: localStorage.getItem(SKILLSTREAM_GUEST_WELCOME_DISMISSED_KEY) === '1',
+      read: localStorage.getItem(IGOLDEN_GUEST_WELCOME_READ_KEY) === '1',
+      dismissed: localStorage.getItem(IGOLDEN_GUEST_WELCOME_DISMISSED_KEY) === '1',
     };
   } catch {
     return { read: false, dismissed: false };
@@ -508,6 +508,7 @@ export default function App() {
   /** In-app bell: hide course/admin alerts; certificates still show. Persisted per uid. */
   const [alertsMuted, setAlertsMuted] = useState(false);
   const { siteNotificationsEnabled } = useNotificationsSiteEnabled();
+  const reduceMotion = useReducedMotion();
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(initialRoute.selectedCourse);
   /** Disambiguates catalog rows when the same `course.id` appears as published and creator draft. */
   const [selectedCourseIsCreatorDraft, setSelectedCourseIsCreatorDraft] = useState(
@@ -1469,7 +1470,7 @@ export default function App() {
         setNotifications([
           {
             id: 'welcome',
-            message: 'Welcome to SkillStream! Start your first course today.',
+            message: 'Welcome to i-Golden! Start your first course today.',
             read,
             time: 'Now',
             kind: 'generic',
@@ -1715,7 +1716,7 @@ export default function App() {
     const welcome = notifications.find((n) => n.id === 'welcome');
     if (!welcome?.read) return;
     try {
-      localStorage.setItem(SKILLSTREAM_GUEST_WELCOME_READ_KEY, '1');
+      localStorage.setItem(IGOLDEN_GUEST_WELCOME_READ_KEY, '1');
     } catch {
       /* ignore */
     }
@@ -2541,7 +2542,7 @@ export default function App() {
     (n: NavbarNotification) => {
       if (!user?.uid && n.id === 'welcome') {
         try {
-          localStorage.setItem(SKILLSTREAM_GUEST_WELCOME_DISMISSED_KEY, '1');
+          localStorage.setItem(IGOLDEN_GUEST_WELCOME_DISMISSED_KEY, '1');
         } catch {
           /* ignore */
         }
@@ -2563,7 +2564,7 @@ export default function App() {
   const handleGuestClearNotifications = useCallback(() => {
     if (user?.uid) return;
     try {
-      localStorage.setItem(SKILLSTREAM_GUEST_WELCOME_DISMISSED_KEY, '1');
+      localStorage.setItem(IGOLDEN_GUEST_WELCOME_DISMISSED_KEY, '1');
     } catch {
       /* ignore */
     }
@@ -2922,8 +2923,60 @@ export default function App() {
               transition={{ delay: 0.1 }}
               className="mb-3 text-4xl font-bold leading-tight text-[var(--text-primary)] sm:mb-6 sm:text-5xl lg:text-6xl xl:text-7xl"
             >
-              Build your <span className="text-orange-500">future</span> with SkillStream.
+              Build your <span className="text-orange-500">future</span> with i-Golden.
             </motion.h1>
+            {reduceMotion ? (
+              <p className="mb-3 text-base font-semibold leading-snug text-orange-500 sm:mb-5 sm:text-lg">
+                Learn Today. Lead Tomorrow.
+              </p>
+            ) : (
+              <motion.div
+                className="mb-3 sm:mb-5"
+                initial="hidden"
+                animate="visible"
+                variants={{
+                  hidden: {},
+                  visible: {
+                    transition: { staggerChildren: 0.16, delayChildren: 0.34 },
+                  },
+                }}
+              >
+                <div
+                  aria-label="Learn Today. Lead Tomorrow."
+                  className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1"
+                >
+                  {(['Learn Today.', 'Lead Tomorrow.'] as const).map((part) => (
+                    <motion.span
+                      key={part}
+                      className="inline-block bg-gradient-to-r from-orange-500 via-amber-500 to-orange-500 bg-clip-text text-base font-semibold leading-snug text-transparent sm:text-lg"
+                      variants={{
+                        hidden: { opacity: 0, y: 18, filter: 'blur(5px)' },
+                        visible: {
+                          opacity: 1,
+                          y: 0,
+                          filter: 'blur(0px)',
+                          transition: { type: 'spring', stiffness: 280, damping: 22 },
+                        },
+                      }}
+                    >
+                      {part}
+                    </motion.span>
+                  ))}
+                </div>
+                <motion.div
+                  aria-hidden
+                  className="mt-2.5 h-[3px] max-w-xs rounded-full bg-gradient-to-r from-orange-400 via-amber-400 to-orange-500 sm:max-w-sm"
+                  initial={{ scaleX: 0, opacity: 0 }}
+                  animate={{ scaleX: 1, opacity: 1 }}
+                  transition={{
+                    delay: 0.85,
+                    duration: 0.65,
+                    ease: [0.16, 1, 0.3, 1],
+                  }}
+                  style={{ transformOrigin: '0% 50%' }}
+                />
+              </motion.div>
+            )}
             <motion.p
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -2969,7 +3022,7 @@ export default function App() {
           >
             <PhoneMockupAdRail
               imageSrc={mobileHeroSrc}
-              imageAlt="SkillStream mobile experience"
+              imageAlt="i-Golden mobile experience"
               slides={heroPhoneAdSlides}
             />
           </motion.div>
@@ -3240,7 +3293,7 @@ export default function App() {
     <div className="pt-32 pb-20 px-6 max-w-7xl mx-auto">
       <div className="max-w-3xl mx-auto text-center mb-16">
         <h1 className="text-5xl font-bold text-[var(--text-primary)] mb-6">Building the future of tech education.</h1>
-        <p className="text-xl text-[var(--text-secondary)]">SkillStream is the leading technology learning platform, empowering teams and individuals to build the future through expert-led content.</p>
+        <p className="text-xl text-[var(--text-secondary)]">i-Golden is the leading technology learning platform, empowering teams and individuals to build the future through expert-led content.</p>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-20">
         {[
@@ -3299,7 +3352,7 @@ export default function App() {
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
         {[
-          { icon: <Play />, title: 'Getting Started', desc: 'Learn the basics of using SkillStream.' },
+          { icon: <Play />, title: 'Getting Started', desc: 'Learn the basics of using i-Golden.' },
           { icon: <Users />, title: 'Account & Billing', desc: 'Manage your subscription and profile.' },
           { icon: <Award />, title: 'Certificates', desc: 'How to earn and share your achievements.' }
         ].map((item, i) => (
@@ -3364,7 +3417,7 @@ export default function App() {
         </div>
         <div>
           <h1 className="text-2xl font-bold text-[var(--text-primary)] mb-1">All Systems Operational</h1>
-          <p className="text-emerald-500/80">SkillStream is running smoothly. No issues reported in the last 24 hours.</p>
+          <p className="text-emerald-500/80">i-Golden is running smoothly. No issues reported in the last 24 hours.</p>
         </div>
       </div>
       <div className="space-y-4">
@@ -3392,7 +3445,7 @@ export default function App() {
       <h1 className="text-4xl font-bold text-[var(--text-primary)] mb-8">Privacy Policy</h1>
       <div className="prose prose-invert max-w-none text-[var(--text-secondary)] space-y-6">
         <p>Last updated: March 19, 2026</p>
-        <p>At SkillStream, we take your privacy seriously. This policy describes how we collect, use, and handle your personal information when you use our website and services.</p>
+        <p>At i-Golden, we take your privacy seriously. This policy describes how we collect, use, and handle your personal information when you use our website and services.</p>
         <h2 className="text-2xl font-bold text-[var(--text-primary)] mt-12 mb-4">1. Information We Collect</h2>
         <p>We collect information you provide directly to us, such as when you create an account, subscribe to a plan, or communicate with our support team.</p>
         <h2 className="text-2xl font-bold text-[var(--text-primary)] mt-12 mb-4">2. How We Use Information</h2>
@@ -3794,8 +3847,19 @@ export default function App() {
           <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-10 md:gap-12">
             <div className="col-span-1 md:col-span-1">
               <div className="flex items-center gap-2 mb-6">
-                <div className="w-8 h-8 bg-orange-500 rounded-sm flex items-center justify-center font-bold text-white">S</div>
-                <span className="text-xl font-bold tracking-tighter text-[var(--text-primary)]">SKILLSTREAM</span>
+                <div className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-sm bg-orange-500">
+                  <img
+                    src={`${import.meta.env.BASE_URL}i-golden-mark.svg`}
+                    alt=""
+                    width={32}
+                    height={32}
+                    decoding="async"
+                    className="size-8 object-cover"
+                  />
+                </div>
+                <span className="text-xl font-bold tracking-tighter transition-colors text-[var(--text-primary)]">
+                  i Golden
+                </span>
               </div>
               <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
                 Empowering technology teams and individuals to build the future through expert-led content and skill assessments.
@@ -3877,7 +3941,7 @@ export default function App() {
             </div>
           </div>
           <div className="max-w-7xl mx-auto mt-12 pt-8 border-t border-[var(--border-color)] text-center text-[var(--text-secondary)] text-xs">
-            © 2026 SkillStream Inc. All rights reserved.
+            © 2026 i-Golden Inc. All rights reserved.
           </div>
         </footer>
       )}

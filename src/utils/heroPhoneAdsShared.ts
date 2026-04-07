@@ -162,7 +162,7 @@ export function normalizeBlocks(blocks: HeroAdBlockStored[]): PhoneMockupAdBlock
 export const INITIAL_STORED_HERO_PHONE_ADS: HeroPhoneAdSlideStored[] = [
   {
     id: 'ad-1',
-    label: 'SkillStream',
+    label: 'i-Golden',
     gradientPreset: 'sky_indigo',
     blocks: [
       { kind: 'text', style: 'headline', content: '7,000+ courses at your pace' },

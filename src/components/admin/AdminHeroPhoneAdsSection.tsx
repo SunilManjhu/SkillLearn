@@ -1472,7 +1472,7 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
               </div>
               <div id="hero-ads-reset-defaults-desc" className="p-4 text-sm leading-relaxed text-[var(--text-secondary)] sm:p-6">
                 <p>
-                  Replace all draft slides with the three SkillStream default cards? Your current draft will be
+                  Replace all draft slides with the three i-Golden default cards? Your current draft will be
                   overwritten until you save.
                 </p>
               </div>

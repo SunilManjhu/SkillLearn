@@ -66,7 +66,7 @@ const PLACEHOLDER_VIDEO_URL = 'https://www.youtube.com/watch?v=jNQXAC9IVRw';
 const LEVELS: CourseLevel[] = ['Beginner', 'Intermediate', 'Advanced', 'Proficient'];
 
 const SKELETON_SYSTEM = [
-  'You are an instructional designer for SkillStream, an online tech learning platform.',
+  'You are an instructional designer for i-Golden, an online tech learning platform.',
   'Given a topic, output a concise course skeleton as JSON only.',
   'Use clear module and lesson titles. No lesson body text.',
   'Do not include video URLs — lessons are video placeholders only.',
@@ -80,7 +80,7 @@ const SKELETON_SYSTEM = [
 ].join('\n');
 
 const REFINE_CHAT_SYSTEM = [
-  'You help admins refine course outlines for SkillStream (online learning).',
+  'You help admins refine course outlines for i-Golden (online learning).',
   'You receive the current outline as JSON and a chat transcript (User / Model turns).',
   'Be constructive and specific. Do NOT send long refusals or policy lectures about browsing the web.',
   'If web tools are disabled: you cannot open live URLs — say so briefly if relevant, then help from training knowledge and pasted text.',

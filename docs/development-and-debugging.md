@@ -52,7 +52,7 @@ See [`.env.example`](../.env.example) for copy-paste templates and comments.
 | Area | Path | Notes |
 |------|------|--------|
 | Shell / navigation / most view state | [`src/App.tsx`](../src/App.tsx) | Large file: catalog, player, profile, admin gate, alerts, enrollments, etc. **See [app-shell-app-tsx.md](./app-shell-app-tsx.md) for a structured map.** |
-| URL ↔ state | [`src/utils/appHistory.ts`](../src/utils/appHistory.ts) | Hash + `history.state` under `APP_HISTORY_KEY` (`skillstreamApp`). Payload shape `AppHistoryPayload` (`view`, `courseId`, `lessonId`, `adminTab`, `learningPathId`, `certificate`, …). **`#/certificate`** carries details in **state**, merged on load via `mergeHashAndHistoryStatePayload` (see [app-shell-app-tsx.md](./app-shell-app-tsx.md)). |
+| URL ↔ state | [`src/utils/appHistory.ts`](../src/utils/appHistory.ts) | Hash + `history.state` under `APP_HISTORY_KEY` (`igoldenApp`). Payload shape `AppHistoryPayload` (`view`, `courseId`, `lessonId`, `adminTab`, `learningPathId`, `certificate`, …). **`#/certificate`** carries details in **state**, merged on load via `mergeHashAndHistoryStatePayload` (see [app-shell-app-tsx.md](./app-shell-app-tsx.md)). |
 | Firebase bootstrap | [`src/firebase.ts`](../src/firebase.ts) | `auth`, `db`, Google sign-in (popup → redirect fallback), `isFirestorePermissionDenied`. Config: [`firebase-applet-config.json`](../firebase-applet-config.json). |
 | Firestore access | [`src/utils/*Firestore.ts`](../src/utils/) | One file per domain (courses, paths, progress, moderation, …). Good search anchor: `Firestore.ts`. |
 | Static / fallback catalog data | [`src/data/`](../src/data/) | e.g. `courses.ts`, `learningPaths.ts` — used with published Firestore data. |

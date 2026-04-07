@@ -2949,7 +2949,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
       >
         <div
           ref={videoAreaRef}
-          data-skillstream-video-area
+          data-igolden-video-area
           onPointerEnter={onVideoAreaPointerEnter}
           onPointerLeave={onVideoAreaPointerLeave}
           className={`touch-manipulation relative group max-lg:landscape:aspect-auto ${landscapeVideoH} max-lg:landscape:w-full max-lg:landscape:shrink-0 max-lg:landscape:transition-[height,min-height] max-lg:landscape:duration-300 max-lg:landscape:ease-out ${

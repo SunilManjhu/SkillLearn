@@ -1,7 +1,7 @@
 /** Structured assistant turn: conversational text plus optional catalog course. */
 export interface AssistantReply {
   reply: string;
-  /** Present only when gently offering a SkillStream course. */
+  /** Present only when gently offering an i-Golden course. */
   recommendCourseId: string | null;
 }
 

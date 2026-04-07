@@ -1,6 +1,6 @@
 # Video player, URL/history, and playback preferences
 
-This document summarizes how the **course player** integrates with **`App.tsx`**, the **History API**, and **localStorage**, based on implementation and fixes in the SkillStream codebase. Use it when debugging Back navigation, reload behavior, or volume/mute persistence.
+This document summarizes how the **course player** integrates with **`App.tsx`**, the **History API**, and **localStorage**, based on implementation and fixes in the i-Golden codebase. Use it when debugging Back navigation, reload behavior, or volume/mute persistence.
 
 **Primary code:** [`src/components/CoursePlayer.tsx`](../src/components/CoursePlayer.tsx)  
 **Shell / routing:** [`src/App.tsx`](../src/App.tsx), [`src/utils/appHistory.ts`](../src/utils/appHistory.ts)  

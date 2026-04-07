@@ -614,7 +614,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               <div className="min-w-0">
                 <p className="text-sm font-medium text-[var(--text-primary)]">Delete Account</p>
                 <p className="mt-1 text-xs leading-snug text-[var(--text-secondary)]">
-                  Removes your SkillStream sign-in permanently.
+                  Removes your i-Golden sign-in permanently.
                 </p>
               </div>
               <button
@@ -833,7 +833,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             </div>
             <div className="space-y-4 p-4 sm:p-5">
               <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
-                Your Google-linked account will be removed from SkillStream. Admins must set their role to
+                Your Google-linked account will be removed from i-Golden. Admins must set their role to
                 user in Admin → Roles before deletion; if you are the only admin, promote someone else to
                 admin first.
               </p>

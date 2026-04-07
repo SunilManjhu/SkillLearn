@@ -1,6 +1,6 @@
 import type { User } from 'firebase/auth';
 
-const STORAGE_KEY = 'skillstream.auth.profile.v1';
+const STORAGE_KEY = 'igolden.auth.profile.v1';
 
 export interface AuthProfileSnapshot {
   uid: string;
