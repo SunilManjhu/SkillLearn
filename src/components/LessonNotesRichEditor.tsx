@@ -213,7 +213,7 @@ export function LessonNotesRichEditor({
     editorProps: {
       attributes: {
         class:
-          'lesson-notes-editor ProseMirror w-full max-w-full flex-1 select-text text-sm leading-relaxed text-[var(--text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/45 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)] max-lg:min-h-[min(52dvh,22rem)] max-lg:rounded-xl max-lg:border max-lg:border-[var(--border-color)] max-lg:bg-[var(--bg-primary)] max-lg:p-4 max-lg:text-[15px] max-lg:leading-relaxed lg:min-h-[min(40vh,12rem)] lg:px-4 lg:py-3 xl:min-h-[min(42vh,16rem)] [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_h2]:mb-2 [&_h2]:mt-3 [&_h2]:text-base [&_h2]:font-bold [&_h2]:first:mt-0 [&_p]:mb-2 [&_p]:last:mb-0',
+          'lesson-notes-editor ProseMirror w-full max-w-full min-h-0 flex-1 select-text text-sm leading-relaxed text-[var(--text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/45 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)] max-lg:min-h-[10rem] max-lg:rounded-xl max-lg:border max-lg:border-[var(--border-color)] max-lg:bg-[var(--bg-primary)] max-lg:p-4 max-lg:text-[15px] max-lg:leading-relaxed lg:min-h-[min(40vh,12rem)] lg:px-4 lg:py-3 xl:min-h-[min(42vh,16rem)] [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_h2]:mb-2 [&_h2]:mt-3 [&_h2]:text-base [&_h2]:font-bold [&_h2]:first:mt-0 [&_p]:mb-2 [&_p]:last:mb-0',
         'aria-label': ariaLabel,
       },
       handleDOMEvents: {
@@ -273,20 +273,22 @@ export function LessonNotesRichEditor({
 
   return (
     <div
-      className={`flex min-h-0 min-w-0 flex-col max-lg:w-full max-lg:flex-none max-lg:overflow-visible lg:min-h-0 lg:overflow-hidden ${
-        desktopFillColumn ? 'lg:flex-1 lg:min-h-0 lg:flex-col' : 'lg:flex-1'
+      className={`flex min-h-0 min-w-0 flex-col max-lg:w-full max-lg:min-h-0 max-lg:flex-1 max-lg:overflow-hidden lg:min-h-0 lg:overflow-hidden ${
+        desktopFillColumn ? 'lg:h-full lg:min-h-0 lg:flex-1 lg:flex-col' : 'lg:flex-1'
       }`}
     >
       <details
         ref={detailsRef}
-        className={`group flex min-h-0 min-w-0 flex-col border-b border-[var(--border-color)] bg-[var(--bg-secondary)]/80 max-lg:flex-none max-lg:border-t max-lg:border-[var(--border-color)] max-lg:bg-[var(--bg-secondary)] max-lg:portrait:sticky max-lg:portrait:bottom-0 max-lg:portrait:z-[40] max-lg:portrait:shadow-[0_-4px_20px_rgba(0,0,0,0.12)] dark:max-lg:portrait:shadow-[0_-4px_24px_rgba(0,0,0,0.35)] max-lg:landscape:sticky max-lg:landscape:bottom-0 max-lg:landscape:z-40 max-lg:landscape:shadow-[0_-4px_20px_rgba(0,0,0,0.12)] dark:max-lg:landscape:shadow-[0_-4px_24px_rgba(0,0,0,0.35)] lg:shadow-none ${
-          desktopFillColumn ? 'lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-hidden' : 'lg:min-h-0 lg:flex-1 lg:overflow-hidden'
+        className={`group min-h-0 min-w-0 border-b border-[var(--border-color)] bg-[var(--bg-secondary)]/80 max-lg:flex max-lg:min-h-0 max-lg:flex-1 max-lg:flex-col max-lg:overflow-hidden max-lg:border-t max-lg:border-[var(--border-color)] max-lg:bg-[var(--bg-secondary)] max-lg:portrait:relative max-lg:portrait:z-0 max-lg:landscape:sticky max-lg:landscape:bottom-0 max-lg:landscape:z-40 max-lg:landscape:shadow-[0_-4px_20px_rgba(0,0,0,0.12)] dark:max-lg:landscape:shadow-[0_-4px_24px_rgba(0,0,0,0.35)] lg:shadow-none ${
+          desktopFillColumn
+            ? 'lg:grid lg:min-h-0 lg:flex-1 lg:overflow-hidden lg:grid-rows-[auto_minmax(0,1fr)] lg:w-full'
+            : 'lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-hidden'
         }`}
         open={notesSectionOpen}
         onToggle={onNotesDetailsToggle}
       >
         <summary
-          className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 bg-[var(--bg-secondary)] px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)] touch-manipulation sm:min-h-10 sm:px-4 [&::-webkit-details-marker]:hidden"
+          className="flex min-h-11 shrink-0 cursor-pointer list-none items-center justify-between gap-2 bg-[var(--bg-secondary)] px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)] touch-manipulation sm:min-h-10 sm:px-4 lg:shrink-0 [&::-webkit-details-marker]:hidden"
           onClick={onDesktopNotesSummaryClick}
         >
           <span className="flex min-w-0 items-center gap-2 text-left leading-snug">
@@ -300,22 +302,20 @@ export function LessonNotesRichEditor({
           />
         </summary>
         <div
-          className={`flex min-h-0 min-w-0 flex-col touch-manipulation lg:min-h-0 lg:overflow-hidden ${
-            desktopFillColumn ? 'lg:flex-1 lg:min-h-0' : 'lg:flex-1'
+          className={`flex min-h-0 min-w-0 flex-col touch-manipulation max-lg:min-h-0 max-lg:flex-1 max-lg:overflow-hidden lg:min-h-0 lg:flex-col lg:overflow-hidden ${
+            desktopFillColumn ? 'lg:row-start-2 lg:h-full lg:max-h-full lg:min-h-0' : 'lg:flex-1'
           }`}
           onPointerDown={focusEditorFromShell}
         >
           <FormatToolbar editor={editor} />
           <div
-            className={`min-h-0 min-w-0 max-lg:overflow-visible max-lg:px-0.5 lg:min-h-0 lg:overflow-y-auto lg:overscroll-y-contain ${
-              desktopFillColumn
-                ? 'lg:flex-1 lg:min-h-0 lg:[&_.lesson-notes-editor]:!min-h-0 lg:[&_.lesson-notes-editor]:flex-1'
-                : 'lg:flex-1'
+            className={`min-h-0 min-w-0 max-lg:min-h-0 max-lg:flex-1 max-lg:overflow-y-auto max-lg:portrait:overscroll-y-auto max-lg:landscape:overscroll-y-contain max-lg:px-0.5 max-lg:max-h-[min(55dvh,22rem)] lg:min-h-0 lg:max-h-full lg:flex-1 lg:overflow-y-auto lg:overscroll-y-contain ${
+              desktopFillColumn ? 'lg:[&_.lesson-notes-editor]:!min-h-0 lg:[&_.lesson-notes-editor]:min-h-0' : ''
             }`}
           >
             <EditorContent
               editor={editor}
-              className="h-full min-h-0 w-full max-lg:h-auto [&_.ProseMirror]:pb-6 lg:[&_.ProseMirror]:pb-8"
+              className="h-auto min-h-0 w-full max-lg:h-auto [&_.ProseMirror]:pb-6 lg:[&_.ProseMirror]:pb-8"
             />
           </div>
         </div>

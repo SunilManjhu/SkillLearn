@@ -157,20 +157,22 @@ export function LessonVideoOutlineNotes({
     <div
       className={`relative overflow-visible border-b border-[var(--border-color)] bg-[var(--bg-secondary)]/80 max-lg:z-20 max-lg:shrink-0 ${
         desktopFillColumn
-          ? 'lg:flex lg:min-h-0 lg:flex-1 lg:flex-col'
+          ? 'lg:flex lg:h-0 lg:min-h-0 lg:flex-1 lg:flex-col'
           : 'shrink-0 lg:shrink-0'
       }`}
     >
       <details
         ref={detailsRef}
         className={`group relative overflow-visible max-lg:z-20 ${
-          desktopFillColumn ? 'lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-hidden' : ''
+          desktopFillColumn
+            ? 'lg:grid lg:h-full lg:min-h-0 lg:flex-1 lg:overflow-hidden lg:grid-rows-[auto_minmax(0,1fr)] lg:w-full'
+            : ''
         }`}
         open={outlineOpen}
         onToggle={onDetailsToggle}
       >
         <summary
-          className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 bg-[var(--bg-secondary)]/80 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)] touch-manipulation sm:min-h-10 sm:px-4 [&::-webkit-details-marker]:hidden"
+          className="flex min-h-11 shrink-0 cursor-pointer list-none items-center justify-between gap-2 bg-[var(--bg-secondary)]/80 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)] touch-manipulation sm:min-h-10 sm:px-4 lg:shrink-0 [&::-webkit-details-marker]:hidden"
           onClick={onDesktopSummaryClick}
         >
           <span className="flex min-w-0 items-center gap-2">
@@ -185,9 +187,9 @@ export function LessonVideoOutlineNotes({
         </summary>
       <ul
         ref={listRef}
-        className={`space-y-0 px-1 pb-2 pt-0.5 max-lg:max-h-[min(55dvh,22rem)] max-lg:min-h-0 max-lg:overflow-y-auto max-lg:overscroll-y-contain max-lg:rounded-b-xl max-lg:border-x max-lg:border-b max-lg:border-[var(--border-color)] max-lg:bg-[var(--bg-secondary)] lg:relative lg:overflow-y-auto lg:overscroll-y-contain lg:rounded-none lg:border-0 lg:shadow-none ${
+        className={`space-y-0 px-1 pb-2 pt-0.5 max-lg:max-h-[min(55dvh,22rem)] max-lg:min-h-0 max-lg:overflow-y-auto max-lg:portrait:overscroll-y-auto max-lg:landscape:overscroll-y-contain max-lg:rounded-b-xl max-lg:border-x max-lg:border-b max-lg:border-[var(--border-color)] max-lg:bg-[var(--bg-secondary)] lg:relative lg:overflow-y-auto lg:overscroll-y-contain lg:rounded-none lg:border-0 lg:shadow-none ${
           desktopFillColumn
-            ? 'lg:max-h-none lg:min-h-0 lg:flex-1'
+            ? 'lg:row-start-2 lg:h-full lg:min-h-0 lg:max-h-full lg:overflow-y-auto'
             : 'lg:max-h-[min(42vh,14rem)]'
         }`}
       >

@@ -300,7 +300,7 @@ export function CoursePlayerSidebarPanels({
                   className={`min-h-0 flex-1 max-lg:portrait:flex-none max-lg:landscape:min-h-0 max-lg:landscape:flex-1 max-lg:shrink-0 max-lg:self-stretch max-lg:relative max-lg:z-0 ${
                     isLgViewport
                       ? lgNotesOpen
-                        ? 'lg:min-h-0 lg:flex-1'
+                        ? 'lg:h-0 lg:min-h-0 lg:flex-1'
                         : 'lg:shrink-0 lg:flex-none'
                       : 'lg:flex-1'
                   }`}

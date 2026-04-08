@@ -3380,14 +3380,14 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   }, [selector, baselineJson, courseDetailsOpen]);
 
   return (
-    <div className="min-w-0 space-y-6 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="flex min-w-0 items-center gap-2 text-lg font-bold">
+    <div className="min-w-0 space-y-4 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3 sm:space-y-6 sm:p-6">
+      <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:justify-between">
+        <h2 className="flex min-w-0 items-center gap-2 text-base font-bold sm:text-lg">
           <BookOpen size={20} className="shrink-0 text-orange-500" />
           <span className="min-w-0">{catalogSectionTitle ?? 'Course catalog'}</span>
         </h2>
         {/* Keep a stable slot so the title row does not jump when switching tabs */}
-        <div className="flex shrink-0 items-center justify-end">
+        <div className="flex w-full shrink-0 items-stretch justify-stretch md:w-auto md:items-center md:justify-end">
           <button
             type="button"
             disabled={
@@ -3450,7 +3450,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 return;
               }
             }}
-            className={`inline-flex min-h-11 touch-manipulation items-center gap-2 rounded-lg border border-[var(--border-color)] px-3 py-2 text-sm font-semibold hover:bg-[var(--hover-bg)] active:opacity-90 disabled:opacity-50 sm:text-xs ${
+            className={`inline-flex min-h-11 w-full touch-manipulation items-center justify-center gap-2 rounded-lg border border-[var(--border-color)] px-3 py-2 text-sm font-semibold hover:bg-[var(--hover-bg)] active:opacity-90 disabled:opacity-50 sm:text-xs md:w-auto ${
               contentCatalogSubTab !== 'catalog' &&
               contentCatalogSubTab !== 'paths' &&
               contentCatalogSubTab !== 'taxonomy' &&
@@ -3536,9 +3536,9 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         <>
       <div ref={courseCatalogEditorRef} className="space-y-4">
         <div className="space-y-3">
-        <div className="min-w-0 overflow-x-auto overflow-y-visible [-webkit-overflow-scrolling:touch] pb-0.5">
-        <div className="grid w-full min-w-[min(100%,920px)] grid-cols-[minmax(0,1fr)_minmax(6.75rem,7.5rem)_auto] items-center gap-x-3">
-          <div className="flex min-w-0 items-center gap-2">
+        <div className="min-w-0 pb-0.5 md:overflow-x-auto md:overflow-y-visible md:[-webkit-overflow-scrolling:touch]">
+        <div className="grid w-full grid-cols-1 gap-3 md:min-w-[min(100%,920px)] md:grid-cols-[minmax(0,1fr)_minmax(6.75rem,7.5rem)_auto] md:items-center md:gap-x-3">
+          <div className="flex min-w-0 flex-col gap-2 md:flex-row md:items-center md:gap-2">
             <div className="flex min-h-6 min-w-0 shrink-0 flex-wrap items-center gap-x-1.5 gap-y-1">
               <label
                 htmlFor="admin-catalog-course-select"
@@ -3621,13 +3621,14 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 </div>
               </span>
             </div>
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
             <select
               id="admin-catalog-course-select"
               value={selector}
               onFocus={openCourseCatalogOnce}
               onMouseDown={openCourseCatalogOnce}
               onChange={onCourseSelectChange}
-              className="box-border min-h-11 min-w-0 flex-1 touch-manipulation rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] sm:min-w-[7rem] sm:text-sm"
+              className="box-border min-h-11 min-w-0 w-full touch-manipulation rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] sm:flex-1 sm:min-w-[7rem] sm:text-sm"
             >
               <option value="" disabled>
                 {!catalogRequested
@@ -3647,33 +3648,64 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 </>
               )}
             </select>
-            <div
-              className="box-border flex w-max max-w-full shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm font-mono text-[var(--text-primary)] md:px-2.5"
-              aria-live="polite"
-              title="Document ID"
-            >
-              <Hash size={16} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-              {draft ? (
-                <span className="text-orange-500/90">{draft.id}</span>
-              ) : (
-                <span className="text-[var(--text-muted)]">—</span>
-              )}
+            <div className="flex w-full min-w-0 flex-row flex-nowrap items-center gap-2 overflow-x-auto overflow-y-visible overscroll-x-contain border-t border-[var(--border-color)]/60 pt-3 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] md:flex-wrap md:overflow-visible md:border-t-0 md:pt-0 [&::-webkit-scrollbar]:hidden">
+              <div className="flex min-w-0 shrink-0 flex-nowrap items-center gap-2">
+                <div
+                  className="box-border flex min-w-0 max-w-full shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm font-mono text-[var(--text-primary)] md:px-2.5"
+                  aria-live="polite"
+                  title="Document ID"
+                >
+                  <Hash size={16} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+                  {draft ? (
+                    <span className="truncate text-orange-500/90">{draft.id}</span>
+                  ) : (
+                    <span className="text-[var(--text-muted)]">—</span>
+                  )}
+                </div>
+                {selector !== '__new__' && (
+                  <button
+                    type="button"
+                    disabled={listLoading || !selector || !selectionIsExistingCatalogCourse}
+                    onClick={requestDuplicateOrConfirm}
+                    title="Duplicate as new draft — clone into a new document ID"
+                    aria-label="Duplicate as new draft"
+                    className="inline-flex size-11 shrink-0 touch-manipulation items-center justify-center rounded-lg border border-[var(--border-color)] hover:bg-[var(--hover-bg)] disabled:pointer-events-none disabled:opacity-40"
+                  >
+                    <Copy size={18} aria-hidden />
+                  </button>
+                )}
+              </div>
+              <div className="flex min-h-11 min-w-[7rem] max-w-full flex-1 items-center gap-1.5 md:hidden">
+                <span className="inline-flex shrink-0 text-[var(--text-muted)]" title="Level">
+                  <SlidersHorizontal size={16} aria-hidden />
+                </span>
+                <select
+                  id="admin-catalog-course-level-mobile"
+                  value={draft?.level ?? ''}
+                  disabled={!draft}
+                  aria-label="Course level"
+                  title="Course level"
+                  onChange={(e) =>
+                    draft && updateDraft({ level: e.target.value as Course['level'] })
+                  }
+                  className="box-border min-h-11 min-w-0 w-full flex-1 rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {!draft && (
+                    <option value="" disabled>
+                      —
+                    </option>
+                  )}
+                  <option value="Beginner">Beginner</option>
+                  <option value="Intermediate">Intermediate</option>
+                  <option value="Advanced">Advanced</option>
+                  <option value="Proficient">Proficient</option>
+                </select>
+              </div>
             </div>
-            {selector !== '__new__' && (
-              <button
-                type="button"
-                disabled={listLoading || !selector || !selectionIsExistingCatalogCourse}
-                onClick={requestDuplicateOrConfirm}
-                title="Duplicate as new draft — clone into a new document ID"
-                aria-label="Duplicate as new draft"
-                className="inline-flex size-11 shrink-0 touch-manipulation items-center justify-center rounded-lg border border-[var(--border-color)] hover:bg-[var(--hover-bg)] disabled:pointer-events-none disabled:opacity-40"
-              >
-                <Copy size={18} aria-hidden />
-              </button>
-            )}
+            </div>
           </div>
 
-          <div className="flex min-w-0 items-center gap-1.5">
+          <div className="hidden min-w-0 items-center gap-1.5 md:flex">
             <label htmlFor="admin-catalog-course-level" className="sr-only">
               Level
             </label>
@@ -3704,49 +3736,47 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           </div>
 
           <div
-            className="flex min-w-0 shrink-0 flex-nowrap items-center justify-end gap-2"
+            className="flex w-full min-w-0 shrink-0 flex-row flex-nowrap items-center gap-1.5 overflow-x-auto overflow-y-visible overscroll-x-contain border-t border-[var(--border-color)]/60 py-1 pt-3 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] md:w-auto md:flex-wrap md:justify-end md:gap-2 md:overflow-visible md:border-t-0 md:py-0 md:pt-0 [&::-webkit-scrollbar]:hidden"
             role="group"
             aria-label="Course actions"
           >
-            <div className="flex min-w-0 items-center gap-2">
-              <button
-                type="button"
-                disabled={busy || !draft || (baselineJson !== null && !isDirty)}
-                onClick={() => void handleSave()}
-                aria-busy={busy}
-                title={busy ? 'Saving…' : 'Save changes to the catalog'}
-                aria-label={busy ? 'Saving…' : 'Save course to catalog'}
-                className="inline-flex min-h-11 shrink-0 touch-manipulation items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-40"
+            <button
+              type="button"
+              disabled={busy || !draft || (baselineJson !== null && !isDirty)}
+              onClick={() => void handleSave()}
+              aria-busy={busy}
+              title={busy ? 'Saving…' : 'Save changes to the catalog'}
+              aria-label={busy ? 'Saving…' : 'Save course to catalog'}
+              className="inline-flex min-h-11 shrink-0 touch-manipulation items-center justify-center gap-2 rounded-xl bg-orange-500 px-3 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-40 sm:px-4"
+            >
+              {busy ? (
+                <Loader2 size={18} className="shrink-0 animate-spin" aria-hidden />
+              ) : (
+                <Save size={18} className="shrink-0" aria-hidden />
+              )}
+              <span>{busy ? 'Saving…' : 'Save'}</span>
+            </button>
+            {draft && isDirty ? (
+              <span
+                role="status"
+                className="inline-flex size-11 shrink-0 items-center justify-center text-amber-600 dark:text-amber-400"
+                title="Unsaved changes"
               >
-                {busy ? (
-                  <Loader2 size={18} className="shrink-0 animate-spin" aria-hidden />
-                ) : (
-                  <Save size={18} className="shrink-0" aria-hidden />
-                )}
-                <span>{busy ? 'Saving…' : 'Save'}</span>
-              </button>
-              {draft && isDirty ? (
-                <span
-                  role="status"
-                  className="inline-flex size-11 shrink-0 items-center justify-center text-amber-600 dark:text-amber-400"
-                  title="Unsaved changes"
-                >
-                  <AlertCircle size={20} strokeWidth={2} aria-hidden />
-                  <span className="sr-only">Unsaved changes</span>
-                </span>
-              ) : draft && !isDirty && selector !== '__new__' ? (
-                <span
-                  role="status"
-                  className="inline-flex size-11 shrink-0 items-center justify-center text-emerald-600 dark:text-emerald-400"
-                  title="All changes saved"
-                >
-                  <CheckCircle2 size={20} strokeWidth={2} aria-hidden />
-                  <span className="sr-only">All changes saved</span>
-                </span>
-              ) : null}
-            </div>
+                <AlertCircle size={20} strokeWidth={2} aria-hidden />
+                <span className="sr-only">Unsaved changes</span>
+              </span>
+            ) : draft && !isDirty && selector !== '__new__' ? (
+              <span
+                role="status"
+                className="inline-flex size-11 shrink-0 items-center justify-center text-emerald-600 dark:text-emerald-400"
+                title="All changes saved"
+              >
+                <CheckCircle2 size={20} strokeWidth={2} aria-hidden />
+                <span className="sr-only">All changes saved</span>
+              </span>
+            ) : null}
             {showPlatformCatalogPublishToggle && draft ? (
-              <div className="flex items-center gap-1 border-l border-[var(--border-color)]/70 pl-3">
+              <div className="flex shrink-0 items-center gap-1 border-l border-[var(--border-color)]/70 pl-2 md:pl-3">
                 <label
                   htmlFor="admin-catalog-publish-checkbox"
                   className="flex min-h-11 cursor-pointer touch-manipulation items-center gap-1.5 rounded-lg px-0.5"
@@ -3772,23 +3802,25 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     aria-label="Published in course catalog and learning paths"
                   />
                 </label>
-                <AdminLabelInfoTip
-                  controlOnly
-                  tipId="admin-catalog-publish-tips"
-                  tipRegionAriaLabel="Published in catalog and paths"
-                  tipSubject="Published in catalog and paths"
-                >
-                  <li>
-                    When on, learners see this course in Browse, path outlines, and path link pickers.
-                  </li>
-                  <li>
-                    When off, it stays hidden there even if a path row is set to Show for learners.
-                  </li>
-                </AdminLabelInfoTip>
+                <span className="inline-flex shrink-0">
+                  <AdminLabelInfoTip
+                    controlOnly
+                    tipId="admin-catalog-publish-tips"
+                    tipRegionAriaLabel="Published in catalog and paths"
+                    tipSubject="Published in catalog and paths"
+                  >
+                    <li>
+                      When on, learners see this course in Browse, path outlines, and path link pickers.
+                    </li>
+                    <li>
+                      When off, it stays hidden there even if a path row is set to Show for learners.
+                    </li>
+                  </AdminLabelInfoTip>
+                </span>
               </div>
             ) : null}
             <div
-              className="flex items-center border-l-2 border-red-500/25 pl-3 md:pl-4"
+              className="flex shrink-0 items-center border-l-2 border-red-500/25 pl-2 md:pl-3 lg:pl-4"
               role="group"
               aria-label="Destructive actions"
             >
@@ -3798,10 +3830,10 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 onClick={() => void requestDeleteCourse()}
                 title="Permanently remove this course from the catalog"
                 aria-label="Delete course from catalog"
-                className="inline-flex min-h-11 touch-manipulation items-center justify-center gap-2 rounded-md border-2 border-red-500/50 bg-transparent px-3 py-2 text-sm font-semibold text-red-500 hover:bg-red-500/10 dark:text-red-400 disabled:opacity-40"
+                className="inline-flex min-h-11 shrink-0 touch-manipulation items-center justify-center gap-2 rounded-md border-2 border-red-500/50 bg-transparent px-2.5 py-2 text-sm font-semibold text-red-500 hover:bg-red-500/10 dark:text-red-400 disabled:opacity-40 sm:px-3"
               >
                 <Trash2 size={17} className="shrink-0" aria-hidden />
-                <span className="max-sm:sr-only">Delete</span>
+                <span>Delete</span>
               </button>
             </div>
           </div>
@@ -4284,11 +4316,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 }`}
               >
                 <div
-                  className={`flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 ${
+                  className={`flex flex-col items-stretch gap-2 md:flex-row md:flex-wrap md:items-center md:justify-between md:gap-x-2 md:gap-y-1.5 ${
                     openModules[mi] ? 'pb-1.5 sm:pb-2' : ''
                   }`}
                 >
-                  <div className="flex min-h-11 min-w-0 flex-1 items-center gap-1.5 md:min-h-10 sm:gap-2">
+                  <div className="flex min-h-11 w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-center md:min-h-10 md:flex-1 md:gap-2">
                     <button
                       type="button"
                       className={ADMIN_CATALOG_MODULE_BADGE_CLASS}
@@ -4309,8 +4341,9 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     >
                       Module
                     </button>
-                    <div className="flex min-w-0 min-h-11 flex-1 flex-col gap-0.5 md:min-h-10">
-                      <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 sm:gap-x-2">
+                    <div className="flex min-h-11 min-w-0 w-full flex-1 flex-col gap-0.5 md:min-h-10">
+                      <div className="flex min-w-0 w-full flex-col gap-1.5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-2 sm:gap-y-0.5">
+                        <div className="flex min-w-0 shrink-0 items-center gap-x-1.5 sm:contents">
                         <span
                           id={`admin-module-id-${mi}`}
                           tabIndex={-1}
@@ -4326,13 +4359,14 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         <span className="shrink-0 text-[var(--text-muted)]" aria-hidden>
                           -
                         </span>
+                        </div>
                         <input
                           id={`admin-module-title-${mi}`}
                           value={mod.title}
                           onChange={(e) => updateModule(mi, { title: e.target.value })}
                           aria-label="Module title"
                           placeholder="e.g. HTML & CSS fundamentals — section title in the syllabus"
-                          className={`min-w-0 flex-1 basis-[min(100%,10rem)] rounded-md border bg-[var(--bg-primary)] px-1.5 py-1 text-sm font-semibold leading-snug text-[var(--text-primary)] sm:basis-0 sm:px-2 sm:py-1 ${
+                          className={`min-w-0 w-full rounded-md border bg-[var(--bg-primary)] px-1.5 py-1 text-sm font-semibold leading-snug text-[var(--text-primary)] sm:flex-1 sm:min-w-0 sm:px-2 sm:py-1 ${
                             showValidationHints && fieldErrors.moduleTitle.has(mi)
                               ? 'border-red-500'
                               : 'border-[var(--border-color)]'
@@ -4368,7 +4402,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       )}
                     </div>
                   </div>
-                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-0.5 sm:gap-1">
+                  <div className="flex w-full shrink-0 flex-wrap items-center justify-start gap-0.5 border-t border-[var(--border-color)]/50 pt-2 sm:gap-1 md:w-auto md:justify-end md:border-t-0 md:pt-0">
                     <button
                       type="button"
                       disabled={busy || !draft || (baselineJson !== null && !isDirty)}
@@ -4484,13 +4518,14 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       data-lesson-li={li}
                       className="space-y-1.5 py-0 sm:space-y-2"
                     >
-                      <div className="flex w-full min-w-0 items-center gap-1.5 sm:gap-2">
+                      <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
                         {lesson.contentKind === 'divider' ? (
                           <div
-                            className="flex min-h-11 min-w-0 flex-1 items-center gap-1.5 rounded-lg py-0 -mx-0.5 px-0.5 md:min-h-10 sm:gap-2 sm:py-0.5 sm:-mx-1 sm:px-1"
+                            className="flex min-h-11 min-w-0 w-full flex-1 flex-col gap-1.5 rounded-lg py-0 -mx-0.5 px-0.5 sm:flex-row sm:items-center md:min-h-10 sm:gap-2 sm:py-0.5 sm:-mx-1 sm:px-1"
                             role="group"
                             aria-label="Section divider row"
                           >
+                            <div className="flex shrink-0 items-center gap-1.5 sm:contents">
                             <button
                               type="button"
                               onClick={() => splitDividerIntoNewModuleAt(mi, li)}
@@ -4509,11 +4544,12 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             >
                               <SlidersHorizontal size={18} aria-hidden />
                             </button>
+                            </div>
                             <input
                               id={`admin-lesson-title-${mi}-${li}`}
                               value={lesson.title}
                               onChange={(e) => updateLesson(mi, li, { title: e.target.value })}
-                              className={`min-w-0 flex-1 rounded-md border bg-[var(--bg-primary)] px-2 py-1 text-sm text-[var(--text-primary)] sm:px-2.5 sm:py-1.5 ${
+                              className={`min-w-0 w-full flex-1 rounded-md border bg-[var(--bg-primary)] px-2 py-1 text-sm text-[var(--text-primary)] sm:px-2.5 sm:py-1.5 ${
                                 showValidationHints && fieldErrors.lessonTitle.has(`${mi}:${li}`)
                                   ? 'border-red-500'
                                   : 'border-[var(--border-color)]'
@@ -4523,7 +4559,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             />
                           </div>
                         ) : (
-                        <div className="flex min-h-11 min-w-0 flex-1 items-center gap-1.5 md:min-h-10 sm:gap-2">
+                        <div className="flex min-h-11 min-w-0 w-full flex-1 flex-col gap-1.5 sm:flex-row sm:items-center md:min-h-10 sm:gap-2">
                           <button
                             type="button"
                             onClick={() => setChangeLessonKindModal({ mi, li })}
@@ -4536,7 +4572,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           <button
                             type="button"
                             onClick={() => toggleLessonOpen(mi, li)}
-                            className="flex min-h-11 min-w-0 flex-1 items-center gap-1.5 rounded-lg py-0 text-left -mx-0.5 px-0.5 hover:bg-[var(--bg-primary)]/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 md:min-h-10 sm:gap-2 sm:py-0.5 sm:-mx-1 sm:px-1"
+                            className="flex min-h-11 min-w-0 w-full flex-1 items-center gap-1.5 rounded-lg py-0 text-left -mx-0.5 px-0.5 hover:bg-[var(--bg-primary)]/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 md:min-h-10 sm:gap-2 sm:py-0.5 sm:-mx-1 sm:px-1"
                             aria-expanded={!!openLessons[`${mi}:${li}`]}
                             aria-label={`Lesson ${li + 1}: ${lesson.id.trim() || 'no id'} - ${lesson.title.trim() || 'Untitled lesson'}. ${openLessons[`${mi}:${li}`] ? 'Collapse' : 'Expand'} lesson`}
                           >
@@ -4554,7 +4590,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           </button>
                         </div>
                         )}
-                        <div className="flex shrink-0 flex-col gap-0.5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-0.5">
+                        <div className="flex w-full shrink-0 flex-row flex-wrap items-center justify-start gap-0.5 border-t border-[var(--border-color)]/50 pt-2 sm:justify-end sm:gap-0.5 md:w-auto md:border-t-0 md:pt-0">
                           <button
                             type="button"
                             disabled={busy || !draft || (baselineJson !== null && !isDirty)}

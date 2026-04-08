@@ -3493,7 +3493,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
           className={
             isQuizLessonRow
               ? 'contents'
-              : 'max-lg:portrait:flex max-lg:portrait:min-h-0 max-lg:portrait:w-full max-lg:portrait:flex-1 max-lg:portrait:flex-col max-lg:portrait:overflow-y-auto max-lg:portrait:overscroll-y-contain max-lg:landscape:flex max-lg:landscape:min-h-0 max-lg:landscape:w-full max-lg:landscape:flex-1 max-lg:landscape:flex-col max-lg:landscape:overflow-hidden lg:contents'
+              : 'max-lg:portrait:flex max-lg:portrait:min-h-0 max-lg:portrait:w-full max-lg:portrait:flex-1 max-lg:portrait:flex-col max-lg:portrait:overflow-y-auto max-lg:portrait:overscroll-y-auto max-lg:landscape:flex max-lg:landscape:min-h-0 max-lg:landscape:w-full max-lg:landscape:flex-1 max-lg:landscape:flex-col max-lg:landscape:overflow-hidden lg:contents'
           }
         >
           <div
