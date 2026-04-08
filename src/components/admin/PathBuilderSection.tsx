@@ -1191,6 +1191,7 @@ function AddPathBranchModal({
   replaceSource = null,
   lessonAddContext = null,
   showModuleInKindPicker = false,
+  topLevelNewPathSectionLabelOnly = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -1206,6 +1207,8 @@ function AddPathBranchModal({
   addPreset?: 'label' | 'course' | 'link' | 'divider' | 'module';
   /** Top-level outline add: kind step is Text label + Section only; Back from label/divider closes. */
   topLevelOutlineAdd?: boolean;
+  /** Admin → Create new path: top-level kind step is section label (text label) only — no divider heading. */
+  topLevelNewPathSectionLabelOnly?: boolean;
   /** Root-row change type: only converting to a text label (no course/link/lesson/divider picker). */
   changeTypeRootRowLabelOnly?: boolean;
   /** Section divider rows only make sense under a top-level section, not at the root list. */
@@ -1541,10 +1544,19 @@ function AddPathBranchModal({
               {mode === 'add' && topLevelOutlineAdd ? (
                 <>
                   <p className="text-xs leading-relaxed text-[var(--text-muted)]">
-                    Top-level outline rows are either a <strong className="text-[var(--text-secondary)]">text label</strong>{' '}
-                    (section you can open and add courses, links, or lessons under) or a{' '}
-                    <strong className="text-[var(--text-secondary)]">section</strong> heading (non-playable divider). Use{' '}
-                    <strong className="text-[var(--text-secondary)]">Add branch here</strong> under a label for catalog items.
+                    {topLevelNewPathSectionLabelOnly ? (
+                      <>
+                        New paths start with a <strong className="text-[var(--text-secondary)]">section label</strong> only.
+                        Add courses, links, or lessons under it with <strong className="text-[var(--text-secondary)]">Add branch here</strong>.
+                      </>
+                    ) : (
+                      <>
+                        Top-level outline rows are either a <strong className="text-[var(--text-secondary)]">text label</strong>{' '}
+                        (section you can open and add courses, links, or lessons under) or a{' '}
+                        <strong className="text-[var(--text-secondary)]">section</strong> heading (non-playable divider). Use{' '}
+                        <strong className="text-[var(--text-secondary)]">Add branch here</strong> under a label for catalog items.
+                      </>
+                    )}
                   </p>
                   <button
                     type="button"
@@ -1560,20 +1572,22 @@ function AddPathBranchModal({
                       Collapsible section title (e.g. &quot;Foundations&quot;) — add courses, links, and lessons inside.
                     </span>
                   </button>
-                  <button
-                    type="button"
-                    className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
-                    onClick={() => setStep('divider')}
-                  >
-                    <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
-                      <Minus size={20} className="shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
-                      Section
-                      <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Heading only</span>
-                    </span>
-                    <span className="pl-8 text-xs text-[var(--text-muted)]">
-                      Non-collapsible subheading in the path outline — not a group; no nested rows.
-                    </span>
-                  </button>
+                  {!topLevelNewPathSectionLabelOnly ? (
+                    <button
+                      type="button"
+                      className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
+                      onClick={() => setStep('divider')}
+                    >
+                      <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
+                        <Minus size={20} className="shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+                        Section
+                        <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Heading only</span>
+                      </span>
+                      <span className="pl-8 text-xs text-[var(--text-muted)]">
+                        Non-collapsible subheading in the path outline — not a group; no nested rows.
+                      </span>
+                    </button>
+                  ) : null}
                 </>
               ) : (
                 <>
@@ -3822,10 +3836,20 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                   <div className="rounded-xl border border-dashed border-orange-500/35 bg-orange-500/[0.07] px-4 py-6 sm:px-6">
                     <p className="text-center text-sm font-semibold text-[var(--text-primary)]">Start your outline</p>
                     <p className="mt-2 text-center text-xs leading-relaxed text-[var(--text-muted)]">
-                      Top-level rows are a <strong className="text-[var(--text-secondary)]">section label</strong> or a{' '}
-                      <strong className="text-[var(--text-secondary)]">course module</strong>. Under a label, add courses,
-                      lessons, links, or dividers. Under a module, add <strong className="text-[var(--text-secondary)]">only lessons</strong>{' '}
-                      from that module.
+                      {pathSelector === '__new__' ? (
+                        <>
+                          Start with a <strong className="text-[var(--text-secondary)]">section label</strong>. After you
+                          save the path, you can add a top-level <strong className="text-[var(--text-secondary)]">course module</strong>{' '}
+                          from the outline. Under a label, add courses, lessons, links, or dividers.
+                        </>
+                      ) : (
+                        <>
+                          Top-level rows are a <strong className="text-[var(--text-secondary)]">section label</strong> or a{' '}
+                          <strong className="text-[var(--text-secondary)]">course module</strong>. Under a label, add courses,
+                          lessons, links, or dividers. Under a module, add{' '}
+                          <strong className="text-[var(--text-secondary)]">only lessons</strong> from that module.
+                        </>
+                      )}
                     </p>
                     <div className="mt-4 flex flex-col gap-2">
                       <button
@@ -3842,25 +3866,36 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                           Free-text heading; add courses, lessons, or links underneath
                         </span>
                       </button>
-                      <button
-                        type="button"
-                        disabled={!!pathMindmapLoading && pathSelector !== '__new__'}
-                        onClick={() => setBranchModal({ kind: 'add', parentId: null, preset: 'module' })}
-                        className="flex min-h-12 w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-left transition-colors hover:border-orange-500/40 hover:bg-[var(--hover-bg)] disabled:opacity-40"
-                      >
-                        <span className="flex w-full items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
-                          <Layers size={18} className="shrink-0 text-indigo-500" aria-hidden />
-                          Course module
-                        </span>
-                        <span className="pl-[1.625rem] text-xs text-[var(--text-muted)]">
-                          Pick a catalog module; only its lessons can go under this row
-                        </span>
-                      </button>
+                      {pathSelector !== '__new__' ? (
+                        <button
+                          type="button"
+                          disabled={!!pathMindmapLoading && pathSelector !== '__new__'}
+                          onClick={() => setBranchModal({ kind: 'add', parentId: null, preset: 'module' })}
+                          className="flex min-h-12 w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-left transition-colors hover:border-orange-500/40 hover:bg-[var(--hover-bg)] disabled:opacity-40"
+                        >
+                          <span className="flex w-full items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
+                            <Layers size={18} className="shrink-0 text-indigo-500" aria-hidden />
+                            Course module
+                          </span>
+                          <span className="pl-[1.625rem] text-xs text-[var(--text-muted)]">
+                            Pick a catalog module; only its lessons can go under this row
+                          </span>
+                        </button>
+                      ) : null}
                     </div>
                     <p className="mt-4 text-center text-[11px] leading-relaxed text-[var(--text-muted)]">
-                      More top-level rows: <strong className="text-[var(--text-secondary)]">Add top-level section here</strong>{' '}
-                      between rows. Under a module, use <strong className="text-[var(--text-secondary)]">Add branch here</strong>{' '}
-                      for lessons only.
+                      {pathSelector === '__new__' ? (
+                        <>
+                          More top-level rows: <strong className="text-[var(--text-secondary)]">Add top-level section here</strong>{' '}
+                          between rows (section label or section heading only until the path is saved).
+                        </>
+                      ) : (
+                        <>
+                          More top-level rows: <strong className="text-[var(--text-secondary)]">Add top-level section here</strong>{' '}
+                          between rows. Under a module, use <strong className="text-[var(--text-secondary)]">Add branch here</strong>{' '}
+                          for lessons only.
+                        </>
+                      )}
                     </p>
                   </div>
                 ) : (
@@ -3950,6 +3985,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
             contextHint={branchModalContextHint}
             addPreset={branchModal.kind === 'add' ? branchModal.preset : undefined}
             topLevelOutlineAdd={branchModal.kind === 'add' && branchModal.parentId == null}
+            topLevelNewPathSectionLabelOnly={pathSelector === '__new__'}
             changeTypeRootRowLabelOnly={addPathBranchModalChangeTypeRootLabelOnly}
             allowSectionDivider={addPathBranchModalAllowDivider}
             lessonAddContext={branchModal.kind === 'add' ? branchModal.lessonAddContext ?? null : null}
