@@ -3537,9 +3537,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       <div ref={courseCatalogEditorRef} className="space-y-4">
         <div className="space-y-3">
         <div className="min-w-0 pb-0.5 md:overflow-x-auto md:overflow-y-visible md:[-webkit-overflow-scrolling:touch]">
-        <div className="grid w-full grid-cols-1 gap-3 md:min-w-[min(100%,920px)] md:grid-cols-[minmax(0,1fr)_minmax(6.75rem,7.5rem)_auto] md:items-center md:gap-x-3">
-          <div className="flex min-w-0 flex-col gap-2 md:flex-row md:items-center md:gap-2">
-            <div className="flex min-h-6 min-w-0 shrink-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+        <div className="flex w-full min-w-0 flex-col gap-3 md:min-w-[min(100%,920px)] lg:flex-row lg:flex-nowrap lg:items-center lg:gap-3 lg:overflow-x-auto lg:overflow-y-visible lg:[-webkit-overflow-scrolling:touch] lg:[scrollbar-width:none] lg:[&::-webkit-scrollbar]:hidden">
+            <div className="flex min-h-6 min-w-0 shrink-0 flex-wrap items-center gap-x-1.5 gap-y-1 lg:shrink-0">
               <label
                 htmlFor="admin-catalog-course-select"
                 className="text-xs font-semibold leading-none text-[var(--text-secondary)]"
@@ -3621,14 +3620,13 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 </div>
               </span>
             </div>
-            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
             <select
               id="admin-catalog-course-select"
               value={selector}
               onFocus={openCourseCatalogOnce}
               onMouseDown={openCourseCatalogOnce}
               onChange={onCourseSelectChange}
-              className="box-border min-h-11 min-w-0 w-full touch-manipulation rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] sm:flex-1 sm:min-w-[7rem] sm:text-sm"
+              className="box-border min-h-11 min-w-0 w-full touch-manipulation rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] md:text-sm lg:min-w-[12rem] lg:flex-1 lg:max-w-none"
             >
               <option value="" disabled>
                 {!catalogRequested
@@ -3648,7 +3646,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 </>
               )}
             </select>
-            <div className="flex w-full min-w-0 flex-row flex-nowrap items-center gap-2 overflow-x-auto overflow-y-visible overscroll-x-contain border-t border-[var(--border-color)]/60 pt-3 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] md:flex-wrap md:overflow-visible md:border-t-0 md:pt-0 [&::-webkit-scrollbar]:hidden">
+          <div className="flex min-w-0 flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:justify-between md:gap-x-4 md:gap-y-2 lg:flex-row lg:flex-nowrap lg:items-center lg:justify-start lg:gap-x-3 lg:gap-y-0 lg:shrink-0">
+            <div className="flex w-full min-w-0 flex-row flex-nowrap items-center gap-2 overflow-x-auto overflow-y-visible overscroll-x-contain border-t border-[var(--border-color)]/60 pt-3 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] md:w-auto md:max-w-[min(100%,42rem)] md:flex-wrap md:overflow-visible md:border-t-0 md:pt-0 lg:w-auto lg:max-w-none lg:flex-nowrap lg:shrink-0 [&::-webkit-scrollbar]:hidden">
               <div className="flex min-w-0 shrink-0 flex-nowrap items-center gap-2">
                 <div
                   className="box-border flex min-w-0 max-w-full shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm font-mono text-[var(--text-primary)] md:px-2.5"
@@ -3701,42 +3700,39 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   <option value="Proficient">Proficient</option>
                 </select>
               </div>
+              <div className="hidden min-h-11 min-w-[10.5rem] shrink-0 items-center gap-1.5 md:flex">
+                <label htmlFor="admin-catalog-course-level" className="sr-only">
+                  Level
+                </label>
+                <span className="inline-flex shrink-0 text-[var(--text-muted)]" title="Level">
+                  <SlidersHorizontal size={16} aria-hidden />
+                </span>
+                <select
+                  id="admin-catalog-course-level"
+                  value={draft?.level ?? ''}
+                  disabled={!draft}
+                  aria-label="Course level"
+                  title="Course level"
+                  onChange={(e) =>
+                    draft && updateDraft({ level: e.target.value as Course['level'] })
+                  }
+                  className="box-border min-h-11 w-full min-w-[9rem] max-w-[11rem] rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {!draft && (
+                    <option value="" disabled>
+                      —
+                    </option>
+                  )}
+                  <option value="Beginner">Beginner</option>
+                  <option value="Intermediate">Intermediate</option>
+                  <option value="Advanced">Advanced</option>
+                  <option value="Proficient">Proficient</option>
+                </select>
+              </div>
             </div>
-            </div>
-          </div>
-
-          <div className="hidden min-w-0 items-center gap-1.5 md:flex">
-            <label htmlFor="admin-catalog-course-level" className="sr-only">
-              Level
-            </label>
-            <span className="inline-flex shrink-0 text-[var(--text-muted)]" title="Level">
-              <SlidersHorizontal size={16} aria-hidden />
-            </span>
-            <select
-              id="admin-catalog-course-level"
-              value={draft?.level ?? ''}
-              disabled={!draft}
-              aria-label="Course level"
-              title="Course level"
-              onChange={(e) =>
-                draft && updateDraft({ level: e.target.value as Course['level'] })
-              }
-              className="box-border min-h-11 min-w-0 w-full flex-1 rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {!draft && (
-                <option value="" disabled>
-                  —
-                </option>
-              )}
-              <option value="Beginner">Beginner</option>
-              <option value="Intermediate">Intermediate</option>
-              <option value="Advanced">Advanced</option>
-              <option value="Proficient">Proficient</option>
-            </select>
-          </div>
 
           <div
-            className="flex w-full min-w-0 shrink-0 flex-row flex-nowrap items-center gap-1.5 overflow-x-auto overflow-y-visible overscroll-x-contain border-t border-[var(--border-color)]/60 py-1 pt-3 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] md:w-auto md:flex-wrap md:justify-end md:gap-2 md:overflow-visible md:border-t-0 md:py-0 md:pt-0 [&::-webkit-scrollbar]:hidden"
+            className="flex w-full min-w-0 shrink-0 flex-row flex-nowrap items-center gap-1.5 overflow-x-auto overflow-y-visible overscroll-x-contain border-t border-[var(--border-color)]/60 py-1 pt-3 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] md:ml-auto md:w-auto md:flex-wrap md:justify-end md:gap-2 md:overflow-visible md:border-t-0 md:py-0 md:pt-0 lg:ml-0 lg:w-auto lg:shrink-0 lg:justify-start [&::-webkit-scrollbar]:hidden"
             role="group"
             aria-label="Course actions"
           >
@@ -3837,6 +3833,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               </button>
             </div>
           </div>
+        </div>
         </div>
         </div>
         </div>
