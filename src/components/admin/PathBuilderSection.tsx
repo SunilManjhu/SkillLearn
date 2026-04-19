@@ -13,9 +13,7 @@ import { flushSync } from 'react-dom';
 import {
   AlertCircle,
   CheckCircle2,
-  ChevronDown,
   ChevronLeft,
-  ChevronRight,
   Copy,
   ArrowRightLeft,
   Globe,
@@ -83,9 +81,9 @@ import {
 } from '../../utils/reorderScrollViewport';
 import { scrollDisclosureRowToTop } from '../../utils/scrollDisclosureRowToTop';
 import {
-  ADMIN_INSERT_STRIP_CHIP_BTN_EXPAND_ROW,
-  ADMIN_INSERT_STRIP_CHIP_BTN_PERSIST,
   ADMIN_INSERT_STRIP_OUTER_EXPAND_HOVER,
+  PATH_INSERT_STRIP_CHIP_BTN_EXPAND_ROW,
+  PATH_INSERT_STRIP_CHIP_BTN_EXPAND_ROW_PAIR,
 } from './adminInsertStripClasses';
 
 function deepClone<T>(x: T): T {
@@ -733,6 +731,7 @@ function PlaceDuplicateBranchModal({
   const [parentId, setParentId] = useState<string | null>(null);
   const [insertIndex, setInsertIndex] = useState(0);
   const [copyNameInput, setCopyNameInput] = useState('');
+  const copyNameInputRef = useRef<HTMLInputElement>(null);
 
   const rootsRef = useRef(roots);
   rootsRef.current = roots;
@@ -801,9 +800,20 @@ function PlaceDuplicateBranchModal({
 
   useEffect(() => {
     if (!open) return;
-    setCopyNameInput('');
     setPlaceMode('copy');
-  }, [open, sourceSnapshot.id]);
+    if (duplicateRootHasEditableTitle(sourceSnapshot)) {
+      setCopyNameInput(duplicateRootEditableTitleBase(sourceSnapshot, publishedList) + ' (copy)');
+      const id = window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          const el = copyNameInputRef.current;
+          el?.focus();
+          el?.select();
+        });
+      });
+      return () => window.cancelAnimationFrame(id);
+    }
+    setCopyNameInput('');
+  }, [open, sourceSnapshot.id, sourceSnapshot, publishedList]);
 
   const parentSelectKey = useMemo(
     () => parentOptions.map((o) => `${o.id ?? 'root'}:${o.label}`).join('|'),
@@ -817,10 +827,11 @@ function PlaceDuplicateBranchModal({
     [siblings, publishedList]
   );
 
-  const copyNameDefaultPreview = useMemo(
-    () => duplicateRootEditableTitleBase(sourceSnapshot, publishedList) + ' (copy)',
-    [sourceSnapshot, publishedList]
-  );
+  const copyNamePlaceholder = useMemo(() => {
+    if (sourceSnapshot.kind === 'label') return 'Enter label name…';
+    if (sourceSnapshot.kind === 'divider') return 'Enter divider text…';
+    return 'Enter link title…';
+  }, [sourceSnapshot.kind]);
 
   const showCopyNameField = placeMode === 'copy' && duplicateRootHasEditableTitle(sourceSnapshot);
 
@@ -879,6 +890,30 @@ function PlaceDuplicateBranchModal({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
+          {showCopyNameField ? (
+            <div className="mb-3">
+              <label className="block text-xs font-semibold text-[var(--text-secondary)]" htmlFor="place-dup-copy-name">
+                Copy name
+              </label>
+              <p id="place-dup-copy-name-hint" className="mt-1 text-[11px] leading-snug text-[var(--text-muted)]">
+                Pre-filled with a suggested title — edit if you want a different name for the duplicate. Tab moves to Copy /
+                Move and keeps this value until you change it.
+              </p>
+              <input
+                ref={copyNameInputRef}
+                id="place-dup-copy-name"
+                type="text"
+                value={copyNameInput}
+                onChange={(e) => setCopyNameInput(e.target.value)}
+                onFocus={(e) => e.currentTarget.select()}
+                placeholder={copyNamePlaceholder}
+                aria-describedby="place-dup-copy-name-hint"
+                className="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+                autoComplete="off"
+              />
+            </div>
+          ) : null}
+
           <div className="mb-3 flex gap-1 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/40 p-1">
             <button
               type="button"
@@ -938,32 +973,13 @@ function PlaceDuplicateBranchModal({
             </p>
           ) : null}
 
-          {showCopyNameField ? (
-            <div className="mb-3">
-              <label className="block text-xs font-semibold text-[var(--text-secondary)]" htmlFor="place-dup-copy-name">
-                Copy name
-              </label>
-              <p id="place-dup-copy-name-hint" className="mt-1 text-[11px] leading-snug text-[var(--text-muted)]">
-                Optional. Leave blank to use <strong className="text-[var(--text-secondary)]">{copyNameDefaultPreview}</strong>.
-              </p>
-              <input
-                id="place-dup-copy-name"
-                type="text"
-                value={copyNameInput}
-                onChange={(e) => setCopyNameInput(e.target.value)}
-                placeholder={copyNameDefaultPreview}
-                aria-describedby="place-dup-copy-name-hint"
-                className="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
-                autoComplete="off"
-              />
-            </div>
-          ) : (
+          {!showCopyNameField ? (
             <p className="mb-3 text-[11px] leading-snug text-[var(--text-muted)]">
               {placeMode === 'move'
                 ? 'Course and lesson rows keep the catalog title; only the outline position changes.'
                 : 'Course and lesson rows keep the catalog title; only the outline position changes on the copy.'}
             </p>
-          )}
+          ) : null}
 
           <div className="space-y-3">
             {parentOptions.length === 0 ? (
@@ -1187,13 +1203,11 @@ function AddPathBranchModal({
   contextHint,
   mode = 'add',
   addPreset,
-  topLevelOutlineAdd = false,
   changeTypeRootRowLabelOnly = false,
   allowSectionDivider = false,
   replaceSource = null,
   lessonAddContext = null,
   showModuleInKindPicker = false,
-  topLevelNewPathSectionLabelOnly = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -1207,10 +1221,6 @@ function AddPathBranchModal({
   mode?: 'add' | 'changeType';
   /** When `mode === 'add'`, skip the kind picker and open the matching step. */
   addPreset?: 'label' | 'course' | 'link' | 'divider' | 'module';
-  /** Top-level outline add: kind step is Text label + Section only; Back from label/divider closes. */
-  topLevelOutlineAdd?: boolean;
-  /** Admin → Create new path: top-level kind step is section label (text label) only — no divider heading. */
-  topLevelNewPathSectionLabelOnly?: boolean;
   /** Root-row change type: only converting to a text label (no course/link/lesson/divider picker). */
   changeTypeRootRowLabelOnly?: boolean;
   /** Section divider rows only make sense under a top-level section, not at the root list. */
@@ -1219,7 +1229,7 @@ function AddPathBranchModal({
   replaceSource?: PathBranchNode | null;
   /** Under a module row: skip to picking a lesson in that module only. */
   lessonAddContext?: { courseId: string; moduleId: string } | null;
-  /** Show “Course module” in the kind step (top-level sections only). */
+  /** Show “Course module” in the kind step (top-level outline rows only). */
   showModuleInKindPicker?: boolean;
 }) {
   const labelCatalog = catalogCoursesForLabels ?? catalogCourses;
@@ -1293,7 +1303,6 @@ function AddPathBranchModal({
     addPreset,
     allowSectionDivider,
     replaceSource,
-    topLevelOutlineAdd,
     changeTypeRootRowLabelOnly,
     lessonAddContext,
   ]);
@@ -1490,10 +1499,6 @@ function AddPathBranchModal({
                   return;
                 }
                 if (step === 'label' || step === 'divider') {
-                  if (mode === 'add' && topLevelOutlineAdd) {
-                    onClose();
-                    return;
-                  }
                   if (mode === 'changeType' && changeTypeRootRowLabelOnly) {
                     onClose();
                     return;
@@ -1515,8 +1520,7 @@ function AddPathBranchModal({
             id="path-branch-modal-title"
             className="min-w-0 flex-1 text-center text-base font-bold text-[var(--text-primary)] sm:text-lg"
           >
-            {step === 'kind' &&
-              (mode === 'changeType' ? 'Change branch type' : topLevelOutlineAdd ? 'Add top-level section' : 'Add a branch')}
+            {step === 'kind' && (mode === 'changeType' ? 'Change branch type' : 'Add a branch')}
             {step === 'label' && (replacing ? 'Text label' : 'Label')}
             {step === 'divider' && 'Section divider'}
             {step === 'linkForm' && 'Web link'}
@@ -1543,56 +1547,6 @@ function AddPathBranchModal({
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
           {step === 'kind' && (
             <div className="flex flex-col gap-3">
-              {mode === 'add' && topLevelOutlineAdd ? (
-                <>
-                  <p className="text-xs leading-relaxed text-[var(--text-muted)]">
-                    {topLevelNewPathSectionLabelOnly ? (
-                      <>
-                        New paths start with a <strong className="text-[var(--text-secondary)]">section label</strong> only.
-                        Add courses, links, or lessons under it with <strong className="text-[var(--text-secondary)]">Add branch here</strong>.
-                      </>
-                    ) : (
-                      <>
-                        Top-level outline rows are either a <strong className="text-[var(--text-secondary)]">text label</strong>{' '}
-                        (section you can open and add courses, links, or lessons under) or a{' '}
-                        <strong className="text-[var(--text-secondary)]">section</strong> heading (non-playable divider). Use{' '}
-                        <strong className="text-[var(--text-secondary)]">Add branch here</strong> under a label for catalog items.
-                      </>
-                    )}
-                  </p>
-                  <button
-                    type="button"
-                    className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
-                    onClick={() => setStep('label')}
-                  >
-                    <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
-                      <Type size={20} className="shrink-0 text-orange-500" aria-hidden />
-                      Text label
-                      <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Section group</span>
-                    </span>
-                    <span className="pl-8 text-xs text-[var(--text-muted)]">
-                      Collapsible section title (e.g. &quot;Foundations&quot;) — add courses, links, and lessons inside.
-                    </span>
-                  </button>
-                  {!topLevelNewPathSectionLabelOnly ? (
-                    <button
-                      type="button"
-                      className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
-                      onClick={() => setStep('divider')}
-                    >
-                      <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
-                        <Minus size={20} className="shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
-                        Section
-                        <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Heading only</span>
-                      </span>
-                      <span className="pl-8 text-xs text-[var(--text-muted)]">
-                        Non-collapsible subheading in the path outline — not a group; no nested rows.
-                      </span>
-                    </button>
-                  ) : null}
-                </>
-              ) : (
-                <>
               <p className="text-xs leading-relaxed text-[var(--text-muted)]">
                 {mode === 'changeType' ? (
                   <>
@@ -1601,9 +1555,10 @@ function AddPathBranchModal({
                   </>
                 ) : (
                   <>
-                    Choose what to add. Top-level rows are <strong className="text-[var(--text-secondary)]">sections</strong>;
-                    use <strong className="text-[var(--text-secondary)]">Add branch here</strong> between rows for courses,
-                    links, or dividers (flat list only — no nested label groups).
+                    Choose what to add. Use <strong className="text-[var(--text-secondary)]">Add label here</strong> on a
+                    top-level gutter to name a new section label first; under a label, use{' '}
+                    <strong className="text-[var(--text-secondary)]">Add branch here</strong> between nested items (flat
+                    list).
                   </>
                 )}
               </p>
@@ -1718,8 +1673,6 @@ function AddPathBranchModal({
                   tab to add <strong className="text-[var(--text-secondary)]">Whole course</strong> branches.
                 </p>
               )}
-                </>
-              )}
             </div>
           )}
 
@@ -1738,7 +1691,7 @@ function AddPathBranchModal({
                     commitLabel();
                   }
                 }}
-                placeholder="e.g. Foundations, Week 1, Core skills"
+                placeholder="Enter label name…"
                 className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm"
                 autoFocus
               />
@@ -1994,29 +1947,52 @@ function pathBranchOutlineVisibility(visibleToRoles: PathOutlineAudienceRole[] |
   return { showInOutline, audienceSelectValue };
 }
 
+/** Top-level path inserts: two chips on one gutter (mirrors catalog lesson/module boundary layout). */
+const PATH_TOP_LEVEL_INSERT_PAIR_INNER =
+  'flex w-full min-w-0 flex-col gap-2 max-md:!pl-0 md:flex-row md:flex-wrap md:items-stretch md:justify-center md:gap-2 md:py-1.5';
+
+/** Nested path “Add branch here” inner — keep in sync with `CATALOG_LESSON_INSERT_INNER_HOVER` in the course catalog. */
+const PATH_NESTED_BRANCH_INSERT_INNER =
+  'flex w-full pl-3 max-md:!pl-0 items-center justify-center md:min-h-0 md:py-1.5';
+
+type PathInsertBranchAtOpts = {
+  /** When adding from a gutter, skip the kind picker and open the matching step (e.g. label name for `preset: 'label'`). */
+  preset?: 'label' | 'course' | 'link' | 'divider' | 'module';
+};
+
+/** Top-level row that may show nested outline rows (matches `PathBranchRow` disclosure rules). */
+function topLevelRowAllowsChildBranches(row: PathBranchNode): boolean {
+  return row.kind !== 'divider';
+}
+
 /** Insert control between sibling rows in the path outline list. `parentId === null` = top-level path rows; else = inside that section’s child list. */
 function PathBranchInsertSlot({
   parentId,
   insertIndex,
-  depth,
+  previousTopLevelSibling,
   onInsertBranchAt,
-  /** When a section has no children yet, keep the control visible on md+ (default is hover-reveal between rows). */
-  persistVisibleOnMd = false,
 }: {
   parentId: string | null;
   insertIndex: number;
-  depth: number;
-  onInsertBranchAt: (parentId: string | null, insertIndex: number) => void;
-  persistVisibleOnMd?: boolean;
+  /** Top-level row directly above this gutter (`null` before the first row). Ignored when `parentId !== null`. */
+  previousTopLevelSibling?: PathBranchNode | null;
+  onInsertBranchAt: (
+    parentId: string | null,
+    insertIndex: number,
+    opts?: PathInsertBranchAtOpts
+  ) => void;
 }) {
   const atTopLevel = parentId == null;
-  const label = atTopLevel ? 'Add top-level section here' : 'Add branch here';
-  const title = atTopLevel
-    ? 'Adds a new top-level section (label). Add courses, links, or dividers inside the section afterward.'
-    : 'Adds a row inside this section at this position among its items.';
-  const pad =
-    depth > 0 ? ({ paddingLeft: `${Math.min(depth, 8) * 0.75}rem` } as const) : undefined;
-  const delayHoverReveal = !persistVisibleOnMd;
+  const nestedLabel = 'Add branch here';
+  const addLabelHereTitle =
+    'Adds a new top-level section label at this position — choose the name in the dialog (same as picking Text label in Add a branch).';
+  const branchUnderAboveTitle =
+    'Adds a sub-branch inside the top-level row above this gutter (at the end of that row’s nested list).';
+  const nestedTitle = 'Adds a row inside this section at this position among its items.';
+  const branchUnderAbove =
+    atTopLevel &&
+    previousTopLevelSibling != null &&
+    topLevelRowAllowsChildBranches(previousTopLevelSibling);
   const {
     stripOuterCursorClass,
     waitCursorOverlayOpen,
@@ -2027,7 +2003,12 @@ function PathBranchInsertSlot({
     onPointerLeave,
     onFocusCapture,
     onBlurCapture,
-  } = useInsertStripRevealCursor(delayHoverReveal);
+  } = useInsertStripRevealCursor(true);
+  const gutterTitle = atTopLevel
+    ? branchUnderAbove
+      ? `${addLabelHereTitle} ${branchUnderAboveTitle}`
+      : addLabelHereTitle
+    : nestedTitle;
   return (
     <>
       <InsertStripWaitCursorPortal
@@ -2036,57 +2017,83 @@ function PathBranchInsertSlot({
         clientY={waitCursorClientY}
       />
       <li
-        className={`${
-          persistVisibleOnMd
-            ? 'group/ins relative z-0 min-w-0 list-none overflow-visible py-0.5'
-            : `group/ins relative z-0 min-h-0 min-w-0 list-none ${ADMIN_INSERT_STRIP_OUTER_EXPAND_HOVER}`
-        } ${stripOuterCursorClass}`.trim()}
-        title={persistVisibleOnMd ? undefined : title}
+        className={`group/pathStrip relative z-0 mb-0 min-h-0 min-w-0 list-none ${ADMIN_INSERT_STRIP_OUTER_EXPAND_HOVER} ${stripOuterCursorClass}`.trim()}
+        title={gutterTitle}
         onPointerEnter={onPointerEnter}
         onPointerMove={onPointerMove}
         onPointerLeave={onPointerLeave}
         onFocusCapture={onFocusCapture}
         onBlurCapture={onBlurCapture}
       >
-      <div
-        className={
-          persistVisibleOnMd
-            ? 'flex w-full max-md:!pl-0 items-center justify-center'
-            : 'flex w-full max-md:!pl-0 items-center justify-center md:min-h-0 md:py-1.5'
-        }
-        style={pad}
-      >
-        <button
-          type="button"
-          title={persistVisibleOnMd ? title : undefined}
-          aria-label={label}
-          onClick={() => onInsertBranchAt(parentId, insertIndex)}
-          className={
-            persistVisibleOnMd
-              ? ADMIN_INSERT_STRIP_CHIP_BTN_PERSIST
-              : ADMIN_INSERT_STRIP_CHIP_BTN_EXPAND_ROW
-          }
-        >
-          <Plus size={14} className="shrink-0 opacity-90" aria-hidden />
-          <span>{label}</span>
-        </button>
-      </div>
-    </li>
+        {atTopLevel ? (
+          branchUnderAbove ? (
+            <div className={PATH_TOP_LEVEL_INSERT_PAIR_INNER}>
+              <button
+                type="button"
+                title={addLabelHereTitle}
+                aria-label="Add label here"
+                onClick={() => onInsertBranchAt(parentId, insertIndex, { preset: 'label' })}
+                className={PATH_INSERT_STRIP_CHIP_BTN_EXPAND_ROW_PAIR}
+              >
+                <Plus size={14} className="shrink-0 opacity-90" aria-hidden />
+                <span className="text-center">Add label here</span>
+              </button>
+              <button
+                type="button"
+                title={branchUnderAboveTitle}
+                aria-label={nestedLabel}
+                onClick={() =>
+                  onInsertBranchAt(
+                    previousTopLevelSibling!.id,
+                    previousTopLevelSibling!.children.length
+                  )
+                }
+                className={PATH_INSERT_STRIP_CHIP_BTN_EXPAND_ROW_PAIR}
+              >
+                <Plus size={14} className="shrink-0 opacity-90" aria-hidden />
+                <span className="text-center">{nestedLabel}</span>
+              </button>
+            </div>
+          ) : (
+            <div className="flex w-full max-md:!pl-0 items-center justify-center md:min-h-0 md:py-1.5">
+              <button
+                type="button"
+                title={addLabelHereTitle}
+                aria-label="Add label here"
+                onClick={() => onInsertBranchAt(parentId, insertIndex, { preset: 'label' })}
+                className={PATH_INSERT_STRIP_CHIP_BTN_EXPAND_ROW}
+              >
+                <Plus size={14} className="shrink-0 opacity-90" aria-hidden />
+                <span>Add label here</span>
+              </button>
+            </div>
+          )
+        ) : (
+          <div className={PATH_NESTED_BRANCH_INSERT_INNER}>
+            <button
+              type="button"
+              title={nestedTitle}
+              aria-label={nestedLabel}
+              onClick={() => onInsertBranchAt(parentId, insertIndex)}
+              className={PATH_INSERT_STRIP_CHIP_BTN_EXPAND_ROW}
+            >
+              <Plus size={14} className="shrink-0 opacity-90" aria-hidden />
+              <span>{nestedLabel}</span>
+            </button>
+          </div>
+        )}
+      </li>
     </>
   );
 }
 
-/** Outline row (top + nested): row1 = title labels; row2 = badge, field(s), show, audience, actions. */
+/** Outline row (nested): one compact row on md — badge, field(s), show, audience, actions (no separate “Title” header row). */
 const PATH_BRANCH_OUTLINE_ROW_GRID =
-  'grid w-full min-w-0 grid-cols-1 gap-y-2 max-md:gap-y-1.5 md:grid-cols-[auto_minmax(0,1fr)_8.25rem_14rem_minmax(7.25rem,max-content)] md:grid-rows-[auto_auto] md:gap-x-3 md:gap-y-1';
+  'grid w-full min-w-0 grid-cols-1 gap-y-2 max-md:gap-y-1.5 md:grid-cols-[auto_minmax(0,1fr)_8.25rem_14rem_minmax(7.25rem,max-content)] md:grid-rows-1 md:items-center md:gap-x-3 md:gap-y-1';
 
 /** Hover / long-press tip for the catalog outline visibility checkbox column. */
 const PATH_BRANCH_SHOW_COLUMN_TIP =
   'When off, the row is hidden from the path outline for everyone (including admins). When on, use the audience menu for User vs Admin-only. For course or lesson rows, learners only see them if that course is also published in the Catalog tab—draft courses stay hidden from learners even when Show is on. Admins viewing a path in the app see all rows that are shown to User or Admin.';
-
-/** Matches link row + branch row: small label above title field (nested / narrow viewports). */
-const PATH_BRANCH_TITLE_FIELD_LABEL_CLASS =
-  'text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]';
 
 function PathBranchVisibilityCells({
   nodeId,
@@ -2158,10 +2165,10 @@ function PathBranchVisibilityCells({
   if ((nested && nestedGridSecondRow) || topLevelGridSecondRow) {
     return (
       <div className="max-md:col-span-full max-md:col-start-1 max-md:row-auto max-md:flex max-md:min-w-0 max-md:flex-row max-md:flex-wrap max-md:items-center max-md:gap-x-3 max-md:gap-y-2 md:contents">
-        <div className="col-start-3 row-start-2 flex min-w-0 items-center justify-center justify-self-center max-md:justify-start md:justify-self-center">
+        <div className="col-start-3 row-start-1 flex min-w-0 items-center justify-center justify-self-center max-md:justify-start md:justify-self-center">
           {showCell}
         </div>
-        <div className="col-start-4 row-start-2 flex min-w-0 w-full items-center justify-self-stretch max-md:min-w-0 max-md:max-w-none max-md:flex-1 sm:min-w-[12rem] md:max-w-[16rem]">
+        <div className="col-start-4 row-start-1 flex min-w-0 w-full items-center justify-self-stretch max-md:min-w-0 max-md:max-w-none max-md:flex-1 sm:min-w-[12rem] md:max-w-[16rem]">
           {roleCell}
         </div>
       </div>
@@ -2215,7 +2222,11 @@ function PathBranchRow({
   /** Branch shows nested rows only when its id is in this set. */
   expandedBranchIds: ReadonlySet<string>;
   onToggleCollapse: (id: string) => void;
-  onInsertBranchAt: (parentId: string | null, insertIndex: number) => void;
+  onInsertBranchAt: (
+    parentId: string | null,
+    insertIndex: number,
+    opts?: PathInsertBranchAtOpts
+  ) => void;
   onRemove: (id: string) => void;
   onCopyBranch: (id: string) => void;
   onMove: (id: string, delta: -1 | 1, scrollAnchor?: HTMLElement | null) => void;
@@ -2233,8 +2244,6 @@ function PathBranchRow({
   /** Show nested list + insert slots when empty (first sub-branch) or when expanded with children. */
   const showNestedBranchList = canNestBranches && (!hasNestedRows || !isCollapsed);
 
-  const chevronSize = depth === 0 ? 16 : 14;
-
   const kindBadgeClass =
     b.kind === 'label'
       ? 'bg-orange-500/15 text-orange-600 dark:text-orange-400'
@@ -2250,41 +2259,44 @@ function PathBranchRow({
 
   const rowDivider =
     depth === 0
-      ? 'border-b border-[var(--border-color)]/55 pb-3 last:border-b-0 last:pb-0'
-      : 'py-0.5';
+      ? 'border-b border-[var(--border-color)]/55 pb-1.5 last:border-b-0 last:pb-0 sm:pb-2'
+      : siblingIndex === 0
+        ? 'pt-0 pb-0.5'
+        : 'py-0.5';
 
   const onBranchRowFocusCapture = (e: React.FocusEvent<HTMLDivElement | HTMLLIElement>) => {
+    const target = e.target as HTMLElement | null;
+    /** Avoid racing expand (focus) + toggle (click) on the section disclosure control — same gesture would expand then collapse. */
+    if (target?.closest?.('[data-path-branch-disclosure]')) return;
     const header = e.currentTarget;
     const related = e.relatedTarget as Node | null;
     if (related && header.contains(related)) return;
     onBranchRowFocus(b.id);
   };
 
+  /** Matches catalog module/lesson: chevron-width column after the kind badge (see `AdminCourseCatalogSection`). */
   const branchBadgeGroup = (
-    <div className="flex shrink-0 items-center gap-1">
-      {hasExpandableNested ? (
+    <div className="flex shrink-0 items-center gap-x-1.5">
+      {depth === 0 && b.kind === 'label' && hasExpandableNested ? (
         <button
           type="button"
+          data-path-branch-disclosure
+          onMouseDown={(e) => {
+            if (e.button === 0) e.preventDefault();
+          }}
           onClick={() => onToggleCollapse(b.id)}
-          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]/80 focus:outline-none focus:ring-2 focus:ring-orange-500/40"
+          className={`inline-flex h-7 min-w-[3.25rem] shrink-0 items-center justify-center rounded-md px-3.5 text-[10px] font-bold uppercase leading-none transition-colors hover:bg-[var(--hover-bg)]/80 focus:outline-none focus:ring-2 focus:ring-orange-500/40 ${kindBadgeClass}`}
           aria-expanded={!isCollapsed}
+          title={isCollapsed ? 'Show nested branches' : 'Hide nested branches'}
           aria-label={
             isCollapsed
               ? `Expand nested branches (${pathBranchKindBadgeShortLabel(b.kind)})`
               : `Collapse nested branches (${pathBranchKindBadgeShortLabel(b.kind)})`
           }
-          title={isCollapsed ? 'Expand nested branches' : 'Collapse nested branches'}
         >
-          {isCollapsed ? (
-            <ChevronRight size={chevronSize} className="shrink-0" aria-hidden />
-          ) : (
-            <ChevronDown size={chevronSize} className="shrink-0" aria-hidden />
-          )}
+          {pathBranchKindBadgeShortLabel(b.kind)}
         </button>
-      ) : (
-        <span className="inline-block h-7 w-7 shrink-0" aria-hidden />
-      )}
-      {depth === 0 && b.kind === 'label' ? (
+      ) : depth === 0 && b.kind === 'label' ? (
         <span
           className={`inline-flex h-7 min-w-[3.25rem] shrink-0 items-center justify-center rounded-md px-3.5 text-[10px] font-bold uppercase leading-none ${kindBadgeClass}`}
           title="Section label (edit title in the field)"
@@ -2303,6 +2315,10 @@ function PathBranchRow({
           {pathBranchKindBadgeShortLabel(b.kind)}
         </button>
       )}
+      <span
+        className="inline-flex min-h-11 min-w-11 shrink-0 md:min-h-9 md:min-w-9"
+        aria-hidden
+      />
     </div>
   );
 
@@ -2313,12 +2329,7 @@ function PathBranchRow({
     if (b.kind === 'label') {
       return (
         <div className="max-md:flex max-md:min-w-0 max-md:flex-row max-md:flex-wrap max-md:items-center max-md:gap-2 md:contents">
-          <span
-            className={`min-w-0 shrink-0 md:col-start-2 md:row-start-1 ${PATH_BRANCH_TITLE_FIELD_LABEL_CLASS}`}
-          >
-            Title
-          </span>
-          <div className="flex shrink-0 items-center md:col-start-1 md:row-start-2">{branchBadgeGroup}</div>
+          <div className="flex shrink-0 items-center md:col-start-1 md:row-start-1">{branchBadgeGroup}</div>
           <input
             type="text"
             value={b.label}
@@ -2326,8 +2337,8 @@ function PathBranchRow({
             onClick={(e) => e.stopPropagation()}
             onKeyDown={(e) => e.stopPropagation()}
             aria-label="Branch label"
-            className={`${branchFieldInputClass} min-w-0 max-md:min-h-10 max-md:flex-1 md:col-start-2 md:row-start-2`}
-            placeholder="Label text"
+            className={`${branchFieldInputClass} min-w-0 max-md:min-h-10 max-md:flex-1 md:col-start-2 md:row-start-1`}
+            placeholder="Enter label name…"
           />
         </div>
       );
@@ -2335,12 +2346,7 @@ function PathBranchRow({
     if (b.kind === 'divider') {
       return (
         <div className="max-md:flex max-md:min-w-0 max-md:flex-row max-md:flex-wrap max-md:items-center max-md:gap-2 md:contents">
-          <span
-            className={`min-w-0 shrink-0 md:col-start-2 md:row-start-1 ${PATH_BRANCH_TITLE_FIELD_LABEL_CLASS}`}
-          >
-            Title
-          </span>
-          <div className="flex shrink-0 items-center md:col-start-1 md:row-start-2">{branchBadgeGroup}</div>
+          <div className="flex shrink-0 items-center md:col-start-1 md:row-start-1">{branchBadgeGroup}</div>
           <input
             type="text"
             value={b.label}
@@ -2348,7 +2354,7 @@ function PathBranchRow({
             onClick={(e) => e.stopPropagation()}
             onKeyDown={(e) => e.stopPropagation()}
             aria-label="Divider text"
-            className={`${branchFieldInputClass} min-w-0 max-md:min-h-10 max-md:flex-1 md:col-start-2 md:row-start-2`}
+            className={`${branchFieldInputClass} min-w-0 max-md:min-h-10 max-md:flex-1 md:col-start-2 md:row-start-1`}
             placeholder="Divider text (shown in learner outline)"
           />
         </div>
@@ -2357,13 +2363,9 @@ function PathBranchRow({
     if (b.kind === 'link') {
       return (
         <>
-          <div className="flex min-w-0 flex-wrap gap-x-4 gap-y-1 max-md:flex-col max-md:gap-1 md:col-start-2 md:row-start-1">
-            <span className={PATH_BRANCH_TITLE_FIELD_LABEL_CLASS}>Title</span>
-            <span className={PATH_BRANCH_TITLE_FIELD_LABEL_CLASS}>URL</span>
-          </div>
           <div className="max-md:flex max-md:min-w-0 max-md:flex-col max-md:items-stretch max-md:gap-1.5 md:contents">
-            <div className="flex items-center md:col-start-1 md:row-start-2">{branchBadgeGroup}</div>
-            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end sm:gap-x-3 sm:gap-y-2 md:col-start-2 md:row-start-2">
+            <div className="flex items-center md:col-start-1 md:row-start-1">{branchBadgeGroup}</div>
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end sm:gap-x-3 sm:gap-y-2 md:col-start-2 md:row-start-1">
               <input
                 type="text"
                 value={b.label}
@@ -2392,13 +2394,8 @@ function PathBranchRow({
     }
     return (
       <div className="max-md:flex max-md:min-w-0 max-md:flex-row max-md:flex-wrap max-md:items-center max-md:gap-2 md:contents">
-        <span
-          className={`min-w-0 shrink-0 md:col-start-2 md:row-start-1 ${PATH_BRANCH_TITLE_FIELD_LABEL_CLASS}`}
-        >
-          Title
-        </span>
-        <div className="flex shrink-0 items-center md:col-start-1 md:row-start-2">{branchBadgeGroup}</div>
-        <span className="flex min-h-10 min-w-0 flex-1 items-center truncate text-sm font-bold text-[var(--text-primary)] max-md:min-h-0 md:col-start-2 md:row-start-2">
+        <div className="flex shrink-0 items-center md:col-start-1 md:row-start-1">{branchBadgeGroup}</div>
+        <span className="flex min-h-10 min-w-0 flex-1 items-center truncate text-sm font-bold text-[var(--text-primary)] max-md:min-h-0 md:col-start-2 md:row-start-1">
           {branchNodeDisplayLabel(b, publishedList)}
         </span>
       </div>
@@ -2477,9 +2474,11 @@ function PathBranchRow({
   return (
     <li
       data-path-branch-node-id={b.id}
-      className={`min-w-0 list-none overflow-hidden ${rowDivider}${
+      className={`min-w-0 list-none ${rowDivider}${
         depth === 0
-          ? 'grid grid-cols-1 gap-y-3 px-3 py-3 max-md:gap-y-2 max-md:px-2 max-md:py-2 sm:px-4 md:grid md:grid-cols-[auto_minmax(0,1fr)_8.25rem_14rem_minmax(7.25rem,max-content)] md:grid-rows-[auto_auto] md:gap-x-3 md:gap-y-1'
+          ? `grid grid-cols-1 gap-y-2 px-3 py-2 max-md:gap-y-1.5 max-md:px-2 max-md:py-1.5 sm:px-4 md:grid md:grid-cols-[auto_minmax(0,1fr)_8.25rem_14rem_minmax(7.25rem,max-content)] md:gap-x-3 ${
+              showNestedBranchList ? 'md:grid-rows-[auto_auto] md:gap-y-0' : 'md:grid-rows-1 md:items-center md:gap-y-1'
+            }`
           : ''
       }`}
       onFocusCapture={depth === 0 ? onBranchRowFocusCapture : undefined}
@@ -2495,15 +2494,18 @@ function PathBranchRow({
             topLevelGridSecondRow
           />
           <div className="max-md:flex max-md:w-full max-md:justify-end md:contents">
-            <div className="flex items-center justify-end gap-1 max-md:col-span-full max-md:col-start-1 max-md:row-auto md:col-start-5 md:row-start-2">
+            <div className="flex items-center justify-end gap-1 max-md:col-span-full max-md:col-start-1 max-md:row-auto md:col-start-5 md:row-start-1 md:self-center">
               {branchActionButtons}
             </div>
           </div>
         </div>
       ) : (
         <div
-          className={`${PATH_BRANCH_OUTLINE_ROW_GRID} max-md:!pl-0 max-md:px-0 max-md:py-1.5 px-1 py-2 sm:px-2 sm:py-2`}
-          style={{ paddingLeft: `${Math.min(depth, 8) * 0.75}rem` }}
+          className={`${PATH_BRANCH_OUTLINE_ROW_GRID} ${
+            siblingIndex === 0
+              ? 'max-md:pb-1.5 max-md:pt-0 pb-2 pt-0 sm:pb-2 sm:pt-0'
+              : 'max-md:py-1.5 py-2 sm:py-2'
+          }`}
           onFocusCapture={onBranchRowFocusCapture}
           role="group"
           aria-label="Catalog outline visibility"
@@ -2517,20 +2519,14 @@ function PathBranchRow({
             nestedGridSecondRow
           />
           <div className="max-md:flex max-md:w-full max-md:justify-end md:contents">
-            <div className="flex items-center justify-end gap-1 max-md:col-span-full max-md:col-start-1 max-md:row-auto max-md:pt-0 md:col-start-5 md:row-start-2">
+            <div className="flex items-center justify-end gap-1 max-md:col-span-full max-md:col-start-1 max-md:row-auto max-md:pt-0 md:col-start-5 md:row-start-1 md:self-center">
               {branchActionButtons}
             </div>
           </div>
         </div>
       )}
       {showNestedBranchList ? (
-        <div
-          className={`col-span-full min-w-0 ${
-            depth === 0
-              ? 'mt-2 border-t border-[var(--border-color)]/50 pt-3 sm:mt-1 md:row-start-3'
-              : 'mt-1 pt-1'
-          }`}
-        >
+        <div className="col-span-full min-w-0 md:row-start-2">
           <PathBranchTreeList
             parentId={b.id}
             nodes={b.children}
@@ -2577,7 +2573,11 @@ function PathBranchTreeList({
   publishedList: Course[];
   expandedBranchIds: ReadonlySet<string>;
   onToggleCollapse: (id: string) => void;
-  onInsertBranchAt: (parentId: string | null, insertIndex: number) => void;
+  onInsertBranchAt: (
+    parentId: string | null,
+    insertIndex: number,
+    opts?: PathInsertBranchAtOpts
+  ) => void;
   onRemove: (id: string) => void;
   onCopyBranch: (id: string) => void;
   onMove: (id: string, delta: -1 | 1, scrollAnchor?: HTMLElement | null) => void;
@@ -2592,19 +2592,21 @@ function PathBranchTreeList({
     <ul
       className={
         depth > 0
-          ? 'space-y-0 max-md:border-l-0 max-md:pl-0 border-l-2 border-orange-500/30 pl-3 sm:pl-4'
-          : // Reserve space so the first md “between rows” insert strip (–translate-y-1/2) does not overlap the Outline heading above the list.
-            'space-y-0 pt-5 md:pt-6'
+          ? 'space-y-0 border-l border-[var(--border-color)]/50 pl-2 sm:pl-3'
+          : // Reserve space so the first md “between rows” insert strip does not overlap controls above the list.
+            'space-y-0 pt-3 md:pt-4'
       }
     >
       <Fragment key={`ins-${insKey}-0`}>
-        <PathBranchInsertSlot
-          parentId={parentId}
-          insertIndex={0}
-          depth={depth}
-          onInsertBranchAt={onInsertBranchAt}
-          persistVisibleOnMd={nodes.length === 0}
-        />
+        {/* Empty nested list: top-level gutter Add branch here already inserts at index 0 under the parent row. */}
+        {!(parentId !== null && depth > 0 && nodes.length === 0) ? (
+          <PathBranchInsertSlot
+            parentId={parentId}
+            insertIndex={0}
+            previousTopLevelSibling={parentId === null ? null : undefined}
+            onInsertBranchAt={onInsertBranchAt}
+          />
+        ) : null}
       </Fragment>
       {nodes.map((b, i) => (
         <Fragment key={b.id}>
@@ -2626,12 +2628,15 @@ function PathBranchTreeList({
             onBranchRowFocus={onBranchRowFocus}
             onVisibleToRolesChange={onVisibleToRolesChange}
           />
-          <PathBranchInsertSlot
-            parentId={parentId}
-            insertIndex={i + 1}
-            depth={depth}
-            onInsertBranchAt={onInsertBranchAt}
-          />
+          {/* Trailing nested gutter duplicates the top-level strip’s “Add branch here” (append under the parent row). */}
+          {!(parentId !== null && depth > 0 && i === nodes.length - 1) ? (
+            <PathBranchInsertSlot
+              parentId={parentId}
+              insertIndex={i + 1}
+              previousTopLevelSibling={parentId === null ? b : undefined}
+              onInsertBranchAt={onInsertBranchAt}
+            />
+          ) : null}
         </Fragment>
       ))}
     </ul>
@@ -3077,7 +3082,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
           ? ' Inserts at the position you chose in the list.'
           : '';
       if (branchModal.parentId == null) {
-        return `Top level: add a section label or a course module, then use Add branch here inside it.${pos}`;
+        return `Top level: Add label here opens the name step first; or pick module, course, link, or (where allowed) divider below.${pos}`;
       }
       const p = findBranchNode(pathBranchTree, branchModal.parentId);
       if (p?.kind === 'module') {
@@ -3791,7 +3796,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
           >
             <div className="space-y-2">
               <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
-                <h3 className="m-0 text-sm font-bold leading-none text-[var(--text-primary)]">Outline</h3>
+                <h3 className="sr-only">Outline</h3>
                 <AdminLabelInfoTip
                   controlOnly
                   tipId="admin-path-outline-tips"
@@ -3814,12 +3819,6 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                   </li>
                 </AdminLabelInfoTip>
               </div>
-              <p className="text-xs leading-relaxed text-[var(--text-muted)]">
-                <strong className="text-[var(--text-secondary)]">Sections</strong> hold one flat list (courses, lessons,
-                links, dividers). <strong className="text-[var(--text-secondary)]">↑↓</strong> to reorder;{' '}
-                <strong className="text-[var(--text-secondary)]">Add branch here</strong> to insert.{' '}
-                <strong className="text-[var(--text-secondary)]">Save</strong> to apply.
-              </p>
               {pathBranchFlatnessIssues.length > 0 ? (
                 <div
                   role="status"
@@ -3864,13 +3863,16 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                     <p className="mt-2 text-center text-xs leading-relaxed text-[var(--text-muted)]">
                       {pathSelector === '__new__' ? (
                         <>
-                          Start with a <strong className="text-[var(--text-secondary)]">section label</strong>. After you
-                          save the path, you can add a top-level <strong className="text-[var(--text-secondary)]">course module</strong>{' '}
-                          from the outline. Under a label, add courses, lessons, links, or dividers.
+                          Add your first section with{' '}
+                          <strong className="text-[var(--text-secondary)]">Add label here</strong> — you type the name in
+                          the dialog. Then use gutters between top-level rows or{' '}
+                          <strong className="text-[var(--text-secondary)]">Add branch here</strong> under a label for nested
+                          items. After you save, you can add a top-level{' '}
+                          <strong className="text-[var(--text-secondary)]">course module</strong> from the branch picker.
                         </>
                       ) : (
                         <>
-                          Top-level rows are a <strong className="text-[var(--text-secondary)]">section label</strong> or a{' '}
+                          Top-level rows are usually a <strong className="text-[var(--text-secondary)]">text label</strong> or a{' '}
                           <strong className="text-[var(--text-secondary)]">course module</strong>. Under a label, add courses,
                           lessons, links, or dividers. Under a module, add{' '}
                           <strong className="text-[var(--text-secondary)]">only lessons</strong> from that module.
@@ -3881,45 +3883,31 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                       <button
                         type="button"
                         disabled={!!pathMindmapLoading && pathSelector !== '__new__'}
-                        onClick={() => setBranchModal({ kind: 'add', parentId: null, preset: 'label' })}
+                        onClick={() => setBranchModal({ kind: 'add', parentId: null, insertIndex: 0, preset: 'label' })}
                         className="flex min-h-12 w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-left transition-colors hover:border-orange-500/40 hover:bg-[var(--hover-bg)] disabled:opacity-40"
                       >
                         <span className="flex w-full items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
-                          <Type size={18} className="shrink-0 text-orange-500" aria-hidden />
-                          Section label
+                          <Plus size={18} className="shrink-0 text-orange-500" aria-hidden />
+                          Add label here
                         </span>
                         <span className="pl-[1.625rem] text-xs text-[var(--text-muted)]">
-                          Free-text heading; add courses, lessons, or links underneath
+                          Opens the dialog to enter the section name before it appears in the outline
                         </span>
                       </button>
-                      {pathSelector !== '__new__' ? (
-                        <button
-                          type="button"
-                          disabled={!!pathMindmapLoading && pathSelector !== '__new__'}
-                          onClick={() => setBranchModal({ kind: 'add', parentId: null, preset: 'module' })}
-                          className="flex min-h-12 w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-left transition-colors hover:border-orange-500/40 hover:bg-[var(--hover-bg)] disabled:opacity-40"
-                        >
-                          <span className="flex w-full items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
-                            <Layers size={18} className="shrink-0 text-indigo-500" aria-hidden />
-                            Course module
-                          </span>
-                          <span className="pl-[1.625rem] text-xs text-[var(--text-muted)]">
-                            Pick a catalog module; only its lessons can go under this row
-                          </span>
-                        </button>
-                      ) : null}
                     </div>
                     <p className="mt-4 text-center text-[11px] leading-relaxed text-[var(--text-muted)]">
                       {pathSelector === '__new__' ? (
                         <>
-                          More top-level rows: <strong className="text-[var(--text-secondary)]">Add top-level section here</strong>{' '}
-                          between rows (section label or section heading only until the path is saved).
+                          More sections: hover a top-level gutter for{' '}
+                          <strong className="text-[var(--text-secondary)]">Add label here</strong>
+                          {', '}
+                          or <strong className="text-[var(--text-secondary)]">Add branch here</strong> to append under the row above.
                         </>
                       ) : (
                         <>
-                          More top-level rows: <strong className="text-[var(--text-secondary)]">Add top-level section here</strong>{' '}
-                          between rows. Under a module, use <strong className="text-[var(--text-secondary)]">Add branch here</strong>{' '}
-                          for lessons only.
+                          More top-level sections: hover for{' '}
+                          <strong className="text-[var(--text-secondary)]">Add label here</strong>. Under a module, use{' '}
+                          <strong className="text-[var(--text-secondary)]">Add branch here</strong> for lessons only.
                         </>
                       )}
                     </p>
@@ -3934,8 +3922,9 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                       expandedBranchIds={expandedBranchIds}
                       onToggleCollapse={toggleBranchCollapse}
                       onBranchRowFocus={focusBranchRow}
-                      onInsertBranchAt={(pid, insertIndex) => {
+                      onInsertBranchAt={(pid, insertIndex, opts) => {
                         const roots = pathBranchTreeRef.current;
+                        const preset = opts?.preset;
                         if (pid != null) {
                           const parent = findBranchNode(roots, pid);
                           if (parent?.kind === 'module') {
@@ -3953,8 +3942,18 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                         }
                         setBranchModal(
                           pid == null
-                            ? { kind: 'add', parentId: null, insertIndex }
-                            : { kind: 'add', parentId: pid, insertIndex }
+                            ? {
+                                kind: 'add',
+                                parentId: null,
+                                insertIndex,
+                                ...(preset ? { preset } : {}),
+                              }
+                            : {
+                                kind: 'add',
+                                parentId: pid,
+                                insertIndex,
+                                ...(preset ? { preset } : {}),
+                              }
                         );
                       }}
                       onRemove={handleRemoveBranch}
@@ -4010,8 +4009,6 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
             catalogCoursesForLabels={publishedList}
             contextHint={branchModalContextHint}
             addPreset={branchModal.kind === 'add' ? branchModal.preset : undefined}
-            topLevelOutlineAdd={branchModal.kind === 'add' && branchModal.parentId == null}
-            topLevelNewPathSectionLabelOnly={pathSelector === '__new__'}
             changeTypeRootRowLabelOnly={addPathBranchModalChangeTypeRootLabelOnly}
             allowSectionDivider={addPathBranchModalAllowDivider}
             lessonAddContext={branchModal.kind === 'add' ? branchModal.lessonAddContext ?? null : null}

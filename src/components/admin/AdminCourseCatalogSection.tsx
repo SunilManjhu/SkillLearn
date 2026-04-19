@@ -4490,39 +4490,43 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               <Fragment key={`module-slot-${mi}`}>
               <div
                 data-admin-module-index={mi}
-                className={`space-y-1.5 pb-0 sm:space-y-2 ${
+                className={`space-y-0 pb-0 ${
                   mi === 0 ? 'pt-0.5 sm:pt-1' : ''
                 }`}
               >
                 <div
                   className={`flex flex-col items-stretch gap-2 md:flex-row md:flex-wrap md:items-center md:justify-between md:gap-x-2 md:gap-y-1.5 ${
-                    openModules[mi] ? 'pb-1.5 sm:pb-2' : ''
+                    openModules[mi] ? 'pb-0' : ''
                   }`}
                 >
                   <div className="flex min-h-11 w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-center md:min-h-10 md:flex-1 md:gap-2">
-                    <button
-                      type="button"
-                      className={ADMIN_CATALOG_MODULE_BADGE_CLASS}
-                      title={openModules[mi] ? 'Collapse module lessons' : 'Expand module lessons'}
-                      aria-expanded={!!openModules[mi]}
-                      aria-label={`${openModules[mi] ? 'Collapse' : 'Expand'} module ${mi + 1} (${mod.id.trim() || 'no id'}). ${mod.lessons.length} lesson${mod.lessons.length === 1 ? '' : 's'}.`}
-                      onClick={() => {
-                        const wasOpen = !!openModules[mi];
-                        toggleModuleOpen(mi);
-                        if (!wasOpen) {
-                          requestAnimationFrame(() => {
-                            requestAnimationFrame(() => {
-                              document.getElementById(`admin-module-title-${mi}`)?.focus({ preventScroll: false });
-                            });
-                          });
-                        }
-                      }}
-                    >
-                      Module
-                    </button>
                     <div className="flex min-h-11 min-w-0 w-full flex-1 flex-col gap-0.5 md:min-h-10">
                       <div className="flex min-w-0 w-full flex-col gap-1.5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-2 sm:gap-y-0.5">
                         <div className="flex min-w-0 shrink-0 items-center gap-x-1.5 sm:contents">
+                        <button
+                          type="button"
+                          className={ADMIN_CATALOG_MODULE_BADGE_CLASS}
+                          title={openModules[mi] ? 'Collapse module lessons' : 'Expand module lessons'}
+                          aria-expanded={!!openModules[mi]}
+                          aria-label={`${openModules[mi] ? 'Collapse' : 'Expand'} module ${mi + 1} (${mod.id.trim() || 'no id'}). ${mod.lessons.length} lesson${mod.lessons.length === 1 ? '' : 's'}.`}
+                          onClick={() => {
+                            const wasOpen = !!openModules[mi];
+                            toggleModuleOpen(mi);
+                            if (!wasOpen) {
+                              requestAnimationFrame(() => {
+                                requestAnimationFrame(() => {
+                                  document.getElementById(`admin-module-title-${mi}`)?.focus({ preventScroll: false });
+                                });
+                              });
+                            }
+                          }}
+                        >
+                          Module
+                        </button>
+                        <span
+                          className="inline-flex min-h-11 min-w-11 shrink-0 md:min-h-9 md:min-w-9"
+                          aria-hidden
+                        />
                         <span
                           id={`admin-module-id-${mi}`}
                           tabIndex={-1}
@@ -4680,7 +4684,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
                 {openModules[mi] && (
                 <>
-                <div className="mt-0.5 space-y-0 border-l border-[var(--border-color)]/50 pl-2 sm:mt-1 sm:pl-3">
+                <div className="space-y-0 border-l border-[var(--border-color)]/50 pl-2 sm:pl-3">
                   <CatalogLessonInsertSlot
                     persistVisibleOnMd={mod.lessons.length === 0}
                     ariaLabel="Add branch here before the first row in this module"
