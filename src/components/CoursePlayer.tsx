@@ -79,6 +79,8 @@ import {
   readLessonNoteText,
 } from '../utils/courseLessonNotes';
 import { migrateStoredNoteToHtml } from '../utils/lessonNoteHtml';
+import { CatalogRichText } from './CatalogRichText';
+import { catalogMiniRichPlainText } from '../utils/catalogMiniRichHtml';
 
 /**
  * Frost + resume blocker wait this long after a user pause so sub‑100ms glitches don’t flash the UI.
@@ -1110,8 +1112,9 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   );
 
   const aboutFallback = useMemo(() => {
-    const section = currentModule?.title ?? 'this course';
-    return `You're in the section “${section}”, on “${currentLesson.title}.” This segment connects to the rest of the course and emphasizes patterns you can reuse while practicing.`;
+    const section = catalogMiniRichPlainText(currentModule?.title ?? '') || 'this course';
+    const lessonLine = catalogMiniRichPlainText(currentLesson.title) || 'this lesson';
+    return `You're in the section “${section}”, on “${lessonLine}.” This segment connects to the rest of the course and emphasizes patterns you can reuse while practicing.`;
   }, [currentModule?.title, currentLesson.title]);
 
   /** Touch: brief idle before hiding chrome while playing (no reliable “cursor left” signal). */
@@ -2410,7 +2413,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
         lessonId: currentLesson.id,
         courseId: course.id,
         courseTitle: course.title,
-        lessonTitle: currentLesson.title,
+        lessonTitle: catalogMiniRichPlainText(currentLesson.title),
         userId: user.uid,
         reason: selectedReportReason,
         details: reportDetails,
@@ -2786,7 +2789,11 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   const lessonContextChipsRow = (
     <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-[var(--text-secondary)] sm:mb-5 sm:gap-3 md:gap-4">
       <span className="rounded bg-[var(--hover-bg)] px-2 py-1">Lesson {currentLesson.id}</span>
-      {currentModule ? <span className="min-w-0">{currentModule.title}</span> : null}
+      {currentModule ? (
+        <span className="min-w-0 [&_p]:m-0 [&_p]:inline">
+          <CatalogRichText value={currentModule.title} />
+        </span>
+      ) : null}
       <span>{lessonDurationLabel(currentLesson)}</span>
       <span className="min-w-0 font-semibold text-orange-500">{course.title}</span>
     </div>
@@ -2807,14 +2814,21 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
       <div className="space-y-2 border-t border-[var(--border-color)]/60 px-3 py-3">
         {currentModule && (
           <p className="text-sm font-medium leading-snug text-[var(--text-primary)]">
-            Section: <span className="text-orange-500">{currentModule.title}</span>
+            Section:{' '}
+            <span className="text-orange-500 [&_p]:m-0 [&_p]:inline">
+              <CatalogRichText value={currentModule.title} />
+            </span>
           </p>
         )}
         <p
           key={`${currentLesson.id}-mabout`}
           className="min-w-0 text-pretty text-sm leading-relaxed text-[var(--text-secondary)]"
         >
-          {currentLesson.about ?? aboutFallback}
+          {catalogMiniRichPlainText(currentLesson.about ?? '') ? (
+            <CatalogRichText as="span" value={currentLesson.about ?? ''} />
+          ) : (
+            aboutFallback
+          )}
         </p>
       </div>
     </details>
@@ -2831,7 +2845,9 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                 isQuizKindLesson ? 'text-xl font-bold sm:text-2xl lg:text-3xl' : 'text-3xl font-bold'
               }`}
             >
-              {currentLesson.title}
+              <span className="[&_p]:m-0 [&_p]:inline">
+                <CatalogRichText value={currentLesson.title} />
+              </span>
             </h1>
             {isWebLessonRow ? (
               <span className="rounded-full border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">
@@ -2916,11 +2932,18 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
         <h2 className="mb-1 text-lg font-semibold text-[var(--text-primary)] sm:text-xl">About this lesson</h2>
         {currentModule && (
           <p className="mb-2 text-sm font-medium text-[var(--text-primary)] not-prose">
-            Section: <span className="text-orange-500">{currentModule.title}</span>
+            Section:{' '}
+            <span className="text-orange-500 [&_p]:m-0 [&_p]:inline">
+              <CatalogRichText value={currentModule.title} />
+            </span>
           </p>
         )}
         <p key={currentLesson.id} className="mb-0 leading-relaxed text-[var(--text-secondary)] not-prose">
-          {currentLesson.about ?? aboutFallback}
+          {catalogMiniRichPlainText(currentLesson.about ?? '') ? (
+            <CatalogRichText as="span" value={currentLesson.about ?? ''} />
+          ) : (
+            aboutFallback
+          )}
         </p>
       </div>
 
@@ -3063,9 +3086,9 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
           {isWebLessonRow && webLessonHref ? (
             <div className="absolute inset-0 z-[25] flex flex-col items-center justify-center gap-4 overflow-y-auto bg-[var(--bg-secondary)] p-5 text-center text-[var(--text-primary)]">
               <p className="text-sm font-semibold text-[var(--text-primary)]">External page</p>
-              {currentLesson.about?.trim() ? (
-                <p className="max-w-lg text-sm leading-relaxed text-[var(--text-secondary)]">
-                  {currentLesson.about.trim()}
+              {catalogMiniRichPlainText(currentLesson.about ?? '') ? (
+                <p className="max-w-lg text-sm leading-relaxed text-[var(--text-secondary)] [&_p]:mb-2 [&_p:last-child]:mb-0">
+                  <CatalogRichText as="span" value={currentLesson.about ?? ''} />
                 </p>
               ) : null}
               <a

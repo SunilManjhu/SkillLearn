@@ -2,6 +2,8 @@ import React, { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, use
 import { useEditor, EditorContent, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
+import Subscript from '@tiptap/extension-subscript';
+import Superscript from '@tiptap/extension-superscript';
 import Placeholder from '@tiptap/extension-placeholder';
 import {
   Bold,
@@ -12,6 +14,8 @@ import {
   List,
   ListOrdered,
   Minus,
+  Subscript as SubscriptIcon,
+  Superscript as SuperscriptIcon,
   StickyNote,
   Undo2,
   Redo2,
@@ -108,6 +112,20 @@ function FormatToolbar({ editor }: { editor: Editor | null }) {
       >
         <UnderlineIcon size={17} aria-hidden />
       </ToolbarButton>
+      <ToolbarButton
+        label="Subscript"
+        active={editor.isActive('subscript')}
+        onClick={() => editor.chain().focus().toggleSubscript().run()}
+      >
+        <SubscriptIcon size={17} aria-hidden />
+      </ToolbarButton>
+      <ToolbarButton
+        label="Superscript"
+        active={editor.isActive('superscript')}
+        onClick={() => editor.chain().focus().toggleSuperscript().run()}
+      >
+        <SuperscriptIcon size={17} aria-hidden />
+      </ToolbarButton>
       <span className="mx-0.5 h-5 w-px shrink-0 bg-[var(--border-color)] max-lg:mx-px" aria-hidden />
       <ToolbarButton
         label={editor.isActive('heading', { level: 2 }) ? 'Normal text' : 'Heading'}
@@ -199,13 +217,15 @@ export function LessonNotesRichEditor({
       }),
       LessonNoteParagraph,
       Underline,
+      Subscript.extend({ excludes: 'superscript' }),
+      Superscript.extend({ excludes: 'subscript' }),
       LessonNoteDivider,
       LessonNoteListBehavior,
       LessonNoteOrderedListMerge,
       Placeholder.configure({
         placeholder: ({ editor }) =>
           editor.isEmpty
-            ? 'Write your notes here… Tap the buttons above to make text bold, add lists, and more.'
+            ? 'Write your notes here… Toolbar: bold, lists, subscript/superscript — paste from Word or the web keeps simple formatting when possible.'
             : '',
       }),
     ],

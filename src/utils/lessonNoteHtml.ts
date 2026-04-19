@@ -6,6 +6,7 @@ import { marked } from 'marked';
 const PURIFY: Config = {
   USE_PROFILES: { html: true },
   ADD_ATTR: ['data-divider-style'],
+  ADD_TAGS: ['sub', 'sup'],
 };
 
 function escapeHtml(s: string): string {
@@ -62,7 +63,7 @@ function storedNotesLookLikeHtml(s: string): boolean {
   const t = s.trim();
   if (!t) return false;
   if (/^</.test(t)) return true;
-  return /<\/?(?:p|ol|ul|li|div|h[1-6]|strong|em|u|span|br|hr)\b/i.test(s);
+  return /<\/?(?:p|ol|ul|li|div|h[1-6]|strong|em|u|span|br|hr|sub|sup)\b/i.test(s);
 }
 
 /**

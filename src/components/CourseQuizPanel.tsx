@@ -14,6 +14,8 @@ import {
 } from '../utils/geminiQuiz';
 import { saveQuizAttempt, type QuizAttemptPerQuestion } from '../utils/quizAttemptsFirestore';
 import { coerceQuizIndex, mcqIndicesMatch } from '../utils/quizCoercion';
+import { CatalogRichText } from './CatalogRichText';
+import { catalogMiniRichPlainText } from '../utils/catalogMiniRichHtml';
 
 export interface CourseQuizPanelProps {
   courseId: string;
@@ -666,9 +668,13 @@ export function CourseQuizPanel({
     <div className="flex min-h-0 w-full flex-col gap-4 text-left text-[var(--text-primary)] bg-[var(--bg-secondary)] max-lg:h-auto max-lg:min-h-0 max-lg:flex-none max-lg:overflow-visible max-lg:gap-3 max-lg:px-4 max-lg:py-3 max-lg:pb-6 sm:max-lg:px-5 lg:min-h-0 lg:flex-1 lg:gap-4 lg:overflow-y-auto lg:p-6 xl:px-8">
       <div className="flex min-w-0 flex-col gap-1 border-b border-[var(--border-color)]/60 pb-3 max-lg:pb-2.5">
         <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Quiz</p>
-        <h2 className="text-lg font-bold leading-snug sm:text-xl">{lesson.title}</h2>
-        {!omitLessonAbout && lesson.about?.trim() ? (
-          <p className="text-sm leading-relaxed text-[var(--text-secondary)]">{lesson.about.trim()}</p>
+        <h2 className="text-lg font-bold leading-snug sm:text-xl [&_p]:m-0 [&_p]:inline">
+          <CatalogRichText value={lesson.title} />
+        </h2>
+        {!omitLessonAbout && catalogMiniRichPlainText(lesson.about ?? '') ? (
+          <p className="text-sm leading-relaxed text-[var(--text-secondary)] [&_p]:mb-2 [&_p:last-child]:mb-0">
+            <CatalogRichText as="span" value={lesson.about ?? ''} />
+          </p>
         ) : null}
       </div>
 

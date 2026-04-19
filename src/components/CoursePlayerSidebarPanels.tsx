@@ -5,6 +5,8 @@ import type { Course, Lesson } from '../data/courses';
 import type { LessonProgress } from '../utils/courseProgress';
 import { isLessonPlaybackComplete, progressPercent } from '../utils/courseProgress';
 import { LessonNotesRichEditor } from './LessonNotesRichEditor';
+import { CatalogRichText } from './CatalogRichText';
+import { catalogMiniRichPlainText } from '../utils/catalogMiniRichHtml';
 import { LessonVideoOutlineNotes } from './LessonVideoOutlineNotes';
 
 export type CoursePlayerSidebarPanelsProps = {
@@ -160,7 +162,9 @@ export function CoursePlayerSidebarPanels({
         </div>
         <p className="text-sm text-[var(--text-secondary)]">
           {notesExpanded ? (
-            <span className="line-clamp-2 font-medium text-[var(--text-primary)]">{currentLesson.title}</span>
+            <span className="line-clamp-2 font-medium text-[var(--text-primary)] [&_p]:m-0 [&_p]:inline">
+              <CatalogRichText value={currentLesson.title} />
+            </span>
           ) : (
             <>
               {course.modules.length} modules •{' '}
@@ -189,7 +193,9 @@ export function CoursePlayerSidebarPanels({
                     <span className="font-mono text-sm text-[var(--text-secondary)]">
                       {String(idx + 1).padStart(2, '0')}
                     </span>
-                    <span className="min-w-0 text-sm font-semibold text-[var(--text-primary)]">{module.title}</span>
+                    <span className="min-w-0 text-sm font-semibold text-[var(--text-primary)] [&_p]:m-0 [&_p]:inline">
+                      <CatalogRichText value={module.title} />
+                    </span>
                   </div>
                   {expandedModules.includes(module.id) ? (
                     <ChevronDown size={18} className="shrink-0 text-[var(--text-secondary)]" aria-hidden />
@@ -214,7 +220,11 @@ export function CoursePlayerSidebarPanels({
                               role="presentation"
                               className="border-t border-[var(--border-color)]/60 px-4 py-2.5 pl-12 text-left text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]"
                             >
-                              {lesson.title.trim() || 'Section'}
+                              {catalogMiniRichPlainText(lesson.title) ? (
+                                <CatalogRichText value={lesson.title} />
+                              ) : (
+                                'Section'
+                              )}
                             </div>
                           );
                         }
@@ -239,7 +249,9 @@ export function CoursePlayerSidebarPanels({
                               ) : (
                                 <CheckCircle2 size={14} className="shrink-0 text-gray-600" aria-hidden />
                               )}
-                              <span className="min-w-0 flex-1 truncate font-medium">{lesson.title}</span>
+                              <span className="min-w-0 flex-1 truncate font-medium [&_p]:m-0 [&_p]:inline">
+                                <CatalogRichText value={lesson.title} />
+                              </span>
                               <span className="shrink-0 text-xs opacity-60">{lessonDurationLabel(lesson)}</span>
                             </div>
                             <div className="flex w-full items-center gap-2 pl-7">
@@ -271,7 +283,7 @@ export function CoursePlayerSidebarPanels({
               id={notesRegionId}
               role="tabpanel"
               aria-labelledby={`${notesRegionId}-tab`}
-              aria-label={`Lesson notes for ${currentLesson.title}`}
+              aria-label={`Lesson notes for ${catalogMiniRichPlainText(currentLesson.title) || 'lesson'}`}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
@@ -312,7 +324,7 @@ export function CoursePlayerSidebarPanels({
                     onHtmlChange={onNoteTextChange}
                     onBlur={onNoteBlur}
                     playbackSeconds={notesPlaybackSeconds}
-                    aria-label={`Notes for ${currentLesson.title}`}
+                    aria-label={`Notes for ${catalogMiniRichPlainText(currentLesson.title) || 'lesson'}`}
                     onSectionOpenChange={onWriteNotesOpenChange}
                     {...(isLgViewport
                       ? {

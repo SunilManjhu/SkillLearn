@@ -10,10 +10,11 @@ import {
 import { isCourseLevel } from './courseTaxonomy';
 import { lessonWebHref } from './lessonContent';
 import { coerceQuizIndex } from './quizCoercion';
+import { catalogMiniRichIsEffectivelyEmpty, catalogMiniRichPlainText } from './catalogMiniRichHtml';
 
-/** Case-insensitive trim — for duplicate title checks within one course. */
+/** Case-insensitive plain text — for duplicate title checks within one course (titles may store mini-HTML). */
 function normCourseDisplayTitle(s: string): string {
-  return s.trim().toLowerCase();
+  return catalogMiniRichPlainText(s).toLowerCase();
 }
 
 /** Per-lesson quiz checks; used by admin draft validation. */
@@ -69,11 +70,11 @@ export function validateCourseDraft(c: Course): string | null {
   for (let mi = 0; mi < c.modules.length; mi += 1) {
     const m = c.modules[mi];
     if (!m.id.trim()) return `Module ${mi + 1}: Module ID is required.`;
-    if (!m.title.trim()) return `Module ${mi + 1}: Module title is required.`;
+    if (catalogMiniRichIsEffectivelyEmpty(m.title)) return `Module ${mi + 1}: Module title is required.`;
     const moduleTitleKey = normCourseDisplayTitle(m.title);
     for (let pj = 0; pj < mi; pj += 1) {
       const prev = c.modules[pj];
-      if (prev.title.trim() && normCourseDisplayTitle(prev.title) === moduleTitleKey) {
+      if (catalogMiniRichPlainText(prev.title) && normCourseDisplayTitle(prev.title) === moduleTitleKey) {
         return `Module ${mi + 1}: Module title must be unique in this course (same as module ${pj + 1}).`;
       }
     }
@@ -85,14 +86,14 @@ export function validateCourseDraft(c: Course): string | null {
     for (let li = 0; li < m.lessons.length; li += 1) {
       const l = m.lessons[li];
       if (!l.id.trim()) return `Module ${mi + 1}, Lesson ${li + 1}: Lesson ID is required.`;
-      if (!l.title.trim()) return `Module ${mi + 1}, Lesson ${li + 1}: Lesson title is required.`;
+      if (catalogMiniRichIsEffectivelyEmpty(l.title)) return `Module ${mi + 1}, Lesson ${li + 1}: Lesson title is required.`;
       const lessonTitleKey = normCourseDisplayTitle(l.title);
       for (let mi2 = 0; mi2 < c.modules.length; mi2 += 1) {
         for (let li2 = 0; li2 < c.modules[mi2].lessons.length; li2 += 1) {
           if (mi2 === mi && li2 === li) continue;
           if (mi2 > mi || (mi2 === mi && li2 > li)) continue;
           const other = c.modules[mi2].lessons[li2];
-          if (other.title.trim() && normCourseDisplayTitle(other.title) === lessonTitleKey) {
+          if (catalogMiniRichPlainText(other.title) && normCourseDisplayTitle(other.title) === lessonTitleKey) {
             return `Module ${mi + 1}, Lesson ${li + 1}: Lesson title must be unique in this course.`;
           }
         }

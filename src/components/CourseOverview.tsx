@@ -32,6 +32,8 @@ import {
 import { useYoutubeResolvedSeconds } from '../hooks/useYoutubeResolvedSeconds';
 import { useCourseStockThumbnail } from '../hooks/useCourseStockThumbnail';
 import { scrollDocumentToTop } from '../utils/scrollDocumentToTop';
+import { CatalogRichText } from './CatalogRichText';
+import { catalogMiniRichPlainText } from '../utils/catalogMiniRichHtml';
 import {
   loadCompletionTimestamps,
   mergeCompletionTimestampFromRemote,
@@ -413,9 +415,9 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                 {course.title}
               </h1>
               
-              <p className="text-base md:text-lg text-[var(--text-secondary)] mb-4 leading-relaxed max-w-2xl">
-                {course.description}
-              </p>
+              <div className="text-base md:text-lg text-[var(--text-secondary)] mb-4 leading-relaxed max-w-2xl [&_p]:mb-2 [&_p:last-child]:mb-0">
+                <CatalogRichText as="div" value={course.description} />
+              </div>
 
               {user && (
                 <div className="mb-4 max-w-2xl">
@@ -671,7 +673,9 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                         {idx + 1}
                       </div>
                       <div className="min-w-0">
-                        <h3 className="font-bold text-[var(--text-primary)]">{module.title}</h3>
+                        <h3 className="font-bold text-[var(--text-primary)] [&_p]:m-0 [&_p]:inline">
+                          <CatalogRichText value={module.title} />
+                        </h3>
                         <p className="text-xs text-[var(--text-secondary)] mt-0.5">
                           {module.lessons.length} lessons
                         </p>
@@ -705,7 +709,11 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                                   id={`course-lesson-${lesson.id}`}
                                   className="border-t border-[var(--border-color)]/60 px-4 py-3 pl-6 text-left text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)] sm:pl-12 md:pl-16"
                                 >
-                                  {lesson.title.trim() || 'Section'}
+                                  {catalogMiniRichPlainText(lesson.title) ? (
+                                    <CatalogRichText value={lesson.title} />
+                                  ) : (
+                                    'Section'
+                                  )}
                                 </div>
                               );
                             }
@@ -731,13 +739,13 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                                         />
                                       )}
                                       <span
-                                        className={`min-w-0 break-words text-sm font-medium transition-colors line-clamp-2 ${
+                                        className={`min-w-0 break-words text-sm font-medium transition-colors line-clamp-2 [&_p]:m-0 [&_p]:inline ${
                                           lessonComplete
                                             ? 'text-emerald-500/80 group-hover:text-emerald-500'
                                             : 'text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]'
                                         }`}
                                       >
-                                        {lesson.title}
+                                        <CatalogRichText value={lesson.title} />
                                       </span>
                                     </div>
                                     <div className="flex w-full items-center gap-2">

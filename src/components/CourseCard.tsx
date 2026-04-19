@@ -2,6 +2,7 @@ import React, { forwardRef } from 'react';
 import { Star, Clock } from 'lucide-react';
 import type { Course } from '../data/courses';
 import { useCourseStockThumbnail } from '../hooks/useCourseStockThumbnail';
+import { CourseCardCategories } from './CourseCardCategories';
 
 export interface CourseCardProps {
   course: Course;
@@ -51,13 +52,7 @@ export const CourseCard = forwardRef<HTMLDivElement, CourseCardProps>(
         </div>
         <div className="flex flex-1 flex-col gap-2 p-3 sm:p-4 min-w-0">
           <div className="flex min-w-0 flex-col gap-1">
-            <span className="line-clamp-1 text-[10px] font-bold uppercase tracking-wider text-orange-500">
-              {course.categories.length === 0
-                ? 'Uncategorized'
-                : course.categories.length === 1
-                  ? course.categories[0]
-                  : `${course.categories[0]} +${course.categories.length - 1}`}
-            </span>
+            <CourseCardCategories categories={course.categories} />
             {course.skills.length > 0 && (
               <div className="flex min-w-0 flex-wrap gap-1">
                 {course.skills.slice(0, 3).map((s) => (

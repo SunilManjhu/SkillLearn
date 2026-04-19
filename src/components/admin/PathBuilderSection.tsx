@@ -85,6 +85,7 @@ import {
   PATH_INSERT_STRIP_CHIP_BTN_EXPAND_ROW,
   PATH_INSERT_STRIP_CHIP_BTN_EXPAND_ROW_PAIR,
 } from './adminInsertStripClasses';
+import { catalogMiniRichPlainText } from '../../utils/catalogMiniRichHtml';
 
 function deepClone<T>(x: T): T {
   return JSON.parse(JSON.stringify(x)) as T;
@@ -532,7 +533,7 @@ function branchNodeToMindmap(n: PathBranchNode, publishedList: Course[]): Mindma
     for (const m of c.modules) {
       const les = m.lessons.find((l) => l.id === n.lessonId);
       if (les) {
-        lessonLabel = les.title?.trim() || n.lessonId;
+        lessonLabel = catalogMiniRichPlainText(les.title ?? '') || n.lessonId;
         break;
       }
     }
@@ -559,8 +560,8 @@ function branchNodeDisplayLabel(n: PathBranchNode, publishedList: Course[]): str
   if (n.kind === 'module') {
     const c = publishedList.find((x) => x.id === n.courseId);
     const mod = courseModuleById(c, n.moduleId);
-    if (c && mod) return `${c.title} · ${mod.title?.trim() || n.moduleId}`;
-    return mod?.title?.trim() || n.moduleId || n.courseId;
+    if (c && mod) return `${c.title} · ${catalogMiniRichPlainText(mod.title ?? '') || n.moduleId}`;
+    return catalogMiniRichPlainText(mod?.title ?? '') || n.moduleId || n.courseId;
   }
   if (n.kind === 'course') return publishedList.find((c) => c.id === n.courseId)?.title ?? n.courseId;
   const c = publishedList.find((x) => x.id === n.courseId);
@@ -569,7 +570,7 @@ function branchNodeDisplayLabel(n: PathBranchNode, publishedList: Course[]): str
     for (const m of c.modules) {
       const les = m.lessons.find((l) => l.id === n.lessonId);
       if (les) {
-        t = les.title || n.lessonId;
+        t = catalogMiniRichPlainText(les.title ?? '') || n.lessonId;
         break;
       }
     }
@@ -1345,9 +1346,11 @@ function AddPathBranchModal({
     if (q) {
       mods = mods.filter(
         (m) =>
-          m.title.toLowerCase().includes(q) ||
+          catalogMiniRichPlainText(m.title).toLowerCase().includes(q) ||
           m.id.toLowerCase().includes(q) ||
-          m.lessons.some((l) => (l.title || l.id).toLowerCase().includes(q))
+          m.lessons.some((l) =>
+            `${catalogMiniRichPlainText(l.title ?? '') || l.id}`.toLowerCase().includes(q)
+          )
       );
     }
     return mods;
@@ -1358,8 +1361,8 @@ function AddPathBranchModal({
     if (!q) return lessonRows;
     return lessonRows.filter(
       (r) =>
-        r.lesson.title.toLowerCase().includes(q) ||
-        r.moduleTitle.toLowerCase().includes(q)
+        catalogMiniRichPlainText(r.lesson.title ?? '').toLowerCase().includes(q) ||
+        catalogMiniRichPlainText(r.moduleTitle).toLowerCase().includes(q)
     );
   }, [lessonRows, query]);
 

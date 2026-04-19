@@ -51,6 +51,12 @@ import {
   ADMIN_INSERT_STRIP_CHIP_BTN_PERSIST_PAIR as ADMIN_CATALOG_INSERT_CHIP_BTN_PERSIST_PAIR,
   ADMIN_INSERT_STRIP_OUTER_EXPAND_HOVER as CATALOG_INSERT_OUTER_EXPAND_HOVER,
 } from './adminInsertStripClasses';
+import { CatalogMiniRichEditor } from './CatalogMiniRichEditor';
+import {
+  catalogMiniRichIsEffectivelyEmpty,
+  catalogMiniRichPlainText,
+  focusCatalogMiniRichById,
+} from '../../utils/catalogMiniRichHtml';
 import type { Course, Lesson, Module, QuizQuestion, QuizQuestionMcq } from '../../data/courses';
 import {
   MAX_QUIZ_CHOICES,
@@ -539,7 +545,7 @@ function applySplitDividerIntoNewModule(
   const mod = course.modules[mi];
   if (!mod || !mod.lessons[li] || mod.lessons[li].contentKind !== 'divider') return null;
 
-  const moduleTitleFromDivider = mod.lessons[li]!.title.trim();
+  const moduleTitleFromDivider = catalogMiniRichPlainText(mod.lessons[li]!.title);
 
   const originalBeforeLen = mod.lessons.slice(0, li).length;
   let beforeSrc = mod.lessons.slice(0, li);
@@ -631,7 +637,7 @@ function applySplitDividerIntoNewModule(
 
 function catalogLessonRowSummary(lesson: Lesson): string {
   const t =
-    lesson.title?.trim() ||
+    catalogMiniRichPlainText(lesson.title ?? '') ||
     (lesson.contentKind === 'divider' ? 'Untitled divider' : 'Untitled lesson');
   return lesson.contentKind === 'divider' ? `Divider — ${t}` : `Lesson — ${t}`;
 }
@@ -654,7 +660,7 @@ function catalogLessonInsertOptionLabel(mod: Module, insertAt: number): string {
 
 function catalogModuleTitleLine(mod: Module, indexOneBased: number): string {
   const id = mod.id.trim() || '—';
-  const title = mod.title.trim() || 'Untitled module';
+  const title = catalogMiniRichPlainText(mod.title) || 'Untitled module';
   return `Module ${indexOneBased}: ${id} — ${title}`;
 }
 
@@ -2470,7 +2476,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       if (el instanceof HTMLElement) {
         pendingScrollToNewModuleTitleMiRef.current = null;
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        el.focus({ preventScroll: true });
+        focusCatalogMiniRichById(`admin-module-title-${miFocus}`, { preventScroll: true });
         return;
       }
       frames += 1;
@@ -2494,7 +2500,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       if (el instanceof HTMLElement) {
         pendingScrollToNewLessonTitleRef.current = null;
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        el.focus({ preventScroll: true });
+        focusCatalogMiniRichById(`admin-lesson-title-${mi}-${li}`, { preventScroll: true });
         return;
       }
       frames += 1;
@@ -2525,7 +2531,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           lessonKeys: [`${mi}:0`],
         };
       }
-      if (!m.title.trim()) {
+      if (catalogMiniRichIsEffectivelyEmpty(m.title)) {
         return {
           targetId: `admin-module-title-${mi}`,
           scope: 'module',
@@ -2533,10 +2539,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           lessonKeys: [`${mi}:0`],
         };
       }
-      const moduleTitleKey = m.title.trim().toLowerCase();
+      const moduleTitleKey = catalogMiniRichPlainText(m.title).toLowerCase();
       for (let pj = 0; pj < mi; pj += 1) {
         const prev = c.modules[pj];
-        if (prev.title.trim() && prev.title.trim().toLowerCase() === moduleTitleKey) {
+        const prevPlain = catalogMiniRichPlainText(prev.title);
+        if (prevPlain && prevPlain.toLowerCase() === moduleTitleKey) {
           return {
             targetId: `admin-module-title-${mi}`,
             scope: 'module',
@@ -2565,7 +2572,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             lessonKeys: openKeys,
           };
         }
-        if (!l.title.trim()) {
+        if (catalogMiniRichIsEffectivelyEmpty(l.title)) {
           return {
             targetId: `admin-lesson-title-${mi}-${li}`,
             scope: 'module',
@@ -2573,13 +2580,14 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             lessonKeys: openKeys,
           };
         }
-        const lessonTitleKey = l.title.trim().toLowerCase();
+        const lessonTitleKey = catalogMiniRichPlainText(l.title).toLowerCase();
         for (let mi2 = 0; mi2 < c.modules.length; mi2 += 1) {
           for (let li2 = 0; li2 < c.modules[mi2].lessons.length; li2 += 1) {
             if (mi2 === mi && li2 === li) continue;
             if (mi2 > mi || (mi2 === mi && li2 > li)) continue;
             const other = c.modules[mi2].lessons[li2];
-            if (other.title.trim() && other.title.trim().toLowerCase() === lessonTitleKey) {
+            const otherPlain = catalogMiniRichPlainText(other.title);
+            if (otherPlain && otherPlain.toLowerCase() === lessonTitleKey) {
               return {
                 targetId: `admin-lesson-title-${mi}-${li}`,
                 scope: 'module',
@@ -2651,12 +2659,13 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     for (let mi = 0; mi < draft.modules.length; mi += 1) {
       const m = draft.modules[mi];
       if (!m.id.trim()) out.moduleId.add(mi);
-      if (!m.title.trim()) out.moduleTitle.add(mi);
-      const mt = m.title.trim().toLowerCase();
+      if (catalogMiniRichIsEffectivelyEmpty(m.title)) out.moduleTitle.add(mi);
+      const mt = catalogMiniRichPlainText(m.title).toLowerCase();
       if (mt) {
         for (let pj = 0; pj < mi; pj += 1) {
           const prev = draft.modules[pj];
-          if (prev.title.trim() && prev.title.trim().toLowerCase() === mt) {
+          const prevPlain = catalogMiniRichPlainText(prev.title);
+          if (prevPlain && prevPlain.toLowerCase() === mt) {
             out.moduleTitle.add(mi);
             out.moduleTitle.add(pj);
           }
@@ -2666,7 +2675,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         const l = m.lessons[li];
         const key = `${mi}:${li}`;
         if (!l.id.trim() && l.contentKind !== 'divider') out.lessonId.add(key);
-        if (!l.title.trim()) out.lessonTitle.add(key);
+        if (catalogMiniRichIsEffectivelyEmpty(l.title)) out.lessonTitle.add(key);
         if (l.contentKind === 'web') {
           if (!lessonWebHref(l)) out.lessonWebUrl.add(key);
         } else if (l.contentKind === 'quiz') {
@@ -2680,14 +2689,15 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       for (let li = 0; li < draft.modules[mi].lessons.length; li += 1) {
         const l = draft.modules[mi].lessons[li];
         const key = `${mi}:${li}`;
-        const lt = l.title.trim().toLowerCase();
+        const lt = catalogMiniRichPlainText(l.title).toLowerCase();
         if (!lt) continue;
         for (let mi2 = 0; mi2 < draft.modules.length; mi2 += 1) {
           for (let li2 = 0; li2 < draft.modules[mi2].lessons.length; li2 += 1) {
             if (mi2 === mi && li2 === li) continue;
             if (mi2 > mi || (mi2 === mi && li2 > li)) continue;
             const o = draft.modules[mi2].lessons[li2];
-            if (o.title.trim() && o.title.trim().toLowerCase() === lt) {
+            const oPlain = catalogMiniRichPlainText(o.title);
+            if (oPlain && oPlain.toLowerCase() === lt) {
               out.lessonTitle.add(key);
               out.lessonTitle.add(`${mi2}:${li2}`);
             }
@@ -3538,7 +3548,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       const el = document.getElementById(id);
       if (!(el instanceof HTMLElement)) return;
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      el.focus({ preventScroll: true });
+      if (id.startsWith('admin-module-title-') || id.startsWith('admin-lesson-title-')) {
+        focusCatalogMiniRichById(id, { preventScroll: true });
+      } else {
+        el.focus({ preventScroll: true });
+      }
       pendingScrollTargetIdRef.current = null;
     });
     return () => cancelAnimationFrame(rafId);
@@ -4384,11 +4398,13 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             </div>
             <label className="block space-y-1 sm:col-span-2">
               <span className="text-xs font-semibold text-[var(--text-secondary)]">Description</span>
-              <textarea
+              <CatalogMiniRichEditor
+                id="admin-course-description"
                 value={draft.description}
-                onChange={(e) => updateDraft({ description: e.target.value })}
-                rows={3}
-                className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm resize-y"
+                onChange={(description) => updateDraft({ description })}
+                aria-label="Course description"
+                variant="multiline"
+                placeholder="Overview shown on the course page — you can paste formatted text (subscripts, bold, etc.)."
               />
             </label>
             <label className="block space-y-1 sm:col-span-2">
@@ -4515,7 +4531,9 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             if (!wasOpen) {
                               requestAnimationFrame(() => {
                                 requestAnimationFrame(() => {
-                                  document.getElementById(`admin-module-title-${mi}`)?.focus({ preventScroll: false });
+                                  focusCatalogMiniRichById(`admin-module-title-${mi}`, {
+                                    preventScroll: false,
+                                  });
                                 });
                               });
                             }
@@ -4543,18 +4561,17 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           -
                         </span>
                         </div>
-                        <input
-                          id={`admin-module-title-${mi}`}
-                          value={mod.title}
-                          onChange={(e) => updateModule(mi, { title: e.target.value })}
-                          aria-label="Module title"
-                          placeholder="e.g. HTML & CSS fundamentals — section title in the syllabus"
-                          className={`min-w-0 w-full rounded-md border bg-[var(--bg-primary)] px-1.5 py-1 text-sm font-semibold leading-snug text-[var(--text-primary)] sm:flex-1 sm:min-w-0 sm:px-2 sm:py-1 ${
-                            showValidationHints && fieldErrors.moduleTitle.has(mi)
-                              ? 'border-red-500'
-                              : 'border-[var(--border-color)]'
-                          }`}
-                        />
+                        <div className="min-w-0 w-full sm:flex-1 sm:min-w-0">
+                          <CatalogMiniRichEditor
+                            id={`admin-module-title-${mi}`}
+                            value={mod.title}
+                            onChange={(title) => updateModule(mi, { title })}
+                            aria-label="Module title"
+                            variant="title"
+                            error={showValidationHints && fieldErrors.moduleTitle.has(mi)}
+                            placeholder="e.g. HTML & CSS fundamentals — section title in the syllabus"
+                          />
+                        </div>
                         <span className="hidden shrink-0 text-[10px] font-medium leading-none tabular-nums text-[var(--text-muted)] md:inline md:text-[11px]">
                           {mod.lessons.length}{' '}
                           {mod.lessons.length === 1 ? 'lesson' : 'lessons'}
@@ -4576,7 +4593,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           )}
                           {fieldErrors.moduleTitle.has(mi) && (
                             <p className="text-red-400">
-                              {!mod.title.trim()
+                              {catalogMiniRichIsEffectivelyEmpty(mod.title)
                                 ? 'Module title is required.'
                                 : 'Module title must be unique in this course.'}
                             </p>
@@ -4728,18 +4745,17 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                               <SlidersHorizontal size={18} aria-hidden />
                             </button>
                             </div>
-                            <input
-                              id={`admin-lesson-title-${mi}-${li}`}
-                              value={lesson.title}
-                              onChange={(e) => updateLesson(mi, li, { title: e.target.value })}
-                              className={`min-w-0 w-full flex-1 rounded-md border bg-[var(--bg-primary)] px-2 py-1 text-sm text-[var(--text-primary)] sm:px-2.5 sm:py-1.5 ${
-                                showValidationHints && fieldErrors.lessonTitle.has(`${mi}:${li}`)
-                                  ? 'border-red-500'
-                                  : 'border-[var(--border-color)]'
-                              }`}
-                              placeholder="e.g. Part 2 — shown as a heading in the syllabus"
-                              aria-label="Divider label"
-                            />
+                            <div className="min-w-0 flex-1">
+                              <CatalogMiniRichEditor
+                                id={`admin-lesson-title-${mi}-${li}`}
+                                value={lesson.title}
+                                onChange={(title) => updateLesson(mi, li, { title })}
+                                aria-label="Divider label"
+                                variant="title"
+                                error={showValidationHints && fieldErrors.lessonTitle.has(`${mi}:${li}`)}
+                                placeholder="e.g. Part 2 — shown as a heading in the syllabus"
+                              />
+                            </div>
                           </div>
                         ) : (
                         <div className="flex min-h-11 min-w-0 w-full flex-1 flex-col gap-0.5 md:min-h-10">
@@ -4783,18 +4799,17 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                                 -
                               </span>
                             </div>
-                            <input
-                              id={`admin-lesson-title-${mi}-${li}`}
-                              value={lesson.title}
-                              onChange={(e) => updateLesson(mi, li, { title: e.target.value })}
-                              aria-label="Lesson title"
-                              placeholder="e.g. Semantic HTML & page structure — lesson name under the module"
-                              className={`min-w-0 w-full rounded-md border bg-[var(--bg-primary)] px-1.5 py-1 text-sm font-semibold leading-snug text-[var(--text-primary)] sm:flex-1 sm:min-w-0 sm:px-2 sm:py-1 ${
-                                showValidationHints && fieldErrors.lessonTitle.has(`${mi}:${li}`)
-                                  ? 'border-red-500'
-                                  : 'border-[var(--border-color)]'
-                              }`}
-                            />
+                            <div className="min-w-0 w-full sm:flex-1 sm:min-w-0">
+                              <CatalogMiniRichEditor
+                                id={`admin-lesson-title-${mi}-${li}`}
+                                value={lesson.title}
+                                onChange={(title) => updateLesson(mi, li, { title })}
+                                aria-label="Lesson title"
+                                variant="title"
+                                error={showValidationHints && fieldErrors.lessonTitle.has(`${mi}:${li}`)}
+                                placeholder="e.g. Semantic HTML & page structure — lesson name under the module"
+                              />
+                            </div>
                           </div>
                           {showValidationHints &&
                             (fieldErrors.lessonId.has(`${mi}:${li}`) ||
@@ -4805,7 +4820,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                                 )}
                                 {fieldErrors.lessonTitle.has(`${mi}:${li}`) && (
                                   <p className="text-red-400">
-                                    {!lesson.title.trim()
+                                    {catalogMiniRichIsEffectivelyEmpty(lesson.title)
                                       ? 'Lesson title is required.'
                                       : 'Lesson title must be unique in this course.'}
                                   </p>
@@ -4952,10 +4967,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         <>
                       {lesson.contentKind === 'divider' &&
                       showValidationHints &&
-                      (!lesson.title.trim() || fieldErrors.lessonTitle.has(`${mi}:${li}`)) ? (
+                      (catalogMiniRichIsEffectivelyEmpty(lesson.title) ||
+                        fieldErrors.lessonTitle.has(`${mi}:${li}`)) ? (
                         <div className="w-full min-w-0 pb-1">
                           <span className="block text-[11px] text-red-400">
-                            {!lesson.title.trim()
+                            {catalogMiniRichIsEffectivelyEmpty(lesson.title)
                               ? 'Divider label is required.'
                               : 'This label must be unique in this course.'}
                           </span>
@@ -5386,12 +5402,13 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       )}
                       <label className="block space-y-1">
                         <span className="text-xs font-semibold text-[var(--text-secondary)]">About (optional)</span>
-                        <textarea
+                        <CatalogMiniRichEditor
+                          id={`admin-lesson-about-${mi}-${li}`}
                           value={lesson.about ?? ''}
-                          onChange={(e) => updateLesson(mi, li, { about: e.target.value || undefined })}
-                          rows={2}
-                          className="w-full text-sm bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-2.5 py-1.5 resize-y sm:px-3 sm:py-2"
-                          placeholder="Short description under the player"
+                          onChange={(about) => updateLesson(mi, li, { about: about || undefined })}
+                          aria-label="About this lesson (optional)"
+                          variant="multiline"
+                          placeholder="Short description under the player — paste from Word or the web keeps subscripts and basic formatting."
                         />
                       </label>
                       <AdminVideoOutlineNotesField
