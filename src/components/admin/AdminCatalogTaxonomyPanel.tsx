@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { GripVertical, Search, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { Course } from '../../data/courses';
@@ -26,21 +26,38 @@ import {
   readCatalogTaxonomyAdminOrder,
   writeCatalogTaxonomyAdminOrder,
 } from '../../utils/catalogTaxonomyAdminOrder';
+import {
+  filterPopularTopicsToUniverse,
+  popularTopicsInsertCopyBefore,
+  popularTopicsRemoveLabel,
+  popularTopicsRenameLabel,
+  popularTopicsReorder,
+  readCatalogPopularTopics,
+  writeCatalogPopularTopics,
+} from '../../utils/catalogPopularTopics';
 
 type TaxonomyKind = 'category' | 'skill';
 
 const TAXONOMY_DRAG_MIME = 'application/x-skilllearn-taxonomy';
 
-type TaxonomyDragPayload = { kind: TaxonomyKind; label: string };
+type TaxonomyDragPayload =
+  | { scope: 'taxonomy'; kind: TaxonomyKind; label: string }
+  | { scope: 'popular'; label: string };
 
 function readTaxonomyDragPayload(e: React.DragEvent): TaxonomyDragPayload | null {
   try {
     const raw = e.dataTransfer.getData(TAXONOMY_DRAG_MIME);
     if (!raw) return null;
-    const o = JSON.parse(raw) as { kind?: string; label?: string };
-    if (o.kind !== 'category' && o.kind !== 'skill') return null;
+    const o = JSON.parse(raw) as { scope?: string; kind?: string; label?: string };
     if (typeof o.label !== 'string' || !o.label.trim()) return null;
-    return { kind: o.kind, label: o.label.trim() };
+    const label = o.label.trim();
+    if (o.scope === 'popular') return { scope: 'popular', label };
+    if (o.scope === 'taxonomy' && (o.kind === 'category' || o.kind === 'skill')) {
+      return { scope: 'taxonomy', kind: o.kind, label };
+    }
+    // Legacy payloads (before `scope` was added)
+    if (o.kind === 'category' || o.kind === 'skill') return { scope: 'taxonomy', kind: o.kind, label };
+    return null;
   } catch {
     return null;
   }
@@ -249,7 +266,7 @@ function TaxonomySection({
   onAddEverywhere: (name: string) => Promise<void>;
   onRenameEverywhere: (fromExact: string, toExact: string) => Promise<void>;
   onRemoveEverywhere: (name: string) => Promise<void>;
-  onDragDrop: (payload: TaxonomyDragPayload, targetKind: TaxonomyKind, beforeLabel: string | null) => void;
+  onDragDrop: (payload: Extract<TaxonomyDragPayload, { scope: 'taxonomy' }>, targetKind: TaxonomyKind, beforeLabel: string | null) => void;
 }) {
   const [query, setQuery] = useState('');
   const [editingLabel, setEditingLabel] = useState<string | null>(null);
@@ -361,7 +378,7 @@ function TaxonomySection({
                     e.preventDefault();
                     e.stopPropagation();
                     const p = readTaxonomyDragPayload(e);
-                    if (!p) return;
+                    if (!p || p.scope !== 'taxonomy') return;
                     if (p.kind === kind && lower(p.label) === lower(label)) return;
                     onDragDrop(p, kind, label);
                   }
@@ -375,7 +392,10 @@ function TaxonomySection({
               onDragStart={
                 dragEnabled
                   ? (e) => {
-                      e.dataTransfer.setData(TAXONOMY_DRAG_MIME, JSON.stringify({ kind, label }));
+                      e.dataTransfer.setData(
+                        TAXONOMY_DRAG_MIME,
+                        JSON.stringify({ scope: 'taxonomy', kind, label })
+                      );
                       e.dataTransfer.effectAllowed = 'move';
                     }
                   : undefined
@@ -424,7 +444,7 @@ function TaxonomySection({
               e.preventDefault();
               e.stopPropagation();
               const p = readTaxonomyDragPayload(e);
-              if (!p) return;
+              if (!p || p.scope !== 'taxonomy') return;
               onDragDrop(p, kind, null);
             }}
           >
@@ -441,6 +461,220 @@ function TaxonomySection({
         <p className="mt-4 text-xs text-[var(--text-muted)]">
           No matches. {showAdd ? 'Press Enter to add, or Esc to clear.' : null}
         </p>
+      ) : null}
+    </section>
+  );
+}
+
+function PopularTopicsSection({
+  items,
+  busy,
+  onCopyFromTaxonomy,
+  onReorderPopular,
+  onRemoveFromList,
+}: {
+  items: readonly string[];
+  busy: boolean;
+  onCopyFromTaxonomy: (label: string, beforeLabel: string | null) => void;
+  onReorderPopular: (label: string, beforeLabel: string | null) => void;
+  onRemoveFromList: (label: string) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const trimmed = query.trim();
+  const filtered = useMemo(() => {
+    if (!trimmed) return [...items];
+    return items.filter((x) => includesCI(x, trimmed));
+  }, [items, trimmed]);
+
+  const dragEnabled = !busy && !trimmed;
+
+  return (
+    <section className="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-primary)]/40 p-4 sm:p-6">
+      <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+        <h3 className="text-base font-bold leading-none text-[var(--text-primary)]">Popular topics</h3>
+        <AdminLabelInfoTip
+          controlOnly
+          tipId="admin-taxonomy-popular-tip"
+          tipRegionAriaLabel="Popular topics tips"
+          tipSubject="Popular topics"
+        >
+          <>
+            <li>Build a curated list for quick reference (stored in this browser).</li>
+            <li>
+              Drag a grip from <strong className="text-[var(--text-primary)]">Categories</strong> or{' '}
+              <strong className="text-[var(--text-primary)]">Skills</strong> and drop here — it{' '}
+              <strong className="text-[var(--text-primary)]">copies</strong> the label; the original chip stays put.
+            </li>
+            <li>Drag grips here to reorder this list only.</li>
+            <li>× removes the label from this list only (does not change courses or presets).</li>
+          </>
+        </AdminLabelInfoTip>
+      </div>
+
+      <div className="mt-4 flex min-w-0 items-stretch gap-2">
+        <div className="relative min-w-0 flex-1">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" aria-hidden />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                setQuery('');
+              }
+            }}
+            placeholder="Search popular topics…"
+            className="min-h-11 w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] pl-9 pr-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-orange-500/40 focus:ring-2 focus:ring-orange-500/20 disabled:opacity-50"
+            disabled={busy}
+          />
+        </div>
+      </div>
+
+      {items.length === 0 && !trimmed ? (
+        <div className="mt-4 space-y-3">
+          <p className="rounded-xl border border-dashed border-[var(--border-color)]/70 bg-[var(--bg-secondary)]/30 px-3 py-4 text-center text-xs leading-relaxed text-[var(--text-muted)]">
+            Drag category or skill chips here to copy them into this list. Clear search to enable drag and drop.
+          </p>
+          <div
+            className="flex min-h-14 items-center justify-center rounded-xl border border-dashed border-[var(--border-color)]/70 bg-[var(--bg-secondary)]/30 px-3 text-center text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]"
+            onDragOver={
+              dragEnabled
+                ? (e) => {
+                    e.preventDefault();
+                    const p = readTaxonomyDragPayload(e);
+                    e.dataTransfer.dropEffect = p?.scope === 'taxonomy' ? 'copy' : 'move';
+                  }
+                : undefined
+            }
+            onDrop={
+              dragEnabled
+                ? (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const p = readTaxonomyDragPayload(e);
+                    if (!p || p.scope !== 'taxonomy') return;
+                    onCopyFromTaxonomy(p.label, null);
+                  }
+                : undefined
+            }
+          >
+            Drop here to add first topic
+          </div>
+        </div>
+      ) : null}
+
+      <div className="mt-4 flex flex-wrap items-stretch gap-2">
+        {filtered.map((label) => (
+          <div
+            key={label.toLowerCase()}
+            className="inline-flex max-w-full min-w-0 items-stretch gap-1 rounded-full border border-[var(--border-color)] bg-[var(--hover-bg)]/40 pl-1 pr-0.5 py-0.5"
+            onDragOver={
+              dragEnabled
+                ? (e) => {
+                    e.preventDefault();
+                    const p = readTaxonomyDragPayload(e);
+                    e.dataTransfer.dropEffect = p?.scope === 'taxonomy' ? 'copy' : 'move';
+                  }
+                : undefined
+            }
+            onDrop={
+              dragEnabled
+                ? (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const p = readTaxonomyDragPayload(e);
+                    if (!p) return;
+                    if (p.scope === 'taxonomy') {
+                      onCopyFromTaxonomy(p.label, label);
+                      return;
+                    }
+                    if (p.scope === 'popular') {
+                      if (lower(p.label) === lower(label)) return;
+                      onReorderPopular(p.label, label);
+                    }
+                  }
+                : undefined
+            }
+          >
+            <div
+              role="button"
+              tabIndex={dragEnabled ? 0 : -1}
+              draggable={dragEnabled}
+              onDragStart={
+                dragEnabled
+                  ? (e) => {
+                      e.dataTransfer.setData(
+                        TAXONOMY_DRAG_MIME,
+                        JSON.stringify({ scope: 'popular', label })
+                      );
+                      e.dataTransfer.effectAllowed = 'move';
+                    }
+                  : undefined
+              }
+              className={
+                dragEnabled
+                  ? 'inline-flex min-h-11 min-w-11 shrink-0 cursor-grab touch-manipulation items-center justify-center rounded-full text-[var(--text-muted)] active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/35'
+                  : 'inline-flex min-h-11 min-w-11 shrink-0 cursor-not-allowed items-center justify-center rounded-full opacity-40'
+              }
+              aria-label={`Drag ${label} to reorder Popular topics`}
+              onKeyDown={(e) => {
+                if (!dragEnabled) return;
+                if (e.key === 'Enter' || e.key === ' ') e.preventDefault();
+              }}
+            >
+              <GripVertical size={18} aria-hidden />
+            </div>
+            <div className="min-w-0 self-center border-0 bg-transparent px-1 py-1">
+              <span className="inline-flex min-h-8 min-w-0 max-w-full items-center text-left text-xs font-semibold text-[var(--text-primary)]">
+                <span className="min-w-0 truncate">{label}</span>
+              </span>
+            </div>
+            <span className="mx-0.5 h-4 w-px shrink-0 self-center bg-[var(--border-color)]" aria-hidden />
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onRemoveFromList(label)}
+              className="inline-flex min-h-8 min-w-8 shrink-0 items-center justify-center self-center rounded-full text-red-400 hover:bg-red-500/10 disabled:opacity-40"
+              aria-label={`Remove ${label} from Popular topics`}
+              title="Remove from this list"
+            >
+              <X size={16} aria-hidden />
+            </button>
+          </div>
+        ))}
+        {dragEnabled && filtered.length > 0 ? (
+          <div
+            className="flex min-h-11 min-w-[min(100%,10rem)] flex-1 items-center justify-center rounded-xl border border-dashed border-[var(--border-color)]/70 bg-[var(--bg-secondary)]/30 px-3 text-center text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]"
+            onDragOver={(e) => {
+              e.preventDefault();
+              const p = readTaxonomyDragPayload(e);
+              e.dataTransfer.dropEffect = p?.scope === 'taxonomy' ? 'copy' : 'move';
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const p = readTaxonomyDragPayload(e);
+              if (!p) return;
+              if (p.scope === 'taxonomy') {
+                onCopyFromTaxonomy(p.label, null);
+                return;
+              }
+              if (p.scope === 'popular') {
+                onReorderPopular(p.label, null);
+              }
+            }}
+          >
+            Drop to place last
+          </div>
+        ) : null}
+      </div>
+
+      {trimmed ? (
+        <p className="mt-2 text-xs text-[var(--text-muted)]">Clear search to drag chips.</p>
+      ) : null}
+
+      {trimmed && filtered.length === 0 ? (
+        <p className="mt-4 text-xs text-[var(--text-muted)]">No matches. Esc clears search.</p>
       ) : null}
     </section>
   );
@@ -483,6 +717,8 @@ export function AdminCatalogTaxonomyPanel({
   }));
   /** Bumps when admin display order (localStorage) changes so merged lists recompute. */
   const [orderRevision, setOrderRevision] = useState(0);
+  /** Bumps when Popular topics localStorage list changes. */
+  const [popularRevision, setPopularRevision] = useState(0);
 
   const applyPending = useCallback(
     (kind: TaxonomyKind, list: readonly string[]): string[] => {
@@ -534,6 +770,65 @@ export function AdminCatalogTaxonomyPanel({
     );
     return mergeUniverseWithAdminOrder(universe, readCatalogTaxonomyAdminOrder('skill'));
   }, [skillPresets.mainPills, skillPresets.moreSkills, taxonomy.skills.more, applyPending, orderRevision]);
+
+  const labelUniverseLower = useMemo(() => {
+    const s = new Set<string>();
+    for (const x of categoryItems) s.add(lower(x));
+    for (const x of skillItems) s.add(lower(x));
+    return s;
+  }, [categoryItems, skillItems]);
+
+  const popularTopicsRaw = useMemo(
+    () => readCatalogPopularTopics(),
+    [popularRevision, orderRevision, categoryItems, skillItems]
+  );
+
+  const popularTopics = useMemo(
+    () => filterPopularTopicsToUniverse(popularTopicsRaw, labelUniverseLower),
+    [popularTopicsRaw, labelUniverseLower]
+  );
+
+  useLayoutEffect(() => {
+    const pruned = filterPopularTopicsToUniverse(popularTopicsRaw, labelUniverseLower);
+    if (pruned.length !== popularTopicsRaw.length) {
+      writeCatalogPopularTopics(pruned);
+      setPopularRevision((r) => r + 1);
+    }
+  }, [popularTopicsRaw, labelUniverseLower]);
+
+  const onPopularCopyFromTaxonomy = useCallback(
+    (label: string, beforeLabel: string | null) => {
+      const base = filterPopularTopicsToUniverse(readCatalogPopularTopics(), labelUniverseLower);
+      const next = popularTopicsInsertCopyBefore(base, label, beforeLabel);
+      if (!next) {
+        showActionToast('Already in Popular topics.', 'neutral');
+        return;
+      }
+      writeCatalogPopularTopics(next);
+      setPopularRevision((r) => r + 1);
+      showActionToast(`Copied “${label.trim()}” to Popular topics.`, 'neutral');
+    },
+    [labelUniverseLower, showActionToast]
+  );
+
+  const onPopularReorder = useCallback(
+    (label: string, beforeLabel: string | null) => {
+      const base = filterPopularTopicsToUniverse(readCatalogPopularTopics(), labelUniverseLower);
+      writeCatalogPopularTopics(popularTopicsReorder(base, label, beforeLabel));
+      setPopularRevision((r) => r + 1);
+    },
+    [labelUniverseLower]
+  );
+
+  const onPopularRemoveFromList = useCallback(
+    (label: string) => {
+      const base = filterPopularTopicsToUniverse(readCatalogPopularTopics(), labelUniverseLower);
+      writeCatalogPopularTopics(popularTopicsRemoveLabel(base, label));
+      setPopularRevision((r) => r + 1);
+      showActionToast(`Removed “${label}” from Popular topics.`, 'neutral');
+    },
+    [labelUniverseLower, showActionToast]
+  );
 
   const updateCoursesEverywhere = async (kind: TaxonomyKind, from: string, to?: string) => {
     const fromK = lower(from);
@@ -752,7 +1047,7 @@ export function AdminCatalogTaxonomyPanel({
   );
 
   const handleTaxonomyDragDrop = useCallback(
-    (payload: TaxonomyDragPayload, targetKind: TaxonomyKind, beforeLabel: string | null) => {
+    (payload: Extract<TaxonomyDragPayload, { scope: 'taxonomy' }>, targetKind: TaxonomyKind, beforeLabel: string | null) => {
       if (busy) return;
       const { kind: srcKind, label } = payload;
       if (beforeLabel && lower(beforeLabel) === lower(label)) return;
@@ -847,6 +1142,8 @@ export function AdminCatalogTaxonomyPanel({
         if (so) writeCatalogTaxonomyAdminOrder('skill', orderWithoutLabel(so, label));
       }
 
+      writeCatalogPopularTopics(popularTopicsRemoveLabel(readCatalogPopularTopics(), label));
+      setPopularRevision((r) => r + 1);
       setOrderRevision((r) => r + 1);
       await onRefreshList();
       await onCatalogChanged();
@@ -975,6 +1272,8 @@ export function AdminCatalogTaxonomyPanel({
         }
       }
 
+      writeCatalogPopularTopics(popularTopicsRenameLabel(readCatalogPopularTopics(), from, to));
+      setPopularRevision((r) => r + 1);
       setOrderRevision((r) => r + 1);
       await onRefreshList();
       await onCatalogChanged();
@@ -1007,6 +1306,10 @@ export function AdminCatalogTaxonomyPanel({
               Skills to turn a category into a skill on every course that used it (blocked if it’s a course’s only
               category or the last main topic pill).
             </li>
+            <li>
+              Drag a chip onto <strong className="text-[var(--text-primary)]">Popular topics</strong> below to{' '}
+              <strong className="text-[var(--text-primary)]">copy</strong> the label there (the category stays here).
+            </li>
           </>
         }
         kind="category"
@@ -1018,6 +1321,14 @@ export function AdminCatalogTaxonomyPanel({
           removeEverywhere('category', name);
         }}
         onDragDrop={handleTaxonomyDragDrop}
+      />
+
+      <PopularTopicsSection
+        items={popularTopics}
+        busy={busy}
+        onCopyFromTaxonomy={onPopularCopyFromTaxonomy}
+        onReorderPopular={onPopularReorder}
+        onRemoveFromList={onPopularRemoveFromList}
       />
 
       <TaxonomySection
@@ -1033,6 +1344,10 @@ export function AdminCatalogTaxonomyPanel({
             <li>
               Drag the grip to reorder or drop into Categories to convert a skill into a category on each course that
               had the skill (same insert-before and “last” zone behavior).
+            </li>
+            <li>
+              Drag onto <strong className="text-[var(--text-primary)]">Popular topics</strong> above to{' '}
+              <strong className="text-[var(--text-primary)]">copy</strong> the label (the skill stays here).
             </li>
           </>
         }

@@ -155,9 +155,11 @@ import { loadCatalogSkillPresets } from './utils/catalogSkillPresetsFirestore';
 import { buildCatalogTaxonomy } from './utils/catalogTaxonomy';
 import {
   courseMatchesLibraryFilters,
+  dedupeLabelsPreserveOrder,
   toggleFilterTag,
   type LibraryFilterState,
 } from './utils/courseTaxonomy';
+import { filterPopularTopicsToUniverse, readCatalogPopularTopics } from './utils/catalogPopularTopics';
 import { PhoneMockupAdRail } from './components/PhoneMockupAdRail';
 import type { PhoneMockupAdSlide } from './utils/heroPhoneAdsShared';
 import { readPublicHeroPhoneAdsCache } from './utils/heroPhoneAdsPublicCache';
@@ -623,6 +625,8 @@ export default function App() {
     skillTags: [],
     level: null,
   });
+  /** Bumps so the catalog filter re-reads admin “Popular topics” from localStorage (view changes / other tabs). */
+  const [libraryPopularStorageRevision, setLibraryPopularStorageRevision] = useState(0);
   /** Navbar Browse → Skills / topic: narrows catalog without showing in Course filters pill. Cleared when Course filters change or clearFilters. */
   const [navCatalogSkillTag, setNavCatalogSkillTag] = useState<string | null>(null);
   const [navCatalogCategoryTag, setNavCatalogCategoryTag] = useState<string | null>(null);
@@ -2018,6 +2022,50 @@ export default function App() {
     () => [...skillPresets.mainPills, ...moreSkills],
     [skillPresets.mainPills, moreSkills]
   );
+
+  const categoryFilterPoolForLibrary = useMemo(
+    () => dedupeLabelsPreserveOrder([...categoryPresets.mainPills, ...moreCategories]),
+    [categoryPresets.mainPills, moreCategories]
+  );
+
+  const libraryPopularTopicsOrdered = useMemo(() => {
+    const universe = new Set<string>();
+    for (const x of categoryPresets.mainPills) {
+      const t = x.trim();
+      if (t) universe.add(t.toLowerCase());
+    }
+    for (const x of moreCategories) {
+      const t = x.trim();
+      if (t) universe.add(t.toLowerCase());
+    }
+    for (const x of skillPresets.mainPills) {
+      const t = x.trim();
+      if (t) universe.add(t.toLowerCase());
+    }
+    for (const x of moreSkills) {
+      const t = x.trim();
+      if (t) universe.add(t.toLowerCase());
+    }
+    return filterPopularTopicsToUniverse(readCatalogPopularTopics(), universe);
+  }, [
+    categoryPresets.mainPills,
+    moreCategories,
+    skillPresets.mainPills,
+    moreSkills,
+    libraryPopularStorageRevision,
+  ]);
+
+  useEffect(() => {
+    if (currentView === 'catalog') setLibraryPopularStorageRevision((r) => r + 1);
+  }, [currentView]);
+
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'skilllearn.catalogPopularTopics.v1') setLibraryPopularStorageRevision((rev) => rev + 1);
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   const filteredCatalogRows = useMemo(
     () =>
@@ -3540,7 +3588,8 @@ export default function App() {
             currentView === 'catalog' && selectedLearningPathId == null ? (
               <CourseLibraryCategoryFilter
                 ref={catalogCategoryFilterTriggerRef}
-                mainTopics={categoryPresets.mainPills}
+                curatedPopularTopics={libraryPopularTopicsOrdered}
+                categoryFilterPool={categoryFilterPoolForLibrary}
                 moreTopics={moreCategories}
                 mainSkills={skillPresets.mainPills}
                 moreSkills={moreSkills}
