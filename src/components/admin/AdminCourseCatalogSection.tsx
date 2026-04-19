@@ -45,7 +45,9 @@ import { AdminCatalogSkillPresetsPanel } from './AdminCatalogSkillPresetsPanel';
 import { AdminCatalogTaxonomyPanel } from './AdminCatalogTaxonomyPanel';
 import {
   ADMIN_INSERT_STRIP_CHIP_BTN_EXPAND_ROW as ADMIN_CATALOG_INSERT_CHIP_BTN_EXPAND_ROW,
+  ADMIN_INSERT_STRIP_CHIP_BTN_EXPAND_ROW_PAIR as ADMIN_CATALOG_INSERT_CHIP_BTN_EXPAND_ROW_PAIR,
   ADMIN_INSERT_STRIP_CHIP_BTN_PERSIST as ADMIN_CATALOG_INSERT_CHIP_BTN_PERSIST,
+  ADMIN_INSERT_STRIP_CHIP_BTN_PERSIST_PAIR as ADMIN_CATALOG_INSERT_CHIP_BTN_PERSIST_PAIR,
   ADMIN_INSERT_STRIP_OUTER_EXPAND_HOVER as CATALOG_INSERT_OUTER_EXPAND_HOVER,
 } from './adminInsertStripClasses';
 import type { Course, Lesson, Module, QuizQuestion, QuizQuestionMcq } from '../../data/courses';
@@ -722,6 +724,66 @@ const CATALOG_MODULE_INSERT_INNER_HOVER =
   'flex w-full max-md:!pl-0 items-center justify-center md:min-h-0 md:py-1.5';
 const CATALOG_MODULE_INSERT_INNER_PERSIST = 'flex w-full max-md:!pl-0 justify-center';
 
+const CATALOG_LESSON_MODULE_BOUNDARY_INNER_HOVER =
+  'flex w-full min-w-0 flex-col gap-2 pl-3 max-md:!pl-0 md:flex-row md:flex-wrap md:items-stretch md:justify-center md:gap-2 md:py-1.5';
+const CATALOG_LESSON_MODULE_BOUNDARY_INNER_PERSIST =
+  'flex w-full min-w-0 flex-col gap-2 pl-3 max-md:!pl-0 md:flex-row md:flex-wrap md:items-stretch md:justify-center md:gap-2';
+
+/** After the last lesson in an expanded module: “Add branch” and “Add module” share one hover strip on one row (md+). */
+function CatalogLessonModuleBoundaryInsertRow({
+  persistVisibleOnMd,
+  onAddBranch,
+  onAddModule,
+  branchAriaLabel,
+  moduleAriaLabel,
+}: {
+  persistVisibleOnMd: boolean;
+  onAddBranch: () => void;
+  onAddModule: () => void;
+  branchAriaLabel: string;
+  moduleAriaLabel: string;
+}) {
+  const branchTitle = 'Adds a row inside this module at this position among its items.';
+  const moduleTitle = 'Adds a new module at this position in the course outline.';
+  const gutterTitle = persistVisibleOnMd ? undefined : `${branchTitle} ${moduleTitle}`;
+  const chipClass = persistVisibleOnMd
+    ? ADMIN_CATALOG_INSERT_CHIP_BTN_PERSIST_PAIR
+    : ADMIN_CATALOG_INSERT_CHIP_BTN_EXPAND_ROW_PAIR;
+  return (
+    <div
+      className={persistVisibleOnMd ? CATALOG_LESSON_INSERT_OUTER_PERSIST : CATALOG_LESSON_INSERT_OUTER_HOVER}
+      title={gutterTitle}
+    >
+      <div
+        className={
+          persistVisibleOnMd ? CATALOG_LESSON_MODULE_BOUNDARY_INNER_PERSIST : CATALOG_LESSON_MODULE_BOUNDARY_INNER_HOVER
+        }
+      >
+        <button
+          type="button"
+          title={persistVisibleOnMd ? branchTitle : undefined}
+          onClick={onAddBranch}
+          aria-label={branchAriaLabel}
+          className={chipClass}
+        >
+          <Plus size={14} className="shrink-0 opacity-90" aria-hidden />
+          <span className="text-center">Add branch here</span>
+        </button>
+        <button
+          type="button"
+          title={persistVisibleOnMd ? moduleTitle : undefined}
+          onClick={onAddModule}
+          aria-label={moduleAriaLabel}
+          className={chipClass}
+        >
+          <Plus size={14} className="shrink-0 opacity-90" aria-hidden />
+          <span className="text-center">Add module here</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function CatalogModuleInsertSlot({
   persistVisibleOnMd,
   ariaLabel,
@@ -933,6 +995,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const [courseDetailsOpen, setCourseDetailsOpen] = useState(false);
   const [openModules, setOpenModules] = useState<Record<number, boolean>>({});
   const [openLessons, setOpenLessons] = useState<Record<string, boolean>>({});
+  /** After a successful save while a lesson was expanded: offer “add another” at this insert index. */
+  const [addAnotherLessonAfterSave, setAddAnotherLessonAfterSave] = useState<{
+    mi: number;
+    insertAt: number;
+  } | null>(null);
   /** Section divider row: “Change branch type” modal (same flow as Path builder). */
   const [changeLessonKindModal, setChangeLessonKindModal] = useState<{ mi: number; li: number } | null>(null);
   /** Insert lesson or section divider after choosing in “Add branch” modal. */
@@ -956,6 +1023,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const pendingScrollToNewLessonTitleRef = useRef<{ mi: number; li: number } | null>(null);
   /** On failed save, scroll/focus the first invalid required field once it is rendered. */
   const pendingScrollTargetIdRef = useRef<string | null>(null);
+  /** Which lesson row is expanded (`mi:li`) — updated whenever `openLessons` changes (safe to read after async save). */
+  const openLessonKeyRef = useRef<string | null>(null);
   /** After lesson reorder: restore viewport Y of the control + focus (mouse stays on same arrow). */
   const pendingLessonReorderFocusRef = useRef<{
     lessonKey: string;
@@ -2280,6 +2349,10 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     return k ?? null;
   }, [openLessons]);
 
+  useEffect(() => {
+    openLessonKeyRef.current = Object.keys(openLessons).find((k) => openLessons[k]) ?? null;
+  }, [openLessons]);
+
   const catalogDisclosureModuleMi = useMemo(() => {
     const e = Object.entries(openModules).find(([, v]) => v);
     if (!e) return null;
@@ -2724,6 +2797,18 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         setSelector(normalized.id);
       }
       setBaselineJson(JSON.stringify(normalized));
+      const savedOpenKey = openLessonKeyRef.current;
+      if (savedOpenKey) {
+        const parts = savedOpenKey.split(':');
+        const mi = Number(parts[0]);
+        const li = Number(parts[1]);
+        const savedLesson =
+          Number.isInteger(mi) && Number.isInteger(li) ? normalized.modules[mi]?.lessons[li] : undefined;
+        setOpenLessons({});
+        if (savedLesson && savedLesson.contentKind !== 'divider') {
+          setAddAnotherLessonAfterSave({ mi, insertAt: li + 1 });
+        }
+      }
     } else {
       showActionToast('Save failed (check console / rules).', 'danger');
     }
@@ -2964,6 +3049,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       courseTitleConflict !== null ||
       changeLessonKindModal !== null ||
       addLessonBranchModal !== null ||
+      addAnotherLessonAfterSave !== null ||
       catalogPlaceModal !== null
   );
 
@@ -3228,9 +3314,24 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
   const closeAddLessonBranchModal = useCallback(() => setAddLessonBranchModal(null), []);
 
+  const closeAddAnotherLessonAfterSave = useCallback(() => setAddAnotherLessonAfterSave(null), []);
+
+  const confirmAddAnotherLessonAfterSave = useCallback(() => {
+    setAddAnotherLessonAfterSave((ctx) => {
+      if (ctx) setAddLessonBranchModal({ mi: ctx.mi, insertAt: ctx.insertAt });
+      return null;
+    });
+  }, []);
+
   useDialogKeyboard({
     open: addLessonBranchModal !== null,
     onClose: closeAddLessonBranchModal,
+  });
+
+  useDialogKeyboard({
+    open: addAnotherLessonAfterSave !== null,
+    onClose: closeAddAnotherLessonAfterSave,
+    onPrimaryAction: confirmAddAnotherLessonAfterSave,
   });
 
   useDialogKeyboard({
@@ -3279,6 +3380,13 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     const mod = draft.modules[mi];
     if (!mod || insertAt < 0 || insertAt > mod.lessons.length) setAddLessonBranchModal(null);
   }, [draft, addLessonBranchModal]);
+
+  useEffect(() => {
+    if (!addAnotherLessonAfterSave || !draft) return;
+    const { mi, insertAt } = addAnotherLessonAfterSave;
+    const mod = draft.modules[mi];
+    if (!mod || insertAt < 0 || insertAt > mod.lessons.length) setAddAnotherLessonAfterSave(null);
+  }, [draft, addAnotherLessonAfterSave]);
 
   useEffect(() => {
     pendingOpenNewModuleIndexRef.current = null;
@@ -4556,35 +4664,76 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             />
                           </div>
                         ) : (
-                        <div className="flex min-h-11 min-w-0 w-full flex-1 flex-col gap-1.5 sm:flex-row sm:items-center md:min-h-10 sm:gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setChangeLessonKindModal({ mi, li })}
-                            className={ADMIN_CATALOG_LESSON_BADGE_CLASS}
-                            title="Change branch type"
-                            aria-label={`Change branch type, now ${catalogLessonBranchKindModalLabel(lesson)}`}
-                          >
-                            Lesson
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => toggleLessonOpen(mi, li)}
-                            className="flex min-h-11 min-w-0 w-full flex-1 items-center gap-1.5 rounded-lg py-0 text-left -mx-0.5 px-0.5 hover:bg-[var(--bg-primary)]/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 md:min-h-10 sm:gap-2 sm:py-0.5 sm:-mx-1 sm:px-1"
-                            aria-expanded={!!openLessons[`${mi}:${li}`]}
-                            aria-label={`Lesson ${li + 1}: ${lesson.id.trim() || 'no id'} - ${lesson.title.trim() || 'Untitled lesson'}. ${openLessons[`${mi}:${li}`] ? 'Collapse' : 'Expand'} lesson`}
-                          >
-                            <span className="shrink-0" aria-hidden>
-                              {openLessons[`${mi}:${li}`] ? (
-                                <ChevronDown size={14} className="text-[var(--text-secondary)]" />
-                              ) : (
-                                <ChevronRight size={14} className="text-[var(--text-secondary)]" />
-                              )}
-                            </span>
-                            <span className="min-w-0 flex-1 truncate text-sm font-bold text-[var(--text-primary)]">
-                              <span className="font-mono text-orange-500/90">{lesson.id.trim() || '—'}</span>
-                              <span> - {lesson.title.trim() || 'Untitled lesson'}</span>
-                            </span>
-                          </button>
+                        <div className="flex min-h-11 min-w-0 w-full flex-1 flex-col gap-0.5 md:min-h-10">
+                          <div className="flex min-w-0 w-full flex-col gap-1.5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-2 sm:gap-y-0.5">
+                            <div className="flex min-w-0 shrink-0 items-center gap-x-1.5 sm:contents">
+                              <button
+                                type="button"
+                                onClick={() => setChangeLessonKindModal({ mi, li })}
+                                className={ADMIN_CATALOG_LESSON_BADGE_CLASS}
+                                title="Change branch type"
+                                aria-label={`Change branch type, now ${catalogLessonBranchKindModalLabel(lesson)}`}
+                              >
+                                Lesson
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => toggleLessonOpen(mi, li)}
+                                className="inline-flex min-h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 md:min-h-9 md:min-w-9"
+                                aria-expanded={!!openLessons[`${mi}:${li}`]}
+                                aria-label={`${openLessons[`${mi}:${li}`] ? 'Collapse' : 'Expand'} lesson ${li + 1} (${lesson.id.trim() || 'no id'}) details`}
+                              >
+                                {openLessons[`${mi}:${li}`] ? (
+                                  <ChevronDown size={16} className="shrink-0" aria-hidden />
+                                ) : (
+                                  <ChevronRight size={16} className="shrink-0" aria-hidden />
+                                )}
+                              </button>
+                              <span
+                                id={`admin-lesson-id-${mi}-${li}`}
+                                tabIndex={-1}
+                                className={`shrink-0 rounded-md px-1.5 py-1 font-mono text-sm font-semibold tabular-nums text-orange-500/90 outline-none sm:px-2 ${
+                                  showValidationHints && fieldErrors.lessonId.has(`${mi}:${li}`)
+                                    ? 'ring-2 ring-red-500 ring-offset-1 ring-offset-[var(--bg-secondary)]'
+                                    : ''
+                                }`}
+                                aria-label="Lesson ID (assigned automatically)"
+                              >
+                                {lesson.id.trim() || '—'}
+                              </span>
+                              <span className="shrink-0 text-[var(--text-muted)]" aria-hidden>
+                                -
+                              </span>
+                            </div>
+                            <input
+                              id={`admin-lesson-title-${mi}-${li}`}
+                              value={lesson.title}
+                              onChange={(e) => updateLesson(mi, li, { title: e.target.value })}
+                              aria-label="Lesson title"
+                              placeholder="e.g. Semantic HTML & page structure — lesson name under the module"
+                              className={`min-w-0 w-full rounded-md border bg-[var(--bg-primary)] px-1.5 py-1 text-sm font-semibold leading-snug text-[var(--text-primary)] sm:flex-1 sm:min-w-0 sm:px-2 sm:py-1 ${
+                                showValidationHints && fieldErrors.lessonTitle.has(`${mi}:${li}`)
+                                  ? 'border-red-500'
+                                  : 'border-[var(--border-color)]'
+                              }`}
+                            />
+                          </div>
+                          {showValidationHints &&
+                            (fieldErrors.lessonId.has(`${mi}:${li}`) ||
+                              fieldErrors.lessonTitle.has(`${mi}:${li}`)) && (
+                              <div className="space-y-0.5 text-[10px]">
+                                {fieldErrors.lessonId.has(`${mi}:${li}`) && (
+                                  <p className="text-red-400">Lesson ID is required.</p>
+                                )}
+                                {fieldErrors.lessonTitle.has(`${mi}:${li}`) && (
+                                  <p className="text-red-400">
+                                    {!lesson.title.trim()
+                                      ? 'Lesson title is required.'
+                                      : 'Lesson title must be unique in this course.'}
+                                  </p>
+                                )}
+                              </div>
+                            )}
                         </div>
                         )}
                         <div className="flex w-full shrink-0 flex-row flex-wrap items-center justify-start gap-0.5 border-t border-[var(--border-color)]/50 pt-2 sm:justify-end sm:gap-0.5 md:w-auto md:border-t-0 md:pt-0">
@@ -4723,74 +4872,17 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       </div>
                       {(openLessons[`${mi}:${li}`] || lesson.contentKind === 'divider') && (
                         <>
-                      <div className="flex flex-row flex-wrap items-end gap-x-1.5 gap-y-1.5 sm:gap-x-2">
-                        {lesson.contentKind !== 'divider' ? (
-                        <label className="flex min-w-0 flex-[1_1_11rem] max-w-full flex-col gap-0.5 sm:max-w-[16rem]">
-                          <span className="whitespace-nowrap text-xs font-semibold text-[var(--text-secondary)]">
-                            Lesson ID
-                          </span>
-                          <input
-                            id={`admin-lesson-id-${mi}-${li}`}
-                            value={lesson.id}
-                            onChange={(e) => updateLesson(mi, li, { id: e.target.value })}
-                            className={`box-border w-full min-w-0 rounded-lg border bg-[var(--bg-primary)] px-2.5 py-1.5 font-mono text-sm sm:px-3 sm:py-2 ${
-                              showValidationHints && fieldErrors.lessonId.has(`${mi}:${li}`)
-                                ? 'border-red-500'
-                                : 'border-[var(--border-color)]'
-                            }`}
-                          />
-                          <span
-                            className={`min-h-[16px] text-[11px] ${
-                              showValidationHints && fieldErrors.lessonId.has(`${mi}:${li}`)
-                                ? 'text-red-400'
-                                : 'text-transparent'
-                            }`}
-                          >
-                            Lesson ID is required.
-                          </span>
-                        </label>
-                        ) : null}
-                        {lesson.contentKind === 'divider' ? (
-                          showValidationHints &&
-                          (!lesson.title.trim() || fieldErrors.lessonTitle.has(`${mi}:${li}`)) ? (
-                            <div className="w-full min-w-0">
-                              <span className="block text-[11px] text-red-400">
-                                {!lesson.title.trim()
-                                  ? 'Divider label is required.'
-                                  : 'This label must be unique in this course.'}
-                              </span>
-                            </div>
-                          ) : null
-                        ) : (
-                        <label className="flex min-w-0 flex-[3_1_12rem] flex-col gap-0.5">
-                          <span className="text-xs font-semibold text-[var(--text-secondary)]">Lesson title</span>
-                          <input
-                            id={`admin-lesson-title-${mi}-${li}`}
-                            value={lesson.title}
-                            onChange={(e) => updateLesson(mi, li, { title: e.target.value })}
-                            className={`w-full text-sm bg-[var(--bg-primary)] border rounded-lg px-2.5 py-1.5 sm:px-3 sm:py-2 ${
-                              showValidationHints && fieldErrors.lessonTitle.has(`${mi}:${li}`)
-                                ? 'border-red-500'
-                                : 'border-[var(--border-color)]'
-                            }`}
-                            placeholder="e.g. Semantic HTML & page structure — lesson name under the module"
-                          />
-                          <span
-                            className={`min-h-[16px] text-[11px] ${
-                              showValidationHints && fieldErrors.lessonTitle.has(`${mi}:${li}`)
-                                ? 'text-red-400'
-                                : 'text-transparent'
-                            }`}
-                          >
+                      {lesson.contentKind === 'divider' &&
+                      showValidationHints &&
+                      (!lesson.title.trim() || fieldErrors.lessonTitle.has(`${mi}:${li}`)) ? (
+                        <div className="w-full min-w-0 pb-1">
+                          <span className="block text-[11px] text-red-400">
                             {!lesson.title.trim()
-                              ? 'Lesson title is required.'
-                              : showValidationHints && fieldErrors.lessonTitle.has(`${mi}:${li}`)
-                                ? 'Lesson title must be unique in this course.'
-                                : ''}
+                              ? 'Divider label is required.'
+                              : 'This label must be unique in this course.'}
                           </span>
-                        </label>
-                        )}
-                      </div>
+                        </div>
+                      ) : null}
                       {lesson.contentKind !== 'divider' ? (
                       <div className="min-w-0 lg:flex lg:items-start lg:gap-4 xl:gap-6">
                         <div className="min-w-0 flex-1 space-y-1.5 sm:space-y-2">
@@ -5165,40 +5257,55 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           ))}
                         </div>
                       ) : (
-                        <label className="block space-y-1">
-                          <span className="text-xs font-semibold text-[var(--text-secondary)]">Video URL</span>
-                          <input
-                            id={`admin-lesson-url-${mi}-${li}`}
-                            value={lesson.videoUrl}
-                            onChange={(e) => updateLesson(mi, li, { videoUrl: e.target.value })}
-                            className={`w-full text-sm font-mono bg-[var(--bg-primary)] border rounded-lg px-2.5 py-1.5 sm:px-3 sm:py-2 ${
-                              showValidationHints && fieldErrors.videoUrl.has(`${mi}:${li}`)
-                                ? 'border-red-500'
-                                : 'border-[var(--border-color)]'
-                            }`}
-                            placeholder="https://www.youtube.com/watch?v=…"
-                          />
-                          <span
-                            className={`min-h-[16px] text-[11px] ${
-                              showValidationHints && fieldErrors.videoUrl.has(`${mi}:${li}`)
-                                ? 'text-red-400'
-                                : 'text-transparent'
-                            }`}
-                          >
-                            Video URL is required and must start with http.
-                          </span>
-                        </label>
+                        <div className="grid min-w-0 w-full grid-cols-1 gap-2 sm:grid-cols-[minmax(0,4fr)_minmax(0,1fr)] sm:items-end sm:gap-x-2 sm:gap-y-0">
+                          <label className="flex min-w-0 flex-col gap-0.5">
+                            <span className="text-xs font-semibold text-[var(--text-secondary)]">Video URL</span>
+                            <input
+                              id={`admin-lesson-url-${mi}-${li}`}
+                              value={lesson.videoUrl}
+                              onChange={(e) => updateLesson(mi, li, { videoUrl: e.target.value })}
+                              className={`min-w-0 w-full rounded-lg border bg-[var(--bg-primary)] px-2 py-1.5 font-mono text-sm sm:px-2.5 sm:py-1.5 ${
+                                showValidationHints && fieldErrors.videoUrl.has(`${mi}:${li}`)
+                                  ? 'border-red-500'
+                                  : 'border-[var(--border-color)]'
+                              }`}
+                              placeholder="https://www.youtube.com/watch?v=…"
+                            />
+                            <span
+                              className={`min-h-[14px] text-[10px] leading-snug sm:min-h-[16px] sm:text-[11px] ${
+                                showValidationHints && fieldErrors.videoUrl.has(`${mi}:${li}`)
+                                  ? 'text-red-400'
+                                  : 'text-transparent'
+                              }`}
+                            >
+                              URL required (http…).
+                            </span>
+                          </label>
+                          <label className="flex min-w-0 flex-col gap-0.5">
+                            <span className="text-xs font-semibold text-[var(--text-secondary)]">Duration (opt.)</span>
+                            <input
+                              value={lesson.duration ?? ''}
+                              onChange={(e) => updateLesson(mi, li, { duration: e.target.value || undefined })}
+                              className="min-w-0 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-1.5 text-sm sm:px-2.5 sm:py-1.5"
+                              placeholder="e.g. 12 min"
+                              aria-label="Duration label shown next to lesson title"
+                            />
+                          </label>
+                        </div>
                       )}
                       <>
-                      <label className="block space-y-1">
-                        <span className="text-xs font-semibold text-[var(--text-secondary)]">Duration label (optional)</span>
-                        <input
-                          value={lesson.duration ?? ''}
-                          onChange={(e) => updateLesson(mi, li, { duration: e.target.value || undefined })}
-                          className="w-full text-sm bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-2.5 py-1.5 sm:px-3 sm:py-2"
-                          placeholder="Shown next to the lesson title when set"
-                        />
-                      </label>
+                      {(lesson.contentKind === 'web' || lesson.contentKind === 'quiz') && (
+                        <label className="block space-y-1">
+                          <span className="text-xs font-semibold text-[var(--text-secondary)]">Duration (opt.)</span>
+                          <input
+                            value={lesson.duration ?? ''}
+                            onChange={(e) => updateLesson(mi, li, { duration: e.target.value || undefined })}
+                            className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2.5 py-1.5 text-sm sm:px-3 sm:py-2"
+                            placeholder="e.g. 12 min — next to lesson title"
+                            aria-label="Duration label shown next to lesson title"
+                          />
+                        </label>
+                      )}
                       <label className="block space-y-1">
                         <span className="text-xs font-semibold text-[var(--text-secondary)]">About (optional)</span>
                         <textarea
@@ -5224,24 +5331,37 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         </>
                       )}
                     </div>
-                    <CatalogLessonInsertSlot
-                      persistVisibleOnMd={false}
-                      ariaLabel={`Add branch here after row ${li + 1} in this module`}
-                      onClick={() => setAddLessonBranchModal({ mi, insertAt: li + 1 })}
-                    />
+                    {li < mod.lessons.length - 1 && (
+                      <CatalogLessonInsertSlot
+                        persistVisibleOnMd={false}
+                        ariaLabel={`Add branch here after row ${li + 1} in this module`}
+                        onClick={() => setAddLessonBranchModal({ mi, insertAt: li + 1 })}
+                      />
+                    )}
                     </Fragment>
                   );
                   })}
+                  {mod.lessons.length > 0 && (
+                    <CatalogLessonModuleBoundaryInsertRow
+                      persistVisibleOnMd={false}
+                      onAddBranch={() => setAddLessonBranchModal({ mi, insertAt: mod.lessons.length })}
+                      onAddModule={() => addModuleAt(mi + 1)}
+                      branchAriaLabel={`Add branch here after row ${mod.lessons.length} in this module`}
+                      moduleAriaLabel={`Add module here after module ${mi + 1}`}
+                    />
+                  )}
                   </div>
                 </div>
                 </>
                 )}
               </div>
-              <CatalogModuleInsertSlot
-                persistVisibleOnMd={false}
-                ariaLabel={`Add module here after module ${mi + 1}`}
-                onClick={() => addModuleAt(mi + 1)}
-              />
+              {(!openModules[mi] || mod.lessons.length === 0) && (
+                <CatalogModuleInsertSlot
+                  persistVisibleOnMd={false}
+                  ariaLabel={`Add module here after module ${mi + 1}`}
+                  onClick={() => addModuleAt(mi + 1)}
+                />
+              )}
               </Fragment>
             ))}
           </div>
@@ -5649,6 +5769,62 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     );
                   })()}
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {addAnotherLessonAfterSave && draft && (
+          <div
+            className="fixed inset-0 z-[102] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+            role="presentation"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) closeAddAnotherLessonAfterSave();
+            }}
+          >
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="admin-add-another-lesson-title"
+              initial={{ y: 24, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 24, opacity: 0 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              className="flex min-w-0 w-full max-w-md flex-col rounded-t-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl sm:rounded-2xl"
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div className="border-b border-[var(--border-color)] px-4 py-3">
+                <h2
+                  id="admin-add-another-lesson-title"
+                  className="text-center text-base font-bold text-[var(--text-primary)] sm:text-lg"
+                >
+                  Add another lesson?
+                </h2>
+                <p className="mt-2 text-center text-xs leading-relaxed text-[var(--text-muted)]">
+                  Insert after the lesson you just saved in module{' '}
+                  <span className="font-semibold text-[var(--text-secondary)]">
+                    {addAnotherLessonAfterSave.mi + 1}
+                  </span>
+                  .
+                </p>
+              </div>
+              <div className="grid min-w-0 grid-cols-1 gap-2 p-4 sm:grid-cols-2 sm:gap-3">
+                <button
+                  type="button"
+                  className="order-1 inline-flex min-h-11 min-w-0 w-full items-center justify-center rounded-xl bg-orange-500 px-3 py-2.5 text-sm font-semibold text-white hover:bg-orange-600 sm:order-2 sm:min-h-10 sm:px-4"
+                  onClick={confirmAddAnotherLessonAfterSave}
+                >
+                  Yes, add lesson
+                </button>
+                <button
+                  type="button"
+                  className="order-2 inline-flex min-h-11 min-w-0 w-full items-center justify-center rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2.5 text-sm font-semibold text-[var(--text-primary)] hover:bg-[var(--hover-bg)] sm:order-1 sm:min-h-10 sm:px-4"
+                  onClick={closeAddAnotherLessonAfterSave}
+                >
+                  Not now
+                </button>
               </div>
             </motion.div>
           </div>
