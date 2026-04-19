@@ -12,6 +12,7 @@ import { filterPathCourseIdsBySavedMindmap, type MindmapTreeNode } from './data/
 import { useBodyScrollLock } from './hooks/useBodyScrollLock';
 import { usePathMindmapOutlineChildren } from './hooks/usePathMindmapOutlineChildren';
 import { useDialogKeyboard } from './hooks/useDialogKeyboard';
+import { AuthGatePage } from './components/AuthGatePage';
 import { ContactForm } from './components/ContactForm';
 import { DemoLearningAgent } from './components/DemoLearningAgent';
 import { useLearningAssistantFabVisible } from './hooks/useLearningAssistantFabVisible';
@@ -179,6 +180,7 @@ type View =
   | 'status'
   | 'enterprise'
   | 'signup'
+  | 'signin'
   | 'profile'
   | 'certificate'
   | 'admin'
@@ -1833,6 +1835,7 @@ export default function App() {
       'status',
       'enterprise',
       'signup',
+      'signin',
       'admin',
     ];
     const simpleTarget = (payload.view === 'settings' ? 'profile' : payload.view) as View;
@@ -2252,7 +2255,9 @@ export default function App() {
       currentView === 'player' ||
       currentView === 'certificate' ||
       currentView === 'admin' ||
-      currentView === 'creator'
+      currentView === 'creator' ||
+      currentView === 'signin' ||
+      currentView === 'signup'
     ) {
       scrollDocumentToTop();
     }
@@ -2285,6 +2290,15 @@ export default function App() {
     setCurrentView(view);
     scrollDocumentToTop();
   };
+
+  /** After Google auth, leave dedicated sign-in / sign-up URLs for the catalog (industry-standard post-login landing). */
+  useLayoutEffect(() => {
+    if (!isAuthReady || !user) return;
+    if (currentView !== 'signin' && currentView !== 'signup') return;
+    historyActionRef.current = 'replace';
+    setCurrentView('catalog');
+    scrollDocumentToTop();
+  }, [isAuthReady, user, currentView]);
 
   const applyAdminCreatorPreview = useCallback(
     (ownerUid: string, course: Course) => {
@@ -2995,14 +3009,14 @@ export default function App() {
               {isAuthReady && !user && (
                 <button
                   type="button"
-                  onClick={() => void handleLogin().catch(() => {})}
+                  onClick={() => handleNavigate('signup')}
                   className="flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-md bg-orange-500 px-6 py-4 text-white transition-colors hover:bg-orange-600 sm:flex-initial sm:px-8"
                 >
                   <span className="flex items-center gap-2 font-bold">
-                    Learn for free
+                    Get started free
                     <ChevronRight size={20} />
                   </span>
-                  <span className="text-sm font-medium text-white/90">Sign in with Google</span>
+                  <span className="text-sm font-medium text-white/90">Create account with Google</span>
                 </button>
               )}
               <button
@@ -3502,37 +3516,6 @@ export default function App() {
     </div>
   );
 
-  const renderSignup = () => (
-    <div className="pt-32 pb-20 px-6 max-w-md mx-auto">
-      <div className="bg-[var(--bg-secondary)] p-8 rounded-2xl border border-[var(--border-color)] shadow-2xl">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-[var(--text-primary)] mb-2">Create your account</h1>
-          <p className="text-[var(--text-muted)]">Start your 14-day free trial today.</p>
-        </div>
-        <form className="space-y-4">
-          <div className="space-y-2">
-            <label className="text-sm text-[var(--text-secondary)]">Full Name</label>
-            <input type="text" className="w-full bg-[var(--bg-primary)] border border-[var(--border-light)] rounded-lg p-3 text-[var(--text-primary)] focus:border-orange-500 outline-none" placeholder="John Doe" />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm text-[var(--text-secondary)]">Email Address</label>
-            <input type="email" className="w-full bg-[var(--bg-primary)] border border-[var(--border-light)] rounded-lg p-3 text-[var(--text-primary)] focus:border-orange-500 outline-none" placeholder="john@example.com" />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm text-[var(--text-secondary)]">Password</label>
-            <input type="password" className="w-full bg-[var(--bg-primary)] border border-[var(--border-light)] rounded-lg p-3 text-[var(--text-primary)] focus:border-orange-500 outline-none" placeholder="••••••••" />
-          </div>
-          <button className="w-full py-4 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-bold transition-colors mt-4">
-            Create Account
-          </button>
-        </form>
-        <p className="text-center text-[var(--text-muted)] text-xs mt-6">
-          By signing up, you agree to our <span onClick={() => handleNavigate('privacy')} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer underline">Privacy Policy</span> and Terms of Service.
-        </p>
-      </div>
-    </div>
-  );
-
   const profileOverlayOpen = currentView === 'profile';
   const mainView: View = profileOverlayOpen ? (profileSettingsUnderlayView ?? 'catalog') : currentView;
 
@@ -3593,7 +3576,6 @@ export default function App() {
           }
           isAuthReady={isAuthReady}
           user={navUser}
-          onLogin={() => void handleLogin().catch(() => {})}
           onLogout={handleLogout}
           notifications={navbarNotifications}
           setNotifications={setNotifications}
@@ -3740,7 +3722,24 @@ export default function App() {
                 onCatalogChanged={refreshCatalogCourses}
               />
             )}
-          {mainView === 'signup' && renderSignup()}
+          {mainView === 'signin' && (
+            <AuthGatePage
+              mode="sign-in"
+              isAuthReady={isAuthReady}
+              user={navUser}
+              onContinueWithGoogle={handleLogin}
+              onNavigate={(v, c) => handleNavigate(v as View, c)}
+            />
+          )}
+          {mainView === 'signup' && (
+            <AuthGatePage
+              mode="sign-up"
+              isAuthReady={isAuthReady}
+              user={navUser}
+              onContinueWithGoogle={handleLogin}
+              onNavigate={(v, c) => handleNavigate(v as View, c)}
+            />
+          )}
         </div>
 
         {currentView === 'profile' && (

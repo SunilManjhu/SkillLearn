@@ -96,7 +96,7 @@ function NavProfileAvatar({ user }: { user: NavbarAccountUser }) {
 
 interface NavbarProps {
   onNavigate: (
-    view: 'home' | 'catalog' | 'contact' | 'profile' | 'admin' | 'creator',
+    view: 'home' | 'catalog' | 'contact' | 'profile' | 'admin' | 'creator' | 'signin',
     clear?: boolean
   ) => void;
   activeView: string;
@@ -134,7 +134,6 @@ interface NavbarProps {
   isAuthReady: boolean;
   /** Firebase user or last-known profile from localStorage while auth restores (avatar only). */
   user: FirebaseUser | AuthProfileSnapshot | null;
-  onLogin: () => void;
   onLogout: () => void;
   notifications: NavbarNotification[];
   setNotifications: React.Dispatch<React.SetStateAction<NavbarNotification[]>>;
@@ -171,7 +170,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   onThemeToggle,
   isAuthReady,
   user,
-  onLogin,
   onLogout,
   notifications,
   setNotifications,
@@ -787,12 +785,12 @@ export const Navbar: React.FC<NavbarProps> = ({
               type="button"
               onClick={() => {
                 setMobileMenuOpen(false);
-                onLogin();
+                onNavigate('signin');
               }}
-              className="flex items-center gap-2 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold rounded-md transition-colors"
+              className="flex items-center gap-2 rounded-md bg-orange-500 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-orange-600"
             >
-              <LogIn size={16} />
-              Login
+              <LogIn size={16} aria-hidden />
+              Sign in
             </button>
           )}
         </div>
@@ -914,14 +912,14 @@ export const Navbar: React.FC<NavbarProps> = ({
               ) : (
                 <button
                   type="button"
-                  className="flex w-full min-h-11 items-center gap-2 rounded-lg bg-orange-500 px-3 py-2.5 text-left text-sm font-bold text-white hover:bg-orange-600 touch-manipulation"
+                  className="flex w-full min-h-11 items-center justify-center gap-2 rounded-lg bg-orange-500 px-3 py-2.5 text-left text-sm font-bold text-white hover:bg-orange-600 touch-manipulation"
                   onClick={() => {
                     setMobileMenuOpen(false);
-                    onLogin();
+                    onNavigate('signin');
                   }}
                 >
                   <LogIn size={18} className="shrink-0" aria-hidden />
-                  Login
+                  Sign in
                 </button>
               )}
             </div>

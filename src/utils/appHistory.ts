@@ -18,6 +18,7 @@ export type AppHistoryView =
   | 'status'
   | 'enterprise'
   | 'signup'
+  | 'signin'
   | 'profile'
   | 'certificate'
   | 'admin'
@@ -80,6 +81,7 @@ const SIMPLE_VIEWS: AppHistoryView[] = [
   'status',
   'enterprise',
   'signup',
+  'signin',
   'profile',
   'admin',
   'creator',
