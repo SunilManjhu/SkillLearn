@@ -34,6 +34,7 @@ import {
 import { AnimatePresence, motion } from 'motion/react';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { useDialogKeyboard } from '../../hooks/useDialogKeyboard';
+import { useInsertStripRevealCursor } from '../../hooks/useInsertStripRevealCursor';
 import type { Course, Lesson, Module } from '../../data/courses';
 import { isCourseCatalogPublished } from '../../data/courses';
 import { formatCourseTaxonomyForSearch } from '../../utils/courseTaxonomy';
@@ -67,6 +68,7 @@ import { normalizeExternalHref } from '../../utils/externalUrl';
 import { AdminLabelInfoTip } from './adminLabelInfoTip';
 import { useAdminActionToast } from './useAdminActionToast';
 import { AdminDisplayNameConflictDialog } from './AdminDisplayNameConflictDialog';
+import { InsertStripWaitCursorPortal } from './InsertStripWaitCursorPortal';
 import {
   findPathSaveTitleConflict,
   loadPathTitlesForConflictCheck,
@@ -2014,15 +2016,38 @@ function PathBranchInsertSlot({
     : 'Adds a row inside this section at this position among its items.';
   const pad =
     depth > 0 ? ({ paddingLeft: `${Math.min(depth, 8) * 0.75}rem` } as const) : undefined;
+  const delayHoverReveal = !persistVisibleOnMd;
+  const {
+    stripOuterCursorClass,
+    waitCursorOverlayOpen,
+    waitCursorClientX,
+    waitCursorClientY,
+    onPointerEnter,
+    onPointerMove,
+    onPointerLeave,
+    onFocusCapture,
+    onBlurCapture,
+  } = useInsertStripRevealCursor(delayHoverReveal);
   return (
-    <li
-      className={
-        persistVisibleOnMd
-          ? 'group/ins relative z-0 min-w-0 list-none overflow-visible py-0.5'
-          : `group/ins relative z-0 min-h-0 min-w-0 list-none ${ADMIN_INSERT_STRIP_OUTER_EXPAND_HOVER}`
-      }
-      title={persistVisibleOnMd ? undefined : title}
-    >
+    <>
+      <InsertStripWaitCursorPortal
+        open={waitCursorOverlayOpen}
+        clientX={waitCursorClientX}
+        clientY={waitCursorClientY}
+      />
+      <li
+        className={`${
+          persistVisibleOnMd
+            ? 'group/ins relative z-0 min-w-0 list-none overflow-visible py-0.5'
+            : `group/ins relative z-0 min-h-0 min-w-0 list-none ${ADMIN_INSERT_STRIP_OUTER_EXPAND_HOVER}`
+        } ${stripOuterCursorClass}`.trim()}
+        title={persistVisibleOnMd ? undefined : title}
+        onPointerEnter={onPointerEnter}
+        onPointerMove={onPointerMove}
+        onPointerLeave={onPointerLeave}
+        onFocusCapture={onFocusCapture}
+        onBlurCapture={onBlurCapture}
+      >
       <div
         className={
           persistVisibleOnMd
@@ -2047,6 +2072,7 @@ function PathBranchInsertSlot({
         </button>
       </div>
     </li>
+    </>
   );
 }
 

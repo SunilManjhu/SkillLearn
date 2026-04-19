@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { useDialogKeyboard } from '../../hooks/useDialogKeyboard';
+import { useInsertStripRevealCursor } from '../../hooks/useInsertStripRevealCursor';
 import { useAdminActionToast } from './useAdminActionToast';
 import { AdminLabelInfoTip } from './adminLabelInfoTip';
 import {
@@ -96,6 +97,7 @@ import { AdminDisplayNameConflictDialog } from './AdminDisplayNameConflictDialog
 import { AdminCourseAiAssistant } from './AdminCourseAiAssistant';
 import { AdminLessonContentPreview } from './AdminLessonContentPreview';
 import { AdminVideoOutlineNotesField } from './AdminVideoOutlineNotesField';
+import { InsertStripWaitCursorPortal } from './InsertStripWaitCursorPortal';
 import {
   addCatalogCategoryExtra,
   CATALOG_CATEGORY_EXTRAS_CHANGED,
@@ -694,11 +696,34 @@ function CatalogLessonInsertSlot({
   onClick: () => void;
 }) {
   const title = 'Adds a row inside this module at this position among its items.';
+  const delayHoverReveal = !persistVisibleOnMd;
+  const {
+    stripOuterCursorClass,
+    waitCursorOverlayOpen,
+    waitCursorClientX,
+    waitCursorClientY,
+    onPointerEnter,
+    onPointerMove,
+    onPointerLeave,
+    onFocusCapture,
+    onBlurCapture,
+  } = useInsertStripRevealCursor(delayHoverReveal);
   return (
-    <div
-      className={persistVisibleOnMd ? CATALOG_LESSON_INSERT_OUTER_PERSIST : CATALOG_LESSON_INSERT_OUTER_HOVER}
-      title={persistVisibleOnMd ? undefined : title}
-    >
+    <>
+      <InsertStripWaitCursorPortal
+        open={waitCursorOverlayOpen}
+        clientX={waitCursorClientX}
+        clientY={waitCursorClientY}
+      />
+      <div
+        className={`${persistVisibleOnMd ? CATALOG_LESSON_INSERT_OUTER_PERSIST : CATALOG_LESSON_INSERT_OUTER_HOVER} ${stripOuterCursorClass}`.trim()}
+        title={persistVisibleOnMd ? undefined : title}
+        onPointerEnter={onPointerEnter}
+        onPointerMove={onPointerMove}
+        onPointerLeave={onPointerLeave}
+        onFocusCapture={onFocusCapture}
+        onBlurCapture={onBlurCapture}
+      >
       <div className={persistVisibleOnMd ? CATALOG_LESSON_INSERT_INNER_PERSIST : CATALOG_LESSON_INSERT_INNER_HOVER}>
         <button
           type="button"
@@ -712,6 +737,7 @@ function CatalogLessonInsertSlot({
         </button>
       </div>
     </div>
+    </>
   );
 }
 
@@ -749,11 +775,34 @@ function CatalogLessonModuleBoundaryInsertRow({
   const chipClass = persistVisibleOnMd
     ? ADMIN_CATALOG_INSERT_CHIP_BTN_PERSIST_PAIR
     : ADMIN_CATALOG_INSERT_CHIP_BTN_EXPAND_ROW_PAIR;
+  const delayHoverReveal = !persistVisibleOnMd;
+  const {
+    stripOuterCursorClass,
+    waitCursorOverlayOpen,
+    waitCursorClientX,
+    waitCursorClientY,
+    onPointerEnter,
+    onPointerMove,
+    onPointerLeave,
+    onFocusCapture,
+    onBlurCapture,
+  } = useInsertStripRevealCursor(delayHoverReveal);
   return (
-    <div
-      className={persistVisibleOnMd ? CATALOG_LESSON_INSERT_OUTER_PERSIST : CATALOG_LESSON_INSERT_OUTER_HOVER}
-      title={gutterTitle}
-    >
+    <>
+      <InsertStripWaitCursorPortal
+        open={waitCursorOverlayOpen}
+        clientX={waitCursorClientX}
+        clientY={waitCursorClientY}
+      />
+      <div
+        className={`${persistVisibleOnMd ? CATALOG_LESSON_INSERT_OUTER_PERSIST : CATALOG_LESSON_INSERT_OUTER_HOVER} ${stripOuterCursorClass}`.trim()}
+        title={gutterTitle}
+        onPointerEnter={onPointerEnter}
+        onPointerMove={onPointerMove}
+        onPointerLeave={onPointerLeave}
+        onFocusCapture={onFocusCapture}
+        onBlurCapture={onBlurCapture}
+      >
       <div
         className={
           persistVisibleOnMd ? CATALOG_LESSON_MODULE_BOUNDARY_INNER_PERSIST : CATALOG_LESSON_MODULE_BOUNDARY_INNER_HOVER
@@ -781,6 +830,7 @@ function CatalogLessonModuleBoundaryInsertRow({
         </button>
       </div>
     </div>
+    </>
   );
 }
 
@@ -794,24 +844,48 @@ function CatalogModuleInsertSlot({
   onClick: () => void;
 }) {
   const title = 'Adds a new module at this position in the course outline.';
+  const delayHoverReveal = !persistVisibleOnMd;
+  const {
+    stripOuterCursorClass,
+    waitCursorOverlayOpen,
+    waitCursorClientX,
+    waitCursorClientY,
+    onPointerEnter,
+    onPointerMove,
+    onPointerLeave,
+    onFocusCapture,
+    onBlurCapture,
+  } = useInsertStripRevealCursor(delayHoverReveal);
   return (
-    <div
-      className={persistVisibleOnMd ? CATALOG_MODULE_INSERT_OUTER_PERSIST : CATALOG_MODULE_INSERT_OUTER_HOVER}
-      title={persistVisibleOnMd ? undefined : title}
-    >
-      <div className={persistVisibleOnMd ? CATALOG_MODULE_INSERT_INNER_PERSIST : CATALOG_MODULE_INSERT_INNER_HOVER}>
-        <button
-          type="button"
-          title={persistVisibleOnMd ? title : undefined}
-          onClick={onClick}
-          aria-label={ariaLabel}
-          className={persistVisibleOnMd ? ADMIN_CATALOG_INSERT_CHIP_BTN_PERSIST : ADMIN_CATALOG_INSERT_CHIP_BTN_EXPAND_ROW}
-        >
-          <Plus size={14} className="shrink-0 opacity-90" aria-hidden />
-          <span>Add module here</span>
-        </button>
+    <>
+      <InsertStripWaitCursorPortal
+        open={waitCursorOverlayOpen}
+        clientX={waitCursorClientX}
+        clientY={waitCursorClientY}
+      />
+      <div
+        className={`${persistVisibleOnMd ? CATALOG_MODULE_INSERT_OUTER_PERSIST : CATALOG_MODULE_INSERT_OUTER_HOVER} ${stripOuterCursorClass}`.trim()}
+        onPointerEnter={onPointerEnter}
+        onPointerMove={onPointerMove}
+        onPointerLeave={onPointerLeave}
+        onFocusCapture={onFocusCapture}
+        onBlurCapture={onBlurCapture}
+        title={persistVisibleOnMd ? undefined : title}
+      >
+        <div className={persistVisibleOnMd ? CATALOG_MODULE_INSERT_INNER_PERSIST : CATALOG_MODULE_INSERT_INNER_HOVER}>
+          <button
+            type="button"
+            title={persistVisibleOnMd ? title : undefined}
+            onClick={onClick}
+            aria-label={ariaLabel}
+            className={persistVisibleOnMd ? ADMIN_CATALOG_INSERT_CHIP_BTN_PERSIST : ADMIN_CATALOG_INSERT_CHIP_BTN_EXPAND_ROW}
+          >
+            <Plus size={14} className="shrink-0 opacity-90" aria-hidden />
+            <span>Add module here</span>
+          </button>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
