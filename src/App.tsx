@@ -154,8 +154,11 @@ import { loadCatalogCategoryPresets } from './utils/catalogCategoryPresetsFirest
 import { loadCatalogSkillPresets } from './utils/catalogSkillPresetsFirestore';
 import { buildCatalogTaxonomy } from './utils/catalogTaxonomy';
 import {
+  COURSE_LEVELS,
+  catalogCourseTaxonomyUsage,
   courseMatchesLibraryFilters,
   dedupeLabelsPreserveOrder,
+  filterTaxonomyPoolToUsedOnCourses,
   toggleFilterTag,
   type LibraryFilterState,
 } from './utils/courseTaxonomy';
@@ -1993,44 +1996,76 @@ export default function App() {
         ? ADMIN_DELETE_BLOCKED_SOLE_MSG
         : ADMIN_DELETE_BLOCKED_MULTI_MSG;
 
-  const moreCategories = useMemo(() => {
-    // Derived via shared taxonomy builder (presets + extras + discovered-from-courses), excluding main.
-    const t = buildCatalogTaxonomy({
-      courses: browseVisibleCatalogCourses,
-      topicPresets: categoryPresets,
-      skillPresets,
-    });
-    return t.topics.more;
-  }, [browseVisibleCatalogCourses, categoryFilterRevision, categoryPresets, skillPresets]);
+  /** Preset + discovery pools; “more” lists still include labels not on any course until filtered below. */
+  const browseCatalogTaxonomy = useMemo(
+    () =>
+      buildCatalogTaxonomy({
+        courses: browseVisibleCatalogCourses,
+        topicPresets: categoryPresets,
+        skillPresets,
+      }),
+    [browseVisibleCatalogCourses, categoryFilterRevision, categoryPresets, skillFilterRevision, skillPresets]
+  );
+
+  const browseCatalogTaxonomyUsage = useMemo(
+    () => catalogCourseTaxonomyUsage(browseVisibleCatalogCourses),
+    [browseVisibleCatalogCourses]
+  );
+
+  /** Only topics/skills/levels that appear on at least one visible catalog course (learner browse + published). */
+  const libraryBrowseMainCategories = useMemo(
+    () =>
+      filterTaxonomyPoolToUsedOnCourses(
+        categoryPresets.mainPills,
+        browseCatalogTaxonomyUsage.categoriesLower
+      ),
+    [categoryPresets.mainPills, browseCatalogTaxonomyUsage]
+  );
+
+  const moreCategories = useMemo(
+    () =>
+      filterTaxonomyPoolToUsedOnCourses(
+        browseCatalogTaxonomy.topics.more,
+        browseCatalogTaxonomyUsage.categoriesLower
+      ),
+    [browseCatalogTaxonomy, browseCatalogTaxonomyUsage]
+  );
+
+  const libraryBrowseMainSkills = useMemo(
+    () => filterTaxonomyPoolToUsedOnCourses(skillPresets.mainPills, browseCatalogTaxonomyUsage.skillsLower),
+    [skillPresets.mainPills, browseCatalogTaxonomyUsage]
+  );
+
+  const moreSkills = useMemo(
+    () =>
+      filterTaxonomyPoolToUsedOnCourses(browseCatalogTaxonomy.skills.more, browseCatalogTaxonomyUsage.skillsLower),
+    [browseCatalogTaxonomy, browseCatalogTaxonomyUsage]
+  );
+
+  const libraryBrowseLevelsOrdered = useMemo(
+    () => COURSE_LEVELS.filter((l) => browseCatalogTaxonomyUsage.levels.has(l)),
+    [browseCatalogTaxonomyUsage]
+  );
 
   /** Browse menu categories — same sources as Course Library (main pills + More), excluding “All”. */
   const catalogBrowseCategories = useMemo(
-    () => [...categoryPresets.mainPills, ...moreCategories],
-    [categoryPresets.mainPills, moreCategories]
+    () => [...libraryBrowseMainCategories, ...moreCategories],
+    [libraryBrowseMainCategories, moreCategories]
   );
 
-  const moreSkills = useMemo(() => {
-    const t = buildCatalogTaxonomy({
-      courses: browseVisibleCatalogCourses,
-      topicPresets: categoryPresets,
-      skillPresets,
-    });
-    return t.skills.more;
-  }, [browseVisibleCatalogCourses, categoryPresets, skillFilterRevision, skillPresets]);
-
   const catalogBrowseSkills = useMemo(
-    () => [...skillPresets.mainPills, ...moreSkills],
-    [skillPresets.mainPills, moreSkills]
+    () => [...libraryBrowseMainSkills, ...moreSkills],
+    [libraryBrowseMainSkills, moreSkills]
   );
 
   const categoryFilterPoolForLibrary = useMemo(
-    () => dedupeLabelsPreserveOrder([...categoryPresets.mainPills, ...moreCategories]),
-    [categoryPresets.mainPills, moreCategories]
+    () => dedupeLabelsPreserveOrder([...libraryBrowseMainCategories, ...moreCategories]),
+    [libraryBrowseMainCategories, moreCategories]
   );
 
   const libraryPopularTopicsOrdered = useMemo(() => {
     const universe = new Set<string>();
-    for (const x of categoryPresets.mainPills) {
+    for (const x of libraryBrowseMainCategories) {
       const t = x.trim();
       if (t) universe.add(t.toLowerCase());
     }
@@ -2038,7 +2073,7 @@ export default function App() {
       const t = x.trim();
       if (t) universe.add(t.toLowerCase());
     }
-    for (const x of skillPresets.mainPills) {
+    for (const x of libraryBrowseMainSkills) {
       const t = x.trim();
       if (t) universe.add(t.toLowerCase());
     }
@@ -2048,12 +2083,31 @@ export default function App() {
     }
     return filterPopularTopicsToUniverse(readCatalogPopularTopics(), universe);
   }, [
-    categoryPresets.mainPills,
+    libraryBrowseMainCategories,
     moreCategories,
-    skillPresets.mainPills,
+    libraryBrowseMainSkills,
     moreSkills,
     libraryPopularStorageRevision,
   ]);
+
+  useEffect(() => {
+    setLibraryFilters((prev) => {
+      const catOk = new Set(categoryFilterPoolForLibrary.map((x) => x.trim().toLowerCase()));
+      const skillOk = new Set(catalogBrowseSkills.map((x) => x.trim().toLowerCase()));
+      const nextCat = prev.categoryTags.filter((t) => catOk.has(t.trim().toLowerCase()));
+      const nextSkill = prev.skillTags.filter((t) => skillOk.has(t.trim().toLowerCase()));
+      const nextLevel =
+        prev.level != null && libraryBrowseLevelsOrdered.includes(prev.level) ? prev.level : null;
+      if (
+        nextCat.length === prev.categoryTags.length &&
+        nextSkill.length === prev.skillTags.length &&
+        nextLevel === prev.level
+      ) {
+        return prev;
+      }
+      return { categoryTags: nextCat, skillTags: nextSkill, level: nextLevel };
+    });
+  }, [categoryFilterPoolForLibrary, catalogBrowseSkills, libraryBrowseLevelsOrdered]);
 
   useEffect(() => {
     if (currentView === 'catalog') setLibraryPopularStorageRevision((r) => r + 1);
@@ -3591,8 +3645,9 @@ export default function App() {
                 curatedPopularTopics={libraryPopularTopicsOrdered}
                 categoryFilterPool={categoryFilterPoolForLibrary}
                 moreTopics={moreCategories}
-                mainSkills={skillPresets.mainPills}
+                mainSkills={libraryBrowseMainSkills}
                 moreSkills={moreSkills}
+                levelsPresent={libraryBrowseLevelsOrdered}
                 filters={libraryFilters}
                 onFiltersChange={handleCourseLibraryFiltersChange}
               />

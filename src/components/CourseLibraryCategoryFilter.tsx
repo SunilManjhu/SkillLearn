@@ -12,6 +12,11 @@ export type CourseLibraryCategoryFilterProps = {
   moreTopics: readonly string[];
   mainSkills: readonly string[];
   moreSkills: readonly string[];
+  /**
+   * When set, only these course levels appear in the filter (e.g. levels used on visible catalog courses).
+   * Omit to show every {@link COURSE_LEVELS} entry.
+   */
+  levelsPresent?: readonly Course['level'][];
   filters: LibraryFilterState;
   onFiltersChange: (next: LibraryFilterState) => void;
 };
@@ -61,6 +66,7 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
       moreTopics,
       mainSkills,
       moreSkills,
+      levelsPresent,
       filters,
       onFiltersChange,
     },
@@ -109,9 +115,9 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
     const visibleMainSkill = useMemo(() => filterLabels(mainSkills), [mainSkills, q]);
     const visibleMoreSkill = useMemo(() => filterLabels(moreSkills), [moreSkills, q]);
     const visibleLevels = useMemo(() => {
-      const labels = [...COURSE_LEVELS];
+      const labels = levelsPresent != null ? [...levelsPresent] : [...COURSE_LEVELS];
       return q ? labels.filter((l) => l.toLowerCase().includes(q)) : labels;
-    }, [q]);
+    }, [q, levelsPresent]);
 
     const activeCount =
       filters.categoryTags.length + filters.skillTags.length + (filters.level != null ? 1 : 0);

@@ -4262,7 +4262,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   onChange={(e) =>
                     draft && updateDraft({ level: e.target.value as Course['level'] })
                   }
-                  className="box-border min-h-11 min-w-0 w-full flex-1 rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="admin-toolbar-main-select box-border min-h-11 min-w-0 w-full flex-1 rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {!draft && (
                     <option value="" disabled>
@@ -4291,7 +4291,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   onChange={(e) =>
                     draft && updateDraft({ level: e.target.value as Course['level'] })
                   }
-                  className="box-border min-h-11 w-full min-w-[9rem] max-w-[11rem] rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="admin-toolbar-main-select box-border min-h-11 w-full min-w-[9rem] max-w-[11rem] rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {!draft && (
                     <option value="" disabled>

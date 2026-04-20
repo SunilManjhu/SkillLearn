@@ -65,6 +65,53 @@ export function courseMatchesLibraryFilters(course: Course, filters: LibraryFilt
   return true;
 }
 
+/** Category/skill strings and levels that appear on at least one course (skills/categories compared case-insensitively). */
+export type CatalogCourseTaxonomyUsage = {
+  categoriesLower: Set<string>;
+  skillsLower: Set<string>;
+  levels: Set<Course['level']>;
+};
+
+export function catalogCourseTaxonomyUsage(courses: readonly Course[]): CatalogCourseTaxonomyUsage {
+  const categoriesLower = new Set<string>();
+  const skillsLower = new Set<string>();
+  const levels = new Set<Course['level']>();
+  for (const co of courses) {
+    for (const c of co.categories ?? []) {
+      const k = c.trim().toLowerCase();
+      if (k) categoriesLower.add(k);
+    }
+    for (const s of co.skills ?? []) {
+      const k = s.trim().toLowerCase();
+      if (k) skillsLower.add(k);
+    }
+    levels.add(co.level);
+  }
+  return { categoriesLower, skillsLower, levels };
+}
+
+/**
+ * Preserve `pool` order and display casing; keep only labels that appear on a course
+ * (pass `usage.categoriesLower` or `usage.skillsLower` from {@link catalogCourseTaxonomyUsage}).
+ */
+export function filterTaxonomyPoolToUsedOnCourses(
+  pool: readonly string[],
+  usedLower: Set<string>
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of pool) {
+    const t = raw.trim();
+    if (!t) continue;
+    const k = t.toLowerCase();
+    if (!usedLower.has(k)) continue;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(t);
+  }
+  return out;
+}
+
 function canonicalLabelFromPool(tag: string, pool: readonly string[]): string {
   const k = tag.trim().toLowerCase();
   return pool.find((p) => p.toLowerCase() === k) ?? tag.trim();
