@@ -288,7 +288,7 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
         <div className="min-w-0">
           <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
             <h2 className="m-0 flex min-w-0 items-center gap-2 text-base font-bold leading-tight text-[var(--text-primary)] sm:text-lg">
-              <Library size={20} className="shrink-0 text-orange-500" aria-hidden />
+              <Library size={20} className="shrink-0 text-admin-icon" aria-hidden />
               <span className="min-w-0">Creator content</span>
             </h2>
             <AdminLabelInfoTip
@@ -299,8 +299,8 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
             >
               <li>
                 Read-only list of private courses and paths stored under{' '}
-                <code className="text-orange-500/90">creatorCourses</code> and{' '}
-                <code className="text-orange-500/90">creatorLearningPaths</code>.
+                <code className="text-[#616161] app-dark:text-[var(--tone-200)]">creatorCourses</code> and{' '}
+                <code className="text-[#616161] app-dark:text-[var(--tone-200)]">creatorLearningPaths</code>.
               </li>
               <li>
                 Use <strong className="font-semibold text-[var(--text-secondary)]">Open overview</strong> for a course
@@ -323,12 +323,12 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
       </div>
 
       {listError && (
-        <p className="text-sm text-red-500" role="alert">
+        <p className="text-sm text-[#616161]" role="alert">
           {listError}{' '}
           <button
             type="button"
             onClick={() => setSubscriptionKey((k) => k + 1)}
-            className="font-semibold underline underline-offset-2 hover:text-red-400"
+            className="font-semibold underline underline-offset-2 hover:text-[#a1a2a2]"
           >
             Retry
           </button>
@@ -339,7 +339,7 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
         <p className="text-sm text-[var(--text-muted)]">Loading accounts…</p>
       ) : creators.length === 0 ? (
         <p className="text-sm text-[var(--text-muted)]">
-          No accounts with role <code className="text-orange-500/90">creator</code> yet. Assign the role in
+          No accounts with role <code className="text-[#616161] app-dark:text-[var(--tone-200)]">creator</code> yet. Assign the role in
           Roles.
         </p>
       ) : (
@@ -536,7 +536,7 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
                   role="listbox"
                   tabIndex={-1}
                   aria-label="Creator options"
-                  className="absolute z-50 mt-1 max-h-[min(15rem,50dvh)] w-full min-w-0 overflow-y-auto overscroll-contain rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] py-1 shadow-lg outline-none ring-offset-2 ring-offset-[var(--bg-primary)] focus-visible:ring-2 focus-visible:ring-orange-500/50 [scrollbar-width:thin] [-webkit-overflow-scrolling:touch]"
+                  className="absolute z-50 mt-1 max-h-[min(15rem,50dvh)] w-full min-w-0 overflow-y-auto overscroll-contain rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] py-1 shadow-lg outline-none ring-offset-2 ring-offset-[var(--bg-primary)] focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/50 [scrollbar-width:thin] [-webkit-overflow-scrolling:touch]"
                   onKeyDown={(e) => {
                     if (listboxOptions.length === 0) return;
                     if (e.key === 'ArrowDown') {
@@ -577,7 +577,7 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
                           role="option"
                           aria-selected={activeListIndex === idx}
                           className={`flex w-full min-h-11 flex-col items-start gap-0.5 px-3 py-2 text-left text-sm hover:bg-[var(--hover-bg)] ${
-                            activeListIndex === idx ? 'bg-[var(--hover-bg)] ring-2 ring-inset ring-orange-500/35' : ''
+                            activeListIndex === idx ? 'bg-[var(--hover-bg)] ring-2 ring-inset ring-[#a1a2a2]/45' : ''
                           }`}
                           onMouseDown={(e) => e.preventDefault()}
                           onClick={() => pickOption(opt.key)}
@@ -610,7 +610,7 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
           <div className="grid gap-4 min-w-0 lg:grid-cols-2 lg:gap-6">
             <div className="min-w-0 space-y-2">
               <h3 className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm font-bold text-[var(--text-primary)]">
-                <BookOpen className="shrink-0 text-orange-500" size={16} aria-hidden />
+                <BookOpen className="shrink-0 text-admin-icon" size={16} aria-hidden />
                 <span className="min-w-0">
                   Private courses (
                 {!selectedKey ? '—' : coursesLoading ? '…' : courseRows.length})
@@ -634,7 +634,7 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
                     >
                       <div className="min-w-0 flex-1">
                         {showOwnerOnRows ? (
-                          <div className="mb-0.5 text-[11px] font-medium leading-snug text-orange-500/90">
+                          <div className="mb-0.5 text-[11px] font-medium leading-snug text-[#616161] app-dark:text-[var(--tone-200)]">
                             {creators.find((x) => x.id === ownerUid)?.displayName ?? ownerUid}
                           </div>
                         ) : null}
@@ -645,7 +645,7 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
                         <button
                           type="button"
                           onClick={() => onPreviewCreatorCourse(ownerUid, c)}
-                          className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[var(--border-color)] bg-[var(--hover-bg)] px-3 py-2 text-xs font-semibold text-[var(--text-primary)] transition-colors hover:border-orange-500/40 hover:text-orange-500 sm:w-auto sm:min-w-[7.5rem]"
+                          className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[var(--border-color)] bg-[var(--hover-bg)] px-3 py-2 text-xs font-semibold text-[var(--text-primary)] transition-colors hover:border-[#8b8c8c]/85 hover:text-[#616161] app-dark:hover:text-[var(--tone-100)] sm:w-auto sm:min-w-[7.5rem]"
                           aria-label={`Open ${c.title} overview`}
                         >
                           <BookOpen size={14} aria-hidden />
@@ -660,7 +660,7 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
 
             <div className="min-w-0 space-y-2">
               <h3 className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm font-bold text-[var(--text-primary)]">
-                <Route className="shrink-0 text-orange-500" size={16} aria-hidden />
+                <Route className="shrink-0 text-admin-icon" size={16} aria-hidden />
                 <span className="min-w-0">
                   Private paths (
                 {!selectedKey ? '—' : pathsLoading ? '…' : pathRows.length})
@@ -684,7 +684,7 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
                     >
                       <div className="min-w-0 flex-1">
                         {showOwnerOnRows ? (
-                          <div className="mb-0.5 text-[11px] font-medium leading-snug text-orange-500/90">
+                          <div className="mb-0.5 text-[11px] font-medium leading-snug text-[#616161] app-dark:text-[var(--tone-200)]">
                             {creators.find((x) => x.id === ownerUid)?.displayName ?? ownerUid}
                           </div>
                         ) : null}
@@ -695,7 +695,7 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
                         <button
                           type="button"
                           onClick={() => onPreviewCreatorPath(ownerUid, p)}
-                          className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[var(--border-color)] bg-[var(--hover-bg)] px-3 py-2 text-xs font-semibold text-[var(--text-primary)] transition-colors hover:border-orange-500/40 hover:text-orange-500 sm:w-auto sm:min-w-[7.5rem]"
+                          className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[var(--border-color)] bg-[var(--hover-bg)] px-3 py-2 text-xs font-semibold text-[var(--text-primary)] transition-colors hover:border-[#8b8c8c]/85 hover:text-[#616161] app-dark:hover:text-[var(--tone-100)] sm:w-auto sm:min-w-[7.5rem]"
                           aria-label={`Open path: ${p.title}`}
                         >
                           <Route size={14} aria-hidden />

@@ -83,7 +83,7 @@ function NavProfileAvatar({ user }: { user: NavbarAccountUser }) {
   }
 
   return (
-    <span className="flex h-full w-full min-h-0 min-w-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-orange-500 to-pink-500 text-white text-xs font-bold">
+    <span className="flex h-full w-full min-h-0 min-w-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-brand-500 to-pink-500 text-white text-xs font-bold">
       <span
         className="select-none truncate px-0.5 text-[0.65rem] leading-none tracking-tight"
         aria-hidden
@@ -393,7 +393,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <>
-    <nav className="fixed top-0 left-0 right-0 z-50 flex min-h-16 items-center justify-between gap-2 overflow-visible border-b border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 transition-colors duration-300 sm:gap-3 sm:px-4 md:px-6">
+    <nav className="fixed top-0 left-0 right-0 z-50 flex min-h-16 items-center justify-between gap-2 overflow-visible border-b border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 transition-colors duration-300 app-dark:[--nav-fg:#f2f2f2] app-dark:[--nav-soft:#e4e4e4] sm:gap-3 sm:px-4 md:px-6">
       <div className="flex min-w-0 flex-1 items-center gap-2 md:gap-6 lg:gap-8">
         <button
           type="button"
@@ -402,12 +402,12 @@ export const Navbar: React.FC<NavbarProps> = ({
           }}
           onKeyDown={(e) => handleTopLevelKeyDown(e, 0)}
           tabIndex={focusedNavIndex === 0 ? 0 : -1}
-          className={`flex items-center gap-2 transition-opacity focus:outline-none focus:ring-2 focus:ring-orange-500 rounded-sm ${activeView === 'home' ? 'opacity-100' : 'opacity-70 hover:opacity-100'}`}
+          className={`flex items-center gap-2 transition-opacity focus:outline-none focus:ring-2 focus:ring-brand-500 rounded-sm ${activeView === 'home' ? 'opacity-100' : 'opacity-70 hover:opacity-100'}`}
           onClick={() => onNavigate('home')}
           aria-label="i Golden, home"
         >
           <div
-            className={`flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-sm transition-colors ${activeView === 'home' ? 'bg-orange-500' : 'bg-[var(--text-muted)]'}`}
+            className={`flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-sm transition-colors ${activeView === 'home' ? 'bg-brand-500' : 'bg-[var(--text-muted)]'}`}
           >
             <img
               src={`${import.meta.env.BASE_URL}i-golden-mark.svg`}
@@ -420,18 +420,18 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
           <span className="hidden min-w-0 flex-col items-start sm:flex">
             <span
-              className={`text-xl font-bold tracking-tighter transition-colors ${activeView === 'home' ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}
+              className={`text-xl font-bold tracking-tighter transition-colors ${activeView === 'home' ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)] app-dark:text-[color:var(--nav-fg)]'}`}
             >
               i Golden
             </span>
-            <span className="hidden max-w-[11rem] text-[0.625rem] font-semibold leading-snug tracking-wide text-[var(--text-muted)] lg:block lg:max-w-[13rem]">
+            <span className="hidden max-w-[11rem] text-[0.625rem] font-semibold leading-snug tracking-wide text-[var(--text-secondary)] app-dark:text-[color:var(--nav-soft)] lg:block lg:max-w-[13rem]">
               Learn Today. Lead Tomorrow.
             </span>
           </span>
         </button>
         
         <div
-          className={`hidden items-center gap-6 text-sm font-medium text-[var(--text-secondary)] ${
+          className={`hidden items-center gap-6 text-sm font-medium text-[var(--text-secondary)] app-dark:text-[color:var(--nav-fg)] ${
             activeView === 'catalog' ? 'lg:flex' : 'md:flex'
           }`}
           ref={dropdownRef}
@@ -449,10 +449,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             }}
             tabIndex={focusedNavIndex === 1 ? 0 : -1}
             aria-current={activeView === 'catalog' && !learningPathNavActive ? 'page' : undefined}
-            className={`h-16 transition-colors hover:text-[var(--text-primary)] focus:text-[var(--text-primary)] focus:outline-none ${
+            className={`h-16 transition-colors hover:text-[var(--text-primary)] focus:text-[var(--text-primary)] focus:outline-none app-dark:hover:text-white app-dark:focus:text-white ${
               activeView === 'catalog' && !learningPathNavActive
-                ? 'border-b-2 border-orange-500 text-orange-500'
-                : 'text-[var(--text-secondary)]'
+                ? 'border-b-2 border-brand-500 text-brand-500'
+                : 'text-[var(--text-secondary)] app-dark:text-[color:var(--nav-fg)]'
             }`}
           >
             Browse Catalog
@@ -471,8 +471,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               }}
               tabIndex={focusedNavIndex === 2 ? 0 : -1}
               aria-current={learningPathNavActive ? 'page' : undefined}
-              className={`flex h-16 items-center gap-1 transition-colors focus:text-[var(--text-primary)] focus:outline-none hover:text-[var(--text-primary)] ${
-                learningPathNavActive ? 'border-b-2 border-orange-500 text-orange-500' : 'text-[var(--text-secondary)]'
+              className={`flex h-16 items-center gap-1 transition-colors focus:text-[var(--text-primary)] focus:outline-none hover:text-[var(--text-primary)] app-dark:hover:text-white app-dark:focus:text-white ${
+                learningPathNavActive ? 'border-b-2 border-brand-500 text-brand-500' : 'text-[var(--text-secondary)] app-dark:text-[color:var(--nav-fg)]'
               }`}
             >
               Learning Paths{' '}
@@ -483,7 +483,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                 className="absolute top-full left-0 w-56 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-b-lg shadow-xl py-2 z-50"
               >
                 {learningPaths.length === 0 ? (
-                  <p className="px-4 py-2 text-sm text-[var(--text-muted)]">No Learning Paths yet</p>
+                  <p className="px-4 py-2 text-sm text-[var(--text-secondary)] app-dark:text-[color:var(--nav-soft)]">
+                    No Learning Paths yet
+                  </p>
                 ) : (
                   learningPaths.map((path, index) => (
                     <button
@@ -491,16 +493,16 @@ export const Navbar: React.FC<NavbarProps> = ({
                       type="button"
                       onClick={() => handleItemSelect(`__path_${index}`)}
                       onMouseEnter={() => setFocusedItemIndex(index)}
-                      className={`w-full text-left px-4 py-2 transition-colors focus:outline-none ${focusedItemIndex === index ? 'bg-[var(--hover-bg)] text-orange-500' : 'hover:bg-[var(--hover-bg)] hover:text-orange-500'}`}
+                      className={`w-full text-left px-4 py-2 transition-colors focus:outline-none ${focusedItemIndex === index ? 'bg-[var(--hover-bg)] text-brand-500' : 'hover:bg-[var(--hover-bg)] hover:text-brand-500'}`}
                     >
                       {path.title || path.id}
                       {path.adminPreviewOwnerUid ? (
-                        <span className="ml-1 text-[10px] font-semibold uppercase tracking-wide text-orange-500">
+                        <span className="ml-1 text-[10px] font-semibold uppercase tracking-wide text-brand-500">
                           · Creator preview
                         </span>
                       ) : path.fromCreatorDraft === true ||
                         (path.fromCreatorDraft !== false && privatePathIds.has(path.id)) ? (
-                        <span className="ml-1 text-[10px] font-semibold uppercase tracking-wide text-orange-500">
+                        <span className="ml-1 text-[10px] font-semibold uppercase tracking-wide text-brand-500">
                           · Draft
                         </span>
                       ) : null}
@@ -523,7 +525,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 setFocusedItemIndex(-1);
               }}
               tabIndex={focusedNavIndex === 3 ? 0 : -1}
-              className="hover:text-[var(--text-primary)] transition-colors flex items-center gap-1 h-16 focus:outline-none focus:text-[var(--text-primary)]"
+              className="text-[var(--text-secondary)] app-dark:text-[color:var(--nav-fg)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1 h-16 focus:outline-none focus:text-[var(--text-primary)] app-dark:hover:text-white app-dark:focus:text-white"
             >
               Skills <ChevronDown size={14} className={`${openDropdown === 'skills' ? 'rotate-180' : ''} transition-transform`} />
             </button>
@@ -540,7 +542,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       aria-pressed={selected}
                       onClick={() => handleItemSelect(item)}
                       onMouseEnter={() => setFocusedItemIndex(index)}
-                      className={`w-full min-h-10 text-left px-4 py-2 transition-colors focus:outline-none ${selected ? 'bg-orange-500/15 font-medium text-orange-500' : ''} ${focusedItemIndex === index ? 'bg-[var(--hover-bg)] text-orange-500' : 'hover:bg-[var(--hover-bg)] hover:text-orange-500'}`}
+                      className={`w-full min-h-10 text-left px-4 py-2 transition-colors focus:outline-none ${selected ? 'bg-brand-500/15 font-medium text-brand-500' : ''} ${focusedItemIndex === index ? 'bg-[var(--hover-bg)] text-brand-500' : 'hover:bg-[var(--hover-bg)] hover:text-brand-500'}`}
                     >
                       {item}
                     </button>
@@ -561,7 +563,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             }}
             onKeyDown={(e) => handleTopLevelKeyDown(e, 4)}
             tabIndex={focusedNavIndex === 4 ? 0 : -1}
-            className={`hover:text-[var(--text-primary)] transition-colors h-16 focus:outline-none focus:text-[var(--text-primary)] ${activeView === 'contact' ? 'text-orange-500 border-b-2 border-orange-500' : 'text-[var(--text-secondary)]'}`}
+            className={`hover:text-[var(--text-primary)] transition-colors h-16 focus:outline-none focus:text-[var(--text-primary)] app-dark:hover:text-white app-dark:focus:text-white ${activeView === 'contact' ? 'text-brand-500 border-b-2 border-brand-500' : 'text-[var(--text-secondary)] app-dark:text-[color:var(--nav-fg)]'}`}
           >
             Contact Us
           </button>
@@ -580,7 +582,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             setMobileMenuOpen(false);
             onThemeToggle();
           }}
-          className="hidden rounded-lg p-2 text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-orange-500/50 md:inline-flex md:items-center md:justify-center"
+          className="hidden rounded-lg p-2 text-[var(--text-secondary)] app-dark:text-[color:var(--nav-fg)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-brand-500/50 app-dark:hover:text-white md:inline-flex md:items-center md:justify-center"
           aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
           title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
         >
@@ -599,11 +601,11 @@ export const Navbar: React.FC<NavbarProps> = ({
               setOpenDropdown(openDropdown === 'notifications' ? null : 'notifications');
               if (openDropdown !== 'notifications') markAllAsRead();
             }}
-            className="p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] relative focus:outline-none focus:text-[var(--text-primary)]"
+            className="p-2 text-[var(--text-secondary)] app-dark:text-[color:var(--nav-fg)] hover:text-[var(--text-primary)] relative focus:outline-none focus:text-[var(--text-primary)] app-dark:hover:text-white"
           >
             <Bell size={20} />
             {unreadCount > 0 && (
-              <span className="absolute top-1.5 right-1.5 w-4 h-4 bg-orange-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-[var(--bg-secondary)]">
+              <span className="absolute top-1.5 right-1.5 w-4 h-4 bg-brand-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-[var(--bg-secondary)]">
                 {unreadCount}
               </span>
             )}
@@ -622,7 +624,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <button
                     type="button"
                     onClick={clearAllNotifications}
-                    className="shrink-0 text-xs font-semibold text-orange-500 transition-colors hover:text-orange-400"
+                    className="shrink-0 text-xs font-semibold text-brand-500 transition-colors hover:text-brand-400"
                   >
                     Clear All
                   </button>
@@ -639,7 +641,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     >
                       <button
                         type="button"
-                        className="min-w-0 flex-1 rounded-lg px-2 py-2 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-orange-500/60"
+                        className="min-w-0 flex-1 rounded-lg px-2 py-2 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-brand-500/60"
                         onClick={() => {
                           onNotificationAction(n);
                           setOpenDropdown(null);
@@ -651,13 +653,13 @@ export const Navbar: React.FC<NavbarProps> = ({
                         <p className="mb-1 text-sm leading-snug text-[var(--text-primary)]">{n.message}</p>
                         <span className="text-[10px] text-[var(--text-muted)]">{n.time}</span>
                         {n.kind === 'certificate' && (
-                          <span className="mt-1 block text-[10px] font-semibold text-orange-500">View in profile</span>
+                          <span className="mt-1 block text-[10px] font-semibold text-brand-500">View in profile</span>
                         )}
                         {n.kind === 'broadcast' && (
-                          <span className="mt-1 block text-[10px] font-semibold text-orange-500">Open course</span>
+                          <span className="mt-1 block text-[10px] font-semibold text-brand-500">Open course</span>
                         )}
                         {n.kind === 'generic' && n.actionLabel && (
-                          <span className="mt-1 block text-[10px] font-semibold text-orange-500">{n.actionLabel}</span>
+                          <span className="mt-1 block text-[10px] font-semibold text-brand-500">{n.actionLabel}</span>
                         )}
                       </button>
                       <button
@@ -695,7 +697,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   setOpenDropdown(openDropdown === 'profile' ? null : 'profile');
                 }}
                 aria-label={accountMenuAriaLabel(user)}
-                className="h-8 w-8 shrink-0 cursor-pointer rounded-full border-2 border-orange-500 p-0 text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)] overflow-hidden flex items-center justify-center"
+                className="h-8 w-8 shrink-0 cursor-pointer rounded-full border-2 border-brand-500 p-0 text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)] overflow-hidden flex items-center justify-center"
               >
                 <NavProfileAvatar user={user} />
               </button>
@@ -752,7 +754,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                           setOpenDropdown(null);
                           onNavigate('admin');
                         }}
-                        className="w-full flex items-center gap-3 px-4 py-2 text-sm text-orange-500 hover:bg-orange-500/10 transition-colors text-left"
+                        className="w-full flex items-center gap-3 px-4 py-2 text-sm text-brand-500 hover:bg-brand-500/10 transition-colors text-left"
                       >
                         <Shield size={16} />
                         Admin
@@ -787,7 +789,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 setMobileMenuOpen(false);
                 onNavigate('signin');
               }}
-              className="flex items-center gap-2 rounded-md bg-orange-500 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-orange-600"
+              className="flex items-center gap-2 rounded-md bg-brand-500 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-brand-600"
             >
               <LogIn size={16} aria-hidden />
               Sign in
@@ -798,7 +800,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         <button
           ref={mobileMenuToggleRef}
           type="button"
-          className={`p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] ${
+          className={`p-2 text-[var(--text-secondary)] app-dark:text-[color:var(--nav-fg)] hover:text-[var(--text-primary)] app-dark:hover:text-white ${
             activeView === 'catalog' ? 'lg:hidden' : 'md:hidden'
           }`}
           onClick={() => {
@@ -830,7 +832,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             id="mobile-nav-drawer"
             ref={mobileMenuRef}
             tabIndex={-1}
-            className={`fixed bottom-0 left-0 top-16 z-[46] flex w-full max-w-sm flex-col overflow-y-auto overscroll-contain border-r border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-xl outline-none focus:outline-none ${
+            className={`fixed bottom-0 left-0 top-16 z-[46] flex w-full max-w-sm flex-col overflow-y-auto overscroll-contain border-r border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-xl outline-none focus:outline-none app-dark:[--nav-fg:#f2f2f2] app-dark:[--nav-soft:#e4e4e4] ${
               activeView === 'catalog' ? 'lg:hidden' : 'md:hidden'
             }`}
             role="dialog"
@@ -838,7 +840,9 @@ export const Navbar: React.FC<NavbarProps> = ({
             aria-label="Main navigation"
           >
             <div className="border-b border-[var(--border-color)] p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Menu</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] app-dark:text-[color:var(--nav-soft)]">
+                Menu
+              </p>
             </div>
             <div className="border-b border-[var(--border-color)] px-2 py-2">
               <button
@@ -883,7 +887,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   {isAdmin && (
                     <button
                       type="button"
-                      className="flex w-full min-h-11 items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-orange-500 hover:bg-orange-500/10 touch-manipulation"
+                      className="flex w-full min-h-11 items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-brand-500 hover:bg-brand-500/10 touch-manipulation"
                       onClick={() => {
                         onNavigate('admin');
                         setMobileMenuOpen(false);
@@ -912,7 +916,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               ) : (
                 <button
                   type="button"
-                  className="flex w-full min-h-11 items-center justify-center gap-2 rounded-lg bg-orange-500 px-3 py-2.5 text-left text-sm font-bold text-white hover:bg-orange-600 touch-manipulation"
+                  className="flex w-full min-h-11 items-center justify-center gap-2 rounded-lg bg-brand-500 px-3 py-2.5 text-left text-sm font-bold text-white hover:bg-brand-600 touch-manipulation"
                   onClick={() => {
                     setMobileMenuOpen(false);
                     onNavigate('signin');
@@ -923,11 +927,11 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
               )}
             </div>
-            <div className="flex flex-col py-2 text-sm font-medium text-[var(--text-secondary)]">
+            <div className="flex flex-col py-2 text-sm font-medium text-[var(--text-secondary)] app-dark:text-[color:var(--nav-fg)]">
               <button
                 type="button"
                 className={`px-4 py-3 text-left transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] ${
-                  activeView === 'catalog' && !learningPathNavActive ? 'text-orange-500' : ''
+                  activeView === 'catalog' && !learningPathNavActive ? 'text-brand-500' : ''
                 }`}
                 onClick={() => {
                   /* Default shouldClear=true matches desktop Browse Catalog: clears learning path + library filters. */
@@ -941,7 +945,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   type="button"
                   className={`flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-[var(--hover-bg)] ${
-                    learningPathNavActive ? 'text-orange-500' : ''
+                    learningPathNavActive ? 'text-brand-500' : ''
                   }`}
                   onClick={() => setMobileNavExpand((e) => (e === 'paths' ? null : 'paths'))}
                   aria-expanded={mobileNavExpand === 'paths'}
@@ -952,13 +956,15 @@ export const Navbar: React.FC<NavbarProps> = ({
                 {mobileNavExpand === 'paths' && (
                   <div className="border-t border-[var(--border-color)] bg-[var(--bg-primary)]/30 pb-2">
                     {learningPaths.length === 0 ? (
-                      <p className="px-6 py-2.5 text-sm text-[var(--text-muted)]">No Learning Paths yet</p>
+                      <p className="px-6 py-2.5 text-sm text-[var(--text-secondary)] app-dark:text-[color:var(--nav-soft)]">
+                        No Learning Paths yet
+                      </p>
                     ) : (
                       learningPaths.map((path, index) => (
                         <button
                           key={`${path.id}:${path.fromCreatorDraft ? 'd' : 'p'}:${path.adminPreviewOwnerUid ?? ''}`}
                           type="button"
-                          className="w-full px-6 py-2.5 text-left text-sm hover:bg-[var(--hover-bg)] hover:text-orange-500"
+                          className="w-full px-6 py-2.5 text-left text-sm hover:bg-[var(--hover-bg)] hover:text-brand-500"
                           onClick={() => {
                             onPathSelect(
                               path.id,
@@ -971,12 +977,12 @@ export const Navbar: React.FC<NavbarProps> = ({
                         >
                           {path.title || path.id}
                           {path.adminPreviewOwnerUid ? (
-                            <span className="ml-1 text-[10px] font-semibold uppercase text-orange-500">
+                            <span className="ml-1 text-[10px] font-semibold uppercase text-brand-500">
                               · Creator preview
                             </span>
                           ) : path.fromCreatorDraft === true ||
                             (path.fromCreatorDraft !== false && privatePathIds.has(path.id)) ? (
-                            <span className="ml-1 text-[10px] font-semibold uppercase text-orange-500">· Draft</span>
+                            <span className="ml-1 text-[10px] font-semibold uppercase text-brand-500">· Draft</span>
                           ) : null}
                         </button>
                       ))
@@ -1003,7 +1009,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                           key={item}
                           type="button"
                           aria-pressed={selected}
-                          className={`w-full min-h-11 px-6 py-2.5 text-left text-sm transition-colors ${selected ? 'bg-orange-500/15 font-medium text-orange-500' : 'hover:bg-[var(--hover-bg)] hover:text-orange-500'}`}
+                          className={`w-full min-h-11 px-6 py-2.5 text-left text-sm transition-colors ${selected ? 'bg-brand-500/15 font-medium text-brand-500' : 'hover:bg-[var(--hover-bg)] hover:text-brand-500'}`}
                           onClick={() => {
                             onSkillSelect(item);
                           }}
@@ -1017,7 +1023,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
               <button
                 type="button"
-                className={`border-t border-[var(--border-color)] px-4 py-3 text-left transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] ${activeView === 'contact' ? 'text-orange-500' : ''}`}
+                className={`border-t border-[var(--border-color)] px-4 py-3 text-left text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] app-dark:text-[color:var(--nav-fg)] app-dark:hover:text-white ${activeView === 'contact' ? 'text-brand-500 app-dark:text-brand-500' : ''}`}
                 onClick={() => {
                   onNavigate('contact');
                   setMobileMenuOpen(false);

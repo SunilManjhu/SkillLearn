@@ -691,7 +691,7 @@ export function CourseQuizPanel({
         >
           <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Previous attempt</p>
           <p className="mt-2 text-sm font-bold text-[var(--text-primary)]">
-            Score: <span className="text-orange-500">{reviewSnapshot.overallScore}%</span>
+            Score: <span className="text-brand-500">{reviewSnapshot.overallScore}%</span>
             {reviewSnapshot.allPassed ? (
               <span className="ml-2 text-xs font-normal text-emerald-600 dark:text-emerald-400">Passed all</span>
             ) : (
@@ -784,7 +784,7 @@ export function CourseQuizPanel({
                             : right
                               ? 'border-emerald-500/60 bg-emerald-500/10'
                               : selected
-                                ? 'border-orange-500/50 bg-orange-500/10'
+                                ? 'border-brand-500/50 bg-brand-500/10'
                                 : 'border-[var(--border-color)] bg-[var(--bg-primary)]'
                         }`}
                       >
@@ -793,7 +793,7 @@ export function CourseQuizPanel({
                           name={`quiz-${q.id}`}
                           checked={selected}
                           onChange={() => setMcq(q.id, ci)}
-                          className="mt-1 h-4 w-4 shrink-0 border-[var(--border-color)] text-orange-500"
+                          className="mt-1 h-4 w-4 shrink-0 border-[var(--border-color)] text-brand-500"
                         />
                         <span className="min-w-0 flex-1 leading-relaxed">{choice}</span>
                       </label>
@@ -859,7 +859,7 @@ export function CourseQuizPanel({
                     <>
                       <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-3 text-sm">
                         <p className="font-semibold text-[var(--text-primary)]">
-                          Score: <span className="text-orange-500">{r.score}%</span>
+                          Score: <span className="text-brand-500">{r.score}%</span>
                           {!passedNow ? (
                             <span className="ml-2 text-xs font-normal text-[var(--text-muted)]">
                               (need {FREEFORM_PASS_THRESHOLD}%+ to pass)
@@ -925,7 +925,7 @@ export function CourseQuizPanel({
       {submitted && overallScore !== null ? (
         <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-4">
           <p className="text-sm font-bold text-[var(--text-primary)]">
-            Overall: <span className="text-orange-500">{overallScore}%</span>
+            Overall: <span className="text-brand-500">{overallScore}%</span>
             {!allPassed ? <span className="ml-2 text-xs font-normal text-[var(--text-muted)]">(in progress)</span> : null}
           </p>
           {user?.uid ? (
@@ -950,7 +950,7 @@ export function CourseQuizPanel({
             <button
               type="button"
               onClick={onGoToNextLesson}
-              className="inline-flex min-h-11 min-w-[44px] w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-3 text-sm font-bold text-white hover:bg-orange-600 sm:w-auto sm:px-8"
+              className="inline-flex min-h-11 min-w-[44px] w-full items-center justify-center gap-2 rounded-xl bg-brand-500 px-4 py-3 text-sm font-bold text-white hover:bg-brand-600 sm:w-auto sm:px-8"
             >
               Next Lesson
               <ChevronRight className="h-5 w-5 shrink-0" aria-hidden />
@@ -986,7 +986,7 @@ export function CourseQuizPanel({
             <button
               type="button"
               onClick={handleNextLessonAfterFailures}
-              className="inline-flex min-h-11 min-w-[44px] w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-3 text-sm font-bold text-white hover:bg-orange-600 sm:w-auto sm:px-8"
+              className="inline-flex min-h-11 min-w-[44px] w-full items-center justify-center gap-2 rounded-xl bg-brand-500 px-4 py-3 text-sm font-bold text-white hover:bg-brand-600 sm:w-auto sm:px-8"
             >
               Next Lesson
               <ChevronRight className="h-5 w-5 shrink-0" aria-hidden />
@@ -996,7 +996,7 @@ export function CourseQuizPanel({
           <button
             type="button"
             onClick={handleTakeQuizAgain}
-            className="inline-flex min-h-11 min-w-[44px] w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-3 text-sm font-bold text-white hover:bg-orange-600 sm:w-auto sm:px-8"
+            className="inline-flex min-h-11 min-w-[44px] w-full items-center justify-center gap-2 rounded-xl bg-brand-500 px-4 py-3 text-sm font-bold text-white hover:bg-brand-600 sm:w-auto sm:px-8"
           >
             Take quiz again
             <ChevronRight className="h-5 w-5 shrink-0" aria-hidden />
@@ -1008,7 +1008,7 @@ export function CourseQuizPanel({
                 type="button"
                 onClick={() => void handleSubmit()}
                 disabled={submitting}
-                className="inline-flex min-h-11 min-w-[44px] flex-1 items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-3 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-50 sm:flex-none sm:px-8"
+                className="inline-flex min-h-11 min-w-[44px] flex-1 items-center justify-center gap-2 rounded-xl bg-brand-500 px-4 py-3 text-sm font-bold text-white hover:bg-brand-600 disabled:opacity-50 sm:flex-none sm:px-8"
               >
                 {submitting ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden /> : null}
                 {submitting ? 'Grading…' : submitted ? 'Submit again' : 'Submit quiz'}

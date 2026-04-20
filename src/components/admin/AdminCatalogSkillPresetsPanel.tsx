@@ -91,7 +91,7 @@ function PresetColumn({
                 type="button"
                 onClick={() => removeAt(i)}
                 disabled={items.length <= minItems && minItems > 0}
-                className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-md text-red-400 hover:bg-red-500/10 disabled:opacity-30"
+                className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-md text-[#a1a2a2] hover:bg-[#757676]/12 disabled:opacity-30"
                 aria-label={`Remove ${label}`}
               >
                 <Trash2 size={16} aria-hidden />
@@ -112,7 +112,7 @@ function PresetColumn({
           type="button"
           onClick={add}
           disabled={!draft.trim()}
-          className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-40"
+          className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg bg-[#616161] text-[#e7e7e7] hover:bg-[#757676] disabled:opacity-40"
           aria-label={`Add ${title} item`}
         >
           <Plus size={18} aria-hidden />
@@ -191,7 +191,7 @@ export const AdminCatalogSkillPresetsPanel: React.FC<AdminCatalogSkillPresetsPan
             type="button"
             onClick={() => void save()}
             disabled={loading || saving || !dirty}
-            className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-orange-500 px-4 py-2 text-xs font-bold text-white hover:bg-orange-600 disabled:opacity-40"
+            className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#616161] px-4 py-2 text-xs font-bold text-[#e7e7e7] hover:bg-[#757676] disabled:opacity-40"
           >
             {saving ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Save size={16} aria-hidden />}
             Save

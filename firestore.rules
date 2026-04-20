@@ -519,6 +519,21 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    /** Extra category/skill strings for catalog pickers (beyond presets); shared read, admin writes. */
+    function isValidCatalogTaxonomyLabelLibraryWrite(data) {
+      return data.keys().hasAll(['categoryLabels', 'skillLabels']) &&
+        data.keys().hasOnly(['categoryLabels', 'skillLabels', 'updatedAt']) &&
+        data.categoryLabels is list && data.categoryLabels.size() <= 400 &&
+        data.skillLabels is list && data.skillLabels.size() <= 400 &&
+        (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    match /siteSettings/catalogTaxonomyLabelLibrary {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidCatalogTaxonomyLabelLibraryWrite(request.resource.data);
+      allow delete: if false;
+    }
+
     // Ordered Gemini model ids + per-model on/off for in-app AI. Falls back to build env when doc missing.
     // No recursion (Firestore rules disallow it): each index j is bool or past end of list (flags.size() <= j).
     function geminiEnabledFlagsAllBool(flags) {
@@ -696,6 +711,46 @@ service cloud.firestore {
       allow read: if true;
       allow create, update: if isAdmin() && isValidHeroPhoneAdsWrite(request.resource.data);
       allow delete: if false;
+    }
+
+    /** Creator-submitted category/skill labels pending admin merge into global presets. */
+    function isValidTaxonomyProposalCreate(data) {
+      return data.keys().hasAll(['kind', 'label', 'status', 'createdBy', 'createdAt']) &&
+        data.keys().hasOnly(['kind', 'label', 'status', 'createdBy', 'createdAt']) &&
+        data.kind in ['category', 'skill'] &&
+        data.label is string && data.label.size() > 0 && data.label.size() <= 80 &&
+        data.status == 'pending' &&
+        data.createdBy is string && data.createdBy == request.auth.uid &&
+        data.createdAt is timestamp;
+    }
+
+    match /catalogTaxonomyProposals/{proposalId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() || resource.data.createdBy == request.auth.uid
+      );
+      allow create: if isAuthenticated() &&
+        (hasCreatorRole() || isAdmin()) &&
+        request.resource.data.createdBy == request.auth.uid &&
+        isValidTaxonomyProposalCreate(request.resource.data);
+      allow update: if isAdmin() &&
+        resource.data.status == 'pending' &&
+        request.resource.data.status in ['approved', 'rejected'] &&
+        request.resource.data.kind == resource.data.kind &&
+        request.resource.data.label == resource.data.label &&
+        request.resource.data.createdBy == resource.data.createdBy &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.reviewedBy == request.auth.uid &&
+        request.resource.data.reviewedAt is timestamp &&
+        request.resource.data.keys().hasOnly([
+          'kind', 'label', 'status', 'createdBy', 'createdAt', 'reviewedBy', 'reviewedAt'
+        ]);
+      allow delete: if isAdmin() ||
+        (
+          isAuthenticated() &&
+          hasCreatorRole() &&
+          resource.data.createdBy == request.auth.uid &&
+          resource.data.status == 'pending'
+        );
     }
 
     match /publishedCourses/{courseId} {

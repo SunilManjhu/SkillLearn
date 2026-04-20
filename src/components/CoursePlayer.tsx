@@ -3202,7 +3202,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                 <button
                   type="button"
                   onClick={handleReplayFromStart}
-                  className="flex items-center gap-2 rounded-full bg-orange-500 px-7 py-3.5 text-sm font-semibold text-white shadow-lg shadow-black/30 transition-colors hover:bg-orange-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+                  className="flex items-center gap-2 rounded-full bg-emerald-600 px-7 py-3.5 text-sm font-semibold text-white shadow-lg shadow-black/30 transition-colors hover:bg-emerald-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
                 >
                   <RotateCcw size={18} aria-hidden />
                   Replay from start
@@ -3285,7 +3285,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                       ytPointerSeekRef.current = false;
                       setYtSeekDragging(false);
                     }}
-                    className="h-2 w-full cursor-pointer accent-orange-500 disabled:cursor-not-allowed disabled:opacity-40 max-lg:landscape:h-1.5"
+                    className="h-2 w-full cursor-pointer accent-brand-500 disabled:cursor-not-allowed disabled:opacity-40 max-lg:landscape:h-1.5"
                   />
                 </div>
                 <div className="flex w-full items-center justify-between gap-2 max-lg:portrait:gap-2 max-lg:landscape:gap-1.5 sm:gap-3">
@@ -3309,9 +3309,9 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                           return next;
                         });
                       }}
-                      className={`rounded-lg border border-white/12 p-1.5 text-white shadow-sm backdrop-blur-md transition-[padding,background-color] duration-300 ease-out hover:bg-zinc-800/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/70 max-lg:portrait:p-1 max-lg:landscape:p-1 ${
+                      className={`rounded-lg border border-white/12 p-1.5 text-white shadow-sm backdrop-blur-md transition-[padding,background-color] duration-300 ease-out hover:bg-zinc-800/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/70 max-lg:portrait:p-1 max-lg:landscape:p-1 ${
                         youtubeCaptionsEnabled
-                          ? 'bg-zinc-800/75 ring-1 ring-orange-400/35 supports-[backdrop-filter]:bg-zinc-800/65'
+                          ? 'bg-zinc-800/75 ring-1 ring-brand-400/35 supports-[backdrop-filter]:bg-zinc-800/65'
                           : 'bg-zinc-900/50 supports-[backdrop-filter]:bg-zinc-900/40'
                       }`}
                       aria-pressed={youtubeCaptionsEnabled}
@@ -3333,7 +3333,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                             return next;
                           });
                         }}
-                        className={`rounded-lg border border-white/12 p-1.5 text-white shadow-sm backdrop-blur-md transition-[padding,background-color] duration-300 ease-out hover:bg-zinc-800/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/70 max-lg:portrait:p-1 max-lg:landscape:p-1 ${
+                        className={`rounded-lg border border-white/12 p-1.5 text-white shadow-sm backdrop-blur-md transition-[padding,background-color] duration-300 ease-out hover:bg-zinc-800/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/70 max-lg:portrait:p-1 max-lg:landscape:p-1 ${
                           ytSettingsOpen
                             ? 'bg-zinc-800/75 ring-1 ring-white/20 supports-[backdrop-filter]:bg-zinc-800/65'
                             : 'bg-zinc-900/50 supports-[backdrop-filter]:bg-zinc-900/40'
@@ -3388,14 +3388,14 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                                   onClick={() => handleYtPlaybackRateSelect(r)}
                                   className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] tabular-nums transition-colors ${
                                     selected
-                                      ? 'bg-orange-500/[0.14] text-white ring-1 ring-orange-400/25'
+                                      ? 'bg-brand-500/[0.14] text-white ring-1 ring-brand-400/25'
                                       : 'text-white/[0.88] hover:bg-white/[0.06] hover:text-white'
                                   }`}
                                 >
                                   <span className="min-w-0">{formatYtSpeedLabel(r)}</span>
                                   {selected && (
                                     <Check
-                                      className="shrink-0 text-orange-400"
+                                      className="shrink-0 text-brand-400"
                                       size={15}
                                       strokeWidth={2.5}
                                       aria-hidden
@@ -3412,7 +3412,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                     <button
                       type="button"
                       onClick={handleYtMuteToggle}
-                      className="shrink-0 rounded-lg border border-white/12 bg-zinc-900/50 p-1.5 text-white shadow-sm backdrop-blur-md transition-[padding,background-color] duration-300 ease-out supports-[backdrop-filter]:bg-zinc-900/40 hover:bg-zinc-800/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/70 max-lg:portrait:p-1 max-lg:landscape:p-1"
+                      className="shrink-0 rounded-lg border border-white/12 bg-zinc-900/50 p-1.5 text-white shadow-sm backdrop-blur-md transition-[padding,background-color] duration-300 ease-out supports-[backdrop-filter]:bg-zinc-900/40 hover:bg-zinc-800/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/70 max-lg:portrait:p-1 max-lg:landscape:p-1"
                       aria-label={ytMuted ? 'Unmute' : 'Mute'}
                     >
                       {ytMuted ? (
@@ -3436,7 +3436,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                         max={100}
                         value={ytMuted ? 0 : ytVolume}
                         onChange={(e) => handleYtVolumeSlider(Number(e.target.value))}
-                        className="h-2 w-full min-w-0 cursor-pointer accent-orange-500 transition-[height] duration-300 ease-out max-lg:landscape:h-1.5"
+                        className="h-2 w-full min-w-0 cursor-pointer accent-brand-500 transition-[height] duration-300 ease-out max-lg:landscape:h-1.5"
                         aria-label="Volume"
                       />
                     </div>
@@ -3447,7 +3447,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                         setChromeVisible(true);
                         void toggleVideoAreaFullscreen();
                       }}
-                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-white/12 bg-zinc-900/50 text-white shadow-sm backdrop-blur-md transition-[padding,background-color] duration-300 ease-out supports-[backdrop-filter]:bg-zinc-900/40 hover:bg-zinc-800/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/80 max-lg:portrait:h-10 max-lg:portrait:w-10 max-lg:landscape:h-9 max-lg:landscape:w-9"
+                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-white/12 bg-zinc-900/50 text-white shadow-sm backdrop-blur-md transition-[padding,background-color] duration-300 ease-out supports-[backdrop-filter]:bg-zinc-900/40 hover:bg-zinc-800/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/80 max-lg:portrait:h-10 max-lg:portrait:w-10 max-lg:landscape:h-9 max-lg:landscape:w-9"
                       aria-label={isVideoAreaFullscreen ? 'Exit full screen' : 'Full screen'}
                     >
                       {isVideoAreaFullscreen ? (
@@ -3483,7 +3483,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                   setChromeVisible(true);
                   void toggleVideoAreaFullscreen();
                 }}
-                className="flex h-11 w-11 items-center justify-center rounded-xl bg-zinc-900/65 text-white shadow-lg ring-1 ring-white/15 backdrop-blur-md transition-colors hover:bg-zinc-900/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/70"
+                className="flex h-11 w-11 items-center justify-center rounded-xl bg-zinc-900/65 text-white shadow-lg ring-1 ring-white/15 backdrop-blur-md transition-colors hover:bg-zinc-900/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/70"
                 aria-label={isVideoAreaFullscreen ? 'Exit full screen' : 'Full screen'}
               >
                 {isVideoAreaFullscreen ? (

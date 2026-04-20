@@ -199,8 +199,8 @@ export function AdminLabelInfoTip({
         }
         className={
           showNarrowPanel
-            ? 'fixed z-[120] left-3 right-3 w-auto max-w-none translate-x-0 overflow-y-auto overflow-x-hidden overscroll-y-contain [-webkit-overflow-scrolling:touch] touch-pan-y max-h-[calc(100dvh-var(--admin-tip-top)-env(safe-area-inset-bottom,0px)-0.75rem)] rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-3.5 text-left text-sm leading-relaxed text-[var(--text-primary)] shadow-xl pointer-events-auto outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40'
-            : 'fixed z-[120] overflow-y-auto overflow-x-hidden overscroll-y-contain rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-3 text-left text-xs leading-snug text-[var(--text-primary)] shadow-lg pointer-events-auto outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 max-h-[min(20rem,calc(100dvh-var(--admin-tip-wide-top)-env(safe-area-inset-bottom,0px)-0.75rem))]'
+            ? 'fixed z-[120] left-3 right-3 w-auto max-w-none translate-x-0 overflow-y-auto overflow-x-hidden overscroll-y-contain [-webkit-overflow-scrolling:touch] touch-pan-y max-h-[calc(100dvh-var(--admin-tip-top)-env(safe-area-inset-bottom,0px)-0.75rem)] rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-3.5 text-left text-sm leading-relaxed text-[var(--text-primary)] shadow-xl pointer-events-auto outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/50 app-dark:border-[var(--tone-500)] app-dark:bg-[var(--tone-800)] app-dark:shadow-[0_12px_40px_rgba(0,0,0,0.55)] app-dark:ring-1 app-dark:ring-[#e7e7e7]/15'
+            : 'fixed z-[120] overflow-y-auto overflow-x-hidden overscroll-y-contain rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3 text-left text-xs leading-snug text-[var(--text-primary)] shadow-lg pointer-events-auto outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/50 max-h-[min(20rem,calc(100dvh-var(--admin-tip-wide-top)-env(safe-area-inset-bottom,0px)-0.75rem))] app-dark:border-[var(--tone-500)] app-dark:bg-[var(--tone-800)] app-dark:shadow-[0_12px_40px_rgba(0,0,0,0.55)] app-dark:ring-1 app-dark:ring-[#e7e7e7]/15'
         }
         style={
           showNarrowPanel
@@ -215,7 +215,7 @@ export function AdminLabelInfoTip({
               : undefined
         }
       >
-        <ul className="list-disc space-y-1.5 pl-4 text-[var(--text-muted)] marker:text-orange-500/70 sm:space-y-1">
+        <ul className="list-disc space-y-1.5 pl-4 text-[var(--text-secondary)] marker:text-[var(--text-primary)] sm:space-y-1 app-dark:text-[var(--tone-100)] app-dark:marker:text-[var(--tone-200)]">
           {children}
         </ul>
       </div>
@@ -231,11 +231,11 @@ export function AdminLabelInfoTip({
           aria-expanded={open}
           aria-controls={tipId}
           aria-label={open ? ariaClose : ariaOpen}
-          className={`inline-flex size-6 shrink-0 touch-manipulation items-center justify-center rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 active:opacity-90 ${
-            open ? 'border-orange-500/50 text-orange-500' : ''
+          className={`inline-flex size-6 shrink-0 touch-manipulation items-center justify-center rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/50 active:opacity-90 app-dark:border-[var(--tone-500)] app-dark:bg-[var(--tone-800)] app-dark:text-[var(--tone-100)] app-dark:hover:bg-[var(--tone-700)] ${
+            open ? 'border-[#8b8c8c] text-[#393a3a] app-dark:border-[#cfcfcf] app-dark:text-[#e7e7e7]' : ''
           }`}
         >
-          <Info size={14} className="text-orange-500/90" aria-hidden />
+          <Info size={14} className="opacity-90 app-dark:opacity-100" aria-hidden />
         </button>
       </span>
       {mounted && portaledPanel ? createPortal(portaledPanel, document.body) : null}

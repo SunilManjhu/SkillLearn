@@ -106,7 +106,7 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
         <div className="min-w-0 pr-1">
           <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
             <h2 className="m-0 flex items-center gap-1.5 text-base font-bold leading-none sm:text-lg">
-              <ShieldCheck size={18} className="shrink-0 text-orange-500" aria-hidden />
+              <ShieldCheck size={18} className="shrink-0 text-admin-icon" aria-hidden />
               Roles
             </h2>
             <AdminLabelInfoTip
@@ -116,9 +116,9 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
               tipSubject="Roles"
             >
               <li>
-                <code className="font-mono text-[0.7rem] text-orange-500/90 sm:text-xs">users</code> docs: role{' '}
-                <code className="text-orange-500/90">admin</code>, <code className="text-orange-500/90">creator</code>, or{' '}
-                <code className="text-orange-500/90">user</code>.
+                <code className="font-mono text-[0.7rem] text-[#616161] app-dark:text-[var(--tone-200)] sm:text-xs">users</code> docs: role{' '}
+                <code className="text-[#616161] app-dark:text-[var(--tone-200)]">admin</code>, <code className="text-[#616161] app-dark:text-[var(--tone-200)]">creator</code>, or{' '}
+                <code className="text-[#616161] app-dark:text-[var(--tone-200)]">user</code>.
               </li>
               <li>Live updates.</li>
               <li>Keep at least one admin.</li>
@@ -137,12 +137,12 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
         </button>
       </div>
       {listError && (
-        <p className="text-sm text-red-500" role="alert">
+        <p className="text-sm text-[#616161]" role="alert">
           {listError}{' '}
           <button
             type="button"
             onClick={() => setSubscriptionKey((k) => k + 1)}
-            className="font-semibold underline underline-offset-2 hover:text-red-400"
+            className="font-semibold underline underline-offset-2 hover:text-[#a1a2a2]"
           >
             Retry
           </button>
@@ -162,7 +162,7 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
         </span>
         <span className="text-[var(--text-muted)]">
           Admins{' '}
-          <strong className="tabular-nums text-orange-500">{loading ? '—' : roleStats.admins}</strong>
+          <strong className="tabular-nums text-[#616161] app-dark:text-[var(--tone-100)]">{loading ? '—' : roleStats.admins}</strong>
         </span>
         <span className="text-[var(--border-color)]" aria-hidden>
           ·
@@ -196,7 +196,7 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
               onClick={() => setRoleFilter(id)}
               className={`min-h-9 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors sm:min-h-10 sm:px-3 sm:py-2 ${
                 roleFilter === id
-                  ? 'border-orange-500/60 bg-orange-500/15 text-orange-400'
+                  ? 'border-[#8b8c8c] bg-[#616161]/15 text-[#616161] app-dark:border-[var(--tone-400)] app-dark:bg-[var(--tone-800)] app-dark:text-[var(--tone-100)]'
                   : 'border-[var(--border-color)] bg-[var(--bg-primary)]/60 text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]'
               }`}
             >

@@ -195,7 +195,7 @@ function OutlineCourseTaxonomyChips({ course }: { course: Course }) {
 
 /**
  * Compact circular progress for path rows (mobile / max-md only in layout).
- * Track reads as neutral/white; progress arc is emerald (full ring at 100%, empty at 0%).
+ * Track reads as neutral; progress arc is brand orange (full ring at 100%, empty at 0%).
  */
 function PathOutlineProgressRingMobile({
   percent,
@@ -242,7 +242,7 @@ function PathOutlineProgressRingMobile({
           cy={cy}
           r={radius}
           fill="none"
-          className="stroke-emerald-500 transition-[stroke-dashoffset] duration-300 ease-out"
+          className="stroke-brand-500 transition-[stroke-dashoffset] duration-300 ease-out"
           strokeWidth={strokeWidth}
           strokeLinecap="round"
           strokeDasharray={circumference}
@@ -279,7 +279,7 @@ function PathOutlineProgressColumn({
     <div className="flex w-full min-w-0 shrink-0 flex-col justify-center gap-0.5 sm:w-[11rem] sm:flex-none">
       <div className="flex flex-nowrap items-center justify-between gap-x-2 text-[11px] leading-tight text-[var(--text-secondary)] sm:text-xs">
         <span className="min-w-0 shrink font-medium">{label}</span>
-        <span className="shrink-0 font-mono tabular-nums text-[var(--text-muted)]">{monoStats}</span>
+        <span className="shrink-0 font-mono tabular-nums text-[var(--text-secondary)]">{monoStats}</span>
       </div>
       <div
         className="h-1.5 w-full min-w-0 overflow-hidden rounded-full bg-[var(--border-color)] sm:h-2"
@@ -290,7 +290,7 @@ function PathOutlineProgressColumn({
         aria-label={ariaLabel}
       >
         <div
-          className="h-full rounded-full bg-orange-500 transition-[width] duration-300 ease-out"
+          className="h-full rounded-full bg-brand-500 transition-[width] duration-300 ease-out"
           style={{ width: `${percent}%` }}
         />
       </div>
@@ -372,10 +372,10 @@ function ActionChips({
   const sizeClass = iconOnlyMobile ? sizeMobileIcon : sizeDefault;
 
   const openCourseBtnClass = coursePlaybackComplete
-    ? `inline-flex items-center justify-center border border-[var(--path-review-btn-border)] bg-transparent font-medium text-[var(--text-muted)] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 ${sizeClass} ${iconOnlyMobile ? 'md:text-xs' : ''}`
+    ? `inline-flex items-center justify-center border border-[var(--path-review-btn-border)] bg-transparent font-medium text-[var(--text-muted)] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60 ${sizeClass} ${iconOnlyMobile ? 'md:text-xs' : ''}`
     : courseInProgress
-      ? `inline-flex items-center justify-center border border-orange-500 bg-transparent font-medium text-orange-500 transition-colors hover:bg-orange-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 ${sizeClass} ${iconOnlyMobile ? 'md:text-xs' : ''}`
-      : `inline-flex items-center justify-center border border-dashed border-[var(--path-open-course-border)] bg-transparent font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 ${sizeClass} ${iconOnlyMobile ? 'md:text-xs' : ''}`;
+      ? `inline-flex items-center justify-center border border-brand-500 bg-transparent font-medium text-brand-500 transition-colors hover:bg-brand-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60 ${sizeClass} ${iconOnlyMobile ? 'md:text-xs' : ''}`
+      : `inline-flex items-center justify-center border border-dashed border-[var(--path-open-course-border)] bg-transparent font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 ${sizeClass} ${iconOnlyMobile ? 'md:text-xs' : ''}`;
 
   const courseCtaLabel = coursePlaybackComplete ? 'Review' : courseInProgress ? 'Continue' : 'Open course';
   const courseCtaAria = coursePlaybackComplete
@@ -455,7 +455,7 @@ function OutlineInProgressLeadIcon({ size }: { size: number }) {
         strokeWidth="2"
         fill="none"
       />
-      <circle cx="12" cy="12" r="7" className="fill-orange-500" clipPath={`url(#${clipId})`} />
+      <circle cx="12" cy="12" r="7" className="fill-brand-500" clipPath={`url(#${clipId})`} />
     </svg>
   );
 }
@@ -483,7 +483,7 @@ function PathRowStatusLead({
   if (externalLink) {
     return (
       <div className={box} role="img" aria-label="External web link">
-        <Link2 className="text-violet-500" size={ic} strokeWidth={2.25} aria-hidden />
+        <Link2 className="text-[var(--text-secondary)]" size={ic} strokeWidth={2.25} aria-hidden />
       </div>
     );
   }
@@ -611,7 +611,7 @@ function OutlineBranchExpandControl({
     <button
       type="button"
       data-outline-branch-chevron=""
-      className="hidden min-h-10 min-w-10 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--hover-bg)]/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 touch-manipulation md:flex sm:min-h-11 sm:min-w-11"
+      className="hidden min-h-10 min-w-10 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--hover-bg)]/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 touch-manipulation md:flex sm:min-h-11 sm:min-w-11"
       aria-expanded={expanded}
       aria-controls={panelId}
       aria-label={expanded ? 'Collapse nested items' : 'Expand nested items'}
@@ -744,7 +744,7 @@ function OutlineNode({
                 <button
                   type="button"
                   data-outline-section-chevron=""
-                  className="flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--hover-bg)]/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 touch-manipulation sm:min-h-11 sm:min-w-11"
+                  className="flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)]/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 touch-manipulation sm:min-h-11 sm:min-w-11"
                   aria-expanded={expanded}
                   aria-controls={panelId}
                   id={`path-section-trigger-${node.id}`}
@@ -777,7 +777,7 @@ function OutlineNode({
             </div>
             <div
               className={`flex w-8 shrink-0 items-center justify-start text-lg font-bold leading-snug tabular-nums max-md:min-h-10 max-md:w-9 md:justify-end sm:w-9 sm:text-xl ${
-                sectionHasUsefulContent ? 'text-orange-500' : 'text-orange-500/45'
+                sectionHasUsefulContent ? 'text-[var(--text-secondary)]' : 'text-[var(--text-muted)]'
               }`}
             >
               {sectionIndex + 1}.
@@ -836,7 +836,7 @@ function OutlineNode({
                             <button
                               type="button"
                               title="No courses are linked to this section yet. Check back later—more content may be added."
-                              className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[var(--hover-bg)]/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 touch-manipulation max-md:order-2 sm:min-h-8 sm:min-w-8 sm:hover:bg-transparent md:order-1"
+                              className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[var(--hover-bg)]/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 touch-manipulation max-md:order-2 sm:min-h-8 sm:min-w-8 sm:hover:bg-transparent md:order-1"
                               aria-label="Details: No courses are linked to this section yet. Check back later—more content may be added."
                             >
                               <Info size={15} strokeWidth={2.25} aria-hidden />
@@ -847,7 +847,7 @@ function OutlineNode({
                           </span>
                         )
                       ) : (
-                        <span className="text-xs font-medium normal-case text-[var(--text-muted)] sm:text-sm md:block md:w-full md:text-right">
+                        <span className="text-xs font-medium normal-case text-[var(--text-secondary)] sm:text-sm md:block md:w-full md:text-right">
                           {courseCountLabel}
                         </span>
                       )}
@@ -883,7 +883,7 @@ function OutlineNode({
                 role="list"
                 aria-labelledby={`path-section-title-${node.id}`}
                 hidden={!showSectionBody}
-                className="mt-2 min-w-0 max-w-full list-none space-y-2 border-0 bg-transparent p-0 ring-0 md:ml-8 md:mt-1.5 md:space-y-1 md:rounded-xl md:border md:border-[var(--border-color)]/60 md:bg-[var(--bg-primary)]/25 md:py-1 md:pl-7 md:pr-5 md:ring-1 md:ring-[var(--border-color)]/25"
+                className="mt-2 min-w-0 max-w-full list-none space-y-2 border-0 bg-transparent p-0 ring-0 md:ml-8 md:mt-1.5 md:space-y-1 md:rounded-xl md:border md:border-[var(--border-light)]/70 md:bg-[var(--bg-primary)]/45 md:py-1 md:pl-7 md:pr-5 md:ring-1 md:ring-[var(--border-color)]/20"
               >
                 {node.children.map((ch) => (
                   <li key={ch.id} className="min-w-0">
@@ -919,7 +919,7 @@ function OutlineNode({
           className="min-w-0 border-t border-[var(--border-color)]/60 pt-2.5 mt-2 first:mt-0 first:border-t-0 first:pt-0"
           role="presentation"
         >
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] [overflow-wrap:anywhere]">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-secondary)] [overflow-wrap:anywhere]">
             {label}
           </p>
         </div>
@@ -952,7 +952,7 @@ function OutlineNode({
             />
           ) : null}
           <div className="flex min-w-0 max-w-full flex-1 flex-col gap-0.5 max-md:pl-2 md:min-w-0 md:flex-1">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] [overflow-wrap:anywhere]">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-secondary)] [overflow-wrap:anywhere]">
               {label}
             </p>
           </div>
@@ -1018,7 +1018,7 @@ function OutlineNode({
                     href={safeLinkHref}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="min-w-0 flex-1 text-base font-semibold leading-snug text-violet-600 underline-offset-2 hover:underline dark:text-violet-400 [overflow-wrap:anywhere]"
+                    className="min-w-0 flex-1 text-base font-semibold leading-snug text-[var(--text-primary)] underline decoration-[var(--border-light)] decoration-1 underline-offset-[3px] transition-colors hover:bg-[var(--hover-bg)]/60 hover:decoration-[var(--text-secondary)] [overflow-wrap:anywhere]"
                     onClick={(e) => e.stopPropagation()}
                   >
                     {label}
@@ -1125,7 +1125,7 @@ function OutlineNode({
                 href={safeLinkHref}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={`min-w-0 flex-1 text-violet-600 underline-offset-2 hover:underline dark:text-violet-400 [overflow-wrap:anywhere] ${nestedLabelClass}`}
+                className={`${nestedLabelClass} min-w-0 flex-1 text-[var(--text-primary)] underline decoration-[var(--border-light)] decoration-1 underline-offset-[3px] transition-colors hover:bg-[var(--hover-bg)]/60 hover:decoration-[var(--text-secondary)] [overflow-wrap:anywhere]`}
                 onClick={(e) => e.stopPropagation()}
               >
                 {label}
@@ -1308,7 +1308,7 @@ export const PathMindmapOutline: React.FC<PathMindmapOutlineProps> = ({
 
   return (
     <div
-      className="min-w-0 max-w-full overflow-x-hidden rounded-none border-0 bg-transparent px-0 py-1 md:rounded-xl md:border md:border-[var(--border-color)]/90 md:bg-[var(--bg-primary)]/25 md:px-6 md:py-2"
+      className="min-w-0 max-w-full overflow-x-hidden rounded-none border-0 bg-transparent px-0 py-1 md:rounded-xl md:border md:border-[var(--border-light)]/80 md:bg-[var(--bg-primary)]/50 md:px-6 md:py-2 md:shadow-[inset_0_1px_0_color-mix(in_srgb,var(--border-color)_35%,transparent)]"
       role="region"
       aria-label={`Learning Path syllabus: ${pathTitle}`}
     >

@@ -219,7 +219,7 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
 
   return (
     <section
-      className="min-w-0 max-w-full rounded-none border-0 bg-transparent p-0 shadow-none md:rounded-2xl md:border md:border-[var(--border-color)] md:bg-[var(--bg-secondary)]/80 md:p-5 md:shadow-sm"
+      className="min-w-0 max-w-full rounded-none border-0 bg-transparent p-0 shadow-none md:rounded-2xl md:border md:border-[var(--border-light)] md:bg-[var(--bg-primary)] md:p-5 md:shadow-sm md:ring-1 md:ring-[var(--border-color)]/25"
       aria-labelledby="learner-path-mindmap-heading"
     >
       <h2 id="learner-path-mindmap-heading" className="sr-only">
@@ -227,11 +227,11 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
       </h2>
       {showInnerHeader ? (
         <div className="mb-2 hidden flex-wrap items-start gap-3 sm:mb-3 md:flex">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-orange-500/35 bg-orange-500/10 text-orange-500">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-brand-500/40 bg-brand-500/15 text-brand-500">
             <LayoutGrid size={22} aria-hidden />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold uppercase tracking-wide text-orange-500">Learning Path</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-500">Learning Path</p>
             <p
               className="mt-1 text-xl font-bold tracking-tight text-[var(--text-primary)] sm:text-2xl"
               aria-hidden="true"
@@ -292,16 +292,16 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
                     aria-expanded={expanded}
                     aria-controls={panelId}
                     onClick={() => togglePathSectionBlock(blockKey)}
-                    className="flex w-full min-w-0 items-start gap-2 rounded-lg py-1 pl-0.5 pr-1 text-left transition-colors hover:bg-[var(--hover-bg)]/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 sm:items-center sm:gap-2.5 sm:pl-1"
+                    className="flex w-full min-w-0 items-start gap-2 rounded-lg py-1 pl-0.5 pr-1 text-left transition-colors hover:bg-[var(--hover-bg)]/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/45 sm:items-center sm:gap-2.5 sm:pl-1"
                   >
-                    <span className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center self-start text-[var(--text-muted)] sm:min-h-11 sm:min-w-11">
+                    <span className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center self-start text-[var(--text-secondary)] sm:min-h-11 sm:min-w-11">
                       <ChevronDown
                         size={20}
                         className={`shrink-0 transition-transform duration-200 ${expanded ? 'rotate-0' : '-rotate-90'}`}
                         aria-hidden
                       />
                     </span>
-                    <h3 className="min-w-0 flex-1 pt-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)] sm:pt-2">
+                    <h3 className="min-w-0 flex-1 pt-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-primary)] sm:pt-2">
                       {heading}
                     </h3>
                   </button>
@@ -320,7 +320,7 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
                         className="min-w-0 border-t border-[var(--border-color)]/60 pt-2.5 mt-2 first:mt-0 first:border-t-0 first:pt-0"
                         role="presentation"
                       >
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] [overflow-wrap:anywhere]">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-secondary)] [overflow-wrap:anywhere]">
                           {seg.label}
                         </p>
                       </div>
@@ -343,7 +343,7 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
                               href={safeHref}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="inline-block text-base font-semibold leading-snug text-violet-600 underline-offset-2 hover:underline dark:text-violet-400 [overflow-wrap:anywhere]"
+                              className="inline-block text-base font-semibold leading-snug text-[var(--text-primary)] underline decoration-[var(--border-light)] decoration-1 underline-offset-[3px] transition-colors hover:bg-[var(--hover-bg)]/60 hover:decoration-[var(--text-secondary)] [overflow-wrap:anywhere]"
                             >
                               {seg.label}
                             </a>
@@ -386,7 +386,7 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
           catalogVisibleCourseIds={catalogVisibleCourseIds}
         />
       ) : (
-        <p className="rounded-xl border border-dashed border-[var(--border-color)] bg-[var(--bg-primary)]/40 px-4 py-8 text-center text-sm text-[var(--text-muted)]">
+        <p className="rounded-xl border border-dashed border-[var(--border-color)] bg-[var(--bg-primary)]/40 px-4 py-8 text-center text-sm leading-relaxed text-[var(--text-secondary)]">
           No saved outline for this path yet. When an admin adds branches and saves the path, the outline will appear
           here.
         </p>

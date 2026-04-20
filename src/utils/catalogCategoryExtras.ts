@@ -1,50 +1,35 @@
 import { allPresetCatalogCategoriesFromState, getCachedCatalogCategoryPresets } from './catalogCategoryPresets';
+import { getCachedTaxonomyCategoryLabels, mutateTaxonomyLabelLibrary } from './catalogTaxonomyLabelLibraryFirestore';
 
-const STORAGE_KEY = 'skilllearn.catalogCategoryExtras';
+export { CATALOG_CATEGORY_EXTRAS_CHANGED } from './catalogTaxonomyPickerEvents';
 
-/** Same-tab listeners (e.g. App) refresh filter pills when admin adds a category. */
-export const CATALOG_CATEGORY_EXTRAS_CHANGED = 'skilllearn-catalog-category-extras-changed';
-
-function persist(next: string[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-  } catch {
-    return;
-  }
-  window.dispatchEvent(new Event(CATALOG_CATEGORY_EXTRAS_CHANGED));
+function lower(s: string): string {
+  return s.trim().toLowerCase();
 }
 
+/** Category labels beyond Firestore presets — stored in Firestore (`catalogTaxonomyLabelLibrary`). */
 export function readCatalogCategoryExtras(): string[] {
-  if (typeof localStorage === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const p = JSON.parse(raw) as unknown;
-    if (!Array.isArray(p)) return [];
-    return p.filter((x): x is string => typeof x === 'string' && x.trim().length > 0);
-  } catch {
-    return [];
-  }
+  return getCachedTaxonomyCategoryLabels();
 }
 
-/** Adds a trimmed category if new; dispatches {@link CATALOG_CATEGORY_EXTRAS_CHANGED}. */
+/** Adds a trimmed category if new; updates Firestore when admin writes are enabled. */
 export function addCatalogCategoryExtra(name: string): void {
   const t = name.trim();
   if (!t) return;
-  const cur = readCatalogCategoryExtras();
-  if (cur.some((c) => c.toLowerCase() === t.toLowerCase())) return;
-  const next = [...cur, t].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-  persist(next);
+  mutateTaxonomyLabelLibrary((prev) => {
+    if (prev.categoryLabels.some((c) => lower(c) === lower(t))) return prev;
+    return { ...prev, categoryLabels: [...prev.categoryLabels, t] };
+  });
 }
 
 /** Removes a name from the saved quick-pick list (does not change course documents). */
 export function removeCatalogCategoryExtra(name: string): void {
-  const t = name.trim();
-  if (!t) return;
-  const cur = readCatalogCategoryExtras();
-  const next = cur.filter((c) => c.toLowerCase() !== t.toLowerCase());
-  if (next.length === cur.length) return;
-  persist(next);
+  const k = lower(name.trim());
+  if (!k) return;
+  mutateTaxonomyLabelLibrary((prev) => ({
+    ...prev,
+    categoryLabels: prev.categoryLabels.filter((c) => lower(c) !== k),
+  }));
 }
 
 /**
@@ -58,10 +43,11 @@ export function replaceCatalogCategoryExtra(oldName: string, newName: string): v
   const presetLower = new Set(
     allPresetCatalogCategoriesFromState(getCachedCatalogCategoryPresets()).map((x) => x.toLowerCase())
   );
-  let next = readCatalogCategoryExtras().filter((c) => c.toLowerCase() !== o.toLowerCase());
-  if (!presetLower.has(n.toLowerCase()) && !next.some((c) => c.toLowerCase() === n.toLowerCase())) {
-    next.push(n);
-  }
-  next.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-  persist(next);
+  mutateTaxonomyLabelLibrary((prev) => {
+    let next = prev.categoryLabels.filter((c) => lower(c) !== o.toLowerCase());
+    if (!presetLower.has(n.toLowerCase()) && !next.some((c) => lower(c) === n.toLowerCase())) {
+      next = [...next, n];
+    }
+    return { ...prev, categoryLabels: next };
+  });
 }

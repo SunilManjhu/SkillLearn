@@ -296,7 +296,7 @@ export function AdminCourseAiAssistant({
         aria-expanded={open}
       >
         <span className="flex min-w-0 items-center gap-2 text-sm font-bold text-[var(--text-primary)]">
-          <Sparkles size={18} className="shrink-0 text-orange-500" aria-hidden />
+          <Sparkles size={18} className="shrink-0 text-admin-icon" aria-hidden />
           <span className="truncate">AI course assistant</span>
         </span>
         {open ? (
@@ -319,7 +319,7 @@ export function AdminCourseAiAssistant({
                 type="checkbox"
                 checked={useGoogleSearch}
                 onChange={(e) => setUseGoogleSearch(e.target.checked)}
-                className="mt-1 size-4 shrink-0 rounded border-[var(--border-color)]"
+                className="mt-1 size-4 shrink-0 rounded border-[var(--border-color)] checkbox-accent-theme"
               />
               <span className="text-xs leading-relaxed text-[var(--text-muted)]">
                 <span className="font-medium text-[var(--text-primary)]">Live Google Search grounding</span> — uses
@@ -327,7 +327,7 @@ export function AdminCourseAiAssistant({
                 billing may include grounded-search usage; see{' '}
                 <a
                   href="https://ai.google.dev/gemini-api/docs/google-search"
-                  className="text-orange-600 underline hover:text-orange-500"
+                  className="text-[#616161] underline hover:text-[#616161]"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -345,7 +345,7 @@ export function AdminCourseAiAssistant({
               onChange={(e) => setReferenceUrlsText(e.target.value)}
               placeholder="https://ncert.nic.in/…&#10;https://cbseacademic.nic.in/…"
               rows={3}
-              className="w-full resize-y rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-orange-500/50 focus:outline-none sm:text-sm"
+              className="w-full resize-y rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[#8b8c8c]/90 focus:outline-none sm:text-sm"
             />
             <p className="text-xs leading-relaxed text-[var(--text-muted)]">
               With URLs listed, the model can use the{' '}
@@ -353,7 +353,7 @@ export function AdminCourseAiAssistant({
               (HTML; large PDFs may not load fully). The API allows at most ~20 URLs per lookup — broad index pages like{' '}
               <a
                 href="https://ncert.nic.in/textbook.php"
-                className="text-orange-600 underline hover:text-orange-500"
+                className="text-[#616161] underline hover:text-[#616161]"
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -364,7 +364,7 @@ export function AdminCourseAiAssistant({
             </p>
           </div>
 
-          <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-xs leading-relaxed text-[var(--text-muted)]">
+          <div className="rounded-lg border border-[#8b8c8c]/65 bg-[#757676]/10 px-3 py-2 text-xs leading-relaxed text-[var(--text-muted)]">
             {useGoogleSearch || parseReferenceUrlsFromText(referenceUrlsText).length > 0 ? (
               <>
                 <span className="font-semibold text-[var(--text-primary)]">Grounding on: </span>
@@ -390,13 +390,13 @@ export function AdminCourseAiAssistant({
               onChange={(e) => setTopic(e.target.value)}
               placeholder="e.g. Python for data analysis"
               rows={2}
-              className="w-full min-h-[2.75rem] resize-y rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-orange-500/50 focus:outline-none sm:text-sm"
+              className="w-full min-h-[2.75rem] resize-y rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[#8b8c8c]/90 focus:outline-none sm:text-sm"
             />
             <button
               type="button"
               disabled={skeletonBusy || !apiKey}
               onClick={() => void requestGenerateSkeleton()}
-              className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-40 sm:w-auto"
+              className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center gap-2 rounded-xl bg-[#616161] px-4 py-2 text-sm font-bold text-[#e7e7e7] hover:bg-[#757676] disabled:opacity-40 sm:w-auto"
             >
               {skeletonBusy ? <Loader2 size={18} className="animate-spin" aria-hidden /> : null}
               Generate skeleton
@@ -430,7 +430,7 @@ export function AdminCourseAiAssistant({
           <div className="border-t border-[var(--border-color)] pt-4 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)]">
-                <MessageSquare size={16} className="text-orange-500/90" aria-hidden />
+                <MessageSquare size={16} className="text-admin-icon opacity-90" aria-hidden />
                 Refine outline (chat)
               </span>
               {chatTurns.length > 0 ? (
@@ -461,7 +461,7 @@ export function AdminCourseAiAssistant({
                     key={i}
                     className={`rounded-lg px-2 py-1.5 text-xs leading-relaxed ${
                       turn.role === 'user'
-                        ? 'ml-4 bg-orange-500/15 text-[var(--text-primary)]'
+                        ? 'ml-4 bg-[#616161]/15 text-[var(--text-primary)]'
                         : 'mr-4 bg-[var(--bg-secondary)] text-[var(--text-primary)]'
                     }`}
                   >
@@ -500,7 +500,7 @@ export function AdminCourseAiAssistant({
               )}
             </div>
             {pendingChatSkeleton ? (
-              <div className="rounded-lg border border-orange-500/40 bg-orange-500/10 px-3 py-2">
+              <div className="rounded-lg border border-[#8b8c8c]/80 bg-[#616161]/10 px-3 py-2">
                 <p className="text-xs font-semibold text-[var(--text-primary)]">Outline update ready</p>
                 <p className="mt-1 text-xs text-[var(--text-muted)]">
                   Apply replaces modules, lesson titles, and course fields from the last model reply.
@@ -509,7 +509,7 @@ export function AdminCourseAiAssistant({
                   <button
                     type="button"
                     onClick={applyPendingChatSkeleton}
-                    className="inline-flex min-h-11 flex-1 touch-manipulation items-center justify-center rounded-xl bg-orange-500 px-3 py-2 text-sm font-bold text-white hover:bg-orange-600"
+                    className="inline-flex min-h-11 flex-1 touch-manipulation items-center justify-center rounded-xl bg-[#616161] px-3 py-2 text-sm font-bold text-[#e7e7e7] hover:bg-[#757676]"
                   >
                     Apply outline to draft
                   </button>
@@ -538,7 +538,7 @@ export function AdminCourseAiAssistant({
                   placeholder="Ask to adjust the outline…"
                   rows={2}
                   disabled={chatBusy}
-                  className="mt-1 w-full resize-y rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-orange-500/50 focus:outline-none disabled:opacity-50 sm:text-sm"
+                  className="mt-1 w-full resize-y rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[#8b8c8c]/90 focus:outline-none disabled:opacity-50 sm:text-sm"
                 />
               </label>
               <button
@@ -554,7 +554,7 @@ export function AdminCourseAiAssistant({
           </div>
 
           {!apiKey ? (
-            <p className="text-xs text-amber-800 dark:text-amber-200">Set GEMINI_API_KEY in .env to enable AI tools.</p>
+            <p className="text-xs text-[#393a3a] app-dark:text-[#cfcfcf]">Set GEMINI_API_KEY in .env to enable AI tools.</p>
           ) : null}
         </div>
       )}
@@ -563,7 +563,7 @@ export function AdminCourseAiAssistant({
       <AnimatePresence>
         {outlineReplaceDialog ? (
           <div
-            className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] backdrop-blur-sm sm:items-center sm:p-6"
+            className="fixed inset-0 z-[100] flex items-end justify-center bg-[#272828]/75 p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] backdrop-blur-sm sm:items-center sm:p-6"
             role="dialog"
             aria-modal="true"
             aria-labelledby="admin-ai-outline-replace-title"
@@ -623,7 +623,7 @@ export function AdminCourseAiAssistant({
                   type="button"
                   autoFocus
                   onClick={confirmOutlineReplaceDialog}
-                  className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-orange-600 sm:w-auto"
+                  className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[#616161] px-5 py-3 text-sm font-bold text-[#e7e7e7] transition-colors hover:bg-[#757676] sm:w-auto"
                 >
                   {outlineReplaceIsSkeleton ? 'Replace with AI skeleton' : 'Apply outline'}
                 </button>

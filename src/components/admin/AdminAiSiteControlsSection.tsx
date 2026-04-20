@@ -148,15 +148,15 @@ export const AdminAiSiteControlsSection: React.FC<{
         aria-labelledby={id}
         disabled={disabled || saving || loading}
         onClick={() => void onToggle(!on)}
-        className={`relative h-7 w-12 shrink-0 rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 disabled:opacity-45 ${
-          on ? 'bg-emerald-500' : 'bg-[var(--border-color)]'
+        className={`relative h-7 w-12 shrink-0 rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/50 disabled:opacity-45 ${
+          on ? 'bg-[#a1a2a2]' : 'bg-[var(--border-color)]'
         }`}
       >
         {saving ? (
-          <Loader2 className="absolute left-1/2 top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 animate-spin text-white" />
+          <Loader2 className="absolute left-1/2 top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 animate-spin text-[#e7e7e7]" />
         ) : (
           <span
-            className={`pointer-events-none absolute top-1 left-1 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+            className={`pointer-events-none absolute top-1 left-1 h-5 w-5 rounded-full bg-[#e7e7e7] shadow transition-transform ${
               on ? 'translate-x-5' : 'translate-x-0'
             }`}
           />

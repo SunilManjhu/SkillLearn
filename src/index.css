@@ -3,11 +3,58 @@
 
 /* App theme (body.light), not prefers-color-scheme — avoids light-mode flicker when OS is set to dark. */
 @custom-variant app-dark (body:not(.light) &);
+@custom-variant app-light (body.light &);
 
 @theme {
   --font-signature: "Great Vibes", cursive;
   --font-serif: "Cormorant Garamond", serif;
   --font-montserrat: "Montserrat", sans-serif;
+
+  /* Real brand orange — use `brand-*` on home + Navbar only; site accent uses remapped `orange-*` below. */
+  --color-brand-50: #fff7ed;
+  --color-brand-100: #ffedd5;
+  --color-brand-200: #fed7aa;
+  --color-brand-300: #fdba74;
+  --color-brand-400: #fb923c;
+  --color-brand-500: #f97316;
+  --color-brand-600: #ea580c;
+  --color-brand-700: #c2410c;
+
+  /*
+   * Remap Tailwind `orange-*` to neutral gray scale (requested palette).
+   * Keeps existing class names site-wide while dropping literal orange everywhere except `brand-*`.
+   */
+  --color-orange-50: #e7e7e7;
+  --color-orange-100: #cfcfcf;
+  --color-orange-200: #b8b8b8;
+  --color-orange-300: #a1a2a2;
+  --color-orange-400: #8b8c8c;
+  --color-orange-500: #757676;
+  --color-orange-600: #616161;
+  --color-orange-700: #4c4d4d;
+  --color-orange-800: #393a3a;
+  --color-orange-900: #272828;
+  --color-orange-950: #272828;
+}
+
+/*
+ * Admin portal icons: neutral only (no brand/orange). Light = dark gray on pale surfaces;
+ * dark = light gray on charcoal surfaces.
+ */
+.text-admin-icon {
+  color: #393a3a;
+}
+body:not(.light) .text-admin-icon {
+  color: #e7e7e7;
+}
+
+/* Native checkboxes: theme accent + focus ring (avoids default browser blue). */
+input[type='checkbox'].checkbox-accent-theme {
+  accent-color: var(--text-primary);
+}
+input[type='checkbox'].checkbox-accent-theme:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg-primary), 0 0 0 4px var(--text-primary);
 }
 
 html {
@@ -16,31 +63,48 @@ html {
 }
 
 :root {
-  --bg-primary: #0a0a0b;
-  --bg-secondary: #141416;
-  --text-primary: #fafafa;
-  --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
-  --border-color: #27272a;
-  --border-light: #3f3f46;
-  --hover-bg: #1c1c1f;
+  /* Dark theme — layered neutrals from product palette */
+  --tone-950: #272828;
+  --tone-900: #393a3a;
+  --tone-800: #4c4d4d;
+  --tone-700: #616161;
+  --tone-600: #757676;
+  --tone-500: #8b8c8c;
+  --tone-400: #a1a2a2;
+  --tone-300: #b8b8b8;
+  --tone-200: #cfcfcf;
+  --tone-100: #e7e7e7;
+
+  /* Page chrome */
+  --bg-primary: #393a3a;
+  /* Cards / panels / navbar strip — one step lighter than page */
+  --bg-secondary: var(--tone-800);
+  --text-primary: var(--tone-100);
+  --text-secondary: var(--tone-300);
+  --text-muted: var(--tone-400);
+  --border-color: var(--tone-950);
+  --border-light: var(--tone-600);
+  --hover-bg: var(--tone-700);
+  /* Course card + course overview skill pill text */
+  --skill-chip-fg: #cfcfcf;
   /* Path outline course CTAs (ActionChips): theme-aware borders */
   --path-review-btn-border: #ffffff;
   /* “Open course” (not started): dashed neutral edge, readable on dark bg */
-  --path-open-course-border: #a1a1aa;
+  --path-open-course-border: var(--tone-400);
 }
 
 body.light {
-  --bg-primary: #fafafa;
+  --bg-primary: var(--tone-100);
   --bg-secondary: #ffffff;
-  --text-primary: #18181b;
-  --text-secondary: #52525b;
-  --text-muted: #71717a;
-  --border-color: #e4e4e7;
-  --border-light: #d4d4d8;
-  --hover-bg: #f4f4f5;
-  --path-review-btn-border: #18181b;
-  --path-open-course-border: #52525b;
+  --text-primary: var(--tone-950);
+  --text-secondary: var(--tone-800);
+  --text-muted: var(--tone-600);
+  --border-color: var(--tone-200);
+  --border-light: var(--tone-300);
+  --hover-bg: var(--tone-100);
+  --skill-chip-fg: #393a3a;
+  --path-review-btn-border: var(--tone-950);
+  --path-open-course-border: var(--tone-800);
 }
 
 body {
@@ -114,13 +178,13 @@ select:-webkit-autofill:focus {
   padding: 0 0.125em;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
-  background: rgba(251, 191, 36, 0.38);
-  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.35);
+  background: color-mix(in srgb, var(--tone-400) 42%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--tone-500) 55%, transparent);
 }
 
 body.light .lesson-notes-editor .lesson-note-ts-active {
-  background: rgba(251, 191, 36, 0.45);
-  box-shadow: 0 0 0 1px rgba(217, 119, 6, 0.35);
+  background: color-mix(in srgb, var(--tone-500) 35%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--tone-600) 40%, transparent);
 }
 
 /* Admin Content: main course / path `<select>` — drop default focus ring (thick blue outline on Chrome/Safari). */
@@ -128,7 +192,7 @@ body.light .lesson-notes-editor .lesson-note-ts-active {
 .admin-toolbar-main-select:focus-visible {
   outline: none;
   box-shadow: none;
-  /* Kill Tailwind ring utilities (ring = box-shadow) so no orange/glow leaks on focus. */
+  /* Kill Tailwind ring utilities (ring = box-shadow) so no stray focus glow leaks. */
   --tw-ring-offset-shadow: 0 0 #0000;
   --tw-ring-shadow: 0 0 #0000;
   --tw-shadow: 0 0 #0000;

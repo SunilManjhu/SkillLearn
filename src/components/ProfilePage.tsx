@@ -38,9 +38,9 @@ const profilePrefStatCellClass =
 
 /** Compact track aligned with label scale; outer min 44px for touch. */
 const profilePrefSwitchOuterClass =
-  'inline-flex min-h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/60 disabled:cursor-not-allowed disabled:opacity-50';
+  'inline-flex min-h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/60 disabled:cursor-not-allowed disabled:opacity-50';
 /** Track ~1rem tall on mobile, ~text-xs cap height on sm; knob travel matches width. */
-const profilePrefSwitchTrackOn = 'bg-orange-500';
+const profilePrefSwitchTrackOn = 'bg-[#a1a2a2]';
 const profilePrefSwitchTrackOff = 'bg-[var(--border-color)]';
 const profilePrefSwitchTrackClass = `relative h-4 w-8 shrink-0 rounded-full transition-colors sm:h-[1.125rem] sm:w-9`;
 const profilePrefSwitchKnobClass = (on: boolean) =>

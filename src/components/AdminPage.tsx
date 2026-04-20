@@ -235,7 +235,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       onClick={() => requestAdminNavigation({ kind: 'tab', tab: id })}
       className={`inline-flex shrink-0 min-h-10 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-bold transition-colors sm:min-h-11 sm:gap-2 sm:px-4 ${
         tab === id
-          ? 'bg-orange-500 text-white'
+          ? 'bg-[#616161] text-[#e7e7e7]'
           : 'bg-[var(--bg-primary)] text-[var(--text-secondary)] border border-[var(--border-color)] hover:bg-[var(--hover-bg)]'
       }`}
     >
@@ -245,13 +245,13 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   );
 
   return (
-    <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] px-3 pb-20 pt-24 sm:px-6 sm:pb-16">
+    <div className="admin-portal min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] px-3 pb-20 pt-24 sm:px-6 sm:pb-16">
       <div
         className="mx-auto min-w-0 max-w-6xl space-y-5 sm:space-y-6"
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
-            <div className="shrink-0 rounded-lg bg-orange-500/15 p-2 text-orange-500">
+            <div className="shrink-0 rounded-lg border border-[var(--border-light)] bg-[var(--hover-bg)] p-2 text-admin-icon app-dark:border-[var(--tone-500)] app-dark:bg-[var(--tone-800)]">
               <Shield size={22} />
             </div>
             <div className="min-w-0">
@@ -264,7 +264,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
           <button
             type="button"
             onClick={() => requestAdminNavigation({ kind: 'dismiss' })}
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-orange-500 hover:bg-orange-500/10 hover:text-orange-400"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] app-dark:text-[var(--tone-200)] app-dark:hover:bg-[var(--tone-800)] app-dark:hover:text-[var(--tone-100)]"
             aria-label="Close admin portal"
             title="Close"
           >
@@ -292,7 +292,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
             <div className="min-w-0">
               <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
                 <h2 id="admin-alerts-heading" className="m-0 flex items-center gap-2 text-lg font-bold leading-none">
-                  <Send size={20} className="shrink-0 text-orange-500" aria-hidden />
+                  <Send size={20} className="shrink-0 text-admin-icon" aria-hidden />
                   Send course alert
                 </h2>
                 <AdminLabelInfoTip
@@ -333,7 +333,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
               <button
                 type="button"
                 onClick={() => requestAdminNavigation({ kind: 'tab', tab: 'catalog' })}
-                className="mt-5 inline-flex min-h-11 w-full max-w-xs touch-manipulation items-center justify-center rounded-xl bg-orange-500 px-4 text-sm font-bold text-white hover:bg-orange-600 sm:w-auto"
+                className="mt-5 inline-flex min-h-11 w-full max-w-xs touch-manipulation items-center justify-center rounded-xl bg-[#616161] px-4 text-sm font-bold text-[#e7e7e7] hover:bg-[#757676] sm:w-auto"
               >
                 Open Content
               </button>
@@ -371,7 +371,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                     aria-invalid={showValidationHints && courseMissing ? true : undefined}
                     aria-describedby={showValidationHints && courseMissing ? 'admin-alerts-course-err' : undefined}
                     className={`box-border min-h-11 w-full touch-manipulation rounded-lg border bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] sm:text-sm ${
-                      showValidationHints && courseMissing ? 'border-red-500/70' : 'border-[var(--border-color)]'
+                      showValidationHints && courseMissing ? 'border-[#616161]' : 'border-[var(--border-color)]'
                     }`}
                   >
                     {sortedCourses.map((c) => (
@@ -381,7 +381,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                     ))}
                   </select>
                   {showValidationHints && courseMissing ? (
-                    <p id="admin-alerts-course-err" className="text-xs text-red-400" role="alert">
+                    <p id="admin-alerts-course-err" className="text-xs text-[#a1a2a2]" role="alert">
                       Course is required.
                     </p>
                   ) : null}
@@ -457,12 +457,12 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                   aria-invalid={showValidationHints && titleMissing ? true : undefined}
                   aria-describedby={showValidationHints && titleMissing ? 'admin-alerts-title-err' : undefined}
                   className={`box-border min-h-11 w-full touch-manipulation rounded-lg border bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] sm:text-sm ${
-                    showValidationHints && titleMissing ? 'border-red-500/70' : 'border-[var(--border-color)]'
+                    showValidationHints && titleMissing ? 'border-[#616161]' : 'border-[var(--border-color)]'
                   }`}
                   placeholder="Short headline"
                 />
                 {showValidationHints && titleMissing ? (
-                  <p id="admin-alerts-title-err" className="text-xs text-red-400" role="alert">
+                  <p id="admin-alerts-title-err" className="text-xs text-[#a1a2a2]" role="alert">
                     Title is required.
                   </p>
                 ) : null}
@@ -481,12 +481,12 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                   aria-invalid={showValidationHints && messageMissing ? true : undefined}
                   aria-describedby={showValidationHints && messageMissing ? 'admin-alerts-message-err' : undefined}
                   className={`box-border min-h-[5.5rem] w-full touch-manipulation resize-y rounded-lg border bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] sm:text-sm ${
-                    showValidationHints && messageMissing ? 'border-red-500/70' : 'border-[var(--border-color)]'
+                    showValidationHints && messageMissing ? 'border-[#616161]' : 'border-[var(--border-color)]'
                   }`}
                   placeholder="What changed?"
                 />
                 {showValidationHints && messageMissing ? (
-                  <p id="admin-alerts-message-err" className="text-xs text-red-400" role="alert">
+                  <p id="admin-alerts-message-err" className="text-xs text-[#a1a2a2]" role="alert">
                     Message is required.
                   </p>
                 ) : null}
@@ -497,7 +497,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                 disabled={busy || sortedCourses.length === 0}
                 aria-busy={busy}
                 onClick={() => void handleSend()}
-                className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center rounded-xl bg-orange-500 px-4 py-3 text-sm font-bold text-white hover:bg-orange-600 disabled:pointer-events-none disabled:opacity-50"
+                className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center rounded-xl bg-[#616161] px-4 py-3 text-sm font-bold text-[#e7e7e7] hover:bg-[#757676] disabled:pointer-events-none disabled:opacity-50"
               >
                 {busy ? 'Publishing…' : 'Publish alert'}
               </button>
@@ -547,7 +547,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
         <AnimatePresence>
           {navigationGuardOpen && (
             <div
-              className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+              className="fixed inset-0 z-[110] flex items-center justify-center bg-[#272828]/75 p-4 backdrop-blur-sm"
               role="dialog"
               aria-modal="true"
               aria-labelledby="admin-nav-guard-title"
@@ -591,7 +591,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                     <button
                       type="button"
                       onClick={confirmLeaveAdmin}
-                      className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-orange-600 sm:w-auto"
+                      className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[#616161] px-5 py-3 text-sm font-bold text-[#e7e7e7] transition-colors hover:bg-[#757676] sm:w-auto"
                     >
                       Leave anyway
                     </button>

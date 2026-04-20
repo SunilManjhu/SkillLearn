@@ -60,7 +60,7 @@ export function AdminVideoOutlineNotesField({ value, onChange, textareaId }: Adm
             className="inline-flex min-h-9 touch-manipulation items-center gap-1 rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-1 text-[11px] font-semibold text-[var(--text-primary)] hover:bg-[var(--hover-bg)] sm:min-h-8 sm:text-xs"
             title={`Insert ${VIDEO_OUTLINE_TIMESTAMP_RANGE_TEMPLATE} at the cursor (first time is selected)`}
           >
-            <Clock className="h-3.5 w-3.5 shrink-0 text-orange-500" aria-hidden />
+            <Clock className="h-3.5 w-3.5 shrink-0 text-admin-icon" aria-hidden />
             Insert time range
           </button>
           <span className="hidden text-[10px] text-[var(--text-muted)] sm:inline" title="Recommended format">
@@ -100,11 +100,11 @@ export function AdminVideoOutlineNotesField({ value, onChange, textareaId }: Adm
           {errorCount || warnCount ? (
             <li className="list-none font-semibold text-[var(--text-secondary)]">
               {errorCount > 0 ? (
-                <span className="text-red-400">{errorCount} error{errorCount === 1 ? '' : 's'}</span>
+                <span className="text-[#a1a2a2]">{errorCount} error{errorCount === 1 ? '' : 's'}</span>
               ) : null}
               {errorCount > 0 && warnCount > 0 ? ' · ' : null}
               {warnCount > 0 ? (
-                <span className="text-amber-500/90">{warnCount} warning{warnCount === 1 ? '' : 's'}</span>
+                <span className="text-[#757676]">{warnCount} warning{warnCount === 1 ? '' : 's'}</span>
               ) : null}
             </li>
           ) : null}
@@ -112,7 +112,7 @@ export function AdminVideoOutlineNotesField({ value, onChange, textareaId }: Adm
             <li
               key={`${d.line}-${idx}`}
               className={`list-none border-l-2 pl-2 ${
-                d.severity === 'error' ? 'border-red-500 text-red-300' : 'border-amber-500/80 text-amber-200/90'
+                d.severity === 'error' ? 'border-[#616161] text-[#cfcfcf]' : 'border-[#8b8c8c] text-[#cfcfcf]'
               }`}
             >
               <span className="font-mono text-[var(--text-muted)]">L{d.line}:</span> {d.message}
@@ -120,7 +120,7 @@ export function AdminVideoOutlineNotesField({ value, onChange, textareaId }: Adm
           ))}
         </ul>
       ) : value.trim() ? (
-        <p className="text-[11px] font-medium text-emerald-500/90">Outline timestamps look consistent.</p>
+        <p className="text-[11px] font-medium text-[#757676]">Outline timestamps look consistent.</p>
       ) : null}
     </div>
   );

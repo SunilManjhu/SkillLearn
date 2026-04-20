@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 function InsertStripWaitCursorSvg() {
   return (
     <svg
-      className="h-7 w-7 text-orange-500"
+      className="h-7 w-7 text-admin-icon"
       viewBox="0 0 66.809 66.81"
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden

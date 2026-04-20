@@ -146,7 +146,7 @@ export function LearnerPathCourseRowList({
 
   if (courseIds.length > 0 && orderedCourses.length === 0) {
     return (
-      <p className="rounded-xl border border-dashed border-[var(--border-color)] bg-[var(--bg-primary)]/40 px-4 py-8 text-center text-sm text-[var(--text-muted)]">
+      <p className="rounded-xl border border-dashed border-[var(--border-color)] bg-[var(--bg-primary)]/40 px-4 py-8 text-center text-sm leading-relaxed text-[var(--text-secondary)]">
         This path lists courses that are not in the published catalog yet. They may still be drafting or
         unpublished.
       </p>

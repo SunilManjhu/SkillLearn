@@ -45,7 +45,7 @@ export function AdminLessonContentPreview({ lesson }: { lesson: Lesson }) {
           webHref ? (
             <div className="flex min-h-[11rem] flex-col bg-[var(--bg-primary)]">
               <div className="flex items-center gap-2 border-b border-[var(--border-color)]/60 px-2 py-1.5">
-                <Globe className="h-3.5 w-3.5 shrink-0 text-orange-500/90" aria-hidden />
+                <Globe className="h-3.5 w-3.5 shrink-0 text-admin-icon opacity-90" aria-hidden />
                 <span className="min-w-0 flex-1 truncate text-[10px] font-mono text-[var(--text-secondary)]" title={webHref}>
                   {webHref}
                 </span>
@@ -53,7 +53,7 @@ export function AdminLessonContentPreview({ lesson }: { lesson: Lesson }) {
                   href={webHref}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex shrink-0 items-center gap-0.5 rounded-md px-1 py-0.5 text-[10px] font-semibold text-orange-500 hover:bg-orange-500/10"
+                  className="inline-flex shrink-0 items-center gap-0.5 rounded-md px-1 py-0.5 text-[10px] font-semibold text-admin-icon hover:bg-[#616161]/10"
                 >
                   <ExternalLink className="h-3 w-3" aria-hidden />
                   Open
@@ -62,7 +62,7 @@ export function AdminLessonContentPreview({ lesson }: { lesson: Lesson }) {
               <iframe
                 src={webHref}
                 title="External page preview"
-                className="min-h-[9.5rem] w-full flex-1 border-0 bg-white"
+                className="min-h-[9.5rem] w-full flex-1 border-0 bg-[#e7e7e7]"
                 loading="lazy"
                 referrerPolicy="no-referrer-when-downgrade"
                 sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
@@ -82,7 +82,7 @@ export function AdminLessonContentPreview({ lesson }: { lesson: Lesson }) {
             {quizDef && quizDef.questions.length > 0 ? (
               <>
                 <div className="mb-2 flex items-center gap-1.5 text-[11px] font-bold text-[var(--text-primary)]">
-                  <ClipboardList className="h-3.5 w-3.5 text-orange-500" aria-hidden />
+                  <ClipboardList className="h-3.5 w-3.5 text-admin-icon" aria-hidden />
                   Quiz · {quizDef.questions.length} question{quizDef.questions.length === 1 ? '' : 's'}
                 </div>
                 <ul className="space-y-1.5">

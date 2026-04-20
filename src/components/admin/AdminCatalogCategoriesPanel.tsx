@@ -269,7 +269,7 @@ export const AdminCatalogCategoriesPanel: React.FC<AdminCatalogCategoriesPanelPr
 
       <section className="space-y-2 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/40 p-4">
         <h3 className="flex items-center gap-2 text-sm font-bold text-[var(--text-primary)]">
-          <Tags size={16} className="shrink-0 text-orange-500" aria-hidden />
+          <Tags size={16} className="shrink-0 text-admin-icon" aria-hidden />
           Preset categories
         </h3>
         <p className="text-xs text-[var(--text-muted)]">
@@ -325,7 +325,7 @@ export const AdminCatalogCategoriesPanel: React.FC<AdminCatalogCategoriesPanelPr
                         setReassignModal(row);
                       }}
                       disabled={busy}
-                      className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-orange-500/50 px-3 py-2 text-xs font-semibold text-orange-500 hover:bg-orange-500/10 disabled:opacity-50"
+                      className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-[#8b8c8c]/90 px-3 py-2 text-xs font-semibold text-[#616161] hover:bg-[#616161]/10 app-dark:border-[var(--tone-400)] app-dark:text-[var(--tone-100)] app-dark:hover:bg-[var(--tone-800)] disabled:opacity-50"
                     >
                       Reassign courses…
                     </button>
@@ -351,7 +351,7 @@ export const AdminCatalogCategoriesPanel: React.FC<AdminCatalogCategoriesPanelPr
       <AnimatePresence>
         {renameModal && (
           <div
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-[#272828]/75 p-4 backdrop-blur-sm"
             role="dialog"
             aria-modal="true"
             aria-labelledby="admin-cat-rename-title"
@@ -400,7 +400,7 @@ export const AdminCatalogCategoriesPanel: React.FC<AdminCatalogCategoriesPanelPr
                     type="button"
                     onClick={() => void applyRename()}
                     disabled={busy}
-                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-50"
+                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#616161] px-4 py-2.5 text-sm font-bold text-[#e7e7e7] hover:bg-[#757676] disabled:opacity-50"
                   >
                     {busy ? <Loader2 size={18} className="animate-spin" aria-hidden /> : null}
                     Save
@@ -415,7 +415,7 @@ export const AdminCatalogCategoriesPanel: React.FC<AdminCatalogCategoriesPanelPr
       <AnimatePresence>
         {reassignModal && (
           <div
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-[#272828]/75 p-4 backdrop-blur-sm"
             role="dialog"
             aria-modal="true"
             aria-labelledby="admin-cat-reassign-title"
@@ -472,7 +472,7 @@ export const AdminCatalogCategoriesPanel: React.FC<AdminCatalogCategoriesPanelPr
                     type="button"
                     onClick={() => void applyReassign()}
                     disabled={busy}
-                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-50"
+                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#616161] px-4 py-2.5 text-sm font-bold text-[#e7e7e7] hover:bg-[#757676] disabled:opacity-50"
                   >
                     {busy ? <Loader2 size={18} className="animate-spin" aria-hidden /> : null}
                     Reassign

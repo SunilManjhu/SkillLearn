@@ -115,13 +115,11 @@ import {
   addCatalogCategoryExtra,
   CATALOG_CATEGORY_EXTRAS_CHANGED,
   readCatalogCategoryExtras,
-  removeCatalogCategoryExtra,
 } from '../../utils/catalogCategoryExtras';
 import {
   addCatalogSkillExtra,
   CATALOG_SKILL_EXTRAS_CHANGED,
   readCatalogSkillExtras,
-  removeCatalogSkillExtra,
 } from '../../utils/catalogSkillExtras';
 import {
   CATALOG_SKILL_PRESETS_CHANGED,
@@ -142,6 +140,7 @@ import {
   type CatalogCategoryPresetsState,
 } from '../../utils/catalogCategoryPresets';
 import { loadCatalogCategoryPresets } from '../../utils/catalogCategoryPresetsFirestore';
+import { buildCatalogTaxonomy } from '../../utils/catalogTaxonomy';
 import { dedupeLabelsPreserveOrder, normalizeCourseTaxonomy } from '../../utils/courseTaxonomy';
 import { getGeminiApiKey } from '../../utils/geminiClient';
 import { resolveMcqCorrectIndex } from '../../utils/geminiQuiz';
@@ -890,14 +889,12 @@ function splitDividerIntoNewModuleInsertOptions(course: Course, mi: number): { i
 const ADMIN_CATALOG_KIND_BADGE_BASE =
   'inline-flex min-h-11 min-w-[3.25rem] shrink-0 touch-manipulation items-center justify-center rounded-md px-3.5 text-[10px] font-bold uppercase leading-none transition-colors focus:outline-none sm:h-7 sm:min-h-0';
 
-/** Amber — section dividers (Path builder uses the same tone for divider branches). */
-const ADMIN_CATALOG_BRANCH_KIND_BADGE_CLASS = `${ADMIN_CATALOG_KIND_BADGE_BASE} hover:ring-2 hover:ring-amber-500/40 focus:ring-2 focus:ring-amber-500/40 bg-amber-500/15 text-amber-800 dark:text-amber-300`;
+/** Neutral-only admin palette (no semantic color bands). */
+const ADMIN_CATALOG_KIND_BADGE_NEUTRAL = `${ADMIN_CATALOG_KIND_BADGE_BASE} hover:ring-2 hover:ring-[#a1a2a2]/40 focus:ring-2 focus:ring-[#a1a2a2]/40 bg-[#757676]/15 text-[#393a3a] app-dark:text-[#cfcfcf]`;
 
-/** Violet — module row badge (structural grouping). */
-const ADMIN_CATALOG_MODULE_BADGE_CLASS = `${ADMIN_CATALOG_KIND_BADGE_BASE} hover:ring-2 hover:ring-violet-500/40 focus:ring-2 focus:ring-violet-500/40 bg-violet-500/15 text-violet-800 dark:text-violet-300`;
-
-/** Sky — playable lesson row badge (distinct from module + divider). */
-const ADMIN_CATALOG_LESSON_BADGE_CLASS = `${ADMIN_CATALOG_KIND_BADGE_BASE} hover:ring-2 hover:ring-sky-500/40 focus:ring-2 focus:ring-sky-500/40 bg-sky-500/15 text-sky-800 dark:text-sky-300`;
+const ADMIN_CATALOG_BRANCH_KIND_BADGE_CLASS = ADMIN_CATALOG_KIND_BADGE_NEUTRAL;
+const ADMIN_CATALOG_MODULE_BADGE_CLASS = ADMIN_CATALOG_KIND_BADGE_NEUTRAL;
+const ADMIN_CATALOG_LESSON_BADGE_CLASS = ADMIN_CATALOG_KIND_BADGE_NEUTRAL;
 
 function catalogLessonBranchKindModalLabel(lesson: Lesson): string {
   if (lesson.contentKind === 'divider') return 'Divider';
@@ -1266,6 +1263,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const [showValidationHints, setShowValidationHints] = useState(false);
   /** New Course (__new__) opens course details + first module/lesson; published picks start collapsed (see effect). */
   const [courseDetailsOpen, setCourseDetailsOpen] = useState(false);
+  /** Description + author bio: optional; collapsed by default to save space. */
+  const [courseDescriptionBioOpen, setCourseDescriptionBioOpen] = useState(false);
   const [openModules, setOpenModules] = useState<Record<number, boolean>>({});
   const [openLessons, setOpenLessons] = useState<Record<string, boolean>>({});
   /** Divider row key `mi:li` → true hides playable rows under that divider until the next divider (default: expanded). */
@@ -1453,7 +1452,10 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   }, [draft]);
 
   useEffect(() => {
-    if (!courseDetailsOpen) setCategoriesTipsOpen(false);
+    if (!courseDetailsOpen) {
+      setCategoriesTipsOpen(false);
+      setCourseDescriptionBioOpen(false);
+    }
   }, [courseDetailsOpen]);
 
   useEffect(() => {
@@ -1574,8 +1576,21 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         if (t) s.add(t);
       }
     }
+    const tax = buildCatalogTaxonomy({
+      courses: courseRowsForTaxonomyPickers,
+      topicPresets: categoryPresetsState,
+      skillPresets: skillPresetsState,
+    });
+    for (const lab of tax.topics.main) {
+      const t = lab?.trim();
+      if (t) s.add(t);
+    }
+    for (const lab of tax.topics.more) {
+      const t = lab?.trim();
+      if (t) s.add(t);
+    }
     return [...s].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-  }, [courseRowsForTaxonomyPickers, categoryOptionsVersion, categoryPresetsState]);
+  }, [courseRowsForTaxonomyPickers, categoryOptionsVersion, categoryPresetsState, skillPresetsState]);
 
   /** Full list for adding skills (presets, saved extras, labels from catalog courses + live published when creator). */
   const skillSelectOptions = useMemo(() => {
@@ -1587,8 +1602,21 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         if (t) s.add(t);
       }
     }
+    const tax = buildCatalogTaxonomy({
+      courses: courseRowsForTaxonomyPickers,
+      topicPresets: categoryPresetsState,
+      skillPresets: skillPresetsState,
+    });
+    for (const lab of tax.skills.main) {
+      const t = lab?.trim();
+      if (t) s.add(t);
+    }
+    for (const lab of tax.skills.more) {
+      const t = lab?.trim();
+      if (t) s.add(t);
+    }
     return [...s].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-  }, [courseRowsForTaxonomyPickers, skillOptionsVersion, skillPresetsState]);
+  }, [courseRowsForTaxonomyPickers, skillOptionsVersion, skillPresetsState, categoryPresetsState]);
 
   useEffect(() => {
     const h = () => setCategoryOptionsVersion((v) => v + 1);
@@ -1602,15 +1630,41 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     return () => window.removeEventListener(CATALOG_SKILL_EXTRAS_CHANGED, h);
   }, []);
 
-  const registerDraftTaxonomyExtras = () => {
-    if (!draft || isCreatorCatalog) return;
-    for (const c of draft.categories) {
+  /** Pins this course’s category/skill labels into the shared picker library (Firestore when admin writes are enabled). */
+  const seedCatalogExtrasFromCourse = (course: Course) => {
+    if (isCreatorCatalog) return;
+    for (const c of course.categories ?? []) {
       if (c.trim()) addCatalogCategoryExtra(c.trim());
     }
-    for (const s of draft.skills) {
+    for (const s of course.skills ?? []) {
       if (s.trim()) addCatalogSkillExtra(s.trim());
     }
   };
+
+  const registerDraftTaxonomyExtras = () => {
+    if (!draft) return;
+    seedCatalogExtrasFromCourse(draft);
+  };
+
+  const draftTaxonomySeedKey = useMemo(() => {
+    if (!draft) return '';
+    const cats = draft.categories
+      .map((c) => c.trim().toLowerCase())
+      .filter(Boolean)
+      .sort()
+      .join('\u001f');
+    const sks = draft.skills
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean)
+      .sort()
+      .join('\u001f');
+    return `${draft.id}\u001e${cats}\u001e${sks}`;
+  }, [draft]);
+
+  useEffect(() => {
+    if (!draftTaxonomySeedKey || !draft) return;
+    seedCatalogExtrasFromCourse(draft);
+  }, [draft, draftTaxonomySeedKey, isCreatorCatalog]);
 
   const categoriesNotOnDraft = useMemo(() => {
     if (!draft) return categorySelectOptions;
@@ -1693,7 +1747,6 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   useEffect(() => {
     if (isCreatorCatalog) {
       if (
-        contentCatalogSubTab === 'taxonomy' ||
         contentCatalogSubTab === 'categories' ||
         contentCatalogSubTab === 'presets' ||
         contentCatalogSubTab === 'skillPresets'
@@ -2004,9 +2057,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     (label: string) => {
       const low = label.toLowerCase();
       setDraft((d) => (d ? { ...d, categories: d.categories.filter((c) => c.toLowerCase() !== low) } : d));
-      if (isCreatorCatalog) removeCatalogCategoryExtra(label);
     },
-    [isCreatorCatalog]
+    []
   );
 
   const addDraftSkill = useCallback(
@@ -2028,9 +2080,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     (label: string) => {
       const low = label.toLowerCase();
       setDraft((d) => (d ? { ...d, skills: d.skills.filter((s) => s.toLowerCase() !== low) } : d));
-      if (isCreatorCatalog) removeCatalogSkillExtra(label);
     },
-    [isCreatorCatalog]
+    []
   );
 
   const updateModule = (mi: number, patch: Partial<Module>) => {
@@ -3487,7 +3538,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const requestContentCatalogSubTab = useCallback(
     (next: ContentCatalogSubTab) => {
       if (next === contentCatalogSubTab) return;
-      if (isCreatorCatalog && next !== 'catalog' && next !== 'paths') return;
+      /** Creators may open taxonomy to suggest global labels; presets/categories admin tabs stay blocked below. */
+      if (isCreatorCatalog && next !== 'catalog' && next !== 'paths' && next !== 'taxonomy') return;
 
       if (contentCatalogSubTab === 'paths') {
         if (next === 'catalog') {
@@ -3958,7 +4010,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     <div className="min-w-0 space-y-4 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3 sm:space-y-6 sm:p-6">
       <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:justify-between">
         <h2 className="flex min-w-0 items-center gap-2 text-base font-bold sm:text-lg">
-          <BookOpen size={20} className="shrink-0 text-orange-500" />
+          <BookOpen size={20} className="shrink-0 text-admin-icon" />
           <span className="min-w-0">{catalogSectionTitle ?? 'Course catalog'}</span>
         </h2>
         {/* Keep a stable slot so the title row does not jump when switching tabs */}
@@ -4057,7 +4109,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
       {isCreatorCatalog && (
         <p
-          className="rounded-xl border border-orange-500/25 bg-orange-500/[0.07] px-3 py-2.5 text-xs leading-relaxed text-[var(--text-secondary)] sm:text-sm"
+          className="rounded-xl border border-[#8b8c8c]/65 bg-[#757676]/12 px-3 py-2.5 text-xs leading-relaxed text-[var(--text-secondary)] sm:text-sm"
           role="note"
         >
           <span className="font-semibold text-[var(--text-primary)]">Finding your work:</span> switch to{' '}
@@ -4073,8 +4125,10 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         <button
           type="button"
           onClick={() => requestContentCatalogSubTab('catalog')}
-          className={`inline-flex min-h-11 touch-manipulation shrink-0 items-center rounded-lg px-3 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 active:opacity-90 ${
-            contentCatalogSubTab === 'catalog' ? 'bg-orange-500/20 text-orange-500' : 'text-[var(--text-secondary)]'
+          className={`inline-flex min-h-11 touch-manipulation shrink-0 items-center rounded-lg px-3 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/45 active:opacity-90 ${
+            contentCatalogSubTab === 'catalog'
+              ? 'bg-[#616161]/10 text-[var(--text-primary)] ring-1 ring-[#a1a2a2]/45'
+              : 'text-[var(--text-secondary)]'
           }`}
           aria-current={contentCatalogSubTab === 'catalog' ? 'page' : undefined}
         >
@@ -4085,25 +4139,29 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             type="button"
             onClick={() => requestContentCatalogSubTab('paths')}
             aria-current={contentCatalogSubTab === 'paths' ? 'page' : undefined}
-            className={`inline-flex min-h-11 touch-manipulation shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold active:opacity-90 ${
-              contentCatalogSubTab === 'paths' ? 'bg-orange-500/20 text-orange-500' : 'text-[var(--text-secondary)]'
+            className={`inline-flex min-h-11 touch-manipulation shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/45 active:opacity-90 ${
+              contentCatalogSubTab === 'paths'
+                ? 'bg-[#616161]/10 text-[var(--text-primary)] ring-1 ring-[#a1a2a2]/45'
+                : 'text-[var(--text-secondary)]'
             }`}
           >
             <Route size={15} aria-hidden />
             Paths
           </button>
-          {!isCreatorCatalog && (
-            <button
-              type="button"
-              onClick={() => requestContentCatalogSubTab('taxonomy')}
-              className={`inline-flex min-h-11 touch-manipulation shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold active:opacity-90 ${
-                contentCatalogSubTab === 'taxonomy' ? 'bg-orange-500/20 text-orange-500' : 'text-[var(--text-secondary)]'
-              }`}
-            >
-              <Tags size={15} aria-hidden />
-              Categories &amp; Skills
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => requestContentCatalogSubTab('taxonomy')}
+            aria-current={contentCatalogSubTab === 'taxonomy' ? 'page' : undefined}
+            aria-label="Categories and skills"
+            className={`inline-flex min-h-11 touch-manipulation shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold tracking-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/45 active:opacity-90 ${
+              contentCatalogSubTab === 'taxonomy'
+                ? 'bg-[#616161]/10 text-[var(--text-primary)] ring-1 ring-[#a1a2a2]/45'
+                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+            }`}
+          >
+            <Tags size={15} className="shrink-0 opacity-90" aria-hidden />
+            <span className="min-w-0 truncate">Categories & Skills</span>
+          </button>
         </div>
       </div>
 
@@ -4128,11 +4186,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   aria-expanded={catalogTipsOpen}
                   aria-controls="admin-catalog-editor-notes"
                   aria-label={catalogTipsOpen ? 'Close course field tips' : 'Open course field tips'}
-                  className={`inline-flex size-6 shrink-0 touch-manipulation items-center justify-center rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 active:opacity-90 ${
-                    catalogTipsOpen ? 'border-orange-500/50 text-orange-500' : ''
+                  className={`inline-flex size-6 shrink-0 touch-manipulation items-center justify-center rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/45 active:opacity-90 ${
+                    catalogTipsOpen ? 'border-[#8b8c8c]/90 text-[#616161] app-dark:border-[var(--tone-400)] app-dark:text-[var(--tone-100)]' : ''
                   }`}
                 >
-                  <Info size={14} className="text-orange-500/90" aria-hidden />
+                  <Info size={14} className="text-admin-icon opacity-90" aria-hidden />
                 </button>
                 <div
                   id="admin-catalog-editor-notes"
@@ -4149,7 +4207,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       ? 'hidden'
                       : tipsNarrowViewport
                         ? catalogTipFixedTop >= 0
-                          ? 'fixed z-[120] left-3 right-3 w-auto max-w-none translate-x-0 overflow-y-auto overflow-x-hidden overscroll-y-contain [-webkit-overflow-scrolling:touch] touch-pan-y max-h-[calc(100dvh-var(--admin-tip-top)-env(safe-area-inset-bottom,0px)-0.75rem)] rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-3.5 text-left text-sm leading-relaxed text-[var(--text-primary)] shadow-xl pointer-events-auto outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40'
+                          ? 'fixed z-[120] left-3 right-3 w-auto max-w-none translate-x-0 overflow-y-auto overflow-x-hidden overscroll-y-contain [-webkit-overflow-scrolling:touch] touch-pan-y max-h-[calc(100dvh-var(--admin-tip-top)-env(safe-area-inset-bottom,0px)-0.75rem)] rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-3.5 text-left text-sm leading-relaxed text-[var(--text-primary)] shadow-xl pointer-events-auto outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/45'
                           : 'hidden'
                         : 'absolute left-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] max-w-sm rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-3 text-left text-xs leading-snug text-[var(--text-primary)] shadow-lg pointer-events-auto'
                   }
@@ -4159,7 +4217,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       : undefined
                   }
                 >
-                  <ul className="list-disc space-y-1.5 pl-4 text-[var(--text-muted)] marker:text-orange-500/70 sm:space-y-1">
+                  <ul className="list-disc space-y-1.5 pl-4 text-[var(--text-muted)] marker:text-[#757676]/90 app-dark:marker:text-[var(--tone-300)] sm:space-y-1">
                     <li>
                       {isCreatorCatalog
                         ? 'Saves go to your private courses (Firestore) — only you and admins can see them.'
@@ -4183,13 +4241,13 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     </li>
                     <li>
                       <strong className="font-semibold text-[var(--text-secondary)]">New Course</strong>: next id{' '}
-                      <code className="text-orange-500/90">C1</code>, <code className="text-orange-500/90">C2</code>…;
+                      <code className="text-[#616161] app-dark:text-[var(--tone-200)]">C1</code>, <code className="text-[#616161] app-dark:text-[var(--tone-200)]">C2</code>…;
                       list A–Z.
                     </li>
                     <li>
-                      Ids: modules <code className="text-orange-500/90">C1M1</code>, lessons{' '}
-                      <code className="text-orange-500/90">C1M1L1</code>, section dividers{' '}
-                      <code className="text-orange-500/90">C1M1D1</code> (not L).
+                      Ids: modules <code className="text-[#616161] app-dark:text-[var(--tone-200)]">C1M1</code>, lessons{' '}
+                      <code className="text-[#616161] app-dark:text-[var(--tone-200)]">C1M1L1</code>, section dividers{' '}
+                      <code className="text-[#616161] app-dark:text-[var(--tone-200)]">C1M1D1</code> (not L).
                     </li>
                   </ul>
                 </div>
@@ -4231,7 +4289,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 >
                   <Hash size={16} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
                   {draft ? (
-                    <span className="truncate text-orange-500/90">{draft.id}</span>
+                    <span className="truncate text-[#616161] app-dark:text-[var(--tone-200)]">{draft.id}</span>
                   ) : (
                     <span className="text-[var(--text-muted)]">—</span>
                   )}
@@ -4318,7 +4376,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               aria-busy={busy}
               title={busy ? 'Saving…' : 'Save changes to the catalog'}
               aria-label={busy ? 'Saving…' : 'Save course to catalog'}
-              className="inline-flex min-h-11 shrink-0 touch-manipulation items-center justify-center gap-2 rounded-xl bg-orange-500 px-3 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-40 sm:px-4"
+              className="inline-flex min-h-11 shrink-0 touch-manipulation items-center justify-center gap-2 rounded-xl bg-[#616161] px-3 py-2 text-sm font-bold text-[#e7e7e7] hover:bg-[#757676] disabled:opacity-40 sm:px-4"
             >
               {busy ? (
                 <Loader2 size={18} className="shrink-0 animate-spin" aria-hidden />
@@ -4330,7 +4388,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             {draft && isDirty ? (
               <span
                 role="status"
-                className="inline-flex size-11 shrink-0 items-center justify-center text-amber-600 dark:text-amber-400"
+                className="inline-flex size-11 shrink-0 items-center justify-center text-[#616161] app-dark:text-[#a1a2a2]"
                 title="Unsaved changes"
               >
                 <AlertCircle size={20} strokeWidth={2} aria-hidden />
@@ -4339,7 +4397,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             ) : draft && !isDirty && selector !== '__new__' ? (
               <span
                 role="status"
-                className="inline-flex size-11 shrink-0 items-center justify-center text-emerald-600 dark:text-emerald-400"
+                className="inline-flex size-11 shrink-0 items-center justify-center text-[#616161] app-dark:text-[#a1a2a2]"
                 title="All changes saved"
               >
                 <CheckCircle2 size={20} strokeWidth={2} aria-hidden />
@@ -4369,7 +4427,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         return { ...d, catalogPublished: false };
                       });
                     }}
-                    className="h-4 w-4 shrink-0 rounded border-[var(--border-color)] accent-orange-500"
+                    className="h-4 w-4 shrink-0 rounded border-[var(--border-color)] checkbox-accent-theme"
                     aria-label="Published in course catalog and learning paths"
                   />
                 </label>
@@ -4391,7 +4449,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               </div>
             ) : null}
             <div
-              className="flex shrink-0 items-center border-l-2 border-red-500/25 pl-2 md:pl-3 lg:pl-4"
+              className="flex shrink-0 items-center border-l-2 border-[#616161]/25 pl-2 md:pl-3 lg:pl-4"
               role="group"
               aria-label="Destructive actions"
             >
@@ -4401,7 +4459,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 onClick={() => void requestDeleteCourse()}
                 title="Permanently remove this course from the catalog"
                 aria-label="Delete course from catalog"
-                className="inline-flex min-h-11 shrink-0 touch-manipulation items-center justify-center gap-2 rounded-md border-2 border-red-500/50 bg-transparent px-2.5 py-2 text-sm font-semibold text-red-500 hover:bg-red-500/10 dark:text-red-400 disabled:opacity-40 sm:px-3"
+                className="inline-flex min-h-11 shrink-0 touch-manipulation items-center justify-center gap-2 rounded-md border-2 border-[#616161]/50 bg-transparent px-2.5 py-2 text-sm font-semibold text-[#616161] hover:bg-[#757676]/12 app-dark:text-[#cfcfcf] disabled:opacity-40 sm:px-3"
               >
                 <Trash2 size={17} className="shrink-0" aria-hidden />
                 <span>Delete</span>
@@ -4464,23 +4522,23 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               </span>
             </button>
             {courseDetailsOpen && (
-              <div className="border-t border-[var(--border-color)] p-4">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label className="block min-w-0 space-y-1">
+              <div className="border-t border-[var(--border-color)] p-3 sm:p-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-12 xl:gap-x-5 xl:gap-y-4">
+            <label className="block min-w-0 space-y-1 xl:col-span-7">
               <span className="text-xs font-semibold text-[var(--text-secondary)]">Course title</span>
               <input
                 id="admin-course-title"
                 value={draft.title}
                 onChange={(e) => updateDraft({ title: e.target.value })}
-                placeholder="e.g. Full-Stack Web Foundations — short name shown in the catalog"
+                placeholder="Short catalog name, e.g. Web Foundations"
                 className={`w-full min-w-0 bg-[var(--bg-primary)] border rounded-lg px-3 py-2 text-sm ${
                   showValidationHints && fieldErrors.courseTitle
-                    ? 'border-red-500'
+                    ? 'border-[#616161]'
                     : 'border-[var(--border-color)]'
                 }`}
               />
             </label>
-            <label className="block min-w-0 space-y-1">
+            <label className="block min-w-0 space-y-1 xl:col-span-5">
               <span className="text-xs font-semibold text-[var(--text-secondary)]">Author</span>
               <input
                 id="admin-course-author"
@@ -4488,7 +4546,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 onChange={(e) => updateDraft({ author: e.target.value })}
                 className={`w-full min-w-0 bg-[var(--bg-primary)] border rounded-lg px-3 py-2 text-sm ${
                   showValidationHints && fieldErrors.courseAuthor
-                    ? 'border-red-500'
+                    ? 'border-[#616161]'
                     : 'border-[var(--border-color)]'
                 }`}
               />
@@ -4496,7 +4554,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             <div
               id="admin-course-categories"
               aria-labelledby="admin-course-categories-label"
-              className={`space-y-2 sm:col-span-2 ${showValidationHints && fieldErrors.courseCategories ? 'rounded-lg ring-2 ring-red-500/60 p-2 -m-2' : ''}`}
+              className={`min-w-0 space-y-1.5 xl:col-span-6 ${showValidationHints && fieldErrors.courseCategories ? 'rounded-lg ring-2 ring-red-500/60 ring-offset-2 ring-offset-[var(--bg-secondary)]' : ''}`}
             >
               <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
                 <span
@@ -4515,11 +4573,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     aria-label={
                       categoriesTipsOpen ? 'Close categories field tips' : 'Open categories field tips'
                     }
-                    className={`inline-flex size-6 shrink-0 touch-manipulation items-center justify-center rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 active:opacity-90 ${
-                      categoriesTipsOpen ? 'border-orange-500/50 text-orange-500' : ''
+                    className={`inline-flex size-6 shrink-0 touch-manipulation items-center justify-center rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/45 active:opacity-90 ${
+                      categoriesTipsOpen ? 'border-[#8b8c8c]/90 text-[#616161] app-dark:border-[var(--tone-400)] app-dark:text-[var(--tone-100)]' : ''
                     }`}
                   >
-                    <Info size={14} className="text-orange-500/90" aria-hidden />
+                    <Info size={14} className="text-admin-icon opacity-90" aria-hidden />
                   </button>
                   <div
                     id="admin-course-categories-tips"
@@ -4540,7 +4598,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         ? 'hidden'
                         : tipsNarrowViewport
                           ? categoriesTipFixedTop >= 0
-                            ? 'fixed z-[120] left-3 right-3 w-auto max-w-none translate-x-0 overflow-y-auto overflow-x-hidden overscroll-y-contain [-webkit-overflow-scrolling:touch] touch-pan-y max-h-[calc(100dvh-var(--admin-tip-top)-env(safe-area-inset-bottom,0px)-0.75rem)] rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-3.5 text-left text-sm leading-relaxed text-[var(--text-primary)] shadow-xl pointer-events-auto outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40'
+                            ? 'fixed z-[120] left-3 right-3 w-auto max-w-none translate-x-0 overflow-y-auto overflow-x-hidden overscroll-y-contain [-webkit-overflow-scrolling:touch] touch-pan-y max-h-[calc(100dvh-var(--admin-tip-top)-env(safe-area-inset-bottom,0px)-0.75rem)] rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-3.5 text-left text-sm leading-relaxed text-[var(--text-primary)] shadow-xl pointer-events-auto outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/45'
                             : 'hidden'
                           : 'absolute left-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] max-w-sm rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-3 text-left text-xs leading-snug text-[var(--text-primary)] shadow-lg pointer-events-auto'
                     }
@@ -4550,34 +4608,34 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         : undefined
                     }
                   >
-                    <ul className="list-disc space-y-1.5 pl-4 text-[var(--text-muted)] marker:text-orange-500/70 sm:space-y-1">
+                    <ul className="list-disc space-y-1.5 pl-4 text-[var(--text-muted)] marker:text-[#757676]/90 app-dark:marker:text-[var(--tone-300)] sm:space-y-1">
                       <li>At least one category and one skill are required.</li>
                       {isCreatorCatalog ? (
                         <>
                           <li>
-                            Removing a category chip also drops it from your add-from-list suggestions when it is not
-                            used on your other drafts or the live catalog.
+                            Removing a chip updates suggestions when that label is not used elsewhere on your drafts or
+                            the live catalog.
                           </li>
-                          <li>
-                            “Add category from list” includes labels from the live published catalog and your drafts, not
-                            only this browser’s saved list.
-                          </li>
+                          <li>Suggestions include the published catalog and your drafts, not only this device.</li>
                         </>
                       ) : (
-                        <li>Custom categories appear in library filters after save or when you leave these fields.</li>
+                        <li>
+                          Add from list uses the same menu style as the Course picker; custom names use the text field +
+                          Enter or Add. New labels join filters after save.
+                        </li>
                       )}
                     </ul>
                   </div>
                 </span>
               </div>
-              <div className="flex min-h-10 flex-wrap gap-2">
+              <div className="flex max-h-24 min-h-9 flex-wrap gap-1.5 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch] pr-0.5">
                 {draft.categories.length === 0 ? (
                   <span className="text-xs text-[var(--text-muted)]">Add at least one category.</span>
                 ) : (
                   draft.categories.map((cat) => (
                     <span
                       key={cat}
-                      className="inline-flex max-w-full items-center gap-1 rounded-lg border border-[var(--border-color)] bg-[var(--hover-bg)] px-2 py-1 text-xs font-medium text-[var(--text-primary)]"
+                      className="inline-flex max-w-full min-w-0 items-center gap-1 rounded-lg border border-[var(--border-color)] bg-[var(--hover-bg)] px-2 py-1 text-xs font-medium text-[var(--text-primary)]"
                     >
                       <span className="truncate">{cat}</span>
                       <button
@@ -4592,71 +4650,74 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   ))
                 )}
               </div>
-              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+              <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,11rem)_minmax(0,1fr)_auto] sm:items-stretch">
                 <select
-                  value=""
+                  key={`admin-cat-pick-${draft.categories.join('\u001f')}`}
+                  aria-label="Add category from list"
+                  defaultValue=""
                   onChange={(e) => {
-                    const v = e.target.value;
-                    if (v) addDraftCategory(v);
-                    e.target.value = '';
+                    const v = e.currentTarget.value;
+                    if (!v) return;
+                    addDraftCategory(v);
+                    e.currentTarget.selectedIndex = 0;
                   }}
                   onBlur={registerDraftTaxonomyExtras}
-                  className="w-full min-h-11 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm sm:max-w-xs"
-                  aria-label="Add category from list"
+                  className="box-border min-h-11 min-w-0 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] touch-manipulation"
                 >
-                  <option value="">Add category from list…</option>
+                  <option value="">Add from list…</option>
                   {categoriesNotOnDraft.map((opt) => (
                     <option key={opt} value={opt}>
                       {opt}
                     </option>
                   ))}
                 </select>
-                <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center">
-                  <input
-                    placeholder="Custom category…"
-                    onKeyDown={(e) => {
-                      if (e.key !== 'Enter') return;
-                      e.preventDefault();
-                      const el = e.currentTarget;
+                <input
+                  type="text"
+                  id="admin-course-custom-category"
+                  placeholder="Or type custom…"
+                  aria-label="Add custom category"
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter') return;
+                    e.preventDefault();
+                    const el = e.currentTarget;
+                    addDraftCategory(el.value);
+                    el.value = '';
+                  }}
+                  onBlur={registerDraftTaxonomyExtras}
+                  className="box-border min-h-11 min-w-0 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const el = document.getElementById('admin-course-custom-category');
+                    if (el instanceof HTMLInputElement) {
                       addDraftCategory(el.value);
                       el.value = '';
-                    }}
-                    onBlur={registerDraftTaxonomyExtras}
-                    className="w-full min-h-11 min-w-0 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm"
-                  />
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      const prev = e.currentTarget.previousElementSibling;
-                      if (prev instanceof HTMLInputElement) {
-                        addDraftCategory(prev.value);
-                        prev.value = '';
-                      }
-                    }}
-                    className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg border border-[var(--border-color)] px-3 text-xs font-bold text-orange-500 hover:bg-[var(--hover-bg)]"
-                  >
-                    Add
-                  </button>
-                </div>
+                    }
+                  }}
+                  className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center rounded-lg border border-[var(--border-color)] px-3 text-sm font-bold text-[#616161] hover:bg-[var(--hover-bg)] app-dark:text-[var(--tone-100)] sm:w-auto sm:min-w-[5.25rem]"
+                >
+                  Add
+                </button>
               </div>
             </div>
             <div
               id="admin-course-skills"
               aria-labelledby="admin-course-skills-label"
-              className={`space-y-2 sm:col-span-2 ${showValidationHints && fieldErrors.courseSkills ? 'rounded-lg ring-2 ring-red-500/60 p-2 -m-2' : ''}`}
+              className={`min-w-0 space-y-1.5 xl:col-span-6 ${showValidationHints && fieldErrors.courseSkills ? 'rounded-lg ring-2 ring-red-500/60 ring-offset-2 ring-offset-[var(--bg-secondary)]' : ''}`}
             >
               <span
                 id="admin-course-skills-label"
-                className="text-xs font-semibold leading-none text-[var(--text-secondary)]"
+                className="inline-flex min-h-6 items-center text-xs font-semibold leading-none text-[var(--text-secondary)]"
               >
                 Skills
               </span>
-              <div className="flex min-h-10 flex-wrap gap-2">
+              <div className="flex max-h-24 min-h-9 flex-wrap gap-1.5 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch] pr-0.5">
                 {draft.skills.length === 0 ? (
                   <span
                     className={`text-xs ${
                       showValidationHints && fieldErrors.courseSkills
-                        ? 'font-medium text-red-400'
+                        ? 'font-medium text-[#a1a2a2]'
                         : 'text-[var(--text-muted)]'
                     }`}
                   >
@@ -4666,7 +4727,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   draft.skills.map((sk) => (
                     <span
                       key={sk}
-                      className="inline-flex max-w-full items-center gap-1 rounded-lg border border-[var(--border-color)] bg-[var(--hover-bg)] px-2 py-1 text-xs font-medium text-[var(--text-primary)]"
+                      className="inline-flex max-w-full min-w-0 items-center gap-1 rounded-lg border border-[var(--border-color)] bg-[var(--hover-bg)] px-2 py-1 text-xs font-medium text-[var(--text-primary)]"
                     >
                       <span className="truncate">{sk}</span>
                       <button
@@ -4681,70 +4742,69 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   ))
                 )}
               </div>
-              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+              <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,11rem)_minmax(0,1fr)_auto] sm:items-stretch">
                 <select
-                  value=""
+                  key={`admin-skill-pick-${draft.skills.join('\u001f')}`}
+                  aria-label="Add skill from list"
+                  defaultValue=""
                   onChange={(e) => {
-                    const v = e.target.value;
-                    if (v) addDraftSkill(v);
-                    e.target.value = '';
+                    const v = e.currentTarget.value;
+                    if (!v) return;
+                    addDraftSkill(v);
+                    e.currentTarget.selectedIndex = 0;
                   }}
                   onBlur={registerDraftTaxonomyExtras}
-                  className="w-full min-h-11 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm sm:max-w-xs"
-                  aria-label="Add skill from list"
+                  className="box-border min-h-11 min-w-0 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] touch-manipulation"
                 >
-                  <option value="">Add skill from list…</option>
+                  <option value="">Add from list…</option>
                   {skillsNotOnDraft.map((opt) => (
                     <option key={opt} value={opt}>
                       {opt}
                     </option>
                   ))}
                 </select>
-                <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center">
-                  <input
-                    placeholder="Custom skill…"
-                    onKeyDown={(e) => {
-                      if (e.key !== 'Enter') return;
-                      e.preventDefault();
-                      const el = e.currentTarget;
+                <input
+                  type="text"
+                  id="admin-course-custom-skill"
+                  placeholder="Or type custom…"
+                  aria-label="Add custom skill"
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter') return;
+                    e.preventDefault();
+                    const el = e.currentTarget;
+                    addDraftSkill(el.value);
+                    el.value = '';
+                  }}
+                  onBlur={registerDraftTaxonomyExtras}
+                  className="box-border min-h-11 min-w-0 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const el = document.getElementById('admin-course-custom-skill');
+                    if (el instanceof HTMLInputElement) {
                       addDraftSkill(el.value);
                       el.value = '';
-                    }}
-                    onBlur={registerDraftTaxonomyExtras}
-                    className="w-full min-h-11 min-w-0 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm"
-                  />
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      const prev = e.currentTarget.previousElementSibling;
-                      if (prev instanceof HTMLInputElement) {
-                        addDraftSkill(prev.value);
-                        prev.value = '';
-                      }
-                    }}
-                    className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg border border-[var(--border-color)] px-3 text-xs font-bold text-orange-500 hover:bg-[var(--hover-bg)]"
-                  >
-                    Add
-                  </button>
-                </div>
+                    }
+                  }}
+                  className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center rounded-lg border border-[var(--border-color)] px-3 text-sm font-bold text-[#616161] hover:bg-[var(--hover-bg)] app-dark:text-[var(--tone-100)] sm:w-auto sm:min-w-[5.25rem]"
+                >
+                  Add
+                </button>
               </div>
             </div>
-            <div className="sm:col-span-2 flex flex-col gap-3 lg:flex-row lg:items-end lg:gap-x-3">
-              <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
-                <label className="inline-flex w-max max-w-full flex-col gap-1">
-                  <span className="whitespace-nowrap text-xs font-semibold text-[var(--text-secondary)]">
-                    Duration label
-                  </span>
+            <div className="sm:col-span-2 xl:col-span-12">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-12 lg:items-end lg:gap-x-4 lg:gap-y-2">
+                <label className="flex min-w-0 flex-col gap-1 sm:col-span-1 lg:col-span-2">
+                  <span className="text-xs font-semibold text-[var(--text-secondary)]">Duration label</span>
                   <input
                     value={draft.duration}
                     onChange={(e) => updateDraft({ duration: e.target.value })}
-                    className="box-border w-full min-w-0 rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm"
+                    className="box-border w-full min-w-0 min-h-11 rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm"
                   />
                 </label>
-                <label className="inline-flex w-max max-w-full flex-col gap-1">
-                  <span className="whitespace-nowrap text-xs font-semibold text-[var(--text-secondary)]">
-                    Rating (0–5)
-                  </span>
+                <label className="flex min-w-0 flex-col gap-1 sm:col-span-1 lg:col-span-2">
+                  <span className="text-xs font-semibold text-[var(--text-secondary)]">Rating (0–5)</span>
                   <input
                     id="admin-course-rating"
                     type="number"
@@ -4753,48 +4813,84 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     step={0.1}
                     value={draft.rating}
                     onChange={(e) => updateDraft({ rating: Number(e.target.value) })}
-                    className={`box-border w-full min-w-0 rounded-lg border bg-[var(--bg-primary)] px-3 py-2 text-sm [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
+                    className={`box-border w-full min-w-0 min-h-11 rounded-lg border bg-[var(--bg-primary)] px-3 py-2 text-sm [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
                       showValidationHints && fieldErrors.courseRating
-                        ? 'border-red-500'
+                        ? 'border-[#616161]'
+                        : 'border-[var(--border-color)]'
+                    }`}
+                  />
+                </label>
+                <label className="flex min-w-0 flex-col gap-1 sm:col-span-2 lg:col-span-8">
+                  <span className="text-xs font-semibold text-[var(--text-secondary)]">Thumbnail URL</span>
+                  <input
+                    id="admin-course-thumbnail"
+                    value={draft.thumbnail}
+                    onChange={(e) => updateDraft({ thumbnail: e.target.value })}
+                    className={`w-full min-w-0 min-h-11 bg-[var(--bg-primary)] border rounded-lg px-3 py-2 text-sm font-mono ${
+                      showValidationHints && fieldErrors.courseThumbnail
+                        ? 'border-[#616161]'
                         : 'border-[var(--border-color)]'
                     }`}
                   />
                 </label>
               </div>
-              <label className="block min-w-0 flex-1 space-y-1">
-                <span className="text-xs font-semibold text-[var(--text-secondary)]">Thumbnail URL</span>
-                <input
-                  id="admin-course-thumbnail"
-                  value={draft.thumbnail}
-                  onChange={(e) => updateDraft({ thumbnail: e.target.value })}
-                  className={`w-full min-w-0 bg-[var(--bg-primary)] border rounded-lg px-3 py-2 text-sm font-mono ${
-                    showValidationHints && fieldErrors.courseThumbnail
-                      ? 'border-red-500'
-                      : 'border-[var(--border-color)]'
-                  }`}
-                />
-              </label>
             </div>
-            <label className="block space-y-1 sm:col-span-2">
-              <span className="text-xs font-semibold text-[var(--text-secondary)]">Description</span>
-              <CatalogMiniRichEditor
-                id="admin-course-description"
-                value={draft.description}
-                onChange={(description) => updateDraft({ description })}
-                aria-label="Course description"
-                variant="multiline"
-                placeholder="Overview shown on the course page — you can paste formatted text (subscripts, bold, etc.)."
-              />
-            </label>
-            <label className="block space-y-1 sm:col-span-2">
-              <span className="text-xs font-semibold text-[var(--text-secondary)]">Author bio (optional)</span>
-              <textarea
-                value={draft.authorBio ?? ''}
-                onChange={(e) => updateDraft({ authorBio: e.target.value || undefined })}
-                rows={2}
-                className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm resize-y"
-              />
-            </label>
+            <div className="sm:col-span-2 xl:col-span-12">
+              <div className="overflow-hidden rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/15">
+                <button
+                  type="button"
+                  id="admin-course-description-bio-toggle"
+                  onClick={() => setCourseDescriptionBioOpen((v) => !v)}
+                  className="flex w-full min-w-0 items-center justify-between gap-2 px-3 py-2.5 text-left sm:px-4 sm:py-3"
+                  aria-expanded={courseDescriptionBioOpen}
+                  aria-controls="admin-course-description-bio-panel"
+                >
+                  <span className="min-w-0 truncate text-sm font-bold text-[var(--text-primary)]">
+                    Description & author bio
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2 sm:gap-3">
+                    <span className="text-xs font-medium text-[var(--text-muted)]">Optional</span>
+                    {courseDescriptionBioOpen ? (
+                      <ChevronDown size={16} className="shrink-0 text-[var(--text-secondary)]" aria-hidden />
+                    ) : (
+                      <ChevronRight size={16} className="shrink-0 text-[var(--text-secondary)]" aria-hidden />
+                    )}
+                  </span>
+                </button>
+                {courseDescriptionBioOpen ? (
+                  <div
+                    id="admin-course-description-bio-panel"
+                    role="region"
+                    aria-labelledby="admin-course-description-bio-toggle"
+                    className="border-t border-[var(--border-color)] px-3 pb-3 pt-2 sm:px-4 sm:pb-4 sm:pt-3"
+                  >
+                    <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 sm:items-stretch sm:gap-4">
+                      <label className="flex h-full min-h-[14rem] min-w-0 flex-col gap-1 sm:min-h-[16rem]">
+                        <span className="text-xs font-semibold text-[var(--text-secondary)]">Description</span>
+                        <CatalogMiniRichEditor
+                          id="admin-course-description"
+                          value={draft.description}
+                          onChange={(description) => updateDraft({ description })}
+                          aria-label="Course description"
+                          variant="multiline"
+                          placeholder="Overview shown on the course page — you can paste formatted text (subscripts, bold, etc.)."
+                          className="flex min-h-0 flex-1 flex-col"
+                        />
+                      </label>
+                      <label className="flex h-full min-h-[14rem] min-w-0 flex-col gap-1 sm:min-h-[16rem]">
+                        <span className="text-xs font-semibold text-[var(--text-secondary)]">Author bio (optional)</span>
+                        <textarea
+                          value={draft.authorBio ?? ''}
+                          onChange={(e) => updateDraft({ authorBio: e.target.value || undefined })}
+                          rows={8}
+                          className="box-border min-h-0 w-full flex-1 resize-y rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm leading-relaxed"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
           </div>
               </div>
             )}
@@ -4812,11 +4908,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     aria-expanded={modulesTipsOpen}
                     aria-controls="admin-modules-lessons-tips"
                     aria-label={modulesTipsOpen ? 'Close modules and lessons tips' : 'Open modules and lessons tips'}
-                    className={`inline-flex size-6 shrink-0 touch-manipulation items-center justify-center rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 active:opacity-90 ${
-                      modulesTipsOpen ? 'border-orange-500/50 text-orange-500' : ''
+                    className={`inline-flex size-6 shrink-0 touch-manipulation items-center justify-center rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/45 active:opacity-90 ${
+                      modulesTipsOpen ? 'border-[#8b8c8c]/90 text-[#616161] app-dark:border-[var(--tone-400)] app-dark:text-[var(--tone-100)]' : ''
                     }`}
                   >
-                    <Info size={14} className="text-orange-500/90" aria-hidden />
+                    <Info size={14} className="text-admin-icon opacity-90" aria-hidden />
                   </button>
                   <div
                     id="admin-modules-lessons-tips"
@@ -4833,7 +4929,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         ? 'hidden'
                         : tipsNarrowViewport
                           ? modulesTipFixedTop >= 0
-                            ? 'fixed z-[120] left-3 right-3 w-auto max-w-none translate-x-0 overflow-y-auto overflow-x-hidden overscroll-y-contain [-webkit-overflow-scrolling:touch] touch-pan-y max-h-[calc(100dvh-var(--admin-tip-top)-env(safe-area-inset-bottom,0px)-0.75rem)] rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-3.5 text-left text-sm leading-relaxed text-[var(--text-primary)] shadow-xl pointer-events-auto outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40'
+                            ? 'fixed z-[120] left-3 right-3 w-auto max-w-none translate-x-0 overflow-y-auto overflow-x-hidden overscroll-y-contain [-webkit-overflow-scrolling:touch] touch-pan-y max-h-[calc(100dvh-var(--admin-tip-top)-env(safe-area-inset-bottom,0px)-0.75rem)] rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-3.5 text-left text-sm leading-relaxed text-[var(--text-primary)] shadow-xl pointer-events-auto outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/45'
                             : 'hidden'
                           : 'absolute left-0 top-full z-[100] mt-2 w-[min(22rem,calc(100vw-2rem))] max-w-sm rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-3 text-left text-xs leading-snug text-[var(--text-primary)] shadow-lg pointer-events-auto'
                     }
@@ -4843,7 +4939,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         : undefined
                     }
                   >
-                    <ul className="list-disc space-y-1.5 pl-4 text-[var(--text-muted)] marker:text-orange-500/70 sm:space-y-1">
+                    <ul className="list-disc space-y-1.5 pl-4 text-[var(--text-muted)] marker:text-[#757676]/90 app-dark:marker:text-[var(--tone-300)] sm:space-y-1">
                       <li>Modules group lessons.</li>
                       <li>
                         <strong className="font-semibold text-[var(--text-secondary)]">Add module here</strong> before the
@@ -4871,9 +4967,9 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         in that spot (same outline effect as changing a lesson to a divider).
                       </li>
                       <li>
-                        Structured ids (<code className="text-orange-500/90">C1</code>…): playable lessons use{' '}
-                        <code className="text-orange-500/90">…M1L1</code>, section dividers use{' '}
-                        <code className="text-orange-500/90">…M1D1</code> (not L). Ids renumber when you reorder.
+                        Structured ids (<code className="text-[#616161] app-dark:text-[var(--tone-200)]">C1</code>…): playable lessons use{' '}
+                        <code className="text-[#616161] app-dark:text-[var(--tone-200)]">…M1L1</code>, section dividers use{' '}
+                        <code className="text-[#616161] app-dark:text-[var(--tone-200)]">…M1D1</code> (not L). Ids renumber when you reorder.
                       </li>
                     </ul>
                   </div>
@@ -4951,7 +5047,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             setDividerSectionsCollapsed({});
                             setChangeModuleKindModal({ sourceMi: mi, targetMi: defaultTarget, insertAt: len });
                           }}
-                          className="inline-flex min-h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40 disabled:pointer-events-none disabled:opacity-30 md:min-h-9 md:min-w-9"
+                          className="inline-flex min-h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/40 disabled:pointer-events-none disabled:opacity-30 md:min-h-9 md:min-w-9"
                           title={
                             !draft || draft.modules.length < 2
                               ? 'Add another module first — then you can merge this one into it as a section divider.'
@@ -4964,7 +5060,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         <span
                           id={`admin-module-id-${mi}`}
                           tabIndex={-1}
-                          className={`shrink-0 rounded-md px-1.5 py-1 font-mono text-sm font-semibold tabular-nums text-orange-500/90 outline-none sm:px-2 ${
+                          className={`shrink-0 rounded-md px-1.5 py-1 font-mono text-sm font-semibold tabular-nums text-[#616161] app-dark:text-[var(--tone-200)] outline-none sm:px-2 ${
                             showValidationHints && fieldErrors.moduleId.has(mi)
                               ? 'ring-2 ring-red-500 ring-offset-1 ring-offset-[var(--bg-secondary)]'
                               : ''
@@ -5005,10 +5101,10 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         (fieldErrors.moduleId.has(mi) || fieldErrors.moduleTitle.has(mi))) && (
                         <div className="space-y-0.5 text-[10px]">
                           {fieldErrors.moduleId.has(mi) && (
-                            <p className="text-red-400">Module ID is required.</p>
+                            <p className="text-[#a1a2a2]">Module ID is required.</p>
                           )}
                           {fieldErrors.moduleTitle.has(mi) && (
-                            <p className="text-red-400">
+                            <p className="text-[#a1a2a2]">
                               {catalogMiniRichIsEffectivelyEmpty(mod.title)
                                 ? 'Module title is required.'
                                 : 'Module title must be unique in this course.'}
@@ -5026,7 +5122,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       aria-busy={busy}
                       aria-label={busy ? 'Saving course…' : 'Save course to catalog'}
                       title={busy ? 'Saving…' : 'Save course to catalog'}
-                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-orange-500 hover:bg-orange-500/10 disabled:opacity-40 md:min-h-9 md:min-w-9"
+                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-admin-icon hover:bg-[#616161]/10 app-dark:hover:bg-[var(--tone-800)] disabled:opacity-40 md:min-h-9 md:min-w-9"
                     >
                       {busy ? (
                         <Loader2 size={18} className="shrink-0 animate-spin" aria-hidden />
@@ -5062,7 +5158,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       type="button"
                       onClick={() => removeModule(mi)}
                       disabled={draft.modules.length <= 1}
-                      className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-red-400 hover:bg-red-500/10 disabled:opacity-30 md:min-h-9 md:min-w-9"
+                      className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[#a1a2a2] hover:bg-[#757676]/12 disabled:opacity-30 md:min-h-9 md:min-w-9"
                       aria-label="Remove module"
                       title="Remove module"
                     >
@@ -5173,7 +5269,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             <button
                               type="button"
                               onClick={() => setChangeLessonKindModal({ mi, li })}
-                              className="inline-flex min-h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40 md:min-h-9 md:min-w-9"
+                              className="inline-flex min-h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/40 md:min-h-9 md:min-w-9"
                               title="Change branch type (video, external page, or quiz)"
                               aria-label="Change branch type"
                             >
@@ -5218,7 +5314,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                               <button
                                 type="button"
                                 onClick={() => setChangeLessonKindModal({ mi, li })}
-                                className="inline-flex min-h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40 md:min-h-9 md:min-w-9"
+                                className="inline-flex min-h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/40 md:min-h-9 md:min-w-9"
                                 title="Change branch type (video, external page, or quiz)"
                                 aria-label={`Change branch type, now ${catalogLessonBranchKindModalLabel(lesson)}`}
                               >
@@ -5227,7 +5323,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                               <span
                                 id={`admin-lesson-id-${mi}-${li}`}
                                 tabIndex={-1}
-                                className={`shrink-0 rounded-md px-1.5 py-1 font-mono text-sm font-semibold tabular-nums text-orange-500/90 outline-none sm:px-2 ${
+                                className={`shrink-0 rounded-md px-1.5 py-1 font-mono text-sm font-semibold tabular-nums text-[#616161] app-dark:text-[var(--tone-200)] outline-none sm:px-2 ${
                                   showValidationHints && fieldErrors.lessonId.has(`${mi}:${li}`)
                                     ? 'ring-2 ring-red-500 ring-offset-1 ring-offset-[var(--bg-secondary)]'
                                     : ''
@@ -5257,10 +5353,10 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                               fieldErrors.lessonTitle.has(`${mi}:${li}`)) && (
                               <div className="space-y-0.5 text-[10px]">
                                 {fieldErrors.lessonId.has(`${mi}:${li}`) && (
-                                  <p className="text-red-400">Lesson ID is required.</p>
+                                  <p className="text-[#a1a2a2]">Lesson ID is required.</p>
                                 )}
                                 {fieldErrors.lessonTitle.has(`${mi}:${li}`) && (
-                                  <p className="text-red-400">
+                                  <p className="text-[#a1a2a2]">
                                     {catalogMiniRichIsEffectivelyEmpty(lesson.title)
                                       ? 'Lesson title is required.'
                                       : 'Lesson title must be unique in this course.'}
@@ -5278,7 +5374,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             aria-busy={busy}
                             aria-label={busy ? 'Saving course…' : 'Save course to catalog'}
                             title={busy ? 'Saving…' : 'Save course to catalog'}
-                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-orange-500 hover:bg-orange-500/10 disabled:opacity-40 md:min-h-9 md:min-w-9"
+                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-admin-icon hover:bg-[#616161]/10 app-dark:hover:bg-[var(--tone-800)] disabled:opacity-40 md:min-h-9 md:min-w-9"
                           >
                             {busy ? (
                               <Loader2 size={18} className="shrink-0 animate-spin" aria-hidden />
@@ -5322,7 +5418,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                                 .filter((_, j) => j !== li)
                                 .some(isPlayableCatalogLesson)
                             }
-                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-red-400 hover:bg-red-500/10 disabled:opacity-30 md:min-h-9 md:min-w-9"
+                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[#a1a2a2] hover:bg-[#757676]/12 disabled:opacity-30 md:min-h-9 md:min-w-9"
                             aria-label="Remove lesson"
                             title="Remove lesson"
                           >
@@ -5413,7 +5509,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       (catalogMiniRichIsEffectivelyEmpty(lesson.title) ||
                         fieldErrors.lessonTitle.has(`${mi}:${li}`)) ? (
                         <div className="w-full min-w-0 pb-1">
-                          <span className="block text-[11px] text-red-400">
+                          <span className="block text-[11px] text-[#a1a2a2]">
                             {catalogMiniRichIsEffectivelyEmpty(lesson.title)
                               ? 'Divider label is required.'
                               : 'This label must be unique in this course.'}
@@ -5445,7 +5541,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                                     : 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
                                 })
                               }
-                              className="h-4 w-4 shrink-0 border-[var(--border-color)] text-orange-500"
+                              className="h-4 w-4 shrink-0 border-[var(--border-color)] text-admin-icon"
                             />
                             Video
                           </label>
@@ -5463,7 +5559,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                                   videoOutlineNotes: undefined,
                                 })
                               }
-                              className="h-4 w-4 shrink-0 border-[var(--border-color)] text-orange-500"
+                              className="h-4 w-4 shrink-0 border-[var(--border-color)] text-admin-icon"
                             />
                             External page
                           </label>
@@ -5486,7 +5582,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                                   },
                                 })
                               }
-                              className="h-4 w-4 shrink-0 border-[var(--border-color)] text-orange-500"
+                              className="h-4 w-4 shrink-0 border-[var(--border-color)] text-admin-icon"
                             />
                             Quiz
                           </label>
@@ -5504,7 +5600,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                                   videoOutlineNotes: undefined,
                                 })
                               }
-                              className="h-4 w-4 shrink-0 border-[var(--border-color)] text-orange-500"
+                              className="h-4 w-4 shrink-0 border-[var(--border-color)] text-admin-icon"
                             />
                             Section divider
                           </label>
@@ -5525,7 +5621,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             onChange={(e) => updateLesson(mi, li, { webUrl: e.target.value })}
                             className={`w-full text-sm font-mono bg-[var(--bg-primary)] border rounded-lg px-2.5 py-1.5 sm:px-3 sm:py-2 ${
                               showValidationHints && fieldErrors.lessonWebUrl.has(`${mi}:${li}`)
-                                ? 'border-red-500'
+                                ? 'border-[#616161]'
                                 : 'border-[var(--border-color)]'
                             }`}
                             placeholder="https://example.com/article or example.com/path"
@@ -5533,7 +5629,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           <span
                             className={`min-h-[16px] text-[11px] ${
                               showValidationHints && fieldErrors.lessonWebUrl.has(`${mi}:${li}`)
-                                ? 'text-red-400'
+                                ? 'text-[#a1a2a2]'
                                 : 'text-transparent'
                             }`}
                           >
@@ -5545,7 +5641,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           id={`admin-quiz-block-${mi}-${li}`}
                           className={`space-y-2 rounded-lg border p-2 sm:space-y-4 sm:p-3 ${
                             showValidationHints && fieldErrors.lessonQuiz.has(`${mi}:${li}`)
-                              ? 'border-red-500'
+                              ? 'border-[#616161]'
                               : 'border-[var(--border-color)]'
                           }`}
                         >
@@ -5556,7 +5652,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                                 type="button"
                                 onClick={() => addQuizQuestion(mi, li, 'mcq')}
                                 disabled={(lesson.quiz?.questions.length ?? 0) >= MAX_QUIZ_QUESTIONS}
-                                className="text-xs font-bold text-orange-500 hover:text-orange-400 disabled:opacity-40"
+                                className="text-xs font-bold text-[#616161] hover:text-[#4c4d4d] app-dark:text-[var(--tone-100)] app-dark:hover:text-[#e7e7e7] disabled:opacity-40"
                               >
                                 + Multiple choice
                               </button>
@@ -5564,7 +5660,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                                 type="button"
                                 onClick={() => addQuizQuestion(mi, li, 'freeform')}
                                 disabled={(lesson.quiz?.questions.length ?? 0) >= MAX_QUIZ_QUESTIONS}
-                                className="text-xs font-bold text-orange-500 hover:text-orange-400 disabled:opacity-40"
+                                className="text-xs font-bold text-[#616161] hover:text-[#4c4d4d] app-dark:text-[var(--tone-100)] app-dark:hover:text-[#e7e7e7] disabled:opacity-40"
                               >
                                 + Open-ended
                               </button>
@@ -5600,7 +5696,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                                     type="button"
                                     onClick={() => removeQuizQuestion(mi, li, qi)}
                                     disabled={(lesson.quiz?.questions.length ?? 0) <= 1}
-                                    className="ml-1 text-xs font-semibold text-red-400 hover:underline disabled:opacity-30"
+                                    className="ml-1 text-xs font-semibold text-[#a1a2a2] hover:underline disabled:opacity-30"
                                   >
                                     Remove
                                   </button>
@@ -5629,7 +5725,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                                         prompt: prev.prompt,
                                       }))
                                     }
-                                    className="h-3.5 w-3.5 text-orange-500"
+                                    className="h-3.5 w-3.5 text-admin-icon"
                                   />
                                   Multiple choice
                                 </label>
@@ -5645,7 +5741,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                                         prompt: prev.prompt,
                                       }))
                                     }
-                                    className="h-3.5 w-3.5 text-orange-500"
+                                    className="h-3.5 w-3.5 text-admin-icon"
                                   />
                                   Open-ended
                                 </label>
@@ -5671,7 +5767,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                                         type="button"
                                         disabled={!!mcqAiKeyBusy[`${mi}-${li}-${qi}`]}
                                         onClick={() => void suggestMcqCorrectWithAi(mi, li, qi, qq)}
-                                        className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center gap-1.5 rounded-lg border border-orange-500/40 bg-orange-500/10 px-3 py-2.5 text-xs font-bold text-orange-600 transition-colors hover:bg-orange-500/15 disabled:opacity-50 sm:w-auto dark:text-orange-300"
+                                        className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center gap-1.5 rounded-lg border border-[#8b8c8c]/80 bg-[#616161]/10 px-3 py-2.5 text-xs font-bold text-[#393a3a] transition-colors hover:bg-[#616161]/15 disabled:opacity-50 sm:w-auto app-dark:text-[#cfcfcf]"
                                       >
                                         {mcqAiKeyBusy[`${mi}-${li}-${qi}`] ? (
                                           <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden />
@@ -5697,7 +5793,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                                             prev.type === 'mcq' ? { ...prev, correctIndex: ci } : prev
                                           )
                                         }
-                                        className="h-4 w-4 shrink-0 text-orange-500"
+                                        className="h-4 w-4 shrink-0 text-admin-icon"
                                         title="Correct answer"
                                       />
                                       <input
@@ -5730,7 +5826,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                                           })
                                         }
                                         disabled={qq.choices.length <= 2}
-                                        className="text-xs text-red-400 hover:underline disabled:opacity-30"
+                                        className="text-xs text-[#a1a2a2] hover:underline disabled:opacity-30"
                                       >
                                         Remove
                                       </button>
@@ -5746,7 +5842,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                                       })
                                     }
                                     disabled={qq.choices.length >= MAX_QUIZ_CHOICES}
-                                    className="text-xs font-bold text-orange-500 hover:text-orange-400 disabled:opacity-40"
+                                    className="text-xs font-bold text-[#616161] hover:text-[#4c4d4d] app-dark:text-[var(--tone-100)] app-dark:hover:text-[#e7e7e7] disabled:opacity-40"
                                   >
                                     + Add choice
                                   </button>
@@ -5803,7 +5899,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                               onChange={(e) => updateLesson(mi, li, { videoUrl: e.target.value })}
                               className={`min-w-0 w-full rounded-lg border bg-[var(--bg-primary)] px-2 py-1.5 font-mono text-sm sm:px-2.5 sm:py-1.5 ${
                                 showValidationHints && fieldErrors.videoUrl.has(`${mi}:${li}`)
-                                  ? 'border-red-500'
+                                  ? 'border-[#616161]'
                                   : 'border-[var(--border-color)]'
                               }`}
                               placeholder="https://www.youtube.com/watch?v=…"
@@ -5811,7 +5907,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             <span
                               className={`min-h-[14px] text-[10px] leading-snug sm:min-h-[16px] sm:text-[11px] ${
                                 showValidationHints && fieldErrors.videoUrl.has(`${mi}:${li}`)
-                                  ? 'text-red-400'
+                                  ? 'text-[#a1a2a2]'
                                   : 'text-transparent'
                               }`}
                             >
@@ -5955,6 +6051,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           onRefreshList={refreshList}
           onCatalogChanged={onCatalogChanged}
           showActionToast={showActionToast}
+          isCreatorCatalog={isCreatorCatalog}
         />
       )}
 
@@ -5981,7 +6078,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       <AnimatePresence>
         {pathSubTabSwitchConfirmOpen && (
           <div
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50"
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#272828]/70"
             role="dialog"
             aria-modal="true"
             aria-labelledby="admin-path-subtab-switch-title"
@@ -6024,7 +6121,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     type="button"
                     autoFocus
                     onClick={confirmDiscardPathBuilderAndSwitch}
-                    className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-orange-600 sm:w-auto"
+                    className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[#616161] px-5 py-3 text-sm font-bold text-[#e7e7e7] transition-colors hover:bg-[#757676] sm:w-auto"
                   >
                     Discard and switch
                   </button>
@@ -6038,7 +6135,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       <AnimatePresence>
         {subTabSwitchConfirmOpen && (
           <div
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50"
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#272828]/70"
             role="dialog"
             aria-modal="true"
             aria-labelledby="admin-catalog-subtab-switch-title"
@@ -6081,7 +6178,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     type="button"
                     autoFocus
                     onClick={confirmDiscardCourseDraftAndSwitch}
-                    className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-orange-600 sm:w-auto"
+                    className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[#616161] px-5 py-3 text-sm font-bold text-[#e7e7e7] transition-colors hover:bg-[#757676] sm:w-auto"
                   >
                     Discard and switch
                   </button>
@@ -6095,7 +6192,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       <AnimatePresence>
         {courseLeaveDialog && (
           <div
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50"
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#272828]/70"
             role="dialog"
             aria-modal="true"
             aria-labelledby="admin-catalog-course-leave-title"
@@ -6140,7 +6237,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     type="button"
                     autoFocus
                     onClick={confirmCourseLeaveDiscard}
-                    className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-orange-600 sm:w-auto"
+                    className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[#616161] px-5 py-3 text-sm font-bold text-[#e7e7e7] transition-colors hover:bg-[#757676] sm:w-auto"
                   >
                     Discard and continue
                   </button>
@@ -6154,7 +6251,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       <AnimatePresence>
         {changeLessonKindModal && draft && (
           <div
-            className="fixed inset-0 z-[102] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+            className="fixed inset-0 z-[102] flex items-end justify-center bg-[#272828]/70 p-0 sm:items-center sm:p-4"
             role="presentation"
             onMouseDown={(e) => {
               if (e.target === e.currentTarget) closeChangeLessonKindModal();
@@ -6209,7 +6306,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     'divider' && (
                     <button
                       type="button"
-                      className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
+                      className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-[#8b8c8c]/80 hover:bg-[var(--hover-bg)]"
                       onClick={() => {
                         const { mi: m, li: l } = changeLessonKindModal;
                         closeChangeLessonKindModal();
@@ -6217,7 +6314,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       }}
                     >
                       <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
-                        <Layers size={20} className="shrink-0 text-violet-500 dark:text-violet-400" aria-hidden />
+                        <Layers size={20} className="shrink-0 text-[#616161] app-dark:text-[#a1a2a2]" aria-hidden />
                         New module from this section
                         <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Own module</span>
                       </span>
@@ -6230,7 +6327,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   )}
                   <button
                     type="button"
-                    className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
+                    className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-[#8b8c8c]/80 hover:bg-[var(--hover-bg)]"
                     onClick={() => {
                       const { mi: m, li: l } = changeLessonKindModal;
                       const cur = draftRef.current?.modules[m]?.lessons[l];
@@ -6246,7 +6343,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     }}
                   >
                     <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
-                      <Video size={20} className="shrink-0 text-orange-500" aria-hidden />
+                      <Video size={20} className="shrink-0 text-admin-icon" aria-hidden />
                       Video
                       <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Embedded player</span>
                     </span>
@@ -6256,7 +6353,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   </button>
                   <button
                     type="button"
-                    className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
+                    className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-[#8b8c8c]/80 hover:bg-[var(--hover-bg)]"
                     onClick={() => {
                       const { mi: m, li: l } = changeLessonKindModal;
                       const cur = draftRef.current?.modules[m]?.lessons[l];
@@ -6271,7 +6368,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     }}
                   >
                     <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
-                      <Globe size={20} className="shrink-0 text-orange-500" aria-hidden />
+                      <Globe size={20} className="shrink-0 text-admin-icon" aria-hidden />
                       External page
                       <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">New tab</span>
                     </span>
@@ -6281,7 +6378,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   </button>
                   <button
                     type="button"
-                    className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
+                    className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-[#8b8c8c]/80 hover:bg-[var(--hover-bg)]"
                     onClick={() => {
                       const { mi: m, li: l } = changeLessonKindModal;
                       const cur = draftRef.current?.modules[m]?.lessons[l];
@@ -6301,7 +6398,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     }}
                   >
                     <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
-                      <ClipboardList size={20} className="shrink-0 text-orange-500" aria-hidden />
+                      <ClipboardList size={20} className="shrink-0 text-admin-icon" aria-hidden />
                       Quiz
                       <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">In-player</span>
                     </span>
@@ -6315,7 +6412,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     return (
                       <button
                         type="button"
-                        className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
+                        className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-[#8b8c8c]/80 hover:bg-[var(--hover-bg)]"
                         onClick={() => {
                           const { mi: m, li: l } = changeLessonKindModal;
                           updateLesson(m, l, {
@@ -6329,7 +6426,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         }}
                       >
                         <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
-                          <Minus size={20} className="shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+                          <Minus size={20} className="shrink-0 text-[#616161] app-dark:text-[#a1a2a2]" aria-hidden />
                           Section divider
                           <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Heading only</span>
                         </span>
@@ -6349,7 +6446,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       <AnimatePresence>
         {splitDividerNewModuleModal != null && draft && (
           <div
-            className="fixed inset-0 z-[102] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+            className="fixed inset-0 z-[102] flex items-end justify-center bg-[#272828]/70 p-0 sm:items-center sm:p-4"
             role="presentation"
             onMouseDown={(e) => {
               if (e.target === e.currentTarget) closeSplitDividerNewModuleModal();
@@ -6393,7 +6490,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     Place new module in the course
                   </span>
                   <select
-                    className="min-h-11 w-full max-w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-orange-500/40 focus:ring-2 focus:ring-orange-500/20"
+                    className="min-h-11 w-full max-w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[#8b8c8c]/80 focus:ring-2 focus:ring-[#a1a2a2]/25"
                     value={String(splitDividerNewModuleModal.insertAt)}
                     onChange={(e) => {
                       const insertAt = Number(e.target.value);
@@ -6412,7 +6509,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 </label>
                 <button
                   type="button"
-                  className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
+                  className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-[#8b8c8c]/80 hover:bg-[var(--hover-bg)]"
                   onClick={() => {
                     const ctx = splitDividerNewModuleModal;
                     if (!ctx) return;
@@ -6422,7 +6519,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   }}
                 >
                   <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
-                    <Layers size={20} className="shrink-0 text-violet-500 dark:text-violet-400" aria-hidden />
+                    <Layers size={20} className="shrink-0 text-[#616161] app-dark:text-[#a1a2a2]" aria-hidden />
                     Create new module
                     <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Confirm</span>
                   </span>
@@ -6438,7 +6535,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
       {catalogDividerRemovePending ? (
         <div
-          className="fixed inset-0 z-[190] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+          className="fixed inset-0 z-[190] flex items-end justify-center bg-[#272828]/70 p-0 sm:items-center sm:p-4"
           role="presentation"
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) closeCatalogDividerRemoveDialog();
@@ -6462,7 +6559,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               <button
                 type="button"
                 onClick={closeCatalogDividerRemoveDialog}
-                className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-full text-red-500 transition-colors hover:bg-red-500/15 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300"
+                className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-full text-[#616161] transition-colors hover:bg-[#757676]/15 hover:text-[#4c4d4d] app-dark:text-[#cfcfcf] app-dark:hover:text-[#cfcfcf]"
                 aria-label="Close"
               >
                 <X size={20} strokeWidth={2.25} aria-hidden />
@@ -6485,7 +6582,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 <button
                   type="button"
                   onClick={() => void confirmCatalogDividerRemoveDeleteAll()}
-                  className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-red-500/50 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-600 transition-colors hover:bg-red-500/20 dark:text-red-400 sm:w-auto"
+                  className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-[#616161]/50 bg-[#757676]/12 px-4 py-3 text-sm font-bold text-[#4c4d4d] transition-colors hover:bg-[#757676]/18 app-dark:text-[#cfcfcf] sm:w-auto"
                 >
                   Delete all
                 </button>
@@ -6493,7 +6590,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   type="button"
                   autoFocus
                   onClick={() => void confirmCatalogDividerRemoveKeepRows()}
-                  className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-4 py-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-orange-600 sm:w-auto"
+                  className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[#616161] px-4 py-3 text-sm font-bold text-[#e7e7e7] shadow-sm transition-colors hover:bg-[#757676] sm:w-auto"
                 >
                   Keep rows
                 </button>
@@ -6506,7 +6603,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       <AnimatePresence>
         {changeModuleKindModal != null && draft && (
           <div
-            className="fixed inset-0 z-[102] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+            className="fixed inset-0 z-[102] flex items-end justify-center bg-[#272828]/70 p-0 sm:items-center sm:p-4"
             role="presentation"
             onMouseDown={(e) => {
               if (e.target === e.currentTarget) closeChangeModuleKindModal();
@@ -6552,7 +6649,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       Merge into module
                     </span>
                     <select
-                      className="min-h-11 w-full max-w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-orange-500/40 focus:ring-2 focus:ring-orange-500/20"
+                      className="min-h-11 w-full max-w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[#8b8c8c]/80 focus:ring-2 focus:ring-[#a1a2a2]/25"
                       value={String(changeModuleKindModal.targetMi)}
                       onChange={(e) => {
                         const nextT = Number(e.target.value);
@@ -6578,7 +6675,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       Place divider and lessons after
                     </span>
                     <select
-                      className="min-h-11 w-full max-w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-orange-500/40 focus:ring-2 focus:ring-orange-500/20"
+                      className="min-h-11 w-full max-w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[#8b8c8c]/80 focus:ring-2 focus:ring-[#a1a2a2]/25"
                       value={String(changeModuleKindModal.insertAt)}
                       onChange={(e) => {
                         const insertAt = Number(e.target.value);
@@ -6597,7 +6694,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 </div>
                 <button
                   type="button"
-                  className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
+                  className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-[#8b8c8c]/80 hover:bg-[var(--hover-bg)]"
                   onClick={() => {
                     const ctx = changeModuleKindModal;
                     if (!ctx) return;
@@ -6621,7 +6718,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   }}
                 >
                   <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
-                    <Minus size={20} className="shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+                    <Minus size={20} className="shrink-0 text-[#616161] app-dark:text-[#a1a2a2]" aria-hidden />
                     Merge as section divider
                     <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Confirm</span>
                   </span>
@@ -6638,7 +6735,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       <AnimatePresence>
         {addAnotherLessonAfterSave && draft && (
           <div
-            className="fixed inset-0 z-[102] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+            className="fixed inset-0 z-[102] flex items-end justify-center bg-[#272828]/70 p-0 sm:items-center sm:p-4"
             role="presentation"
             onMouseDown={(e) => {
               if (e.target === e.currentTarget) closeAddAnotherLessonAfterSave();
@@ -6673,7 +6770,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               <div className="grid min-w-0 grid-cols-1 gap-2 p-4 sm:grid-cols-2 sm:gap-3">
                 <button
                   type="button"
-                  className="order-1 inline-flex min-h-11 min-w-0 w-full items-center justify-center rounded-xl bg-orange-500 px-3 py-2.5 text-sm font-semibold text-white hover:bg-orange-600 sm:order-2 sm:min-h-10 sm:px-4"
+                  className="order-1 inline-flex min-h-11 min-w-0 w-full items-center justify-center rounded-xl bg-[#616161] px-3 py-2.5 text-sm font-semibold text-[#e7e7e7] hover:bg-[#757676] sm:order-2 sm:min-h-10 sm:px-4"
                   onClick={confirmAddAnotherLessonAfterSave}
                 >
                   Yes, add lesson
@@ -6694,7 +6791,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       <AnimatePresence>
         {addLessonBranchModal && draft && (
           <div
-            className="fixed inset-0 z-[102] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+            className="fixed inset-0 z-[102] flex items-end justify-center bg-[#272828]/70 p-0 sm:items-center sm:p-4"
             role="presentation"
             onMouseDown={(e) => {
               if (e.target === e.currentTarget) closeAddLessonBranchModal();
@@ -6736,7 +6833,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 <div className="flex flex-col gap-3">
                   <button
                     type="button"
-                    className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
+                    className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-[#8b8c8c]/80 hover:bg-[var(--hover-bg)]"
                     onClick={() => {
                       const { mi, insertAt } = addLessonBranchModal;
                       addLesson(mi, insertAt, 'lesson');
@@ -6744,7 +6841,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     }}
                   >
                     <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
-                      <BookOpen size={20} className="shrink-0 text-orange-500" aria-hidden />
+                      <BookOpen size={20} className="shrink-0 text-admin-icon" aria-hidden />
                       Lesson
                       <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Playable</span>
                     </span>
@@ -6754,7 +6851,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   </button>
                   <button
                     type="button"
-                    className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
+                    className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-[#8b8c8c]/80 hover:bg-[var(--hover-bg)]"
                     onClick={() => {
                       const { mi, insertAt } = addLessonBranchModal;
                       addLesson(mi, insertAt, 'divider');
@@ -6762,7 +6859,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     }}
                   >
                     <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
-                      <Minus size={20} className="shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+                      <Minus size={20} className="shrink-0 text-[#616161] app-dark:text-[#a1a2a2]" aria-hidden />
                       Section divider
                       <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Heading only</span>
                     </span>
@@ -6779,7 +6876,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
       {catalogPlaceModal && draft ? (
         <div
-          className="fixed inset-0 z-[103] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+          className="fixed inset-0 z-[103] flex items-end justify-center bg-[#272828]/70 p-0 sm:items-center sm:p-4"
           role="presentation"
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) closeCatalogPlaceModal();
@@ -6815,7 +6912,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   onClick={() => setCatalogPlaceMode('copy')}
                   className={`flex min-h-11 flex-1 touch-manipulation items-center justify-center gap-1.5 rounded-lg px-2 text-xs font-bold sm:text-sm ${
                     catalogPlaceMode === 'copy'
-                      ? 'bg-orange-500 text-white shadow-sm'
+                      ? 'bg-[#616161] text-[#e7e7e7] shadow-sm'
                       : 'text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]'
                   }`}
                 >
@@ -6832,7 +6929,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   }
                   className={`flex min-h-11 flex-1 touch-manipulation items-center justify-center gap-1.5 rounded-lg px-2 text-xs font-bold sm:text-sm ${
                     catalogPlaceMode === 'move'
-                      ? 'bg-orange-500 text-white shadow-sm'
+                      ? 'bg-[#616161] text-[#e7e7e7] shadow-sm'
                       : 'text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]'
                   } disabled:opacity-40`}
                 >
@@ -7020,7 +7117,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               <button
                 type="button"
                 onClick={() => void commitCatalogPlace()}
-                className="mt-5 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600"
+                className="mt-5 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[#616161] px-4 py-2 text-sm font-bold text-[#e7e7e7] hover:bg-[#757676]"
               >
                 {catalogPlaceMode === 'copy' ? 'Place copy' : 'Move here'}
               </button>
@@ -7032,7 +7129,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       <AnimatePresence>
         {deleteDialogOpen && draft && (
           <div
-            className="fixed inset-0 z-[101] flex items-center justify-center bg-black/50 p-4"
+            className="fixed inset-0 z-[101] flex items-center justify-center bg-[#272828]/70 p-4"
             role="dialog"
             aria-modal="true"
             aria-labelledby="admin-catalog-delete-title"
@@ -7101,7 +7198,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     autoFocus
                     onClick={() => void confirmDeletePublished()}
                     aria-label={`Remove ${draft.id} permanently`}
-                    className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-red-600 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-red-500 sm:w-auto"
+                    className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[#616161] px-5 py-3 text-sm font-bold text-[#e7e7e7] transition-colors hover:bg-[#616161] sm:w-auto"
                   >
                     Yes, remove
                   </button>

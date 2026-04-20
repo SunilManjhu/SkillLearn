@@ -1,7 +1,7 @@
 import React, { useCallback, useLayoutEffect, useRef, useState } from 'react';
 
 const CHIP_CLASS =
-  'max-w-[min(100%,7rem)] shrink-0 truncate rounded bg-orange-500/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-orange-500';
+  'max-w-[min(100%,7rem)] shrink-0 truncate rounded border border-[#cfcfcf] bg-[#e7e7e7] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-[#272828]';
 const SUFFIX_CLASS = 'shrink-0 text-[9px] font-bold tabular-nums text-[var(--text-muted)]';
 
 /** Tailwind `gap-1` → 4px at default root font size. */
@@ -90,7 +90,7 @@ export function CourseCardCategories({ categories }: CourseCardCategoriesProps) 
 
   if (categories.length === 0) {
     return (
-      <span className="line-clamp-1 text-[10px] font-bold uppercase tracking-wider text-orange-500">
+      <span className="line-clamp-1 rounded border border-[#cfcfcf] bg-[#e7e7e7] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#272828]">
         Uncategorized
       </span>
     );

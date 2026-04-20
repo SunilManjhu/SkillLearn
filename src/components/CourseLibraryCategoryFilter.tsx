@@ -30,19 +30,34 @@ type TagRowProps = {
   label: string;
   selected: string[];
   onToggle: (label: string) => void;
+  /** Category / skill / level pills use the same neutral palette in light and dark (`app-dark:`). */
+  variant?: 'category' | 'skill' | 'level';
 };
 
-function FilterTagButton({ label, selected, onToggle }: TagRowProps) {
+function FilterTagButton({ label, selected, onToggle, variant = 'skill' }: TagRowProps) {
   const isOn = selected.some((s) => s.toLowerCase() === label.toLowerCase());
+  const categoryStyle = variant === 'category';
+  const skillStyle = variant === 'skill';
+  const selectedNeutral =
+    'border-[#8b8c8c] bg-[#cfcfcf] text-[#272828] app-dark:border-[#757676] app-dark:bg-[#272828] app-dark:text-[#e7e7e7] app-dark:hover:bg-[#393a3a]';
+  const idleNeutral =
+    'border-[var(--border-light)] bg-[var(--hover-bg)]/60 text-[var(--text-secondary)] hover:border-[#8b8c8c] hover:bg-[#e7e7e7]/50 hover:text-[var(--text-primary)] app-dark:hover:border-[#616161] app-dark:hover:bg-[#393a3a]/80';
+  const stateClasses = categoryStyle
+    ? isOn
+      ? selectedNeutral
+      : idleNeutral
+    : skillStyle
+      ? isOn
+        ? selectedNeutral
+        : idleNeutral
+      : isOn
+        ? selectedNeutral
+        : idleNeutral;
   return (
     <button
       type="button"
       onClick={() => onToggle(label)}
-      className={`inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-full border px-3 py-2 text-left text-xs font-medium transition-colors sm:text-sm ${
-        isOn
-          ? 'border-orange-500 bg-orange-500/15 text-orange-500'
-          : 'border-[var(--border-light)] bg-[var(--hover-bg)]/60 text-[var(--text-secondary)] hover:border-orange-500/40 hover:text-[var(--text-primary)]'
-      }`}
+      className={`inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-full border px-3 py-2 text-left text-xs font-medium transition-colors sm:text-sm ${stateClasses}`}
     >
       <span className="min-w-0 [overflow-wrap:anywhere]">{label}</span>
       {isOn ? (
@@ -135,9 +150,9 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
     ) => {
       const dot =
         kind === 'category' ? (
-          <span className="h-2 w-2 shrink-0 rounded-full bg-orange-500" aria-hidden />
+          <span className="h-2 w-2 shrink-0 rounded-full bg-[#272828] app-dark:bg-[#e7e7e7]" aria-hidden />
         ) : kind === 'skill' ? (
-          <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" aria-hidden />
+          <span className="h-2 w-2 shrink-0 rounded-full bg-[#616161] app-dark:bg-[#cfcfcf]" aria-hidden />
         ) : (
           <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--text-muted)]" aria-hidden />
         );
@@ -150,7 +165,13 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
             e.stopPropagation();
             onRemove();
           }}
-          className="inline-flex max-w-[min(100%,18rem)] shrink-0 items-center gap-1.5 rounded-full border border-[var(--border-color)] bg-[var(--hover-bg)] px-2 py-1 text-left text-xs font-medium text-[var(--text-primary)] outline-none transition-colors hover:bg-[var(--border-color)]/40 focus-visible:ring-2 focus-visible:ring-orange-500/60 focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--bg-secondary)]"
+          className={`inline-flex max-w-[min(100%,18rem)] shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-left text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--bg-secondary)] ${
+            kind === 'category'
+              ? 'border-[#8b8c8c] bg-[#cfcfcf] text-[#272828] hover:bg-[#b8b8b8] focus-visible:ring-[#a1a2a2]/50 app-dark:border-[#757676] app-dark:bg-[#272828] app-dark:text-[#e7e7e7] app-dark:hover:bg-[#393a3a] app-dark:focus-visible:ring-[#a1a2a2]/50'
+              : kind === 'skill'
+                ? 'border-[#8b8c8c] bg-[#cfcfcf] text-[#272828] hover:bg-[#b8b8b8] focus-visible:ring-[#a1a2a2]/50 app-dark:border-[#757676] app-dark:bg-[#272828] app-dark:text-[#e7e7e7] app-dark:hover:bg-[#393a3a] app-dark:focus-visible:ring-[#a1a2a2]/50'
+                : 'border-[#8b8c8c] bg-[#cfcfcf] text-[#272828] hover:bg-[#b8b8b8] focus-visible:ring-[#a1a2a2]/50 app-dark:border-[#757676] app-dark:bg-[#272828] app-dark:text-[#e7e7e7] app-dark:hover:bg-[#393a3a] app-dark:focus-visible:ring-[#a1a2a2]/50'
+          }`}
         >
           {dot}
           <span className="min-w-0 flex-1 truncate">{label}</span>
@@ -230,7 +251,7 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
         }}
       >
         <div
-          className="flex w-full min-w-0 items-stretch gap-1 rounded-full border border-[var(--border-light)] bg-[var(--bg-secondary)] py-1 pl-2 pr-1 shadow-sm transition-colors focus-within:border-orange-500/40 focus-within:ring-1 focus-within:ring-orange-500/25 max-md:min-h-11 max-md:py-1.5 max-md:pl-2.5 max-md:pr-1.5"
+          className="flex w-full min-w-0 items-stretch gap-1 rounded-full border border-[var(--border-light)] bg-[var(--bg-secondary)] py-1 pl-2 pr-1 shadow-sm transition-colors focus-within:border-[#8b8c8c] focus-within:ring-1 focus-within:ring-[#a1a2a2]/30 app-dark:focus-within:border-[#616161] app-dark:focus-within:ring-[#757676]/40 max-md:min-h-11 max-md:py-1.5 max-md:pl-2.5 max-md:pr-1.5"
           role="group"
           aria-label="Course filters"
         >
@@ -297,7 +318,7 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
               }}
               aria-expanded={open}
               aria-controls={panelId}
-              className="inline-flex h-full min-h-10 min-w-11 touch-manipulation items-center justify-center rounded-full text-[var(--text-muted)] outline-none transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus-visible:ring-2 focus-visible:ring-orange-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)] md:hidden"
+              className="inline-flex h-full min-h-10 min-w-11 touch-manipulation items-center justify-center rounded-full text-[var(--text-muted)] outline-none transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/55 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)] app-dark:focus-visible:ring-[#757676]/60 md:hidden"
               aria-label={open ? 'Close filter options' : 'Open filter options'}
             >
               <ChevronDown size={20} className={`transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden />
@@ -309,7 +330,7 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
                   e.stopPropagation();
                   setQuery('');
                 }}
-                className="inline-flex h-full min-h-10 min-w-11 touch-manipulation items-center justify-center rounded-full text-[var(--text-muted)] outline-none transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus-visible:ring-2 focus-visible:ring-orange-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)] md:min-w-10"
+                className="inline-flex h-full min-h-10 min-w-11 touch-manipulation items-center justify-center rounded-full text-[var(--text-muted)] outline-none transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/55 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)] app-dark:focus-visible:ring-[#757676]/60 md:min-w-10"
                 aria-label="Clear search text"
               >
                 <X size={18} strokeWidth={2} aria-hidden />
@@ -323,7 +344,7 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
               }}
               aria-expanded={open}
               aria-controls={panelId}
-              className="hidden h-full min-h-10 min-w-10 items-center justify-center rounded-full text-[var(--text-muted)] outline-none transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus-visible:ring-2 focus-visible:ring-orange-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)] md:inline-flex"
+              className="hidden h-full min-h-10 min-w-10 items-center justify-center rounded-full text-[var(--text-muted)] outline-none transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/55 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)] app-dark:focus-visible:ring-[#757676]/60 md:inline-flex"
               aria-label={open ? 'Close filter options' : 'Open filter options'}
             >
               <ChevronDown size={18} className={`transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden />
@@ -333,7 +354,7 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
               tabIndex={activeCount > 0 ? 0 : -1}
               aria-hidden={activeCount === 0}
               onClick={activeCount > 0 ? clearAllFilters : undefined}
-              className={`inline-flex h-full min-h-10 min-w-11 touch-manipulation items-center justify-center rounded-full text-[var(--text-muted)] outline-none transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus-visible:ring-2 focus-visible:ring-orange-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)] md:min-w-10 ${activeCount === 0 ? 'pointer-events-none max-md:hidden md:invisible' : ''}`}
+              className={`inline-flex h-full min-h-10 min-w-11 touch-manipulation items-center justify-center rounded-full text-[var(--text-muted)] outline-none transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/55 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)] app-dark:focus-visible:ring-[#757676]/60 md:min-w-10 ${activeCount === 0 ? 'pointer-events-none max-md:hidden md:invisible' : ''}`}
               aria-label="Clear all filters"
             >
               <X size={18} strokeWidth={2} aria-hidden />
@@ -347,7 +368,7 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
             id={panelId}
             role="dialog"
             aria-label="Course filters"
-            className="filterWindow dropdown card absolute left-0 right-0 top-full z-50 mt-2 max-h-[min(75vh,32rem)] overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-secondary)] shadow-2xl max-md:z-[60] max-md:rounded-3xl max-md:shadow-[0_12px_48px_-12px_rgba(0,0,0,0.35)] dark:max-md:shadow-[0_12px_48px_-12px_rgba(0,0,0,0.55)] sm:left-auto sm:right-0 sm:translate-x-0 sm:min-w-[18rem] sm:w-[min(26rem,calc(100vw-2rem))]"
+            className="filterWindow dropdown card absolute left-0 right-0 top-full z-50 mt-2 max-h-[min(75vh,32rem)] overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-secondary)] shadow-2xl max-md:z-[60] max-md:rounded-3xl max-md:shadow-[0_12px_48px_-12px_rgba(39,40,40,0.2)] app-dark:max-md:shadow-[0_12px_48px_-12px_rgba(39,40,40,0.55)] sm:left-auto sm:right-0 sm:translate-x-0 sm:min-w-[18rem] sm:w-[min(26rem,calc(100vw-2rem))]"
           >
             <div
               className="max-h-[min(65vh,28rem)] overflow-y-auto overscroll-y-contain px-3 py-3 max-md:max-h-[min(62dvh,26rem)] max-md:px-4 max-md:pb-[max(1rem,env(safe-area-inset-bottom,0px))] max-md:pt-4 [scrollbar-width:thin] [scrollbar-color:var(--border-light)_var(--bg-secondary)] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-[var(--bg-secondary)] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[var(--border-light)]"
@@ -368,6 +389,7 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
                         <React.Fragment key={`pop-${k}`}>
                           <FilterTagButton
                             label={canon}
+                            variant={useCategory ? 'category' : 'skill'}
                             selected={useCategory ? filters.categoryTags : filters.skillTags}
                             onToggle={useCategory ? toggleCategory : toggleSkill}
                           />
@@ -392,6 +414,7 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
                       <React.Fragment key={`cx-${label}`}>
                         <FilterTagButton
                           label={label}
+                          variant="category"
                           selected={filters.categoryTags}
                           onToggle={toggleCategory}
                         />
@@ -414,7 +437,12 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
                   <div className="flex flex-wrap gap-2 max-md:gap-2.5">
                     {visibleMainSkill.map((label) => (
                       <React.Fragment key={`sm-${label}`}>
-                        <FilterTagButton label={label} selected={filters.skillTags} onToggle={toggleSkill} />
+                        <FilterTagButton
+                          label={label}
+                          variant="skill"
+                          selected={filters.skillTags}
+                          onToggle={toggleSkill}
+                        />
                       </React.Fragment>
                     ))}
                   </div>
@@ -433,7 +461,12 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
                   <div className="flex flex-wrap gap-2 max-md:gap-2.5">
                     {visibleMoreSkill.map((label) => (
                       <React.Fragment key={`sx-${label}`}>
-                        <FilterTagButton label={label} selected={filters.skillTags} onToggle={toggleSkill} />
+                        <FilterTagButton
+                          label={label}
+                          variant="skill"
+                          selected={filters.skillTags}
+                          onToggle={toggleSkill}
+                        />
                       </React.Fragment>
                     ))}
                   </div>
@@ -455,6 +488,7 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
                       <React.Fragment key={`lv-${level}`}>
                         <FilterTagButton
                           label={level}
+                          variant="level"
                           selected={filters.level === level ? [level] : []}
                           onToggle={(lbl) => toggleLevel(lbl as Course['level'])}
                         />

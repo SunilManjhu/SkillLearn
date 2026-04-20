@@ -387,7 +387,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                 {course.categories.map((cat) => (
                   <span
                     key={cat}
-                    className="rounded-full bg-orange-500/10 px-3 py-1 text-xs font-bold uppercase tracking-wider text-orange-500"
+                    className="rounded-full border border-[#cfcfcf] bg-[#e7e7e7] px-3 py-1 text-xs font-bold uppercase tracking-wider text-[#272828]"
                   >
                     {cat}
                   </span>
@@ -395,7 +395,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                 {course.skills.slice(0, 6).map((sk) => (
                   <span
                     key={sk}
-                    className="rounded-md bg-[var(--bg-primary)]/80 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-secondary)] backdrop-blur-sm"
+                    className="rounded-md bg-[var(--bg-primary)]/80 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[color:var(--skill-chip-fg)] backdrop-blur-sm"
                   >
                     {sk}
                   </span>
@@ -436,7 +436,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                     aria-label="Course completion"
                   >
                     <div
-                      className="h-full rounded-full bg-orange-500 transition-[width] duration-300 ease-out"
+                      className="h-full rounded-full bg-brand-500 transition-[width] duration-300 ease-out"
                       style={{ width: `${overallProgressPercent}%` }}
                     />
                   </div>
@@ -448,7 +448,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                   <button
                     type="button"
                     onClick={requestPrimaryAction}
-                    className="flex items-center justify-center gap-2 px-8 py-4 bg-orange-500 hover:bg-orange-600 text-white rounded-2xl font-bold transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-orange-500/20"
+                    className="flex items-center justify-center gap-2 px-8 py-4 bg-brand-500 hover:bg-brand-600 text-white rounded-2xl font-bold transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-brand-500/20"
                   >
                     {isComplete ? <RotateCcw size={20} /> : <Play size={20} fill="currentColor" />}
                     {primaryCtaLabel}
@@ -457,7 +457,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                     <button
                       type="button"
                       onClick={handleViewCertificate}
-                      className="flex items-center justify-center gap-2 px-8 py-4 rounded-2xl font-bold transition-all border-2 border-orange-500/60 text-orange-500 hover:bg-orange-500/10"
+                      className="flex items-center justify-center gap-2 px-8 py-4 rounded-2xl font-bold transition-all border-2 border-brand-500/60 text-brand-500 hover:bg-brand-500/10"
                     >
                       <Award size={20} />
                       View Certificate
@@ -467,7 +467,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
 
                 <div className="text-sm">
                   <span className="text-[var(--text-secondary)]">by </span>
-                  <span className="font-bold text-orange-500">{course.author}</span>
+                  <span className="font-bold text-brand-500">{course.author}</span>
                 </div>
               </div>
             </div>
@@ -485,8 +485,8 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
               transition={collapseTransition}
               className="mb-12 overflow-hidden"
             >
-              <div className="bg-orange-500/5 border border-orange-500/20 rounded-3xl p-8 flex flex-col md:flex-row items-center gap-8">
-                <div className="w-16 h-16 bg-orange-500/10 rounded-2xl flex items-center justify-center text-orange-500 shrink-0">
+              <div className="bg-brand-500/5 border border-brand-500/20 rounded-3xl p-8 flex flex-col md:flex-row items-center gap-8">
+                <div className="w-16 h-16 bg-brand-500/10 rounded-2xl flex items-center justify-center text-brand-500 shrink-0">
                   <Star size={32} fill="currentColor" />
                 </div>
                 
@@ -508,7 +508,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                         >
                           <Star
                             size={24}
-                            className={star <= (hoverStars || ratingStars) ? 'text-orange-500' : 'text-[var(--border-color)]'}
+                            className={star <= (hoverStars || ratingStars) ? 'text-brand-500' : 'text-[var(--border-color)]'}
                             fill={star <= (hoverStars || ratingStars) ? 'currentColor' : 'none'}
                           />
                         </button>
@@ -523,7 +523,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                             animate={{ opacity: 1, x: 0 }}
                             exit={{ opacity: 0, x: reduceMotion ? 0 : 10 }}
                             transition={modalTransition}
-                            className="text-base font-bold text-orange-500"
+                            className="text-base font-bold text-brand-500"
                           >
                             {RATING_LABELS[hoverStars || ratingStars]}
                           </motion.p>
@@ -543,13 +543,13 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                         value={ratingComment}
                         onChange={(e) => setRatingComment(e.target.value)}
                         placeholder="Optional: Share your thoughts..."
-                        className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500/50 min-h-[80px] resize-none"
+                        className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-500/50 min-h-[80px] resize-none"
                       />
                       <div className="flex gap-3">
                         <button
                           type="button"
                           onClick={handleRatingSubmit}
-                          className="rounded-xl bg-orange-500 px-6 py-2 text-sm font-bold text-white transition-colors hover:bg-orange-600"
+                          className="rounded-xl bg-brand-500 px-6 py-2 text-sm font-bold text-white transition-colors hover:bg-brand-600"
                         >
                           Submit Rating
                         </button>
@@ -596,7 +596,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
             >
               <div className="flex flex-col items-stretch gap-4 md:flex-row md:items-center md:gap-6">
                 {/* Decorative icon only on md+; on mobile it was a sparse full-width row above the copy */}
-                <div className="hidden h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-orange-500/10 text-orange-500 md:flex">
+                <div className="hidden h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-brand-500/10 text-brand-500 md:flex">
                   <Star size={24} fill="currentColor" aria-hidden />
                 </div>
 
@@ -607,14 +607,14 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                   <div className="mb-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 md:justify-start">
                     <h3 className="text-lg font-bold text-[var(--text-primary)]">Your Rating</h3>
                     <div
-                      className="flex items-center gap-0.5 text-orange-500"
+                      className="flex items-center gap-0.5 text-brand-500"
                       aria-label={`${existingRating.stars} out of 5 stars`}
                     >
                       {[1, 2, 3, 4, 5].map((star) => (
                         <Star
                           key={star}
                           size={18}
-                          className={star <= existingRating.stars ? 'text-orange-500' : 'text-[var(--border-color)]'}
+                          className={star <= existingRating.stars ? 'text-brand-500' : 'text-[var(--border-color)]'}
                           fill={star <= existingRating.stars ? 'currentColor' : 'none'}
                           aria-hidden
                         />
@@ -631,7 +631,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                 <button
                   type="button"
                   onClick={handleResetRating}
-                  className="min-h-11 w-full shrink-0 rounded-xl px-4 py-2.5 text-sm font-bold text-orange-500 transition-colors hover:bg-orange-500/10 md:min-h-0 md:w-auto md:self-center"
+                  className="min-h-11 w-full shrink-0 rounded-xl px-4 py-2.5 text-sm font-bold text-brand-500 transition-colors hover:bg-brand-500/10 md:min-h-0 md:w-auto md:self-center"
                 >
                   Reset Rating
                 </button>
@@ -669,7 +669,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                     className="flex w-full items-center justify-between p-4 text-left transition-colors hover:bg-[var(--hover-bg)] sm:p-6"
                   >
                     <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-orange-500/10 text-sm font-bold text-orange-500">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-500/10 text-sm font-bold text-brand-500">
                         {idx + 1}
                       </div>
                       <div className="min-w-0">
@@ -735,7 +735,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                                       ) : (
                                         <Play
                                           size={14}
-                                          className="shrink-0 text-[var(--text-secondary)] transition-colors group-hover:text-orange-500"
+                                          className="shrink-0 text-[var(--text-secondary)] transition-colors group-hover:text-brand-500"
                                         />
                                       )}
                                       <span
@@ -751,7 +751,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                                     <div className="flex w-full items-center gap-2">
                                       <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--hover-bg)]">
                                         <div
-                                          className="h-full rounded-full bg-orange-500 transition-[width] duration-300"
+                                          className="h-full rounded-full bg-brand-500 transition-[width] duration-300"
                                           style={{ width: `${pct}%` }}
                                         />
                                       </div>
@@ -780,9 +780,9 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
           <div className="space-y-8 lg:sticky lg:top-20 lg:self-start">
             {/* Author Info */}
             <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-3xl p-8">
-              <h3 className="text-sm font-bold text-orange-500 uppercase tracking-widest mb-6">Course Author</h3>
+              <h3 className="text-sm font-bold text-brand-500 uppercase tracking-widest mb-6">Course Author</h3>
               <div className="flex items-center gap-4 mb-6">
-                <div className="w-16 h-16 rounded-2xl bg-orange-500/10 flex items-center justify-center text-orange-500">
+                <div className="w-16 h-16 rounded-2xl bg-brand-500/10 flex items-center justify-center text-brand-500">
                   <User size={32} />
                 </div>
                 <div>
@@ -797,10 +797,10 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
 
             {/* Metadata */}
             <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-3xl p-8 space-y-6">
-              <h3 className="text-sm font-bold text-orange-500 uppercase tracking-widest mb-2">Course Details</h3>
+              <h3 className="text-sm font-bold text-brand-500 uppercase tracking-widest mb-2">Course Details</h3>
               
               <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-xl bg-[var(--hover-bg)] flex items-center justify-center text-orange-500">
+                <div className="w-10 h-10 rounded-xl bg-[var(--hover-bg)] flex items-center justify-center text-brand-500">
                   <Clock size={20} />
                 </div>
                 <div>
@@ -810,7 +810,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
               </div>
 
               <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-xl bg-[var(--hover-bg)] flex items-center justify-center text-orange-500">
+                <div className="w-10 h-10 rounded-xl bg-[var(--hover-bg)] flex items-center justify-center text-brand-500">
                   <BarChart size={20} />
                 </div>
                 <div>
@@ -820,22 +820,36 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
               </div>
 
               <div className="flex items-start gap-4">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--hover-bg)] text-orange-500">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--hover-bg)] text-brand-500">
                   <Layout size={20} />
                 </div>
                 <div className="min-w-0 space-y-3">
                   <div>
                     <p className="text-xs text-[var(--text-secondary)]">Categories</p>
-                    <p className="text-sm font-bold leading-snug text-[var(--text-primary)]">
-                      {course.categories.length ? course.categories.join(' · ') : '—'}
-                    </p>
+                    {course.categories.length ? (
+                      <p className="mt-1 flex flex-wrap gap-1.5 leading-snug">
+                        {course.categories.map((c) => (
+                          <span
+                            key={c}
+                            className="rounded-md border border-[#cfcfcf] bg-[#e7e7e7] px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-[#272828]"
+                          >
+                            {c}
+                          </span>
+                        ))}
+                      </p>
+                    ) : (
+                      <p className="text-sm font-bold leading-snug text-[var(--text-primary)]">—</p>
+                    )}
                   </div>
                   {course.skills.length > 0 && (
                     <div>
                       <p className="text-xs text-[var(--text-secondary)]">Skills</p>
-                      <p className="flex flex-wrap gap-1 text-sm font-bold leading-snug text-[var(--text-primary)]">
+                      <p className="flex flex-wrap gap-1 text-sm font-bold leading-snug">
                         {course.skills.map((sk) => (
-                          <span key={sk} className="rounded-md bg-[var(--hover-bg)] px-2 py-0.5 text-xs font-semibold">
+                          <span
+                            key={sk}
+                            className="rounded-md bg-[var(--hover-bg)] px-2 py-0.5 text-xs font-semibold text-[color:var(--skill-chip-fg)]"
+                          >
                             {sk}
                           </span>
                         ))}
@@ -898,7 +912,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                   type="submit"
                   disabled={loginSubmitting}
                   autoFocus
-                  className="w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white py-3 rounded-xl text-sm font-bold transition-colors"
+                  className="w-full flex items-center justify-center gap-2 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white py-3 rounded-xl text-sm font-bold transition-colors"
                 >
                   <LogIn size={18} />
                   {loginSubmitting ? 'Signing in…' : 'Continue with Google'}

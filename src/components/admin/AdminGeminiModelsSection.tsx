@@ -187,30 +187,12 @@ export const AdminGeminiModelsSection: React.FC<AdminGeminiModelsSectionProps> =
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
         <div className="min-w-0">
           <h2 className="text-base font-bold text-[var(--text-primary)]">Gemini model chain</h2>
-          <p className="mt-0.5 text-[11px] leading-snug text-[var(--text-muted)]">
-            Order = try next model on rate limit (enabled rows, top to bottom). After save, the app uses{' '}
-            <strong className="font-medium text-[var(--text-secondary)]">only</strong> this chain — it does not append
-            extra ids from <code className="font-mono text-[10px] text-orange-500/90">.env</code>. Add every fallback
-            model here. <kbd className="rounded border border-[var(--border-color)] bg-[var(--bg-primary)] px-1 font-mono text-[10px]">Enter</kbd>{' '}
-            adds an id. No Firestore doc yet →{' '}
-            <code className="font-mono text-[10px] text-orange-500/90">GEMINI_MODEL</code> /{' '}
-            <code className="font-mono text-[10px] text-orange-500/90">GEMINI_MODEL_FALLBACK</code>.
-          </p>
-          <p className="mt-1 text-[10px] text-[var(--text-muted)]">
-            <span className="font-mono text-[var(--text-secondary)]">{envDefaultChain.join(' → ')}</span>
-            {' · '}
-            {fromFirestore ? (
-              <span className="text-emerald-600 dark:text-emerald-400">Firestore</span>
-            ) : (
-              <span>env until first save</span>
-            )}
-          </p>
         </div>
         <button
           type="button"
           disabled={saving || !isDirty}
           onClick={() => void handleSave()}
-          className="inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 self-start rounded-lg bg-orange-500 px-3 text-sm font-semibold text-white hover:bg-orange-600 disabled:opacity-40 sm:self-auto"
+          className="inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 self-start rounded-lg bg-[#616161] px-3 text-sm font-semibold text-[#e7e7e7] hover:bg-[#757676] disabled:opacity-40 sm:self-auto"
         >
           {saving ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Save size={16} aria-hidden />}
           Save
@@ -218,7 +200,7 @@ export const AdminGeminiModelsSection: React.FC<AdminGeminiModelsSectionProps> =
       </div>
 
       {!loading && enabledCount === 0 && normalizedSnapshot.modelIds.length > 0 && (
-        <p className="rounded-lg border border-amber-500/35 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-800 dark:text-amber-200">
+        <p className="rounded-lg border border-[#8b8c8c]/75 bg-[#757676]/12 px-2.5 py-1.5 text-[11px] text-[#393a3a] app-dark:text-[#cfcfcf]">
           All models disabled — no API calls.
         </p>
       )}
@@ -323,7 +305,7 @@ export const AdminGeminiModelsSection: React.FC<AdminGeminiModelsSectionProps> =
                       type="button"
                       onClick={() => removeRow(i)}
                       disabled={rows.length <= 1}
-                      className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md text-red-400/90 hover:bg-red-500/10 disabled:opacity-25"
+                      className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md text-[#a1a2a2]/90 hover:bg-[#757676]/12 disabled:opacity-25"
                       aria-label="Remove"
                     >
                       <Trash2 size={16} aria-hidden />
@@ -335,12 +317,12 @@ export const AdminGeminiModelsSection: React.FC<AdminGeminiModelsSectionProps> =
                     aria-checked={row.enabled}
                     aria-label={`${row.enabled ? 'Disable' : 'Enable'} ${row.id || 'model'}`}
                     onClick={() => setRowEnabled(i, !row.enabled)}
-                    className={`relative h-8 w-[3.25rem] shrink-0 rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50 ${
-                      row.enabled ? 'bg-emerald-500' : 'bg-[var(--border-color)]'
+                    className={`relative h-8 w-[3.25rem] shrink-0 rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/50 ${
+                      row.enabled ? 'bg-[#a1a2a2]' : 'bg-[var(--border-color)]'
                     }`}
                   >
                     <span
-                      className={`pointer-events-none absolute top-1 left-1 h-6 w-6 rounded-full bg-white shadow transition-transform ${
+                      className={`pointer-events-none absolute top-1 left-1 h-6 w-6 rounded-full bg-[#e7e7e7] shadow transition-transform ${
                         row.enabled ? 'translate-x-5' : 'translate-x-0'
                       }`}
                     />
@@ -354,7 +336,7 @@ export const AdminGeminiModelsSection: React.FC<AdminGeminiModelsSectionProps> =
       </div>
 
       <p className="text-[10px] text-[var(--text-muted)]">
-        <button type="button" onClick={applyEnvDefaults} className="text-orange-500 hover:underline">
+        <button type="button" onClick={applyEnvDefaults} className="text-[#616161] hover:underline app-dark:text-[var(--tone-100)]">
           Reset to env
         </button>
         {' · '}
@@ -362,7 +344,7 @@ export const AdminGeminiModelsSection: React.FC<AdminGeminiModelsSectionProps> =
           href="https://ai.google.dev/gemini-api/docs/models"
           target="_blank"
           rel="noreferrer"
-          className="text-orange-500 hover:underline"
+          className="text-[#616161] hover:underline app-dark:text-[var(--tone-100)]"
         >
           Docs
         </a>

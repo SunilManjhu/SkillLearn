@@ -580,7 +580,7 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
           <div className="min-w-0 flex-1 space-y-1.5 lg:min-w-0">
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
               <h2 className="flex min-w-0 items-center gap-1.5 text-[0.95rem] font-bold leading-tight text-[var(--text-primary)] sm:gap-2 sm:text-base sm:leading-normal md:text-lg">
-                <Megaphone size={17} className="shrink-0 text-orange-500 sm:size-[18px] md:size-5" aria-hidden />
+                <Megaphone size={17} className="shrink-0 text-admin-icon sm:size-[18px] md:size-5" aria-hidden />
                 <span className="min-w-0">Home Hero — Phone Ads</span>
               </h2>
               <AdminLabelInfoTip
@@ -613,7 +613,7 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                 <div className="flex min-w-0 w-full items-center justify-between gap-2 sm:w-auto sm:flex-1 sm:justify-start sm:gap-2 lg:flex-none">
                   <Timer
                     size={16}
-                    className="size-4 shrink-0 text-orange-500 sm:size-[18px] lg:size-4"
+                    className="size-4 shrink-0 text-admin-icon sm:size-[18px] lg:size-4"
                     aria-hidden
                   />
                   <div className="min-w-0 [&>div]:flex-nowrap [&>div]:gap-x-1 lg:[&>div]:gap-x-0.5">
@@ -677,7 +677,7 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                       onBlur={() => {
                         setAutoViewSecText(String(draftDefaultSec));
                       }}
-                      className="min-h-10 w-[4.75rem] border-0 bg-[var(--bg-secondary)] px-2 py-1.5 text-center text-sm tabular-nums text-[var(--text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 sm:w-28 sm:px-2.5 lg:h-8 lg:min-h-8 lg:w-[5.5rem] lg:py-0 lg:text-sm"
+                      className="min-h-10 w-[4.75rem] border-0 bg-[var(--bg-secondary)] px-2 py-1.5 text-center text-sm tabular-nums text-[var(--text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#a1a2a2]/50 sm:w-28 sm:px-2.5 lg:h-8 lg:min-h-8 lg:w-[5.5rem] lg:py-0 lg:text-sm"
                     />
                     <button
                       type="button"
@@ -703,7 +703,7 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                     checked={enabled}
                     onChange={(e) => setEnabled(e.target.checked)}
                     aria-label="Ads (global): use custom hero content on the home page"
-                    className="size-4 shrink-0 rounded border-[var(--border-color)] text-orange-500 focus:ring-orange-500"
+                    className="size-4 shrink-0 rounded border-[var(--border-color)] checkbox-accent-theme"
                   />
                   <div className="flex min-w-0 items-center gap-1 lg:gap-0.5">
                     <label
@@ -811,7 +811,7 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                   type="button"
                   disabled={draftSlides.length >= MAX_SLIDES}
                   onClick={addSlide}
-                  className="col-span-2 inline-flex min-h-11 items-center justify-center gap-1 rounded-lg bg-orange-500/15 px-2.5 py-2 text-xs font-bold text-orange-600 hover:bg-orange-500/25 disabled:pointer-events-none disabled:opacity-40 dark:text-orange-400 sm:col-span-1 sm:flex-initial sm:gap-1.5 sm:px-3 sm:text-sm"
+                  className="col-span-2 inline-flex min-h-11 items-center justify-center gap-1 rounded-lg bg-[#616161]/15 px-2.5 py-2 text-xs font-bold text-[#393a3a] hover:bg-[#616161]/25 disabled:pointer-events-none disabled:opacity-40 app-dark:text-[#cfcfcf] sm:col-span-1 sm:flex-initial sm:gap-1.5 sm:px-3 sm:text-sm"
                 >
                   <Plus size={16} className="shrink-0 sm:size-[18px]" aria-hidden />
                   Add Slide
@@ -858,7 +858,7 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                         ? `Collapse slide ${slideIndex + 1} editor`
                         : `Expand slide ${slideIndex + 1} editor`
                     }
-                    className="flex min-h-11 min-w-0 w-full touch-manipulation items-center gap-2 rounded-lg px-1 py-1 text-left transition-colors hover:bg-[var(--hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 sm:w-auto sm:flex-1"
+                    className="flex min-h-11 min-w-0 w-full touch-manipulation items-center gap-2 rounded-lg px-1 py-1 text-left transition-colors hover:bg-[var(--hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/45 sm:w-auto sm:flex-1"
                   >
                     <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-secondary)]">
                       {isOpen ? <ChevronDown size={18} aria-hidden /> : <ChevronRight size={18} aria-hidden />}
@@ -890,7 +890,7 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                         onChange={(e) => updateSlide(slideIndex, { enabled: e.target.checked })}
                         title={perSlideShowTitle}
                         aria-label={`Slide ${slideIndex + 1}: Show (per slide) on home hero`}
-                        className="size-[1.125rem] shrink-0 rounded border-[var(--border-color)] text-orange-500 focus:ring-orange-500 disabled:opacity-40 sm:size-4"
+                        className="size-[1.125rem] shrink-0 rounded border-[var(--border-color)] checkbox-accent-theme disabled:opacity-40 sm:size-4"
                       />
                       <span className="text-[0.65rem] font-bold leading-tight text-[var(--text-secondary)] sm:hidden">
                         Show
@@ -922,7 +922,7 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                         type="button"
                         disabled={draftSlides.length <= 1}
                         onClick={() => removeSlide(slideIndex)}
-                        className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-red-400 hover:bg-red-500/10 disabled:opacity-40"
+                        className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[#a1a2a2] hover:bg-[#757676]/12 disabled:opacity-40"
                         aria-label="Remove slide"
                       >
                         <Trash2 size={18} aria-hidden />
@@ -1112,7 +1112,7 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                               type="button"
                               disabled={s.blocks.length <= 1}
                               onClick={() => removeBlock(slideIndex, blockIndex)}
-                              className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-red-400 hover:bg-red-500/10 disabled:opacity-40"
+                              className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-[#a1a2a2] hover:bg-[#757676]/12 disabled:opacity-40"
                               aria-label="Remove block"
                             >
                               <Trash2 size={16} aria-hidden />
@@ -1322,12 +1322,12 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
               })}
             </div>
 
-            <div className="sticky bottom-0 z-[5] -mx-4 mt-2 flex flex-col gap-2 border-t border-[var(--border-color)] bg-[var(--bg-secondary)]/95 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-4px_24px_-8px_rgba(0,0,0,0.12)] backdrop-blur-sm sm:static sm:z-0 sm:-mx-6 sm:mx-0 sm:mt-0 sm:flex-row sm:flex-wrap sm:border-0 sm:bg-transparent sm:px-0 sm:py-0 sm:pt-2 sm:shadow-none sm:backdrop-blur-none dark:shadow-[0_-4px_24px_-8px_rgba(0,0,0,0.35)]">
+            <div className="sticky bottom-0 z-[5] -mx-4 mt-2 flex flex-col gap-2 border-t border-[var(--border-color)] bg-[var(--bg-secondary)]/95 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-4px_24px_-8px_rgba(39,40,40,0.14)] backdrop-blur-sm sm:static sm:z-0 sm:-mx-6 sm:mx-0 sm:mt-0 sm:flex-row sm:flex-wrap sm:border-0 sm:bg-transparent sm:px-0 sm:py-0 sm:pt-2 sm:shadow-none sm:backdrop-blur-none app-dark:shadow-[0_-4px_24px_-8px_rgba(39,40,40,0.45)]">
               <button
                 type="button"
                 disabled={saving || !dirty}
                 onClick={() => void handleSave()}
-                className="min-h-11 flex-1 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-orange-600 disabled:pointer-events-none disabled:opacity-50 sm:flex-none sm:py-3 sm:px-8 sm:shadow-none"
+                className="min-h-11 flex-1 rounded-xl bg-[#616161] px-4 py-2.5 text-sm font-bold text-[#e7e7e7] shadow-sm hover:bg-[#757676] disabled:pointer-events-none disabled:opacity-50 sm:flex-none sm:py-3 sm:px-8 sm:shadow-none"
               >
                 {saving ? 'Saving…' : 'Save to Firestore'}
               </button>
@@ -1362,7 +1362,7 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
       <AnimatePresence>
         {saveErrorDialog && (
           <div
-            className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] backdrop-blur-sm sm:items-center sm:p-6"
+            className="fixed inset-0 z-[100] flex items-end justify-center bg-[#272828]/75 p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] backdrop-blur-sm sm:items-center sm:p-6"
             role="dialog"
             aria-modal="true"
             aria-labelledby="hero-ads-save-error-title"
@@ -1424,7 +1424,7 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                   type="button"
                   autoFocus
                   onClick={closeSaveErrorDialog}
-                  className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-orange-600 sm:w-auto"
+                  className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[#616161] px-5 py-3 text-sm font-bold text-[#e7e7e7] transition-colors hover:bg-[#757676] sm:w-auto"
                 >
                   OK
                 </button>
@@ -1437,7 +1437,7 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
       <AnimatePresence>
         {resetDefaultsDialogOpen && (
           <div
-            className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] backdrop-blur-sm sm:items-center sm:p-6"
+            className="fixed inset-0 z-[100] flex items-end justify-center bg-[#272828]/75 p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] backdrop-blur-sm sm:items-center sm:p-6"
             role="dialog"
             aria-modal="true"
             aria-labelledby="hero-ads-reset-defaults-title"
@@ -1488,7 +1488,7 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                   type="button"
                   autoFocus
                   onClick={confirmResetDefaults}
-                  className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-orange-600 sm:w-auto"
+                  className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[#616161] px-5 py-3 text-sm font-bold text-[#e7e7e7] transition-colors hover:bg-[#757676] sm:w-auto"
                 >
                   Replace with defaults
                 </button>

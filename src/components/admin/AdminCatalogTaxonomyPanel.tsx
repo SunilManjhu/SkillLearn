@@ -1,5 +1,7 @@
-import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { GripVertical, Search, Trash2, X } from 'lucide-react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { onAuthStateChanged } from 'firebase/auth';
+import { Check, GripVertical, Plus, Search, Trash2, X } from 'lucide-react';
+import { auth } from '../../firebase';
 import { AnimatePresence, motion } from 'motion/react';
 import type { Course } from '../../data/courses';
 import { dedupeLabelsPreserveOrder } from '../../utils/courseTaxonomy';
@@ -18,7 +20,6 @@ import { normalizeCatalogCategoryPresets } from '../../utils/catalogCategoryPres
 import { normalizeCatalogSkillPresets } from '../../utils/catalogSkillPresetsState';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { useDialogKeyboard } from '../../hooks/useDialogKeyboard';
-import { AdminLabelInfoTip } from './adminLabelInfoTip';
 import {
   mergeUniverseWithAdminOrder,
   orderInsertBefore,
@@ -35,6 +36,14 @@ import {
   readCatalogPopularTopics,
   writeCatalogPopularTopics,
 } from '../../utils/catalogPopularTopics';
+import type { CatalogTaxonomyProposal } from '../../utils/catalogTaxonomyProposalsFirestore';
+import {
+  approveTaxonomyProposalAndMerge,
+  createTaxonomyProposal,
+  setTaxonomyProposalRejected,
+  subscribeMyPendingTaxonomyProposals,
+  subscribePendingTaxonomyProposals,
+} from '../../utils/catalogTaxonomyProposalsFirestore';
 
 type TaxonomyKind = 'category' | 'skill';
 
@@ -170,6 +179,8 @@ const Chip: React.FC<{
   disabled?: boolean;
   /** When nested inside a drag row wrapper that already provides the outer chrome. */
   frameless?: boolean;
+  /** Softer remove control (dense taxonomy lists). */
+  mutedActions?: boolean;
 }> = ({
   label,
   editing,
@@ -181,6 +192,7 @@ const Chip: React.FC<{
   onRemove,
   disabled,
   frameless,
+  mutedActions,
 }) => {
   const inputRef = useRef<HTMLInputElement | null>(null);
   return (
@@ -215,7 +227,7 @@ const Chip: React.FC<{
             }}
             // `size` lets the chip grow/shrink with the typed text while keeping it readable.
             size={Math.max(1, editValue.length)}
-            className="min-h-8 w-auto min-w-[6ch] bg-transparent px-0 py-0 text-xs font-semibold text-[var(--text-primary)] outline-none focus-visible:ring-2 focus-visible:ring-orange-500/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)] disabled:opacity-40"
+            className="min-h-8 w-auto min-w-[6ch] bg-transparent px-0 py-0 text-xs font-semibold text-[var(--text-primary)] outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)] disabled:opacity-40"
             autoFocus
           />
         </div>
@@ -235,11 +247,15 @@ const Chip: React.FC<{
         type="button"
         disabled={disabled || editing}
         onClick={onRemove}
-        className="inline-flex min-h-8 min-w-8 items-center justify-center rounded-full text-red-400 hover:bg-red-500/10 disabled:opacity-40"
+        className={
+          mutedActions
+            ? 'inline-flex min-h-8 min-w-8 items-center justify-center rounded-md text-[var(--text-muted)]/50 transition-colors hover:bg-[#757676]/12 hover:text-[#a1a2a2] disabled:opacity-40'
+            : 'inline-flex min-h-8 min-w-8 items-center justify-center rounded-full text-[#a1a2a2] hover:bg-[#757676]/12 disabled:opacity-40'
+        }
         aria-label={`Remove ${label} everywhere`}
         title="Remove everywhere"
       >
-        <X size={16} aria-hidden />
+        <X size={mutedActions ? 15 : 16} aria-hidden />
       </button>
     </div>
   );
@@ -247,55 +263,58 @@ const Chip: React.FC<{
 
 function TaxonomySection({
   title,
-  tip,
-  tipId,
   kind,
   items,
   busy,
-  onAddEverywhere,
+  globalFilterText,
+  readOnlyTaxonomy,
+  pendingProposals,
+  showAdminProposalActions,
+  listLayout = 'wrap',
+  headerCount,
   onRenameEverywhere,
   onRemoveEverywhere,
   onDragDrop,
+  onApproveProposal,
+  onRejectProposal,
 }: {
   title: string;
-  tipId: string;
-  tip: React.ReactNode;
   kind: TaxonomyKind;
   items: readonly string[];
   busy: boolean;
-  onAddEverywhere: (name: string) => Promise<void>;
+  globalFilterText: string;
+  readOnlyTaxonomy: boolean;
+  pendingProposals: readonly CatalogTaxonomyProposal[];
+  showAdminProposalActions: boolean;
+  /** `grid`: two columns of chips from `sm` up (course catalog taxonomy mock). */
+  listLayout?: 'wrap' | 'grid';
+  /** Optional count pill in the section header (e.g. total labels). */
+  headerCount?: number;
   onRenameEverywhere: (fromExact: string, toExact: string) => Promise<void>;
   onRemoveEverywhere: (name: string) => Promise<void>;
   onDragDrop: (payload: Extract<TaxonomyDragPayload, { scope: 'taxonomy' }>, targetKind: TaxonomyKind, beforeLabel: string | null) => void;
+  onApproveProposal: (p: CatalogTaxonomyProposal) => void;
+  onRejectProposal: (p: CatalogTaxonomyProposal) => void;
 }) {
-  const [query, setQuery] = useState('');
   const [editingLabel, setEditingLabel] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState('');
 
-  const trimmed = query.trim();
+  const globalTrimmed = globalFilterText.trim();
+
   const filtered = useMemo(() => {
-    if (!trimmed) return items;
-    return items.filter((x) => includesCI(x, trimmed));
-  }, [items, trimmed]);
+    let base = items;
+    if (globalTrimmed) base = base.filter((x) => includesCI(x, globalTrimmed));
+    return base;
+  }, [items, globalTrimmed]);
 
-  const exactMatch = useMemo(() => {
-    if (!trimmed) return null;
-    const k = lower(trimmed);
-    return items.find((x) => lower(x) === k) ?? null;
-  }, [items, trimmed]);
+  /** Always show pending rows (do not hide behind global search — admins must always see Approve/Reject). */
+  const pendingVisible = pendingProposals;
 
-  const showAdd = trimmed.length > 0 && exactMatch == null && editingLabel == null;
-
-  const dragEnabled = !busy && !trimmed && editingLabel == null;
-
-  const commitAdd = async () => {
-    const next = trimmed;
-    if (!next) return;
-    await onAddEverywhere(next);
-    setQuery('');
-  };
+  const searchBlocksDrag = globalTrimmed.length > 0;
+  const dragEnabled = !readOnlyTaxonomy && !busy && !searchBlocksDrag && editingLabel == null;
 
   const startInlineEdit = (src: string) => {
+    if (readOnlyTaxonomy) return;
     setEditingLabel(src);
     setEditingValue(src);
   };
@@ -314,154 +333,160 @@ function TaxonomySection({
       return;
     }
     await onRenameEverywhere(from, to);
-    setQuery('');
     cancelInlineEdit();
   };
 
+  const chipDisabled = busy || readOnlyTaxonomy;
+
+  const chipListClassName =
+    listLayout === 'grid'
+      ? 'grid min-h-0 max-h-[70dvh] min-w-0 flex-1 grid-cols-1 content-start gap-1.5 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch] sm:grid-cols-2'
+      : 'flex min-h-0 max-h-[70dvh] min-w-0 flex-1 flex-wrap content-start items-stretch gap-1.5 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch]';
+
   return (
-    <section className="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-primary)]/40 p-4 sm:p-6">
-      <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
-        <h3 className="text-base font-bold leading-none text-[var(--text-primary)]">{title}</h3>
-        <AdminLabelInfoTip
-          controlOnly
-          tipId={tipId}
-          tipRegionAriaLabel={`${title} tips`}
-          tipSubject={title}
-        >
-          {tip}
-        </AdminLabelInfoTip>
-      </div>
-
-      <div className="mt-4 flex min-w-0 items-stretch gap-2">
-        <div className="relative min-w-0 flex-1">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" aria-hidden />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                e.preventDefault();
-                setQuery('');
-                return;
-              }
-              if (e.key === 'Enter') {
-                if (!showAdd) return;
-                e.preventDefault();
-                void commitAdd();
-              }
-            }}
-            placeholder={kind === 'category' ? 'Search categories…' : 'Search skills…'}
-            className="min-h-11 w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] pl-9 pr-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-orange-500/40 focus:ring-2 focus:ring-orange-500/20 disabled:opacity-50"
-            disabled={busy}
-          />
-        </div>
-
-        {/* No explicit add button: Enter adds, Escape clears. */}
-      </div>
-
-      <div className="mt-4 flex flex-wrap items-stretch gap-2">
-        {filtered.map((label) => (
-          <div
-            key={label.toLowerCase()}
-            className="inline-flex max-w-full min-w-0 items-stretch gap-1 rounded-full border border-[var(--border-color)] bg-[var(--hover-bg)]/40 pl-1 pr-0.5 py-0.5"
-            onDragOver={
-              dragEnabled
-                ? (e) => {
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = 'move';
-                  }
-                : undefined
-            }
-            onDrop={
-              dragEnabled
-                ? (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const p = readTaxonomyDragPayload(e);
-                    if (!p || p.scope !== 'taxonomy') return;
-                    if (p.kind === kind && lower(p.label) === lower(label)) return;
-                    onDragDrop(p, kind, label);
-                  }
-                : undefined
-            }
-          >
-            <div
-              role="button"
-              tabIndex={dragEnabled ? 0 : -1}
-              draggable={dragEnabled}
-              onDragStart={
-                dragEnabled
-                  ? (e) => {
-                      e.dataTransfer.setData(
-                        TAXONOMY_DRAG_MIME,
-                        JSON.stringify({ scope: 'taxonomy', kind, label })
-                      );
-                      e.dataTransfer.effectAllowed = 'move';
-                    }
-                  : undefined
-              }
-              className={
-                dragEnabled
-                  ? 'inline-flex min-h-11 min-w-11 shrink-0 cursor-grab touch-manipulation items-center justify-center rounded-full text-[var(--text-muted)] active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/35'
-                  : 'inline-flex min-h-11 min-w-11 shrink-0 cursor-not-allowed items-center justify-center rounded-full opacity-40'
-              }
-              aria-label={
-                kind === 'category'
-                  ? `Drag ${label} to reorder categories or move to Skills`
-                  : `Drag ${label} to reorder skills or move to Categories`
-              }
-              onKeyDown={(e) => {
-                if (!dragEnabled) return;
-                if (e.key === 'Enter' || e.key === ' ') e.preventDefault();
-              }}
-            >
-              <GripVertical size={18} aria-hidden />
-            </div>
-            <div className="min-w-0 self-center border-0 bg-transparent">
-              <Chip
-                label={label}
-                editing={editingLabel != null && lower(editingLabel) === lower(label)}
-                editValue={editingLabel != null && lower(editingLabel) === lower(label) ? editingValue : label}
-                onEditStart={() => startInlineEdit(label)}
-                onEditChange={setEditingValue}
-                onEditCommit={() => void commitInlineEdit()}
-                onEditCancel={cancelInlineEdit}
-                disabled={busy}
-                onRemove={() => void onRemoveEverywhere(label)}
-                frameless
-              />
-            </div>
-          </div>
-        ))}
-        {dragEnabled && filtered.length > 0 ? (
-          <div
-            className="flex min-h-11 min-w-[min(100%,10rem)] flex-1 items-center justify-center rounded-xl border border-dashed border-[var(--border-color)]/70 bg-[var(--bg-secondary)]/30 px-3 text-center text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]"
-            onDragOver={(e) => {
-              e.preventDefault();
-              e.dataTransfer.dropEffect = 'move';
-            }}
-            onDrop={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              const p = readTaxonomyDragPayload(e);
-              if (!p || p.scope !== 'taxonomy') return;
-              onDragDrop(p, kind, null);
-            }}
-          >
-            Drop to place last
-          </div>
+    <section className="flex min-h-0 min-w-0 flex-col rounded-xl border border-[var(--border-color)]/70 bg-[var(--bg-primary)]/25 p-3 sm:p-4">
+      <div className="flex min-w-0 shrink-0 items-center justify-between gap-2">
+        <h3 className="text-[11px] font-medium uppercase tracking-[0.06em] text-[var(--text-muted)]">{title}</h3>
+        {headerCount != null ? (
+          <span className="shrink-0 rounded-full border border-[var(--border-color)]/80 bg-[var(--bg-secondary)]/50 px-2 py-0.5 text-[11px] font-normal normal-case tracking-normal text-[var(--text-muted)] tabular-nums">
+            {headerCount}
+          </span>
         ) : null}
       </div>
 
-      {trimmed ? (
-        <p className="mt-2 text-xs text-[var(--text-muted)]">Clear search to drag chips.</p>
-      ) : null}
+      <div className="mt-2.5 flex min-h-0 min-w-0 flex-1 flex-col gap-2">
+        {pendingVisible.length > 0 ? (
+          <div className="shrink-0 space-y-1.5">
+            {pendingVisible.map((p) => (
+              <div
+                key={p.id}
+                className="flex min-w-0 flex-col gap-2 rounded-lg border border-[#8b8c8c]/70 bg-[#757676]/10 px-2.5 py-2 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-[var(--text-primary)]">{p.label}</p>
+                  <p className="text-[10px] font-medium text-[#616161] app-dark:text-[#cfcfcf]">Pending</p>
+                </div>
+                {showAdminProposalActions ? (
+                  <div className="flex shrink-0 flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => onApproveProposal(p)}
+                      className="inline-flex min-h-9 min-w-[5rem] items-center justify-center gap-1 rounded-md bg-[#616161] px-2 text-xs font-semibold text-[#e7e7e7] hover:bg-[#757676] disabled:opacity-40"
+                    >
+                      <Check size={14} aria-hidden />
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => onRejectProposal(p)}
+                      className="inline-flex min-h-9 min-w-[5rem] items-center justify-center rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-40"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
 
-      {trimmed && filtered.length === 0 ? (
-        <p className="mt-4 text-xs text-[var(--text-muted)]">
-          No matches. {showAdd ? 'Press Enter to add, or Esc to clear.' : null}
-        </p>
-      ) : null}
+        <div className={chipListClassName}>
+          {filtered.map((label) => (
+            <div
+              key={label.toLowerCase()}
+              className={`group/chip inline-flex max-w-full min-w-0 items-stretch gap-0.5 rounded-lg border border-[var(--border-color)]/55 bg-[var(--bg-secondary)]/35 py-0.5 pl-0.5 pr-1 ${listLayout === 'grid' ? 'w-full' : ''}`}
+              onDragOver={
+                dragEnabled
+                  ? (e) => {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                    }
+                  : undefined
+              }
+              onDrop={
+                dragEnabled
+                  ? (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const p = readTaxonomyDragPayload(e);
+                      if (!p || p.scope !== 'taxonomy') return;
+                      if (p.kind === kind && lower(p.label) === lower(label)) return;
+                      onDragDrop(p, kind, label);
+                    }
+                  : undefined
+              }
+            >
+              <div
+                role="button"
+                tabIndex={dragEnabled ? 0 : -1}
+                draggable={dragEnabled}
+                onDragStart={
+                  dragEnabled
+                    ? (e) => {
+                        e.dataTransfer.setData(
+                          TAXONOMY_DRAG_MIME,
+                          JSON.stringify({ scope: 'taxonomy', kind, label })
+                        );
+                        e.dataTransfer.effectAllowed = 'move';
+                      }
+                    : undefined
+                }
+                className={
+                  dragEnabled
+                    ? 'inline-flex min-h-9 min-w-9 shrink-0 cursor-grab touch-manipulation items-center justify-center rounded-md text-[var(--text-muted)]/55 transition-colors hover:text-[var(--text-muted)] group-hover/chip:text-[var(--text-muted)] active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/40'
+                    : 'inline-flex min-h-9 min-w-9 shrink-0 cursor-not-allowed items-center justify-center rounded-md text-[var(--text-muted)]/35'
+                }
+                aria-label={
+                  kind === 'category'
+                    ? `Drag ${label} to reorder categories or move to Skills`
+                    : `Drag ${label} to reorder skills or move to Categories`
+                }
+                onKeyDown={(e) => {
+                  if (!dragEnabled) return;
+                  if (e.key === 'Enter' || e.key === ' ') e.preventDefault();
+                }}
+              >
+                <GripVertical size={16} aria-hidden />
+              </div>
+              <div className="min-w-0 self-center border-0 bg-transparent">
+                <Chip
+                  label={label}
+                  editing={editingLabel != null && lower(editingLabel) === lower(label)}
+                  editValue={editingLabel != null && lower(editingLabel) === lower(label) ? editingValue : label}
+                  onEditStart={() => startInlineEdit(label)}
+                  onEditChange={setEditingValue}
+                  onEditCommit={() => void commitInlineEdit()}
+                  onEditCancel={cancelInlineEdit}
+                  disabled={chipDisabled}
+                  onRemove={() => void onRemoveEverywhere(label)}
+                  frameless
+                  mutedActions
+                />
+              </div>
+            </div>
+          ))}
+          {dragEnabled && filtered.length > 0 ? (
+            <div
+              className={`flex min-h-9 min-w-[min(100%,9rem)] items-center justify-center rounded-lg border border-dashed border-[var(--border-color)]/55 bg-[var(--bg-secondary)]/20 px-2 text-center text-xs text-[var(--text-muted)] ${listLayout === 'grid' ? 'col-span-1 w-full sm:col-span-2' : 'flex-1'}`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const p = readTaxonomyDragPayload(e);
+                if (!p || p.scope !== 'taxonomy') return;
+                onDragDrop(p, kind, null);
+              }}
+            >
+              End of list
+            </div>
+          ) : null}
+        </div>
+      </div>
     </section>
   );
 }
@@ -469,83 +494,56 @@ function TaxonomySection({
 function PopularTopicsSection({
   items,
   busy,
+  globalFilterText,
   onCopyFromTaxonomy,
   onReorderPopular,
   onRemoveFromList,
 }: {
   items: readonly string[];
   busy: boolean;
+  globalFilterText: string;
   onCopyFromTaxonomy: (label: string, beforeLabel: string | null) => void;
   onReorderPopular: (label: string, beforeLabel: string | null) => void;
   onRemoveFromList: (label: string) => void;
 }) {
-  const [query, setQuery] = useState('');
-  const trimmed = query.trim();
-  const filtered = useMemo(() => {
-    if (!trimmed) return [...items];
-    return items.filter((x) => includesCI(x, trimmed));
-  }, [items, trimmed]);
+  const globalTrimmed = globalFilterText.trim();
 
-  const dragEnabled = !busy && !trimmed;
+  const filtered = useMemo(() => {
+    let base = [...items];
+    if (globalTrimmed) base = base.filter((x) => includesCI(x, globalTrimmed));
+    return base;
+  }, [items, globalTrimmed]);
+
+  const searchBlocksDrag = globalTrimmed.length > 0;
+  const dragEnabled = !busy && !searchBlocksDrag;
+
+  const popularDragOver = (e: React.DragEvent) => {
+    const p = readTaxonomyDragPayload(e);
+    if (p?.scope === 'taxonomy') {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      return;
+    }
+    if (p?.scope === 'popular') {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    }
+  };
 
   return (
-    <section className="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-primary)]/40 p-4 sm:p-6">
-      <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
-        <h3 className="text-base font-bold leading-none text-[var(--text-primary)]">Popular topics</h3>
-        <AdminLabelInfoTip
-          controlOnly
-          tipId="admin-taxonomy-popular-tip"
-          tipRegionAriaLabel="Popular topics tips"
-          tipSubject="Popular topics"
-        >
-          <>
-            <li>Build a curated list for quick reference (stored in this browser).</li>
-            <li>
-              Drag a grip from <strong className="text-[var(--text-primary)]">Categories</strong> or{' '}
-              <strong className="text-[var(--text-primary)]">Skills</strong> and drop here — it{' '}
-              <strong className="text-[var(--text-primary)]">copies</strong> the label; the original chip stays put.
-            </li>
-            <li>Drag grips here to reorder this list only.</li>
-            <li>× removes the label from this list only (does not change courses or presets).</li>
-          </>
-        </AdminLabelInfoTip>
+    <section className="flex min-h-0 min-w-0 flex-col rounded-xl border border-[var(--border-color)]/70 bg-[var(--bg-primary)]/25 p-3 sm:p-4">
+      <div className="flex min-w-0 shrink-0 items-center justify-between gap-2">
+        <h3 className="text-[11px] font-medium uppercase tracking-[0.06em] text-[var(--text-muted)]">Popular</h3>
+        <span className="shrink-0 rounded-full border border-[#8b8c8c]/75 bg-[#616161]/10 px-2 py-0.5 text-[10px] font-normal normal-case tracking-normal text-[#393a3a] app-dark:text-[#cfcfcf]">
+          This device
+        </span>
       </div>
 
-      <div className="mt-4 flex min-w-0 items-stretch gap-2">
-        <div className="relative min-w-0 flex-1">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" aria-hidden />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                e.preventDefault();
-                setQuery('');
-              }
-            }}
-            placeholder="Search popular topics…"
-            className="min-h-11 w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] pl-9 pr-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-orange-500/40 focus:ring-2 focus:ring-orange-500/20 disabled:opacity-50"
-            disabled={busy}
-          />
-        </div>
-      </div>
-
-      {items.length === 0 && !trimmed ? (
-        <div className="mt-4 space-y-3">
-          <p className="rounded-xl border border-dashed border-[var(--border-color)]/70 bg-[var(--bg-secondary)]/30 px-3 py-4 text-center text-xs leading-relaxed text-[var(--text-muted)]">
-            Drag category or skill chips here to copy them into this list. Clear search to enable drag and drop.
-          </p>
+      <div className="mt-3 flex min-h-0 min-w-0 flex-1 flex-col gap-2">
+        {items.length === 0 && !globalTrimmed ? (
           <div
-            className="flex min-h-14 items-center justify-center rounded-xl border border-dashed border-[var(--border-color)]/70 bg-[var(--bg-secondary)]/30 px-3 text-center text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]"
-            onDragOver={
-              dragEnabled
-                ? (e) => {
-                    e.preventDefault();
-                    const p = readTaxonomyDragPayload(e);
-                    e.dataTransfer.dropEffect = p?.scope === 'taxonomy' ? 'copy' : 'move';
-                  }
-                : undefined
-            }
+            className="flex min-h-[5.625rem] flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-[var(--border-color)]/55 bg-[var(--bg-secondary)]/20 px-4 py-4 text-center text-xs leading-snug text-[var(--text-muted)]"
+            onDragOver={dragEnabled ? popularDragOver : undefined}
             onDrop={
               dragEnabled
                 ? (e) => {
@@ -558,124 +556,105 @@ function PopularTopicsSection({
                 : undefined
             }
           >
-            Drop here to add first topic
+            <Plus size={18} strokeWidth={1.5} className="shrink-0 text-[var(--text-muted)]/40" aria-hidden />
+            <span>Drag a category or skill chip here to pin it</span>
           </div>
-        </div>
-      ) : null}
+        ) : null}
 
-      <div className="mt-4 flex flex-wrap items-stretch gap-2">
-        {filtered.map((label) => (
-          <div
-            key={label.toLowerCase()}
-            className="inline-flex max-w-full min-w-0 items-stretch gap-1 rounded-full border border-[var(--border-color)] bg-[var(--hover-bg)]/40 pl-1 pr-0.5 py-0.5"
-            onDragOver={
-              dragEnabled
-                ? (e) => {
-                    e.preventDefault();
-                    const p = readTaxonomyDragPayload(e);
-                    e.dataTransfer.dropEffect = p?.scope === 'taxonomy' ? 'copy' : 'move';
-                  }
-                : undefined
-            }
-            onDrop={
-              dragEnabled
-                ? (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const p = readTaxonomyDragPayload(e);
-                    if (!p) return;
-                    if (p.scope === 'taxonomy') {
-                      onCopyFromTaxonomy(p.label, label);
-                      return;
-                    }
-                    if (p.scope === 'popular') {
-                      if (lower(p.label) === lower(label)) return;
-                      onReorderPopular(p.label, label);
-                    }
-                  }
-                : undefined
-            }
-          >
+        <div className="flex min-h-0 max-h-[70dvh] min-w-0 flex-1 flex-wrap content-start items-stretch gap-1.5 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch]">
+          {filtered.map((label) => (
             <div
-              role="button"
-              tabIndex={dragEnabled ? 0 : -1}
-              draggable={dragEnabled}
-              onDragStart={
+              key={label.toLowerCase()}
+              className="group/chip inline-flex max-w-full min-w-0 items-stretch gap-0.5 rounded-lg border border-[var(--border-color)]/55 bg-[var(--bg-secondary)]/35 py-0.5 pl-0.5 pr-1"
+              onDragOver={dragEnabled ? popularDragOver : undefined}
+              onDrop={
                 dragEnabled
                   ? (e) => {
-                      e.dataTransfer.setData(
-                        TAXONOMY_DRAG_MIME,
-                        JSON.stringify({ scope: 'popular', label })
-                      );
-                      e.dataTransfer.effectAllowed = 'move';
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const p = readTaxonomyDragPayload(e);
+                      if (!p) return;
+                      if (p.scope === 'taxonomy') {
+                        onCopyFromTaxonomy(p.label, label);
+                        return;
+                      }
+                      if (p.scope === 'popular') {
+                        if (lower(p.label) === lower(label)) return;
+                        onReorderPopular(p.label, label);
+                      }
                     }
                   : undefined
               }
-              className={
-                dragEnabled
-                  ? 'inline-flex min-h-11 min-w-11 shrink-0 cursor-grab touch-manipulation items-center justify-center rounded-full text-[var(--text-muted)] active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/35'
-                  : 'inline-flex min-h-11 min-w-11 shrink-0 cursor-not-allowed items-center justify-center rounded-full opacity-40'
-              }
-              aria-label={`Drag ${label} to reorder Popular topics`}
-              onKeyDown={(e) => {
-                if (!dragEnabled) return;
-                if (e.key === 'Enter' || e.key === ' ') e.preventDefault();
+            >
+              <div
+                role="button"
+                tabIndex={dragEnabled ? 0 : -1}
+                draggable={dragEnabled}
+                onDragStart={
+                  dragEnabled
+                    ? (e) => {
+                        e.dataTransfer.setData(
+                          TAXONOMY_DRAG_MIME,
+                          JSON.stringify({ scope: 'popular', label })
+                        );
+                        e.dataTransfer.effectAllowed = 'move';
+                      }
+                    : undefined
+                }
+                className={
+                  dragEnabled
+                    ? 'inline-flex min-h-9 min-w-9 shrink-0 cursor-grab touch-manipulation items-center justify-center rounded-md text-[var(--text-muted)]/55 transition-colors hover:text-[var(--text-muted)] group-hover/chip:text-[var(--text-muted)] active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/40'
+                    : 'inline-flex min-h-9 min-w-9 shrink-0 cursor-not-allowed items-center justify-center rounded-md text-[var(--text-muted)]/35'
+                }
+                aria-label={`Drag ${label} to reorder Popular topics`}
+                onKeyDown={(e) => {
+                  if (!dragEnabled) return;
+                  if (e.key === 'Enter' || e.key === ' ') e.preventDefault();
+                }}
+              >
+                <GripVertical size={16} aria-hidden />
+              </div>
+              <div className="min-w-0 self-center border-0 bg-transparent px-0.5 py-0.5">
+                <span className="inline-flex min-h-8 min-w-0 max-w-full items-center text-left text-xs font-medium text-[var(--text-primary)]">
+                  <span className="min-w-0 truncate">{label}</span>
+                </span>
+              </div>
+              <span className="mx-0.5 h-4 w-px shrink-0 self-center bg-[var(--border-color)]/60" aria-hidden />
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => onRemoveFromList(label)}
+                className="inline-flex min-h-8 min-w-8 shrink-0 items-center justify-center self-center rounded-md text-[var(--text-muted)]/50 transition-colors hover:bg-[#757676]/12 hover:text-[#a1a2a2] disabled:opacity-40"
+                aria-label={`Remove ${label} from Popular topics`}
+                title="Remove from this list"
+              >
+                <X size={15} aria-hidden />
+              </button>
+            </div>
+          ))}
+          {dragEnabled && filtered.length > 0 ? (
+            <div
+              className="flex min-h-9 min-w-[min(100%,9rem)] flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-color)]/55 bg-[var(--bg-secondary)]/20 px-2 text-center text-xs text-[var(--text-muted)]"
+              onDragOver={popularDragOver}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const p = readTaxonomyDragPayload(e);
+                if (!p) return;
+                if (p.scope === 'taxonomy') {
+                  onCopyFromTaxonomy(p.label, null);
+                  return;
+                }
+                if (p.scope === 'popular') {
+                  onReorderPopular(p.label, null);
+                }
               }}
             >
-              <GripVertical size={18} aria-hidden />
+              End of list
             </div>
-            <div className="min-w-0 self-center border-0 bg-transparent px-1 py-1">
-              <span className="inline-flex min-h-8 min-w-0 max-w-full items-center text-left text-xs font-semibold text-[var(--text-primary)]">
-                <span className="min-w-0 truncate">{label}</span>
-              </span>
-            </div>
-            <span className="mx-0.5 h-4 w-px shrink-0 self-center bg-[var(--border-color)]" aria-hidden />
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => onRemoveFromList(label)}
-              className="inline-flex min-h-8 min-w-8 shrink-0 items-center justify-center self-center rounded-full text-red-400 hover:bg-red-500/10 disabled:opacity-40"
-              aria-label={`Remove ${label} from Popular topics`}
-              title="Remove from this list"
-            >
-              <X size={16} aria-hidden />
-            </button>
-          </div>
-        ))}
-        {dragEnabled && filtered.length > 0 ? (
-          <div
-            className="flex min-h-11 min-w-[min(100%,10rem)] flex-1 items-center justify-center rounded-xl border border-dashed border-[var(--border-color)]/70 bg-[var(--bg-secondary)]/30 px-3 text-center text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]"
-            onDragOver={(e) => {
-              e.preventDefault();
-              const p = readTaxonomyDragPayload(e);
-              e.dataTransfer.dropEffect = p?.scope === 'taxonomy' ? 'copy' : 'move';
-            }}
-            onDrop={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              const p = readTaxonomyDragPayload(e);
-              if (!p) return;
-              if (p.scope === 'taxonomy') {
-                onCopyFromTaxonomy(p.label, null);
-                return;
-              }
-              if (p.scope === 'popular') {
-                onReorderPopular(p.label, null);
-              }
-            }}
-          >
-            Drop to place last
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </div>
-
-      {trimmed ? (
-        <p className="mt-2 text-xs text-[var(--text-muted)]">Clear search to drag chips.</p>
-      ) : null}
-
-      {trimmed && filtered.length === 0 ? (
-        <p className="mt-4 text-xs text-[var(--text-muted)]">No matches. Esc clears search.</p>
-      ) : null}
     </section>
   );
 }
@@ -689,6 +668,7 @@ export function AdminCatalogTaxonomyPanel({
   onRefreshList,
   onCatalogChanged,
   showActionToast,
+  isCreatorCatalog = false,
 }: {
   publishedList: Course[];
   categoryPresets: CatalogCategoryPresetsState;
@@ -698,6 +678,8 @@ export function AdminCatalogTaxonomyPanel({
   onRefreshList: () => Promise<Course[]>;
   onCatalogChanged: () => void | Promise<void>;
   showActionToast: (msg: string, variant?: 'neutral' | 'danger') => void;
+  /** When true, global presets are read-only; creators submit proposals instead of mutating presets. */
+  isCreatorCatalog?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<{
@@ -719,6 +701,57 @@ export function AdminCatalogTaxonomyPanel({
   const [orderRevision, setOrderRevision] = useState(0);
   /** Bumps when Popular topics localStorage list changes. */
   const [popularRevision, setPopularRevision] = useState(0);
+  const [globalQuery, setGlobalQuery] = useState('');
+  const [debouncedGlobal, setDebouncedGlobal] = useState('');
+  const [authUid, setAuthUid] = useState<string | null>(() => auth.currentUser?.uid ?? null);
+  const [taxonomyProposals, setTaxonomyProposals] = useState<CatalogTaxonomyProposal[]>([]);
+  const [suggestTargetKind, setSuggestTargetKind] = useState<TaxonomyKind>('category');
+  const [headerSuggestBusy, setHeaderSuggestBusy] = useState(false);
+
+  useEffect(() => {
+    return onAuthStateChanged(auth, (u) => setAuthUid(u?.uid ?? null));
+  }, []);
+
+  useEffect(() => {
+    const trimmed = globalQuery.trim();
+    if (!trimmed) {
+      setDebouncedGlobal('');
+      return;
+    }
+    const id = window.setTimeout(() => setDebouncedGlobal(trimmed), 200);
+    return () => window.clearTimeout(id);
+  }, [globalQuery]);
+
+  useEffect(() => {
+    if (isCreatorCatalog) {
+      if (!authUid) {
+        setTaxonomyProposals([]);
+        return undefined;
+      }
+      return subscribeMyPendingTaxonomyProposals(authUid, setTaxonomyProposals, () =>
+        showActionToast('Could not load your taxonomy proposals. Check the connection or Firestore rules.', 'danger')
+      );
+    }
+    return subscribePendingTaxonomyProposals(setTaxonomyProposals, () =>
+      showActionToast('Could not load pending taxonomy proposals (index or permissions).', 'danger')
+    );
+  }, [isCreatorCatalog, authUid, showActionToast]);
+
+  const pendingCategoryProposals = useMemo(
+    () => taxonomyProposals.filter((p) => p.kind === 'category'),
+    [taxonomyProposals]
+  );
+  const pendingSkillProposals = useMemo(
+    () => taxonomyProposals.filter((p) => p.kind === 'skill'),
+    [taxonomyProposals]
+  );
+
+  const clearAllSearches = useCallback(() => {
+    setGlobalQuery('');
+    setDebouncedGlobal('');
+  }, []);
+
+  const showClearAllSearches = globalQuery.trim().length > 0;
 
   const applyPending = useCallback(
     (kind: TaxonomyKind, list: readonly string[]): string[] => {
@@ -830,6 +863,146 @@ export function AdminCatalogTaxonomyPanel({
     [labelUniverseLower, showActionToast]
   );
 
+  const suggestProposal = useCallback(
+    async (kind: TaxonomyKind, label: string): Promise<boolean> => {
+      if (!authUid) {
+        showActionToast('Sign in to suggest a label.', 'danger');
+        return false;
+      }
+      const t = label.trim();
+      const k = lower(t);
+      const universe = kind === 'category' ? categoryItems : skillItems;
+      if (universe.some((x) => lower(x) === k)) {
+        showActionToast('That label is already in the catalog.', 'neutral');
+        return false;
+      }
+      if (taxonomyProposals.some((p) => p.kind === kind && lower(p.label) === k)) {
+        showActionToast('A pending proposal already exists for this label.', 'neutral');
+        return false;
+      }
+      const r = await createTaxonomyProposal(kind, t, authUid);
+      if (r.ok === false) {
+        showActionToast(r.error, 'danger');
+        return false;
+      }
+      showActionToast(`Submitted “${t}” for admin review.`, 'neutral');
+      return true;
+    },
+    [authUid, categoryItems, skillItems, taxonomyProposals, showActionToast]
+  );
+
+  const suggestDraftTrimmed = globalQuery.trim();
+  const showHeaderSuggest =
+    isCreatorCatalog &&
+    suggestDraftTrimmed.length > 0 &&
+    !headerSuggestBusy &&
+    (suggestTargetKind === 'category'
+      ? !categoryItems.some((x) => lower(x) === lower(suggestDraftTrimmed)) &&
+        !pendingCategoryProposals.some((p) => lower(p.label) === lower(suggestDraftTrimmed))
+      : !skillItems.some((x) => lower(x) === lower(suggestDraftTrimmed)) &&
+        !pendingSkillProposals.some((p) => lower(p.label) === lower(suggestDraftTrimmed)));
+
+  const headerSuggestBlockedHint =
+    isCreatorCatalog && suggestDraftTrimmed.length > 0 && !showHeaderSuggest && !headerSuggestBusy
+      ? suggestTargetKind === 'category'
+        ? pendingCategoryProposals.some((p) => lower(p.label) === lower(suggestDraftTrimmed))
+          ? 'Already pending for this label.'
+          : categoryItems.some((x) => lower(x) === lower(suggestDraftTrimmed))
+            ? 'Already listed as a topic.'
+            : null
+        : pendingSkillProposals.some((p) => lower(p.label) === lower(suggestDraftTrimmed))
+          ? 'Already pending for this label.'
+          : skillItems.some((x) => lower(x) === lower(suggestDraftTrimmed))
+            ? 'Already listed as a skill.'
+            : null
+      : null;
+
+  const submitHeaderSuggest = useCallback(async () => {
+    const t = globalQuery.trim();
+    if (!isCreatorCatalog || !t || headerSuggestBusy) return;
+    const k = lower(t);
+    const canSubmit =
+      suggestTargetKind === 'category'
+        ? !categoryItems.some((x) => lower(x) === k) && !pendingCategoryProposals.some((p) => lower(p.label) === k)
+        : !skillItems.some((x) => lower(x) === k) && !pendingSkillProposals.some((p) => lower(p.label) === k);
+    if (!canSubmit) return;
+    setHeaderSuggestBusy(true);
+    try {
+      const ok = await suggestProposal(suggestTargetKind, t);
+      if (ok) {
+        setGlobalQuery('');
+        setDebouncedGlobal('');
+      }
+    } finally {
+      setHeaderSuggestBusy(false);
+    }
+  }, [
+    isCreatorCatalog,
+    globalQuery,
+    headerSuggestBusy,
+    suggestTargetKind,
+    categoryItems,
+    skillItems,
+    pendingCategoryProposals,
+    pendingSkillProposals,
+    suggestProposal,
+  ]);
+
+  const handleApproveProposal = useCallback(
+    async (p: CatalogTaxonomyProposal) => {
+      if (!authUid) return;
+      setBusy(true);
+      try {
+        const r = await approveTaxonomyProposalAndMerge(p, categoryPresets, skillPresets, authUid);
+        if (r.ok === false) {
+          showActionToast(r.error, 'danger');
+          return;
+        }
+        const k = lower(p.label.trim());
+        if (p.kind === 'category') {
+          const already = categoryPresets.moreTopics.some((x) => lower(x) === k);
+          if (!already) {
+            const nextCats = normalizeCatalogCategoryPresets({
+              mainPills: categoryPresets.mainPills,
+              moreTopics: [...categoryPresets.moreTopics, p.label.trim()],
+            });
+            onPresetsChanged({ categories: nextCats, skills: skillPresets });
+          }
+        } else {
+          const already = skillPresets.moreSkills.some((x) => lower(x) === k);
+          if (!already) {
+            const nextSkills = normalizeCatalogSkillPresets({
+              mainPills: skillPresets.mainPills,
+              moreSkills: [...skillPresets.moreSkills, p.label.trim()],
+            });
+            onPresetsChanged({ categories: categoryPresets, skills: nextSkills });
+          }
+        }
+        await onCatalogChanged();
+        showActionToast(`Approved “${p.label.trim()}”.`, 'neutral');
+      } finally {
+        setBusy(false);
+      }
+    },
+    [authUid, categoryPresets, skillPresets, onPresetsChanged, onCatalogChanged, showActionToast]
+  );
+
+  const handleRejectProposal = useCallback(
+    async (p: CatalogTaxonomyProposal) => {
+      if (!authUid) return;
+      if (!window.confirm(`Reject proposal “${p.label}”?`)) return;
+      setBusy(true);
+      try {
+        const ok = await setTaxonomyProposalRejected(p.id, authUid);
+        if (!ok) showActionToast('Could not reject proposal.', 'danger');
+        else showActionToast(`Rejected “${p.label.trim()}”.`, 'neutral');
+      } finally {
+        setBusy(false);
+      }
+    },
+    [authUid, showActionToast]
+  );
+
   const updateCoursesEverywhere = async (kind: TaxonomyKind, from: string, to?: string) => {
     const fromK = lower(from);
     if (kind === 'category' && !to) {
@@ -917,6 +1090,7 @@ export function AdminCatalogTaxonomyPanel({
       catOrdSnapshot: readonly string[],
       skillOrdSnapshot: readonly string[]
     ) => {
+      if (isCreatorCatalog) return;
       if (fromKind === toKind) return;
       const k = lower(label);
       const t = label.trim();
@@ -1043,11 +1217,13 @@ export function AdminCatalogTaxonomyPanel({
       onCatalogChanged,
       showActionToast,
       saveCoursesConcurrently,
+      isCreatorCatalog,
     ]
   );
 
   const handleTaxonomyDragDrop = useCallback(
     (payload: Extract<TaxonomyDragPayload, { scope: 'taxonomy' }>, targetKind: TaxonomyKind, beforeLabel: string | null) => {
+      if (isCreatorCatalog) return;
       if (busy) return;
       const { kind: srcKind, label } = payload;
       if (beforeLabel && lower(beforeLabel) === lower(label)) return;
@@ -1071,12 +1247,13 @@ export function AdminCatalogTaxonomyPanel({
         skillItems
       );
     },
-    [busy, categoryItems, skillItems, performMigrate]
+    [busy, categoryItems, skillItems, performMigrate, isCreatorCatalog]
   );
 
   const closeConfirm = useCallback(() => setConfirm(null), []);
 
   const performRemovalWork = async (kind: TaxonomyKind, label: string) => {
+    if (isCreatorCatalog) return;
     if (busy) return;
 
     if (kind === 'category') {
@@ -1159,6 +1336,7 @@ export function AdminCatalogTaxonomyPanel({
   };
 
   const removeEverywhere = (kind: TaxonomyKind, label: string) => {
+    if (isCreatorCatalog) return;
     if (busy) return;
     const linked =
       kind === 'category'
@@ -1188,37 +1366,8 @@ export function AdminCatalogTaxonomyPanel({
     onPrimaryAction: () => void confirmRemove(),
   });
 
-  const addEverywhere = async (kind: TaxonomyKind, name: string) => {
-    if (busy) return;
-    const t = name.trim();
-    if (!t) return;
-    showActionToast('Updating…', 'neutral');
-    setBusy(true);
-    try {
-      // Adds go into the "more" bucket to avoid changing curated ordering.
-      if (kind === 'category') {
-        const nextCats = normalizeCatalogCategoryPresets({
-          mainPills: categoryPresets.mainPills,
-          moreTopics: [...categoryPresets.moreTopics, t],
-        });
-        await saveCatalogCategoryPresets(nextCats);
-        onPresetsChanged({ categories: nextCats, skills: skillPresets });
-      } else {
-        const nextSkills = normalizeCatalogSkillPresets({
-          mainPills: skillPresets.mainPills,
-          moreSkills: [...skillPresets.moreSkills, t],
-        });
-        await saveCatalogSkillPresets(nextSkills);
-        onPresetsChanged({ categories: categoryPresets, skills: nextSkills });
-      }
-      await onCatalogChanged();
-      showActionToast(`Added ${t}.`);
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const renameEverywhere = async (kind: TaxonomyKind, fromExact: string, toExact: string) => {
+    if (isCreatorCatalog) return;
     if (busy) return;
     const from = fromExact.trim();
     const to = toExact.trim();
@@ -1289,83 +1438,163 @@ export function AdminCatalogTaxonomyPanel({
   };
 
   return (
-    <div className="space-y-4">
-      <TaxonomySection
-        title="Categories"
-        tipId="admin-taxonomy-categories-tip"
-        tip={
-          <>
-            <li>Search to add, rename, or remove everywhere.</li>
-            <li>Click a chip to edit it in place.</li>
-            <li>
-              Click × to remove from presets and extras. If no course uses the label, it removes immediately; otherwise
-              you’ll see which courses use it before confirming.
-            </li>
-            <li>
-              Drag the grip to reorder, drop on a chip to insert before it, or use the dashed “last” zone. Drag into
-              Skills to turn a category into a skill on every course that used it (blocked if it’s a course’s only
-              category or the last main topic pill).
-            </li>
-            <li>
-              Drag a chip onto <strong className="text-[var(--text-primary)]">Popular topics</strong> below to{' '}
-              <strong className="text-[var(--text-primary)]">copy</strong> the label there (the category stays here).
-            </li>
-          </>
-        }
-        kind="category"
-        items={categoryItems}
-        busy={busy}
-        onAddEverywhere={(name) => addEverywhere('category', name)}
-        onRenameEverywhere={(from, to) => renameEverywhere('category', from, to)}
-        onRemoveEverywhere={async (name) => {
-          removeEverywhere('category', name);
-        }}
-        onDragDrop={handleTaxonomyDragDrop}
-      />
+    <div className="flex min-h-0 min-w-0 flex-col gap-3" aria-labelledby="admin-catalog-taxonomy-heading">
+      <header className="rounded-xl border border-[var(--border-color)]/80 bg-[var(--bg-primary)]/50 p-3 sm:p-3.5">
+        <div className="flex min-w-0 flex-col gap-3">
+          <h2 id="admin-catalog-taxonomy-heading" className="sr-only">
+            Categories and skills
+          </h2>
+          <div className="flex min-w-0 w-full flex-col gap-2 sm:flex-row sm:items-stretch sm:gap-2">
+            <div className="relative min-h-10 min-w-0 flex-1">
+              <label className="sr-only" htmlFor="admin-taxonomy-global-search">
+                Filter categories or skills
+              </label>
+              <Search
+                size={15}
+                className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
+                aria-hidden
+              />
+              <input
+                id="admin-taxonomy-global-search"
+                value={globalQuery}
+                onChange={(e) => setGlobalQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    clearAllSearches();
+                    return;
+                  }
+                  if (e.key === 'Enter' && showHeaderSuggest) {
+                    e.preventDefault();
+                    void submitHeaderSuggest();
+                  }
+                }}
+                placeholder="Filter categories or skills…"
+                className="h-10 w-full rounded-lg border border-[var(--border-color)]/90 bg-[var(--bg-secondary)]/40 py-2 pl-9 pr-3 text-sm text-[var(--text-primary)] outline-none transition-[border-color,box-shadow] placeholder:text-[var(--text-muted)]/65 focus:border-[#8b8c8c]/80 focus:ring-2 focus:ring-[#a1a2a2]/20"
+              />
+            </div>
+            {showClearAllSearches ? (
+              <button
+                type="button"
+                onClick={clearAllSearches}
+                className="inline-flex h-10 shrink-0 touch-manipulation items-center justify-center rounded-lg border border-transparent px-3 text-sm font-medium text-admin-icon opacity-95 hover:bg-[#616161]/10 app-dark:hover:bg-[var(--tone-800)]"
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
 
-      <PopularTopicsSection
-        items={popularTopics}
-        busy={busy}
-        onCopyFromTaxonomy={onPopularCopyFromTaxonomy}
-        onReorderPopular={onPopularReorder}
-        onRemoveFromList={onPopularRemoveFromList}
-      />
+          {isCreatorCatalog ? (
+            <div className="flex min-w-0 flex-col gap-2 border-t border-[var(--border-color)]/60 pt-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
+              <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">Suggest as</span>
+              <div
+                className="inline-flex rounded-lg border border-[var(--border-color)]/80 bg-[var(--bg-secondary)]/30 p-0.5"
+                role="group"
+                aria-label="Suggest label kind"
+              >
+                <button
+                  type="button"
+                  onClick={() => setSuggestTargetKind('category')}
+                  className={`min-h-9 min-w-[5.5rem] rounded-md px-2.5 text-xs font-semibold transition-colors ${
+                    suggestTargetKind === 'category'
+                      ? 'bg-[var(--bg-primary)] text-[var(--text-primary)] shadow-sm'
+                      : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                  }`}
+                >
+                  Topic
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSuggestTargetKind('skill')}
+                  className={`min-h-9 min-w-[5.5rem] rounded-md px-2.5 text-xs font-semibold transition-colors ${
+                    suggestTargetKind === 'skill'
+                      ? 'bg-[var(--bg-primary)] text-[var(--text-primary)] shadow-sm'
+                      : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                  }`}
+                >
+                  Skill
+                </button>
+              </div>
+              {showHeaderSuggest ? (
+                <button
+                  type="button"
+                  disabled={headerSuggestBusy}
+                  onClick={() => void submitHeaderSuggest()}
+                  className="inline-flex min-h-9 flex-1 touch-manipulation items-center justify-center rounded-lg border border-[#8b8c8c]/75 bg-[#757676]/12 px-3 text-sm font-medium text-[#393a3a] hover:bg-[#757676]/18 disabled:opacity-40 app-dark:text-[#e7e7e7] sm:flex-none"
+                >
+                  {headerSuggestBusy ? 'Submitting…' : `Suggest “${suggestDraftTrimmed}”`}
+                </button>
+              ) : null}
+              {headerSuggestBlockedHint ? (
+                <p className="w-full text-xs text-[#393a3a] app-dark:text-[#cfcfcf]" role="status">
+                  {headerSuggestBlockedHint}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      </header>
 
-      <TaxonomySection
-        title="Skills"
-        tipId="admin-taxonomy-skills-tip"
-        tip={
-          <>
-            <li>Same UX as categories.</li>
-            <li>
-              Removing deletes the skill from courses, presets, and extras. Unused skills remove in one step; if any
-              course uses the skill, you’ll see the list before confirming.
-            </li>
-            <li>
-              Drag the grip to reorder or drop into Categories to convert a skill into a category on each course that
-              had the skill (same insert-before and “last” zone behavior).
-            </li>
-            <li>
-              Drag onto <strong className="text-[var(--text-primary)]">Popular topics</strong> above to{' '}
-              <strong className="text-[var(--text-primary)]">copy</strong> the label (the skill stays here).
-            </li>
-          </>
-        }
-        kind="skill"
-        items={skillItems}
-        busy={busy}
-        onAddEverywhere={(name) => addEverywhere('skill', name)}
-        onRenameEverywhere={(from, to) => renameEverywhere('skill', from, to)}
-        onRemoveEverywhere={async (name) => {
-          removeEverywhere('skill', name);
-        }}
-        onDragDrop={handleTaxonomyDragDrop}
-      />
+      <div className="grid min-h-0 min-w-0 grid-cols-1 gap-3 lg:grid-cols-3 lg:items-stretch lg:gap-3">
+        <div className="min-h-0 min-w-0">
+          <TaxonomySection
+            title="Categories"
+            kind="category"
+            items={categoryItems}
+            busy={busy}
+            globalFilterText={debouncedGlobal}
+            readOnlyTaxonomy={isCreatorCatalog}
+            pendingProposals={pendingCategoryProposals}
+            showAdminProposalActions={!isCreatorCatalog}
+            headerCount={categoryItems.length}
+            onRenameEverywhere={(from, to) => renameEverywhere('category', from, to)}
+            onRemoveEverywhere={async (name) => {
+              removeEverywhere('category', name);
+            }}
+            onDragDrop={handleTaxonomyDragDrop}
+            onApproveProposal={(p) => void handleApproveProposal(p)}
+            onRejectProposal={(p) => void handleRejectProposal(p)}
+          />
+        </div>
+
+        <div className="min-h-0 min-w-0">
+          <PopularTopicsSection
+            items={popularTopics}
+            busy={busy}
+            globalFilterText={debouncedGlobal}
+            onCopyFromTaxonomy={onPopularCopyFromTaxonomy}
+            onReorderPopular={onPopularReorder}
+            onRemoveFromList={onPopularRemoveFromList}
+          />
+        </div>
+
+        <div className="min-h-0 min-w-0">
+          <TaxonomySection
+            title="Skills"
+            kind="skill"
+            items={skillItems}
+            busy={busy}
+            globalFilterText={debouncedGlobal}
+            readOnlyTaxonomy={isCreatorCatalog}
+            pendingProposals={pendingSkillProposals}
+            showAdminProposalActions={!isCreatorCatalog}
+            listLayout="grid"
+            headerCount={skillItems.length}
+            onRenameEverywhere={(from, to) => renameEverywhere('skill', from, to)}
+            onRemoveEverywhere={async (name) => {
+              removeEverywhere('skill', name);
+            }}
+            onDragDrop={handleTaxonomyDragDrop}
+            onApproveProposal={(p) => void handleApproveProposal(p)}
+            onRejectProposal={(p) => void handleRejectProposal(p)}
+          />
+        </div>
+      </div>
 
       <AnimatePresence>
         {confirm ? (
           <div
-            className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+            className="fixed inset-0 z-[120] flex items-center justify-center bg-[#272828]/75 p-4 backdrop-blur-sm"
             role="dialog"
             aria-modal="true"
             aria-labelledby="admin-taxonomy-remove-title"
@@ -1408,7 +1637,7 @@ export function AdminCatalogTaxonomyPanel({
                 {confirm.blockedCourses.length > 0 ? (
                   <div
                     role="alert"
-                    className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-sm text-[var(--text-primary)]"
+                    className="rounded-xl border border-[#8b8c8c]/80 bg-[#757676]/12 px-3 py-2.5 text-sm text-[var(--text-primary)]"
                   >
                     <strong className="font-semibold">Can’t remove yet:</strong> some courses below only have this
                     category. Add at least one other category in Catalog for each marked course, then try again.
@@ -1433,13 +1662,13 @@ export function AdminCatalogTaxonomyPanel({
                             key={c.id}
                             className={
                               blocked
-                                ? 'rounded-lg border border-amber-500/35 bg-amber-500/5 px-2.5 py-2'
+                                ? 'rounded-lg border border-[#8b8c8c]/75 bg-[#757676]/10 px-2.5 py-2'
                                 : 'rounded-lg px-2.5 py-1.5'
                             }
                           >
                             <span className="font-medium text-[var(--text-primary)]">{displayCourseLabelWithId(c)}</span>
                             {blocked ? (
-                              <span className="mt-1 block text-xs text-amber-700 dark:text-amber-300">
+                              <span className="mt-1 block text-xs text-[#4c4d4d] app-dark:text-[#b8b8b8]">
                                 Only category — add another in Catalog first
                               </span>
                             ) : null}
@@ -1463,7 +1692,7 @@ export function AdminCatalogTaxonomyPanel({
                     autoFocus={confirm.blockedCourses.length === 0}
                     disabled={busy || confirm.blockedCourses.length > 0}
                     onClick={() => confirmRemove()}
-                    className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-red-500 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-red-600 disabled:pointer-events-none disabled:opacity-40 sm:w-auto"
+                    className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[#616161] px-5 py-3 text-sm font-bold text-[#e7e7e7] transition-colors hover:bg-[#616161] disabled:pointer-events-none disabled:opacity-40 sm:w-auto"
                   >
                     <Trash2 size={18} className="mr-2" aria-hidden />
                     Remove from courses &amp; presets

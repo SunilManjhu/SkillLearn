@@ -4,8 +4,9 @@
  * Flat only: no row shadows or gradients.
  */
 .lpcr {
-  /* Brand accents (same in light/dark) */
-  --lpcr-accent: #e85d24;
+  /* True brand orange for path course rows (not theme-remapped `orange-*`). */
+  --lpcr-accent: #f97316;
+  --lpcr-accent-soft: color-mix(in srgb, var(--lpcr-accent) 18%, transparent);
   --lpcr-success: #4caf50;
 
   display: flex;
@@ -21,14 +22,15 @@
   width: 100%;
   padding: 1rem 1.15rem;
   margin: 0;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border-light);
   border-radius: 12px;
+  /* Sits above page `--bg-primary` so the row reads as its own surface */
   background: var(--bg-secondary);
   color: var(--text-primary);
   text-align: left;
   cursor: pointer;
   font: inherit;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .lpcr__row:hover {
@@ -48,15 +50,15 @@
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  border: 2px solid var(--border-color);
+  border: 2px solid var(--border-light);
   background: var(--hover-bg);
   color: var(--text-muted);
 }
 
-/* In progress: neutral outer circle; orange icon only (stroke via currentColor). */
+/* In progress: orange ring + icon (stroke via currentColor) */
 .lpcr__icon-wrap--active {
-  border-color: var(--border-color);
-  background: var(--hover-bg);
+  border-color: color-mix(in srgb, var(--lpcr-accent) 55%, var(--border-light));
+  background: var(--lpcr-accent-soft);
   color: var(--lpcr-accent);
 }
 
@@ -80,18 +82,21 @@
 }
 
 .lpcr__title--muted {
-  color: var(--text-secondary);
+  color: var(--text-primary);
+  opacity: 0.94;
 }
 
 .lpcr__title--bright {
   color: var(--text-primary);
+  opacity: 1;
 }
 
 .lpcr__meta {
   margin: 0;
   font-size: 13px;
   line-height: 1.35;
-  color: var(--text-secondary);
+  color: var(--text-primary);
+  opacity: 0.82;
 }
 
 .lpcr__meta-strong {
@@ -100,7 +105,8 @@
 }
 
 .lpcr__meta-dim {
-  color: var(--text-muted);
+  color: var(--text-primary);
+  opacity: 0.78;
 }
 
 .lpcr__meta-done {
@@ -118,10 +124,10 @@
 
 .lpcr__track {
   width: 72px;
-  height: 3px;
-  background: var(--border-color);
+  height: 4px;
+  background: color-mix(in srgb, var(--text-primary) 18%, var(--bg-secondary));
   overflow: hidden;
-  border-radius: 0;
+  border-radius: 999px;
 }
 
 .lpcr__fill {
@@ -138,7 +144,8 @@
 .lpcr__pct {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
-  color: var(--text-muted);
+  color: var(--text-primary);
+  opacity: 0.85;
   min-width: 2.25rem;
 }
 

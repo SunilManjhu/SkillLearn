@@ -961,7 +961,7 @@ function PlaceDuplicateBranchModal({
 
   return (
     <div
-      className="fixed inset-0 z-[200] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+      className="fixed inset-0 z-[200] flex items-end justify-center bg-[#272828]/70 p-0 sm:items-center sm:p-4"
       role="presentation"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
@@ -1021,7 +1021,7 @@ function PlaceDuplicateBranchModal({
               onClick={() => setPlaceMode('copy')}
               className={`flex min-h-11 flex-1 touch-manipulation items-center justify-center gap-1.5 rounded-lg px-2 text-xs font-bold sm:text-sm ${
                 placeMode === 'copy'
-                  ? 'bg-orange-500 text-white shadow-sm'
+                  ? 'bg-[#616161] text-[#e7e7e7] shadow-sm'
                   : 'text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]'
               }`}
             >
@@ -1033,7 +1033,7 @@ function PlaceDuplicateBranchModal({
               onClick={() => setPlaceMode('move')}
               className={`flex min-h-11 flex-1 touch-manipulation items-center justify-center gap-1.5 rounded-lg px-2 text-xs font-bold sm:text-sm ${
                 placeMode === 'move'
-                  ? 'bg-orange-500 text-white shadow-sm'
+                  ? 'bg-[#616161] text-[#e7e7e7] shadow-sm'
                   : 'text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]'
               }`}
             >
@@ -1068,7 +1068,7 @@ function PlaceDuplicateBranchModal({
             )}
           </p>
           {topLevelOnly ? (
-            <p className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-[var(--text-secondary)]">
+            <p className="mb-3 rounded-lg border border-[#8b8c8c]/70 bg-[#757676]/12 px-3 py-2 text-xs leading-relaxed text-[var(--text-secondary)]">
               This branch has nested rows, so it can only be placed in the <strong>top-level</strong> outline (two levels
               max: module → sub-rows).
             </p>
@@ -1084,7 +1084,7 @@ function PlaceDuplicateBranchModal({
 
           <div className="space-y-3">
             {parentOptions.length === 0 ? (
-              <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs leading-relaxed text-[var(--text-primary)]">
+              <p className="rounded-lg border border-[#616161]/80 bg-[#757676]/12 px-3 py-2 text-xs leading-relaxed text-[var(--text-primary)]">
                 No valid placement target. Top-level outline only accepts outline modules or catalog units — fix the branch
                 type or outline structure first.
               </p>
@@ -1156,7 +1156,7 @@ function PlaceDuplicateBranchModal({
                 onCommit(effectiveParentId, insertIdx, { mode: 'move', sourceId: sourceSnapshot.id });
               }
             }}
-            className="mt-5 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-40"
+            className="mt-5 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[#616161] px-4 py-2 text-sm font-bold text-[#e7e7e7] hover:bg-[#757676] disabled:opacity-40"
           >
             {placeMode === 'copy' ? 'Place copy' : 'Move here'}
           </button>
@@ -1388,7 +1388,7 @@ function mindmapNodeToPathBranch(n: MindmapTreeNode): PathBranchNode {
 }
 
 const PATH_OUTLINE_MERGE_SELECT_CLASS =
-  'min-h-11 w-full max-w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-orange-500/40 focus:ring-2 focus:ring-orange-500/20';
+  'min-h-11 w-full max-w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[#8b8c8c]/80 focus:ring-2 focus:ring-[#a1a2a2]/25';
 
 /** Catalog-style “Change module type” for top-level outline modules: merge into another section as a divider + nested rows. */
 function ChangePathOutlineModuleMergeModal({
@@ -1442,7 +1442,7 @@ function ChangePathOutlineModuleMergeModal({
 
   const mergeDialogShell = (body: React.ReactNode) => (
     <div
-      className="fixed inset-0 z-[200] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+      className="fixed inset-0 z-[200] flex items-end justify-center bg-[#272828]/70 p-0 sm:items-center sm:p-4"
       role="presentation"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
@@ -1545,11 +1545,11 @@ function ChangePathOutlineModuleMergeModal({
       </div>
       <button
         type="button"
-        className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
+        className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-[#8b8c8c]/80 hover:bg-[var(--hover-bg)]"
         onClick={() => onConfirm(targetId, insertAt)}
       >
         <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
-          <Minus size={20} className="shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+          <Minus size={20} className="shrink-0 text-[#616161] app-dark:text-[#a1a2a2]" aria-hidden />
           Merge as section divider
           <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Confirm</span>
         </span>
@@ -1851,7 +1851,7 @@ function AddPathBranchModal({
 
   return (
     <div
-      className="fixed inset-0 z-[200] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+      className="fixed inset-0 z-[200] flex items-end justify-center bg-[#272828]/70 p-0 sm:items-center sm:p-4"
       role="presentation"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
@@ -1962,11 +1962,11 @@ function AddPathBranchModal({
               </p>
               <button
                 type="button"
-                className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
+                className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-[#8b8c8c]/80 hover:bg-[var(--hover-bg)]"
                 onClick={() => setStep('label')}
               >
                 <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
-                  <Type size={20} className="shrink-0 text-orange-500" aria-hidden />
+                  <Type size={20} className="shrink-0 text-admin-icon" aria-hidden />
                   Module
                   <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Fastest</span>
                 </span>
@@ -1978,14 +1978,14 @@ function AddPathBranchModal({
                 <button
                   type="button"
                   disabled={!canLink}
-                  className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-[#8b8c8c]/80 hover:bg-[var(--hover-bg)] disabled:cursor-not-allowed disabled:opacity-50"
                   onClick={() => {
                     setStep('moduleCourse');
                     setQuery('');
                   }}
                 >
                   <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
-                    <Layers size={20} className="shrink-0 text-indigo-500" aria-hidden />
+                    <Layers size={20} className="shrink-0 text-[#616161]" aria-hidden />
                     Catalog unit
                     <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Top level</span>
                   </span>
@@ -1997,14 +1997,14 @@ function AddPathBranchModal({
               <button
                 type="button"
                 disabled={!canLink}
-                className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-[#8b8c8c]/80 hover:bg-[var(--hover-bg)] disabled:cursor-not-allowed disabled:opacity-50"
                 onClick={() => {
                   setStep('course');
                   setQuery('');
                 }}
               >
                 <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
-                  <GraduationCap size={20} className="shrink-0 text-blue-500" aria-hidden />
+                  <GraduationCap size={20} className="shrink-0 text-[#616161]" aria-hidden />
                   Whole course
                   <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">From catalog</span>
                 </span>
@@ -2014,14 +2014,14 @@ function AddPathBranchModal({
               </button>
               <button
                 type="button"
-                className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
+                className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-[#8b8c8c]/80 hover:bg-[var(--hover-bg)]"
                 onClick={() => {
                   setStep('linkForm');
                   setQuery('');
                 }}
               >
                 <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
-                  <Link2 size={20} className="shrink-0 text-violet-500" aria-hidden />
+                  <Link2 size={20} className="shrink-0 text-[#616161]" aria-hidden />
                   Web link
                   <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Opens in new tab</span>
                 </span>
@@ -2032,11 +2032,11 @@ function AddPathBranchModal({
               {allowSectionDivider ? (
                 <button
                   type="button"
-                  className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
+                  className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-[#8b8c8c]/80 hover:bg-[var(--hover-bg)]"
                   onClick={() => setStep('divider')}
                 >
                   <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
-                    <Minus size={20} className="shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+                    <Minus size={20} className="shrink-0 text-[#616161] app-dark:text-[#a1a2a2]" aria-hidden />
                     Section divider
                     <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Non-collapsible</span>
                   </span>
@@ -2049,14 +2049,14 @@ function AddPathBranchModal({
                 <button
                   type="button"
                   disabled={!canLink}
-                  className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-[#8b8c8c]/80 hover:bg-[var(--hover-bg)] disabled:cursor-not-allowed disabled:opacity-50"
                   onClick={() => {
                     setStep('lessonCourse');
                     setQuery('');
                   }}
                 >
                   <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
-                    <GraduationCap size={20} className="shrink-0 text-teal-500" aria-hidden />
+                    <GraduationCap size={20} className="shrink-0 text-[#616161]" aria-hidden />
                     Single lesson
                     <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">From a course</span>
                   </span>
@@ -2100,7 +2100,7 @@ function AddPathBranchModal({
                 type="button"
                 disabled={!labelInput.trim()}
                 onClick={commitLabel}
-                className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-40"
+                className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[#616161] px-4 py-2 text-sm font-bold text-[#e7e7e7] hover:bg-[#757676] disabled:opacity-40"
               >
                 {replacing ? 'Save module' : 'Add branch'}
               </button>
@@ -2133,7 +2133,7 @@ function AddPathBranchModal({
                 type="button"
                 disabled={!labelInput.trim()}
                 onClick={commitDivider}
-                className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-40"
+                className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[#616161] px-4 py-2 text-sm font-bold text-[#e7e7e7] hover:bg-[#757676] disabled:opacity-40"
               >
                 {replacing ? 'Save divider' : 'Add divider'}
               </button>
@@ -2178,7 +2178,7 @@ function AddPathBranchModal({
                 type="button"
                 disabled={!linkFormValid}
                 onClick={commitWebLink}
-                className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-40"
+                className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[#616161] px-4 py-2 text-sm font-bold text-[#e7e7e7] hover:bg-[#757676] disabled:opacity-40"
               >
                 {replacing ? 'Save link' : 'Add link'}
               </button>
@@ -2547,7 +2547,7 @@ function PathBranchVisibilityCells({
             onChange(nodeId, []);
           }
         }}
-        className="h-4 w-4 shrink-0 rounded border-[var(--border-color)] accent-orange-500"
+        className="h-4 w-4 shrink-0 rounded border-[var(--border-color)] checkbox-accent-theme"
         aria-label="Show in catalog path outline"
       />
       <span className="min-w-0 select-none font-semibold leading-snug md:sr-only">Show</span>
@@ -2667,18 +2667,7 @@ function PathBranchRow({
   /** Show nested list + insert slots when empty (first sub-branch) or when expanded with children. */
   const showNestedBranchList = canNestBranches && (!hasNestedRows || !isCollapsed);
 
-  const kindBadgeClass =
-    b.kind === 'label'
-      ? 'bg-orange-500/15 text-orange-600 dark:text-orange-400'
-      : b.kind === 'divider'
-        ? 'bg-amber-500/15 text-amber-800 dark:text-amber-300'
-        : b.kind === 'module'
-          ? 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-400'
-          : b.kind === 'course'
-            ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
-            : b.kind === 'link'
-              ? 'bg-violet-500/15 text-violet-600 dark:text-violet-400'
-              : 'bg-teal-500/15 text-teal-600 dark:text-teal-400';
+  const kindBadgeClass = 'bg-[#757676]/15 text-[#393a3a] app-dark:text-[#cfcfcf]';
 
   const rowDivider =
     depth === 0
@@ -2713,7 +2702,7 @@ function PathBranchRow({
         e.stopPropagation();
         onRequestChangeType(b.id);
       }}
-      className="inline-flex min-h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 sm:h-7 sm:w-7 sm:min-h-0 sm:min-w-0"
+      className="inline-flex min-h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/45 sm:h-7 sm:w-7 sm:min-h-0 sm:min-w-0"
       title={
         isTopLevelOutlineModuleRow
           ? hasAnotherOutlineModuleForMerge
@@ -2745,7 +2734,7 @@ function PathBranchRow({
               e.stopPropagation();
               onToggleCollapse(b.id);
             }}
-            className={`inline-flex min-h-11 min-w-[3.25rem] shrink-0 items-center justify-center gap-1 rounded-md px-3.5 text-[10px] font-bold uppercase leading-none transition-colors hover:bg-[var(--hover-bg)]/80 focus:outline-none focus:ring-2 focus:ring-orange-500/40 sm:h-7 sm:min-h-0 ${kindBadgeClass}`}
+            className={`inline-flex min-h-11 min-w-[3.25rem] shrink-0 items-center justify-center gap-1 rounded-md px-3.5 text-[10px] font-bold uppercase leading-none transition-colors hover:bg-[var(--hover-bg)]/80 focus:outline-none focus:ring-2 focus:ring-[#a1a2a2]/45 sm:h-7 sm:min-h-0 ${kindBadgeClass}`}
             aria-expanded={!isCollapsed}
             title={isCollapsed ? 'Show nested branches' : 'Hide nested branches'}
             aria-label={
@@ -2914,7 +2903,7 @@ function PathBranchRow({
           e.stopPropagation();
           onCopyBranch(b.id);
         }}
-        className={`${PATH_BRANCH_ROW_ICON_BTN_CLASS} text-[var(--text-muted)] transition-colors hover:bg-[var(--hover-bg)] hover:text-orange-500`}
+        className={`${PATH_BRANCH_ROW_ICON_BTN_CLASS} text-[var(--text-muted)] transition-colors hover:bg-[var(--hover-bg)] hover:text-[#616161] app-dark:hover:text-[var(--tone-100)]`}
         aria-label="Copy or move this branch — choose destination in the dialog"
         title="Copy or move branch"
       >
@@ -2923,7 +2912,7 @@ function PathBranchRow({
       <button
         type="button"
         onClick={() => onRemove(b.id)}
-        className={`${PATH_BRANCH_ROW_ICON_BTN_CLASS} text-red-400 hover:bg-red-500/10`}
+        className={`${PATH_BRANCH_ROW_ICON_BTN_CLASS} text-[#a1a2a2] hover:bg-[#757676]/12`}
         aria-label="Remove branch and nested items"
       >
         <Trash2 size={16} />
@@ -4156,7 +4145,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
 
       {isCreatorPaths && publishedList.length === 0 && (
         <p
-          className="rounded-xl border border-orange-500/25 bg-orange-500/[0.07] px-3 py-2.5 text-xs leading-relaxed text-[var(--text-secondary)] sm:text-sm"
+          className="rounded-xl border border-[#8b8c8c]/65 bg-[#757676]/12 px-3 py-2.5 text-xs leading-relaxed text-[var(--text-secondary)] sm:text-sm"
           role="status"
         >
           You have no courses yet. Open the <strong className="font-semibold text-[var(--text-primary)]">Catalog</strong>{' '}
@@ -4191,7 +4180,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                 ) : (
                   <li>
                     <strong className="font-semibold text-[var(--text-secondary)]">Create new path</strong>: next id{' '}
-                    <code className="text-orange-500/90">P1</code>, <code className="text-orange-500/90">P2</code>…; list
+                    <code className="text-[#616161] app-dark:text-[var(--tone-200)]">P1</code>, <code className="text-[#616161] app-dark:text-[var(--tone-200)]">P2</code>…; list
                     A–Z.
                   </li>
                 )}
@@ -4233,7 +4222,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                   >
                     <Hash size={16} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
                     {pathDraft ? (
-                      <span className="truncate text-orange-500/90">{pathDraft.id}</span>
+                      <span className="truncate text-[#616161] app-dark:text-[var(--tone-200)]">{pathDraft.id}</span>
                     ) : (
                       <span className="text-[var(--text-muted)]">—</span>
                     )}
@@ -4301,7 +4290,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                         : 'Save path and outline'
                   }
                   aria-label={pathBusy ? 'Saving…' : 'Save path to catalog'}
-                  className="inline-flex min-h-11 shrink-0 touch-manipulation items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-40 sm:px-5"
+                  className="inline-flex min-h-11 shrink-0 touch-manipulation items-center justify-center gap-2 rounded-xl bg-[#616161] px-4 py-2 text-sm font-bold text-[#e7e7e7] hover:bg-[#757676] disabled:opacity-40 sm:px-5"
                 >
                   {pathBusy ? (
                     <Loader2 size={18} className="shrink-0 animate-spin" aria-hidden />
@@ -4313,7 +4302,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                 {pathDraft && pathDirty ? (
                   <span
                     role="status"
-                    className="inline-flex size-11 shrink-0 items-center justify-center text-amber-600 dark:text-amber-400"
+                    className="inline-flex size-11 shrink-0 items-center justify-center text-[#616161] app-dark:text-[#a1a2a2]"
                     title="Unsaved changes"
                   >
                     <AlertCircle size={20} strokeWidth={2} aria-hidden />
@@ -4322,7 +4311,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                 ) : pathDraft && !pathDirty && pathSelector !== '__new__' ? (
                   <span
                     role="status"
-                    className="inline-flex size-11 shrink-0 items-center justify-center text-emerald-600 dark:text-emerald-400"
+                    className="inline-flex size-11 shrink-0 items-center justify-center text-[#616161] app-dark:text-[#a1a2a2]"
                     title="All changes saved"
                   >
                     <CheckCircle2 size={20} strokeWidth={2} aria-hidden />
@@ -4360,7 +4349,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                           return { ...d, catalogPublished: false };
                         });
                       }}
-                      className="h-4 w-4 shrink-0 rounded border-[var(--border-color)] accent-orange-500"
+                      className="h-4 w-4 shrink-0 rounded border-[var(--border-color)] checkbox-accent-theme"
                       aria-label="Published in learning path picker and navbar"
                     />
                   </label>
@@ -4381,7 +4370,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                 </div>
               ) : null}
               <div
-                className="flex items-center border-l-2 border-red-500/25 pl-3 md:pl-4"
+                className="flex items-center border-l-2 border-[#616161]/25 pl-3 md:pl-4"
                 role="group"
                 aria-label="Destructive actions"
               >
@@ -4395,7 +4384,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                       : 'Discard unsaved new path'
                   }
                   aria-label="Delete path from catalog"
-                  className="inline-flex min-h-11 touch-manipulation items-center justify-center gap-2 rounded-md border-2 border-red-500/50 bg-transparent px-3 py-2 text-sm font-semibold text-red-500 hover:bg-red-500/10 dark:text-red-400 disabled:opacity-40"
+                  className="inline-flex min-h-11 touch-manipulation items-center justify-center gap-2 rounded-md border-2 border-[#616161]/50 bg-transparent px-3 py-2 text-sm font-semibold text-[#616161] hover:bg-[#757676]/12 app-dark:text-[#cfcfcf] disabled:opacity-40"
                 >
                   <Trash2 size={17} className="shrink-0" aria-hidden />
                   <span className="max-sm:sr-only">Delete</span>
@@ -4410,7 +4399,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
         isLearningPathCatalogPublished(pathDraft) &&
         platformPathHasUnpublishedCourse ? (
           <p
-            className="whitespace-pre-line rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-900 dark:text-amber-100/90 sm:text-sm"
+            className="whitespace-pre-line rounded-lg border border-[#8b8c8c]/75 bg-[#757676]/12 px-3 py-2 text-xs font-medium text-[#393a3a] app-dark:text-[#e7e7e7] sm:text-sm"
             role="status"
           >
             {formatPathPublishBlockedByCoursesMessage(platformPathLearnerVisibleUnpublishedCourses)}
@@ -4420,7 +4409,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
 
       {!pathDraft && !pathsLoading ? (
         <div className="rounded-xl border border-dashed border-[var(--border-color)] bg-[var(--bg-primary)]/35 px-4 py-8 text-center sm:py-10">
-          <Route size={28} className="mx-auto mb-3 text-orange-500/70" aria-hidden />
+          <Route size={28} className="mx-auto mb-3 text-admin-icon opacity-70" aria-hidden />
           <p className="text-sm font-semibold text-[var(--text-primary)]">Select or create a path</p>
           <p className="mx-auto mt-1.5 max-w-sm text-xs leading-relaxed text-[var(--text-muted)]">
             Pick an existing path from the menu, or choose <span className="font-medium text-[var(--text-secondary)]">Create new path</span> to start fresh.
@@ -4473,7 +4462,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                       }}
                       placeholder="Short name shown to learners (e.g. Full-Stack Track)"
                       className={`w-full min-w-0 rounded-lg border bg-[var(--bg-primary)] px-3 py-2 text-sm ${
-                        showPathTitleRequiredHint ? 'border-red-500' : 'border-[var(--border-color)]'
+                        showPathTitleRequiredHint ? 'border-[#616161]' : 'border-[var(--border-color)]'
                       }`}
                     />
                   </label>
@@ -4509,11 +4498,11 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                       aria-expanded={pathOutlineTipsOpen}
                       aria-controls="admin-path-outline-tips"
                       aria-label={pathOutlineTipsOpen ? 'Close outline tips' : 'Open outline tips'}
-                      className={`inline-flex size-6 shrink-0 touch-manipulation items-center justify-center rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 active:opacity-90 ${
-                        pathOutlineTipsOpen ? 'border-orange-500/50 text-orange-500' : ''
+                      className={`inline-flex size-6 shrink-0 touch-manipulation items-center justify-center rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/45 active:opacity-90 ${
+                        pathOutlineTipsOpen ? 'border-[#8b8c8c]/90 text-[#616161] app-dark:border-[var(--tone-400)] app-dark:text-[var(--tone-100)]' : ''
                       }`}
                     >
-                      <Info size={14} className="text-orange-500/90" aria-hidden />
+                      <Info size={14} className="text-admin-icon opacity-90" aria-hidden />
                     </button>
                     <div
                       id="admin-path-outline-tips"
@@ -4534,7 +4523,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                           ? 'hidden'
                           : tipsNarrowViewport
                             ? pathOutlineTipFixedTop >= 0
-                              ? 'fixed z-[120] left-3 right-3 w-auto max-w-none translate-x-0 overflow-y-auto overflow-x-hidden overscroll-y-contain [-webkit-overflow-scrolling:touch] touch-pan-y max-h-[calc(100dvh-var(--admin-tip-top)-env(safe-area-inset-bottom,0px)-0.75rem)] rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-3.5 text-left text-sm leading-relaxed text-[var(--text-primary)] shadow-xl pointer-events-auto outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40'
+                              ? 'fixed z-[120] left-3 right-3 w-auto max-w-none translate-x-0 overflow-y-auto overflow-x-hidden overscroll-y-contain [-webkit-overflow-scrolling:touch] touch-pan-y max-h-[calc(100dvh-var(--admin-tip-top)-env(safe-area-inset-bottom,0px)-0.75rem)] rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-3.5 text-left text-sm leading-relaxed text-[var(--text-primary)] shadow-xl pointer-events-auto outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/45'
                               : 'hidden'
                             : 'absolute left-0 top-full z-[100] mt-2 w-[min(22rem,calc(100vw-2rem))] max-w-sm rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-3 text-left text-xs leading-snug text-[var(--text-primary)] shadow-lg pointer-events-auto'
                       }
@@ -4544,7 +4533,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                           : undefined
                       }
                     >
-                      <ul className="list-disc space-y-1.5 pl-4 text-[var(--text-muted)] marker:text-orange-500/70 sm:space-y-1">
+                      <ul className="list-disc space-y-1.5 pl-4 text-[var(--text-muted)] marker:text-[#757676]/90 app-dark:marker:text-[var(--tone-300)] sm:space-y-1">
                         <li>
                           <strong className="font-semibold text-[var(--text-secondary)]">Add module here</strong> before
                           the first top-level row and between rows. On desktop, when the path already has rows, hover or
@@ -4584,9 +4573,9 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
               {pathBranchFlatnessIssues.length > 0 ? (
                 <div
                   role="status"
-                  className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-[var(--text-primary)]"
+                  className="rounded-lg border border-[#8b8c8c]/80 bg-[#757676]/12 px-3 py-2 text-xs leading-relaxed text-[var(--text-primary)]"
                 >
-                  <p className="font-semibold text-amber-800 dark:text-amber-200">Outline needs flattening</p>
+                  <p className="font-semibold text-[#393a3a] app-dark:text-[#cfcfcf]">Outline needs flattening</p>
                   <ul className="mt-1 list-inside list-disc text-[var(--text-secondary)]">
                     {pathBranchFlatnessIssues.slice(0, 5).map((msg, i) => (
                       <li key={i}>{msg}</li>
@@ -4606,7 +4595,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                         }))
                       )
                     }
-                    className="mt-2 inline-flex min-h-10 w-full items-center justify-center rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white hover:bg-amber-700 disabled:opacity-40 sm:w-auto"
+                    className="mt-2 inline-flex min-h-10 w-full items-center justify-center rounded-lg bg-[#616161] px-3 py-2 text-xs font-bold text-[#e7e7e7] hover:bg-[#4c4d4d] disabled:opacity-40 sm:w-auto"
                   >
                     Flatten for editing
                   </button>
@@ -4620,7 +4609,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
               </div>
             ) : (
                 pathBranchTree.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-orange-500/35 bg-orange-500/[0.07] px-4 py-6 sm:px-6">
+                  <div className="rounded-xl border border-dashed border-[#8b8c8c]/75 bg-[#757676]/12 px-4 py-6 sm:px-6">
                     <p className="text-center text-sm font-semibold text-[var(--text-primary)]">Start your outline</p>
                     <p className="mt-2 text-center text-xs leading-relaxed text-[var(--text-muted)]">
                       {pathSelector === '__new__' ? (
@@ -4646,10 +4635,10 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                         type="button"
                         disabled={!!pathMindmapLoading && pathSelector !== '__new__'}
                         onClick={() => setBranchModal({ kind: 'add', parentId: null, insertIndex: 0, preset: 'label' })}
-                        className="flex min-h-12 w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-left transition-colors hover:border-orange-500/40 hover:bg-[var(--hover-bg)] disabled:opacity-40"
+                        className="flex min-h-12 w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-left transition-colors hover:border-[#8b8c8c]/80 hover:bg-[var(--hover-bg)] disabled:opacity-40"
                       >
                         <span className="flex w-full items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
-                          <Plus size={18} className="shrink-0 text-orange-500" aria-hidden />
+                          <Plus size={18} className="shrink-0 text-admin-icon" aria-hidden />
                           Add module here
                         </span>
                         <span className="pl-[1.625rem] text-xs text-[var(--text-muted)]">
@@ -4766,7 +4755,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
           </div>
 
           {pathDraft.courseIds.length === 0 && showPathCourseRequiredHint ? (
-            <p id="admin-path-course-required-hint" className="text-xs font-medium text-red-500 dark:text-red-400">
+            <p id="admin-path-course-required-hint" className="text-xs font-medium text-[#616161] app-dark:text-[#cfcfcf]">
               Link at least one course (or lesson) before saving. Links alone do not count as catalog courses.
             </p>
           ) : null}
@@ -4945,7 +4934,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
       <AnimatePresence>
         {pathConfirmDialog && pathConfirmCopy && (
           <div
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50"
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#272828]/70"
             role="dialog"
             aria-modal="true"
             aria-labelledby="path-builder-confirm-title"
@@ -4986,10 +4975,10 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                     type="button"
                     autoFocus
                     onClick={() => void confirmPathDialogPrimary()}
-                    className={`inline-flex min-h-11 w-full items-center justify-center rounded-xl px-5 py-3 text-sm font-bold text-white transition-colors sm:w-auto ${
+                    className={`inline-flex min-h-11 w-full items-center justify-center rounded-xl px-5 py-3 text-sm font-bold text-[#e7e7e7] transition-colors sm:w-auto ${
                       pathConfirmDialog.kind === 'deletePublished'
-                        ? 'bg-red-500 hover:bg-red-600'
-                        : 'bg-orange-500 hover:bg-orange-600'
+                        ? 'bg-[#616161] hover:bg-[#4c4d4d]'
+                        : 'bg-[#616161] hover:bg-[#757676]'
                     }`}
                   >
                     {pathConfirmCopy.primary}
@@ -5003,7 +4992,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
 
       {dividerRemovePending ? (
         <div
-          className="fixed inset-0 z-[190] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+          className="fixed inset-0 z-[190] flex items-end justify-center bg-[#272828]/70 p-0 sm:items-center sm:p-4"
           role="presentation"
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) closeDividerRemoveDialog();
@@ -5027,7 +5016,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
               <button
                 type="button"
                 onClick={closeDividerRemoveDialog}
-                className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-full text-red-500 transition-colors hover:bg-red-500/15 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300"
+                className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-full text-[#616161] transition-colors hover:bg-[#757676]/15 hover:text-[#4c4d4d] app-dark:text-[#cfcfcf] app-dark:hover:text-[#cfcfcf]"
                 aria-label="Close"
               >
                 <X size={20} strokeWidth={2.25} aria-hidden />
@@ -5048,7 +5037,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                 <button
                   type="button"
                   onClick={() => void confirmDividerRemoveDeleteNested()}
-                  className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-red-500/50 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-600 transition-colors hover:bg-red-500/20 dark:text-red-400 sm:w-auto"
+                  className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-[#616161]/50 bg-[#757676]/12 px-4 py-3 text-sm font-bold text-[#4c4d4d] transition-colors hover:bg-[#757676]/18 app-dark:text-[#cfcfcf] sm:w-auto"
                 >
                   Delete all
                 </button>
@@ -5056,7 +5045,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                   type="button"
                   autoFocus
                   onClick={() => void confirmDividerRemoveHoistNested()}
-                  className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-4 py-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-orange-600 sm:w-auto"
+                  className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[#616161] px-4 py-3 text-sm font-bold text-[#e7e7e7] shadow-sm transition-colors hover:bg-[#757676] sm:w-auto"
                 >
                   Keep rows
                 </button>

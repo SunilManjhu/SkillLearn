@@ -39,10 +39,10 @@ function OutlineRow({
   playbackSeconds: number | null;
 }) {
   const inRange = isPlaybackInVideoOutlineLine(playbackSeconds, line);
-  const activeRing = inRange ? ' ring-1 ring-orange-400/50 ring-inset' : '';
+  const activeRing = inRange ? ' ring-1 ring-brand-400/50 ring-inset' : '';
   const activeText =
     inRange && line.highlight
-      ? ' font-medium text-orange-600 dark:text-orange-400'
+      ? ' font-medium text-brand-600 dark:text-brand-400'
       : '';
 
   const canSeek = seekEnabled && line.seekStartSeconds !== null;
@@ -55,7 +55,7 @@ function OutlineRow({
           onClick={() => onSeekSeconds(sec)}
           aria-current={inRange ? 'true' : undefined}
           data-outline-active={inRange ? 'true' : undefined}
-          className={`w-full min-h-11 touch-manipulation rounded-lg px-2 py-2 text-left text-sm leading-snug text-[var(--text-primary)] transition-colors hover:bg-[var(--hover-bg)] focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/70 sm:min-h-10 sm:px-2.5${activeRing}${activeText}`}
+          className={`w-full min-h-11 touch-manipulation rounded-lg px-2 py-2 text-left text-sm leading-snug text-[var(--text-primary)] transition-colors hover:bg-[var(--hover-bg)] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/70 sm:min-h-10 sm:px-2.5${activeRing}${activeText}`}
           aria-label={`Jump to ${formatSecondsAsMmSs(sec)}: ${line.visibleText}`}
         >
           {line.visibleText}

@@ -48,7 +48,7 @@ export function AdminDisplayNameConflictDialog({
     <AnimatePresence>
       {open && conflict && (
         <div
-          className="fixed inset-0 z-[102] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-[102] flex items-center justify-center bg-[#272828]/75 p-4 backdrop-blur-sm"
           role="dialog"
           aria-modal="true"
           aria-labelledby="admin-display-name-conflict-title"
@@ -97,7 +97,7 @@ export function AdminDisplayNameConflictDialog({
                   type="button"
                   autoFocus
                   onClick={goToRename}
-                  className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-blue-500 sm:w-auto"
+                  className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[#616161] px-5 py-3 text-sm font-bold text-[#e7e7e7] transition-colors hover:bg-[#757676] sm:w-auto"
                 >
                   Go to title
                 </button>

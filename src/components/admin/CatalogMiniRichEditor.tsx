@@ -44,7 +44,7 @@ function MiniToolbarBtn({
       title={label}
       className={`inline-flex shrink-0 min-h-8 min-w-8 items-center justify-center rounded-md touch-manipulation disabled:pointer-events-none disabled:opacity-35 ${
         active
-          ? 'bg-orange-500/15 text-orange-600 dark:text-orange-400'
+          ? 'bg-[#616161]/15 text-[#393a3a] app-dark:text-[#cfcfcf]'
           : 'text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]'
       }`}
     >
@@ -115,6 +115,8 @@ export type CatalogMiniRichEditorProps = {
   variant: 'title' | 'multiline';
   error?: boolean;
   placeholder?: string;
+  /** Merged onto the outer shell (e.g. `h-full min-h-0` beside a matched-height textarea). */
+  className?: string;
 };
 
 export function CatalogMiniRichEditor({
@@ -125,6 +127,7 @@ export function CatalogMiniRichEditor({
   variant,
   error,
   placeholder = '',
+  className,
 }: CatalogMiniRichEditorProps) {
   const editor = useEditor({
     extensions: [
@@ -179,13 +182,13 @@ export function CatalogMiniRichEditor({
     editor.commands.setContent(catalogMiniRichEditorContent(value), { emitUpdate: false });
   }, [editor, value]);
 
-  const borderClass = error ? 'border-red-500' : 'border-[var(--border-color)]';
+  const borderClass = error ? 'border-[#616161]' : 'border-[var(--border-color)]';
 
   return (
     <div
       id={id}
       data-catalog-mini-rich
-      className={`group/catalog-mini-rich relative z-0 min-w-0 w-full overflow-visible rounded-md border bg-[var(--bg-primary)] ${borderClass}`}
+      className={`group/catalog-mini-rich relative z-0 min-w-0 w-full overflow-visible rounded-md border bg-[var(--bg-primary)] ${borderClass}${className ? ` ${className}` : ''}`}
     >
       <MiniToolbar editor={editor} />
       {variant === 'title' ? (
@@ -196,8 +199,8 @@ export function CatalogMiniRichEditor({
           />
         </div>
       ) : (
-        <div className="min-w-0 overflow-hidden rounded-md">
-          <EditorContent editor={editor} />
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md">
+          <EditorContent editor={editor} className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain" />
         </div>
       )}
     </div>

@@ -1,92 +1,110 @@
-/** Persisted display order for admin Categories & Skills (taxonomy tab). */
+/**
+ * Persisted ordering for admin Categories & Skills chip lists (localStorage).
+ * Merged with the live “universe” of labels (presets + extras + discovered on courses).
+ */
 
-const STORAGE = {
-  category: 'skilllearn.catalogTaxonomyAdminOrder.v1.categories',
-  skill: 'skilllearn.catalogTaxonomyAdminOrder.v1.skills',
-} as const;
+export type CatalogTaxonomyAdminOrderKind = 'category' | 'skill';
 
-export type TaxonomyAdminOrderKind = keyof typeof STORAGE;
+const STORAGE_PREFIX = 'skilllearn.catalogTaxonomyOrder';
+
+function storageKey(kind: CatalogTaxonomyAdminOrderKind): string {
+  return `${kind === 'category' ? `${STORAGE_PREFIX}.category` : `${STORAGE_PREFIX}.skill`}.v1`;
+}
 
 function lower(s: string): string {
   return s.trim().toLowerCase();
 }
 
-export function readCatalogTaxonomyAdminOrder(kind: TaxonomyAdminOrderKind): string[] | null {
+/** Remove every occurrence of label (case-insensitive); preserve order of the rest. */
+export function orderWithoutLabel(list: readonly string[], label: string): string[] {
+  const k = lower(label);
+  return list.filter((x) => lower(x) !== k);
+}
+
+/**
+ * Insert or move `label` so it sits immediately before `beforeLabel` (case-insensitive).
+ * If `beforeLabel` is null, appends at the end. Removes any prior copy of `label` first.
+ */
+export function orderInsertBefore(
+  list: readonly string[],
+  label: string,
+  beforeLabel: string | null
+): string[] {
+  const t = label.trim();
+  if (!t) return [...list];
+  const k = lower(t);
+  const without = list.filter((x) => lower(x) !== k);
+  const b = beforeLabel?.trim();
+  if (!b) {
+    return [...without, t];
+  }
+  const bk = lower(b);
+  const idx = without.findIndex((x) => lower(x) === bk);
+  if (idx < 0) {
+    return [...without, t];
+  }
+  const next = [...without];
+  next.splice(idx, 0, t);
+  return next;
+}
+
+/** Saved admin order for this kind, or null if unset / invalid. */
+export function readCatalogTaxonomyAdminOrder(kind: CatalogTaxonomyAdminOrderKind): string[] | null {
   if (typeof localStorage === 'undefined') return null;
   try {
-    const raw = localStorage.getItem(STORAGE[kind]);
+    const raw = localStorage.getItem(storageKey(kind));
     if (!raw) return null;
     const p = JSON.parse(raw) as unknown;
     if (!Array.isArray(p)) return null;
-    return p.filter((x): x is string => typeof x === 'string' && x.trim().length > 0);
+    const out = p.filter((x): x is string => typeof x === 'string' && x.trim().length > 0);
+    return out.length > 0 ? out : null;
   } catch {
     return null;
   }
 }
 
-export function writeCatalogTaxonomyAdminOrder(kind: TaxonomyAdminOrderKind, order: readonly string[]): void {
+export function writeCatalogTaxonomyAdminOrder(kind: CatalogTaxonomyAdminOrderKind, order: readonly string[]): void {
+  if (typeof localStorage === 'undefined') return;
   try {
-    localStorage.setItem(STORAGE[kind], JSON.stringify([...order]));
+    localStorage.setItem(storageKey(kind), JSON.stringify([...order]));
   } catch {
-    return;
+    // ignore quota / private mode
   }
 }
 
 /**
- * Apply saved order, then append any labels in `universe` that are missing (localeCompare sort).
- * `universe` order is ignored except for labels not in saved order.
+ * Apply saved drag order first (labels still in `universe`), then append any new universe
+ * labels in stable source order.
  */
-export function mergeUniverseWithAdminOrder(universe: readonly string[], saved: readonly string[] | null): string[] {
-  const universeLower = new Map<string, string>();
-  for (const u of universe) {
-    const t = u.trim();
-    if (!t) continue;
-    const k = lower(t);
-    if (!universeLower.has(k)) universeLower.set(k, t);
+export function mergeUniverseWithAdminOrder(
+  universe: readonly string[],
+  adminOrder: readonly string[] | null
+): string[] {
+  if (!adminOrder || adminOrder.length === 0) {
+    return [...universe];
   }
-
-  const used = new Set<string>();
+  const universeLower = new Set(universe.map((x) => lower(x)));
+  const seen = new Set<string>();
   const out: string[] = [];
 
-  for (const s of saved ?? []) {
-    const t = s.trim();
+  for (const raw of adminOrder) {
+    const t = raw.trim();
     if (!t) continue;
     const k = lower(t);
-    const canonical = universeLower.get(k);
-    if (!canonical || used.has(k)) continue;
+    if (!universeLower.has(k) || seen.has(k)) continue;
+    seen.add(k);
+    const canonical = universe.find((u) => lower(u) === k) ?? t;
     out.push(canonical);
-    used.add(k);
   }
 
-  const rest: string[] = [];
-  for (const k of universeLower.keys()) {
-    if (!used.has(k)) rest.push(universeLower.get(k)!);
+  for (const raw of universe) {
+    const t = raw.trim();
+    if (!t) continue;
+    const k = lower(t);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(raw);
   }
-  rest.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-  out.push(...rest);
+
   return out;
-}
-
-/** Remove label (case-insensitive) from order list. */
-export function orderWithoutLabel(order: readonly string[], label: string): string[] {
-  const k = lower(label);
-  return order.filter((x) => lower(x) !== k);
-}
-
-/** Insert `label` before `beforeLabel`, or append if `beforeLabel` is null / not found. */
-export function orderInsertBefore(order: readonly string[], label: string, beforeLabel: string | null): string[] {
-  const k = lower(label);
-  const next = order.filter((x) => lower(x) !== k);
-  const canonical = label.trim();
-  if (!beforeLabel) {
-    next.push(canonical);
-    return next;
-  }
-  const bi = next.findIndex((x) => lower(x) === lower(beforeLabel));
-  if (bi < 0) {
-    next.push(canonical);
-    return next;
-  }
-  next.splice(bi, 0, canonical);
-  return next;
 }

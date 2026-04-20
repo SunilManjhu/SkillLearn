@@ -152,6 +152,13 @@ import {
 } from './utils/catalogCategoryPresets';
 import { loadCatalogCategoryPresets } from './utils/catalogCategoryPresetsFirestore';
 import { loadCatalogSkillPresets } from './utils/catalogSkillPresetsFirestore';
+import {
+  bootstrapTaxonomyLabelLibraryFromLocalStorage,
+  loadCatalogTaxonomyLabelLibrary,
+  migrateLegacyLocalStorageTaxonomyLabelsIfServerEmpty,
+  setCatalogTaxonomyLabelLibraryWriteEnabled,
+  subscribeCatalogTaxonomyLabelLibrary,
+} from './utils/catalogTaxonomyLabelLibraryFirestore';
 import { buildCatalogTaxonomy } from './utils/catalogTaxonomy';
 import {
   COURSE_LEVELS,
@@ -799,7 +806,7 @@ export default function App() {
   const showLearningAssistantFab = useLearningAssistantFabVisible();
 
   const catalogCategoryFilterTriggerRef = useRef<HTMLInputElement | null>(null);
-  /** Bumps when admin adds a custom category (localStorage + event). */
+  /** Bumps when the shared category picker library changes (Firestore + same-tab events). */
   const [categoryFilterRevision, setCategoryFilterRevision] = useState(0);
   const [skillFilterRevision, setSkillFilterRevision] = useState(0);
   const courseRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -2265,6 +2272,22 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    bootstrapTaxonomyLabelLibraryFromLocalStorage();
+    void loadCatalogTaxonomyLabelLibrary();
+    const unsub = subscribeCatalogTaxonomyLabelLibrary();
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    /** Creator studio uses per-draft taxonomy only; never push label-library writes to the global Firestore doc from this view (even for admin accounts). */
+    const canPersist = adminAccessResolved && isAdminUser && currentView !== 'creator';
+    setCatalogTaxonomyLabelLibraryWriteEnabled(canPersist);
+    if (canPersist) {
+      void migrateLegacyLocalStorageTaxonomyLabelsIfServerEmpty();
+    }
+  }, [adminAccessResolved, isAdminUser, currentView]);
+
+  useEffect(() => {
     const unsub = subscribeHeroPhoneAdsForPublic(setHeroPhoneAdSlides);
     return unsub;
   }, []);
@@ -3028,9 +3051,9 @@ export default function App() {
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="mb-3 inline-flex items-center gap-2 rounded-full bg-orange-500/20 px-3 py-1 text-xs font-bold uppercase tracking-widest text-orange-500 sm:mb-6"
+              className="mb-3 inline-flex items-center gap-2 rounded-full border border-[#8b8c8c]/60 bg-[#cfcfcf] px-3 py-1 text-xs font-bold uppercase tracking-widest text-[#272828] sm:mb-6 app-dark:border-[#616161] app-dark:bg-[#4c4d4d] app-dark:text-[#e7e7e7]"
             >
-              <TrendingUp size={14} />
+              <TrendingUp size={14} className="shrink-0" aria-hidden />
               Trending in Software Development
             </motion.div>
             <motion.h1
@@ -3039,10 +3062,10 @@ export default function App() {
               transition={{ delay: 0.1 }}
               className="mb-3 text-4xl font-bold leading-tight text-[var(--text-primary)] sm:mb-6 sm:text-5xl lg:text-6xl xl:text-7xl"
             >
-              Build your <span className="text-orange-500">future</span> with i-Golden.
+              Build your <span className="text-brand-500">future</span> with i-Golden.
             </motion.h1>
             {reduceMotion ? (
-              <p className="mb-3 text-base font-semibold leading-snug text-orange-500 sm:mb-5 sm:text-lg">
+              <p className="mb-3 text-base font-semibold leading-snug text-brand-500 sm:mb-5 sm:text-lg">
                 Learn Today. Lead Tomorrow.
               </p>
             ) : (
@@ -3064,7 +3087,7 @@ export default function App() {
                   {(['Learn Today.', 'Lead Tomorrow.'] as const).map((part) => (
                     <motion.span
                       key={part}
-                      className="inline-block bg-gradient-to-r from-orange-500 via-amber-500 to-orange-500 bg-clip-text text-base font-semibold leading-snug text-transparent sm:text-lg"
+                      className="inline-block bg-gradient-to-r from-brand-500 via-amber-500 to-brand-500 bg-clip-text text-base font-semibold leading-snug text-transparent sm:text-lg"
                       variants={{
                         hidden: { opacity: 0, y: 18, filter: 'blur(5px)' },
                         visible: {
@@ -3081,7 +3104,7 @@ export default function App() {
                 </div>
                 <motion.div
                   aria-hidden
-                  className="mt-2.5 h-[3px] max-w-xs rounded-full bg-gradient-to-r from-orange-400 via-amber-400 to-orange-500 sm:max-w-sm"
+                  className="mt-2.5 h-[3px] max-w-xs rounded-full bg-gradient-to-r from-brand-400 via-amber-400 to-brand-500 sm:max-w-sm"
                   initial={{ scaleX: 0, opacity: 0 }}
                   animate={{ scaleX: 1, opacity: 1 }}
                   transition={{
@@ -3112,7 +3135,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => handleNavigate('signup')}
-                  className="flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-md bg-orange-500 px-6 py-4 text-white transition-colors hover:bg-orange-600 sm:flex-initial sm:px-8"
+                  className="flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-md bg-brand-500 px-6 py-4 text-white transition-colors hover:bg-brand-600 sm:flex-initial sm:px-8"
                 >
                   <span className="flex items-center gap-2 font-bold">
                     Get started free
@@ -3124,7 +3147,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => handleNavigate('contact')}
-                className="hidden min-h-11 min-w-0 items-center justify-center rounded-md bg-[var(--hover-bg)] px-6 py-4 font-bold text-[var(--text-primary)] transition-colors hover:bg-[var(--hover-bg)]/80 md:inline-flex md:px-8"
+                className="hidden min-h-11 min-w-0 items-center justify-center rounded-md border border-[#393a3a] bg-[#cfcfcf] px-6 py-4 font-bold text-[#272828] shadow-sm transition-colors hover:bg-[#b8b8b8] hover:border-[#272828] md:inline-flex md:px-8 app-dark:border-[#8b8c8c] app-dark:bg-[#616161] app-dark:text-[#e7e7e7] app-dark:shadow-none app-dark:hover:bg-[#757676] app-dark:hover:border-[#a1a2a2]"
               >
                 Contact Us
               </button>
@@ -3149,28 +3172,28 @@ export default function App() {
       <section className="py-12 bg-[var(--bg-secondary)] border-y border-[var(--border-color)]">
         <div className="max-w-7xl mx-auto px-6 grid grid-cols-2 md:grid-cols-4 gap-8">
           <div className="flex items-center gap-4">
-            <div className="p-3 bg-[var(--hover-bg)] rounded-lg text-orange-500"><Users size={24} /></div>
+            <div className="p-3 bg-[var(--hover-bg)] rounded-lg text-brand-500"><Users size={24} /></div>
             <div>
               <div className="text-xl font-bold text-[var(--text-primary)]">1.5M+</div>
               <div className="text-xs text-[var(--text-secondary)] uppercase tracking-wider">Learners</div>
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <div className="p-3 bg-[var(--hover-bg)] rounded-lg text-orange-500"><Globe size={24} /></div>
+            <div className="p-3 bg-[var(--hover-bg)] rounded-lg text-brand-500"><Globe size={24} /></div>
             <div>
               <div className="text-xl font-bold text-[var(--text-primary)]">150+</div>
               <div className="text-xs text-[var(--text-secondary)] uppercase tracking-wider">Countries</div>
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <div className="p-3 bg-[var(--hover-bg)] rounded-lg text-orange-500"><Award size={24} /></div>
+            <div className="p-3 bg-[var(--hover-bg)] rounded-lg text-brand-500"><Award size={24} /></div>
             <div>
               <div className="text-xl font-bold text-[var(--text-primary)]">7,000+</div>
               <div className="text-xs text-[var(--text-secondary)] uppercase tracking-wider">Courses</div>
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <div className="p-3 bg-[var(--hover-bg)] rounded-lg text-orange-500"><Play size={24} /></div>
+            <div className="p-3 bg-[var(--hover-bg)] rounded-lg text-brand-500"><Play size={24} /></div>
             <div>
               <div className="text-xl font-bold text-[var(--text-primary)]">20k+</div>
               <div className="text-xs text-[var(--text-secondary)] uppercase tracking-wider">Lessons</div>
@@ -3189,7 +3212,7 @@ export default function App() {
           <div className="flex items-center gap-4">
             <button 
               onClick={() => handleNavigate('catalog')}
-              className="text-orange-500 font-bold hover:underline flex items-center gap-1"
+              className="text-brand-500 font-bold hover:underline flex items-center gap-1"
             >
               View all courses <ChevronRight size={18} />
             </button>
@@ -3237,17 +3260,17 @@ export default function App() {
               </h1>
             </div>
           ) : selectedLearningPathId != null && (pathTitleLoading || pathHeroTitle != null) ? (
-            <div className="mb-2 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:mb-4 sm:p-5">
+            <div className="mb-2 rounded-2xl border border-[var(--border-light)] bg-[var(--bg-secondary)] p-4 shadow-sm ring-1 ring-[var(--border-color)]/30 sm:mb-4 sm:p-5">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div className="flex min-w-0 gap-3">
                   <div
-                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-orange-500/35 bg-orange-500/10 text-orange-500"
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-brand-500/40 bg-brand-500/15 text-brand-500"
                     aria-hidden
                   >
                     <LayoutGrid size={22} />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-orange-500 sm:text-xs">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-brand-500 sm:text-xs">
                       Learning path
                     </p>
                     <h1
@@ -3272,7 +3295,7 @@ export default function App() {
                     {selectedLearningPathId != null &&
                     activeCatalogPathRow?.adminPreviewOwnerUid &&
                     !pathUnknown ? (
-                      <p className="mt-2 text-xs font-medium text-orange-500 sm:text-sm">
+                      <p className="mt-2 text-xs font-medium leading-snug text-[var(--text-secondary)] sm:text-sm">
                         Creator preview — you’re viewing this path as it exists in another creator’s private
                         studio.
                       </p>
@@ -3281,7 +3304,7 @@ export default function App() {
                     activeCatalogPathRow?.fromCreatorDraft === true &&
                     !activeCatalogPathRow?.adminPreviewOwnerUid &&
                     !pathUnknown ? (
-                      <p className="mt-2 text-xs font-medium text-orange-500 sm:text-sm">
+                      <p className="mt-2 text-xs font-medium leading-snug text-[var(--text-secondary)] sm:text-sm">
                         Draft path — only you see this in Browse Catalog until an admin publishes it.
                       </p>
                     ) : null}
@@ -3296,7 +3319,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => handleNavigate('catalog')}
-                  className="shrink-0 rounded-xl border border-[var(--border-color)] bg-[var(--hover-bg)] px-4 py-2.5 text-sm font-semibold text-[var(--text-primary)] transition-colors hover:border-orange-500/40 hover:text-orange-500"
+                  className="shrink-0 rounded-xl border border-[var(--border-light)] bg-[var(--hover-bg)] px-4 py-2.5 text-sm font-semibold text-[var(--text-primary)] transition-colors hover:border-[var(--text-muted)] hover:bg-[var(--bg-primary)]"
                 >
                   Browse all courses
                 </button>
@@ -3418,7 +3441,7 @@ export default function App() {
           { icon: <Award />, title: 'Recognized Skills', desc: 'Earn certificates that are valued by top employers.' }
         ].map((item, i) => (
           <div key={i} className="bg-[var(--bg-secondary)] p-8 rounded-2xl border border-[var(--border-color)]">
-            <div className="w-12 h-12 bg-orange-500/10 text-orange-500 rounded-lg flex items-center justify-center mb-6">
+            <div className="w-12 h-12 bg-brand-500/10 text-brand-500 rounded-lg flex items-center justify-center mb-6">
               {item.icon}
             </div>
             <h3 className="text-xl font-bold text-[var(--text-primary)] mb-4">{item.title}</h3>
@@ -3442,12 +3465,12 @@ export default function App() {
           { title: 'Content Specialist', team: 'Education', location: 'Remote' },
           { title: 'Technical Recruiter', team: 'People', location: 'Austin, TX' }
         ].map((job, i) => (
-          <div key={i} className="bg-[var(--bg-secondary)] p-6 rounded-xl border border-[var(--border-color)] flex items-center justify-between hover:border-orange-500/50 transition-colors cursor-pointer group">
+          <div key={i} className="bg-[var(--bg-secondary)] p-6 rounded-xl border border-[var(--border-color)] flex items-center justify-between hover:border-brand-500/50 transition-colors cursor-pointer group">
             <div>
-              <h3 className="text-lg font-bold text-[var(--text-primary)] group-hover:text-orange-500 transition-colors">{job.title}</h3>
+              <h3 className="text-lg font-bold text-[var(--text-primary)] group-hover:text-brand-500 transition-colors">{job.title}</h3>
               <p className="text-[var(--text-secondary)] text-sm">{job.team} • {job.location}</p>
             </div>
-            <ChevronRight className="text-[var(--text-secondary)] group-hover:text-orange-500 transition-colors" />
+            <ChevronRight className="text-[var(--text-secondary)] group-hover:text-brand-500 transition-colors" />
           </div>
         ))}
       </div>
@@ -3462,7 +3485,7 @@ export default function App() {
           <input 
             type="text" 
             placeholder="Search for articles..." 
-            className="w-full bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-full py-4 px-6 text-[var(--text-primary)] focus:outline-none focus:border-orange-500 transition-colors"
+            className="w-full bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-full py-4 px-6 text-[var(--text-primary)] focus:outline-none focus:border-brand-500 transition-colors"
           />
         </div>
       </div>
@@ -3473,7 +3496,7 @@ export default function App() {
           { icon: <Award />, title: 'Certificates', desc: 'How to earn and share your achievements.' }
         ].map((item, i) => (
           <div key={i} className="bg-[var(--bg-secondary)] p-8 rounded-2xl border border-[var(--border-color)] hover:bg-[var(--hover-bg)] transition-colors cursor-pointer">
-            <div className="w-10 h-10 bg-orange-500/10 text-orange-500 rounded-lg flex items-center justify-center mb-6">
+            <div className="w-10 h-10 bg-brand-500/10 text-brand-500 rounded-lg flex items-center justify-center mb-6">
               {item.icon}
             </div>
             <h3 className="text-lg font-bold text-[var(--text-primary)] mb-2">{item.title}</h3>
@@ -3492,7 +3515,7 @@ export default function App() {
           <p className="text-xl text-[var(--text-secondary)] mb-12">Have questions? We're here to help you find the right solution for your needs.</p>
           <div className="space-y-8">
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-orange-500/10 text-orange-500 rounded-full flex items-center justify-center">
+              <div className="w-12 h-12 bg-brand-500/10 text-brand-500 rounded-full flex items-center justify-center">
                 <Mail />
               </div>
               <div>
@@ -3503,7 +3526,7 @@ export default function App() {
               </div>
             </div>
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-orange-500/10 text-orange-500 rounded-full flex items-center justify-center">
+              <div className="w-12 h-12 bg-brand-500/10 text-brand-500 rounded-full flex items-center justify-center">
                 <LifeBuoy />
               </div>
               <div>
@@ -3579,7 +3602,7 @@ export default function App() {
           <h1 className="text-6xl font-bold text-[var(--text-primary)] mb-8 leading-tight">Scale your team's skills.</h1>
           <p className="text-xl text-[var(--text-secondary)] mb-12">The most comprehensive technology learning platform for organizations of all sizes.</p>
           <div className="flex gap-4">
-            <button className="px-8 py-4 bg-orange-500 text-white rounded-md font-bold hover:bg-orange-600 transition-colors">
+            <button className="px-8 py-4 bg-brand-500 text-white rounded-md font-bold hover:bg-brand-600 transition-colors">
               Request a Demo
             </button>
             <button className="px-8 py-4 bg-[var(--hover-bg)] text-[var(--text-primary)] rounded-md font-bold hover:bg-[var(--hover-bg)]/80 transition-colors">
@@ -3588,10 +3611,10 @@ export default function App() {
           </div>
         </div>
         <div className="relative">
-          <div className="absolute -inset-4 bg-orange-500/20 blur-3xl rounded-full"></div>
+          <div className="absolute -inset-4 bg-brand-500/20 blur-3xl rounded-full"></div>
           <div className="relative bg-[var(--bg-secondary)] border border-[var(--border-color)] p-8 rounded-2xl shadow-2xl">
             <div className="flex items-center gap-4 mb-8">
-              <div className="w-12 h-12 bg-orange-500 rounded-lg flex items-center justify-center text-white">
+              <div className="w-12 h-12 bg-brand-500 rounded-lg flex items-center justify-center text-white">
                 <TrendingUp />
               </div>
               <div>
@@ -3607,7 +3630,7 @@ export default function App() {
                     <span>{progress}%</span>
                   </div>
                   <div className="h-2 bg-[var(--hover-bg)] rounded-full overflow-hidden">
-                    <div className="h-full bg-orange-500 rounded-full" style={{ width: `${progress}%` }}></div>
+                    <div className="h-full bg-brand-500 rounded-full" style={{ width: `${progress}%` }}></div>
                   </div>
                 </div>
               ))}

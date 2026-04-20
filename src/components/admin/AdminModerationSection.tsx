@@ -216,7 +216,7 @@ export const AdminModerationSection: React.FC<AdminModerationSectionProps> = ({
     <div className="min-w-0 space-y-6 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="flex items-center gap-2 text-lg font-bold">
-          <Flag size={20} className="text-orange-500" />
+          <Flag size={20} className="text-admin-icon" />
           Moderation inbox
         </h2>
         <button
@@ -235,7 +235,9 @@ export const AdminModerationSection: React.FC<AdminModerationSectionProps> = ({
           type="button"
           onClick={() => setSubTab('reports')}
           className={`shrink-0 rounded-lg px-3 py-2 text-sm font-semibold min-h-10 sm:min-h-0 ${
-            subTab === 'reports' ? 'bg-orange-500/20 text-orange-500' : 'text-[var(--text-secondary)]'
+            subTab === 'reports'
+              ? 'bg-[#616161]/10 text-[var(--text-primary)] ring-1 ring-[#a1a2a2]/45 app-dark:bg-[var(--tone-800)] app-dark:ring-[var(--tone-500)]'
+              : 'text-[var(--text-secondary)]'
           }`}
         >
           Reports ({reports.length})
@@ -244,7 +246,9 @@ export const AdminModerationSection: React.FC<AdminModerationSectionProps> = ({
           type="button"
           onClick={() => setSubTab('suggestions')}
           className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold sm:min-h-0 ${
-            subTab === 'suggestions' ? 'bg-orange-500/20 text-orange-500' : 'text-[var(--text-secondary)]'
+            subTab === 'suggestions'
+              ? 'bg-[#616161]/10 text-[var(--text-primary)] ring-1 ring-[#a1a2a2]/45 app-dark:bg-[var(--tone-800)] app-dark:ring-[var(--tone-500)]'
+              : 'text-[var(--text-secondary)]'
           }`}
         >
           <Lightbulb size={14} />
@@ -254,7 +258,9 @@ export const AdminModerationSection: React.FC<AdminModerationSectionProps> = ({
           type="button"
           onClick={() => setSubTab('contact')}
           className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold sm:min-h-0 ${
-            subTab === 'contact' ? 'bg-orange-500/20 text-orange-500' : 'text-[var(--text-secondary)]'
+            subTab === 'contact'
+              ? 'bg-[#616161]/10 text-[var(--text-primary)] ring-1 ring-[#a1a2a2]/45 app-dark:bg-[var(--tone-800)] app-dark:ring-[var(--tone-500)]'
+              : 'text-[var(--text-secondary)]'
           }`}
         >
           <Mail size={14} />
@@ -276,8 +282,8 @@ export const AdminModerationSection: React.FC<AdminModerationSectionProps> = ({
                   <div className="min-w-0 space-y-1">
                     <p className="font-semibold text-[var(--text-primary)]">{r.reason}</p>
                     <p className="text-xs text-[var(--text-muted)]">
-                      Lesson <code className="text-orange-500/90">{r.lessonId}</code> · User{' '}
-                      <code className="text-orange-500/90">{r.userId}</code>
+                      Lesson <code className="text-[#616161] app-dark:text-[var(--tone-200)]">{r.lessonId}</code> · User{' '}
+                      <code className="text-[#616161] app-dark:text-[var(--tone-200)]">{r.userId}</code>
                     </p>
                     <p className="text-xs text-[var(--text-muted)]">{formatWhen(r.timestampMs)}</p>
                     {r.details ? (
@@ -288,7 +294,7 @@ export const AdminModerationSection: React.FC<AdminModerationSectionProps> = ({
                     <button
                       type="button"
                       onClick={() => void resolveReport(r)}
-                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-emerald-400 hover:bg-emerald-500/10"
+                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[#a1a2a2] hover:bg-[#757676]/12"
                       aria-label="Resolve report"
                       title="Resolve and notify user"
                     >
@@ -297,7 +303,7 @@ export const AdminModerationSection: React.FC<AdminModerationSectionProps> = ({
                     <button
                       type="button"
                       onClick={() => void removeReport(r.id)}
-                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-red-400 hover:bg-red-500/10"
+                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[#a1a2a2] hover:bg-[#757676]/12"
                       aria-label="Delete report"
                       title="Delete without notifying"
                     >
@@ -327,20 +333,20 @@ export const AdminModerationSection: React.FC<AdminModerationSectionProps> = ({
                       href={s.suggestedUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="font-medium text-orange-500 hover:underline break-all"
+                      className="font-medium text-[#616161] hover:underline break-all app-dark:text-[var(--tone-100)]"
                     >
                       {s.suggestedUrl}
                     </a>
                     <p className="text-xs text-[var(--text-muted)]">
-                      Lesson <code className="text-orange-500/90">{s.lessonId}</code> · User{' '}
-                      <code className="text-orange-500/90">{s.userId}</code>
+                      Lesson <code className="text-[#616161] app-dark:text-[var(--tone-200)]">{s.lessonId}</code> · User{' '}
+                      <code className="text-[#616161] app-dark:text-[var(--tone-200)]">{s.userId}</code>
                     </p>
                     <p className="text-xs text-[var(--text-muted)]">{formatWhen(s.timestampMs)}</p>
                   </div>
                   <button
                     type="button"
                     onClick={() => void removeSuggestion(s.id)}
-                    className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-red-400 hover:bg-red-500/10"
+                    className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[#a1a2a2] hover:bg-[#757676]/12"
                     aria-label="Delete suggestion"
                   >
                     <Trash2 size={18} />
@@ -367,7 +373,7 @@ export const AdminModerationSection: React.FC<AdminModerationSectionProps> = ({
                     <p className="font-semibold text-[var(--text-primary)]">{c.subject}</p>
                     <p className="text-xs text-[var(--text-muted)]">{senderLine(c)}</p>
                     <p className="text-xs text-[var(--text-muted)]">
-                      User <code className="text-orange-500/90">{c.userId}</code>
+                      User <code className="text-[#616161] app-dark:text-[var(--tone-200)]">{c.userId}</code>
                     </p>
                     <p className="text-xs text-[var(--text-muted)]">{formatWhen(c.timestampMs)}</p>
                     <p className="mt-2 text-[var(--text-secondary)] whitespace-pre-wrap">{c.message}</p>
@@ -375,7 +381,7 @@ export const AdminModerationSection: React.FC<AdminModerationSectionProps> = ({
                   <button
                     type="button"
                     onClick={() => void removeContact(c.id)}
-                    className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-red-400 hover:bg-red-500/10"
+                    className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[#a1a2a2] hover:bg-[#757676]/12"
                     aria-label="Delete contact message"
                   >
                     <Trash2 size={18} />
@@ -389,7 +395,7 @@ export const AdminModerationSection: React.FC<AdminModerationSectionProps> = ({
 
       {confirmState && (
         <div
-          className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-[#272828]/75 backdrop-blur-sm"
           role="dialog"
           aria-modal="true"
           aria-labelledby="admin-moderation-confirm-title"
@@ -424,8 +430,8 @@ export const AdminModerationSection: React.FC<AdminModerationSectionProps> = ({
                   type="button"
                   onClick={() => void submitConfirm()}
                   disabled={confirmSubmitting}
-                  className={`min-h-11 flex-[1.4] rounded-lg py-2.5 text-sm font-semibold text-white disabled:opacity-60 ${
-                    confirmState.type === 'resolve-report' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-red-600 hover:bg-red-500'
+                  className={`min-h-11 flex-[1.4] rounded-lg py-2.5 text-sm font-semibold text-[#e7e7e7] disabled:opacity-60 ${
+                    confirmState.type === 'resolve-report' ? 'bg-[#616161] hover:bg-[#757676]' : 'bg-[#616161] hover:bg-[#4c4d4d]'
                   }`}
                 >
                   {confirmSubmitting

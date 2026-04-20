@@ -135,7 +135,7 @@ export function CoursePlayerSidebarPanels({
             }}
             className={`flex min-h-11 min-w-0 flex-1 touch-manipulation items-center justify-center gap-1.5 rounded-lg px-2 text-sm font-semibold transition-colors sm:min-h-10 sm:px-3 ${
               !notesExpanded
-                ? 'bg-[var(--bg-secondary)] text-orange-600 shadow-sm dark:text-orange-400'
+                ? 'bg-[var(--bg-secondary)] text-brand-600 shadow-sm dark:text-brand-400'
                 : 'text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]'
             }`}
           >
@@ -152,7 +152,7 @@ export function CoursePlayerSidebarPanels({
             }}
             className={`flex min-h-11 min-w-0 flex-1 touch-manipulation items-center justify-center gap-1.5 rounded-lg px-2 text-sm font-semibold transition-colors sm:min-h-10 sm:px-3 ${
               notesExpanded
-                ? 'bg-[var(--bg-secondary)] text-orange-600 shadow-sm dark:text-orange-400'
+                ? 'bg-[var(--bg-secondary)] text-brand-600 shadow-sm dark:text-brand-400'
                 : 'text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]'
             }`}
           >
@@ -230,22 +230,37 @@ export function CoursePlayerSidebarPanels({
                         }
                         const pct = progressPercent(progressByLesson[lesson.id]);
                         const done = isLessonPlaybackComplete(progressByLesson[lesson.id]);
+                        const active = currentLesson.id === lesson.id;
                         return (
                           <button
                             key={lesson.id}
                             type="button"
                             onClick={() => onSelectLesson(lesson)}
                             className={`flex w-full min-h-11 flex-col gap-1.5 p-4 pl-12 text-left text-sm transition-colors hover:bg-[var(--hover-bg)] touch-manipulation ${
-                              currentLesson.id === lesson.id
-                                ? 'bg-orange-500/10 text-orange-500'
+                              active
+                                ? done
+                                  ? 'bg-emerald-500/10 text-emerald-600 app-dark:text-emerald-400'
+                                  : 'bg-[#393a3a] text-[#a1a2a2] app-light:bg-[#b8b8b8] app-light:text-[var(--text-secondary)]'
                                 : 'text-[var(--text-secondary)]'
                             }`}
                           >
                             <div className="flex min-w-0 items-center gap-3">
-                              {currentLesson.id === lesson.id ? (
-                                <Play size={14} fill="currentColor" className="shrink-0" aria-hidden />
+                              {active ? (
+                                done ? (
+                                  <CheckCircle2
+                                    size={14}
+                                    className="shrink-0 text-emerald-600 app-dark:text-emerald-400"
+                                    aria-hidden
+                                  />
+                                ) : (
+                                  <Play size={14} fill="currentColor" className="shrink-0" aria-hidden />
+                                )
                               ) : done ? (
-                                <CheckCircle2 size={14} className="shrink-0 text-orange-500/80" aria-hidden />
+                                <CheckCircle2
+                                  size={14}
+                                  className="shrink-0 text-emerald-600 app-dark:text-emerald-400"
+                                  aria-hidden
+                                />
                               ) : (
                                 <CheckCircle2 size={14} className="shrink-0 text-gray-600" aria-hidden />
                               )}
@@ -257,7 +272,9 @@ export function CoursePlayerSidebarPanels({
                             <div className="flex w-full items-center gap-2 pl-7">
                               <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--hover-bg)]">
                                 <div
-                                  className="h-full rounded-full bg-orange-500 transition-[width] duration-300"
+                                  className={`h-full rounded-full transition-[width] duration-300 ${
+                                    done ? 'bg-emerald-500' : 'bg-brand-500'
+                                  }`}
                                   style={{ width: `${pct}%` }}
                                 />
                               </div>
