@@ -41,9 +41,12 @@ function walkSectionToSegments(children: MindmapTreeNode[], pathSet: Set<string>
     if (k === 'divider') {
       flush();
       segments.push({ type: 'divider', id: n.id, label: n.label.trim() || 'Divider' });
+      if (n.children.length > 0) {
+        segments.push(...walkSectionToSegments(n.children, pathSet));
+      }
     } else if (k === 'label') {
       flush();
-      segments.push({ type: 'label', id: n.id, label: n.label.trim() || 'Label' });
+      segments.push({ type: 'label', id: n.id, label: n.label.trim() || 'Module' });
     } else if (k === 'link' && n.externalUrl?.trim()) {
       flush();
       segments.push({

@@ -13,17 +13,22 @@ import { flushSync } from 'react-dom';
 import {
   AlertCircle,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
+  ChevronRight,
   Copy,
   ArrowRightLeft,
   Globe,
   GraduationCap,
+  Hash,
+  Info,
   Link2,
   Layers,
   Loader2,
   Plus,
   Route,
   Save,
+  SlidersHorizontal,
   Trash2,
   Type,
   X,
@@ -64,6 +69,11 @@ import {
 import { fetchPathMindmapFromFirestore, savePathMindmapToFirestore } from '../../utils/pathMindmapFirestore';
 import { normalizeExternalHref } from '../../utils/externalUrl';
 import { AdminLabelInfoTip } from './adminLabelInfoTip';
+import {
+  narrowAdminTipPanelStyle,
+  readFixedTipTopBelowAnchor,
+  useTipsNarrowViewport,
+} from './adminTipPanelLayout';
 import { useAdminActionToast } from './useAdminActionToast';
 import { AdminDisplayNameConflictDialog } from './AdminDisplayNameConflictDialog';
 import { InsertStripWaitCursorPortal } from './InsertStripWaitCursorPortal';
@@ -98,7 +108,7 @@ function arrayMove<T>(list: T[], from: number, to: number): T[] {
   return next;
 }
 
-/** Tree node for path outline — synced to `pathMindmap` on save. Two levels only: top-level sections (label or module) and sub-rows (sub-rows cannot nest further). */
+/** Tree node for path outline — synced to `pathMindmap` on save. Top-level outline modules (`kind: 'label'`) or catalog units (`kind: 'module'`), plus sub-rows; `divider` rows may group a flat list of sub-rows (no deeper nesting under non-divider rows). */
 type PathBranchNode =
   | {
       id: string;
@@ -174,6 +184,7 @@ function flattenPathBranchSectionChildren(nodes: PathBranchNode[], publishedList
     for (const n of ns) {
       if (n.kind === 'divider') {
         out.push({ ...n, children: [] });
+        if (n.children.length > 0) walk(n.children);
         continue;
       }
       if (n.kind === 'module' && n.children.length > 0) {
@@ -216,10 +227,10 @@ function collectPathBranchStructureIssues(roots: PathBranchNode[], publishedList
     if (root.kind !== 'label' && root.kind !== 'module') {
       const display = branchNodeDisplayLabel(root, publishedList);
       if (root.kind === 'divider') {
-        issues.push('A divider cannot be a top-level section — move it under a section or delete it.');
+        issues.push('A divider cannot be a top-level module — move it under a module or delete it.');
       } else {
         issues.push(
-          `Top-level rows must be a text section or a course module. “${display}” is a ${root.kind} row — use Change type, or add a section / module at the top level first.`
+          `Top-level rows must be an outline module or a catalog unit. “${display}” is a ${root.kind} row — use Change type, or add a module / unit at the top level first.`
         );
       }
     }
@@ -256,14 +267,29 @@ function collectPathBranchStructureIssues(roots: PathBranchNode[], publishedList
       }
     } else {
       for (const row of root.children) {
+        if (row.kind === 'divider') {
+          for (const inner of row.children) {
+            if (inner.children.length > 0) {
+              issues.push(
+                `Under divider “${branchNodeDisplayLabel(row, publishedList)}”, “${branchNodeDisplayLabel(inner, publishedList)}” has nested rows — only a flat list is allowed inside a divider group.`
+              );
+            }
+            if (inner.kind === 'module') {
+              issues.push(
+                `Catalog units belong at the top level only — move “${branchNodeDisplayLabel(inner, publishedList)}” out from under “${secLabel}”.`
+              );
+            }
+          }
+          continue;
+        }
         if (row.children.length > 0) {
           issues.push(
-            `Under “${secLabel}”, “${branchNodeDisplayLabel(row, publishedList)}” has nested rows. Paths must be section → flat list only—flatten or remove nesting.`
+            `Under “${secLabel}”, “${branchNodeDisplayLabel(row, publishedList)}” has nested rows. Paths must be module → flat list only—flatten or remove nesting.`
           );
         }
         if (row.kind === 'module') {
           issues.push(
-            `Course modules belong at the top level only — move “${branchNodeDisplayLabel(row, publishedList)}” out from under “${secLabel}”.`
+            `Catalog units belong at the top level only — move “${branchNodeDisplayLabel(row, publishedList)}” out from under “${secLabel}”.`
           );
         }
       }
@@ -278,7 +304,7 @@ function isRootBranchId(roots: PathBranchNode[], id: string): boolean {
 }
 
 function updateNodeChildren(n: PathBranchNode, children: PathBranchNode[]): PathBranchNode {
-  if (n.kind === 'divider') return { ...n, children: [] };
+  if (n.kind === 'divider') return { ...n, children };
   if (n.kind === 'label') return { ...n, children };
   if (n.kind === 'module') return { ...n, children };
   if (n.kind === 'course') return { ...n, children };
@@ -293,7 +319,7 @@ function collectCourseIdsFromTree(nodes: PathBranchNode[]): string[] {
       if (n.kind === 'course' || n.kind === 'module' || n.kind === 'lesson') {
         if (!out.includes(n.courseId)) out.push(n.courseId);
       }
-      if (n.kind !== 'divider') walk(n.children);
+      walk(n.children);
     }
   }
   walk(nodes);
@@ -346,7 +372,7 @@ function collectLearnerVisibleUnpublishedCourses(
             addIfEligible(publishedList.find((c) => c.id === n.courseId));
           }
         }
-        if (n.kind !== 'divider') walk(n.children);
+        walk(n.children);
       }
     };
     walk(roots);
@@ -419,6 +445,32 @@ function removeNodeById(nodes: PathBranchNode[], id: string): PathBranchNode[] {
     .map((n) => updateNodeChildren(n, removeNodeById(n.children, id)));
 }
 
+/**
+ * Remove a section divider and splice its children into the parent list at the same index (outline “move up” out of the group).
+ * Returns null if the divider id is not found.
+ */
+function hoistDividerChildrenInForest(roots: PathBranchNode[], dividerId: string): PathBranchNode[] | null {
+  function hoistInList(siblings: PathBranchNode[]): PathBranchNode[] | null {
+    const i = siblings.findIndex((c) => c.id === dividerId);
+    if (i >= 0) {
+      const d = siblings[i]!;
+      if (d.kind !== 'divider') return null;
+      return [...siblings.slice(0, i), ...d.children, ...siblings.slice(i + 1)];
+    }
+    let changed = false;
+    const out = siblings.map((n) => {
+      const inner = hoistInList(n.children);
+      if (inner != null) {
+        changed = true;
+        return updateNodeChildren(n, inner);
+      }
+      return n;
+    });
+    return changed ? out : null;
+  }
+  return hoistInList(roots);
+}
+
 /** Remove the first node with `id` and return it (for move). Does not remap ids. */
 function extractNodeById(
   nodes: PathBranchNode[],
@@ -477,7 +529,7 @@ function branchNodeToMindmap(n: PathBranchNode, publishedList: Course[]): Mindma
     return {
       id: n.id,
       label: n.label.trim() || 'Untitled',
-      children: [],
+      children,
       kind: 'divider',
       ...v,
     };
@@ -610,9 +662,11 @@ function findDepthOfBranchId(roots: PathBranchNode[], targetId: string): number 
   return walk(roots, 0);
 }
 
-/** Only top-level rows may have child rows (two levels total: section → sub-branch). */
+/** Top-level sections and divider rows may list child outline rows (divider groups are one extra level). */
 function parentAllowsChildRows(roots: PathBranchNode[], parentId: string | null): boolean {
   if (parentId === null) return true;
+  const p = findBranchNode(roots, parentId);
+  if (p?.kind === 'divider') return true;
   return findDepthOfBranchId(roots, parentId) === 0;
 }
 
@@ -621,7 +675,7 @@ function remapBranchSubtreeIds(node: PathBranchNode): PathBranchNode {
   const walk = (n: PathBranchNode): PathBranchNode => {
     const id = newMindmapNodeId();
     if (n.kind === 'divider') {
-      return { ...n, id, children: [] };
+      return { ...n, id, children: n.children.map(walk) };
     }
     if (n.kind === 'module') {
       return { ...n, id, children: n.children.map(walk) };
@@ -650,6 +704,27 @@ function topLevelParentsForDuplicate(roots: PathBranchNode[]): PathBranchNode[] 
   return roots.filter((r) => r.kind !== 'divider');
 }
 
+/** Section dividers under an outline module (and nested dividers) for copy/move placement — labels match catalog “section” wording. */
+function collectDividerDuplicateParentsUnderSection(
+  roots: PathBranchNode[],
+  section: PathBranchNode,
+  publishedList: Course[]
+): { id: string; label: string }[] {
+  const out: { id: string; label: string }[] = [];
+  const sectionTitle = branchNodeDisplayLabel(section, publishedList);
+  const walk = (prefix: string, nodes: PathBranchNode[]) => {
+    for (const n of nodes) {
+      if (n.kind !== 'divider') continue;
+      if (!parentAllowsChildRows(roots, n.id)) continue;
+      const path = `${prefix} · Divider: ${branchNodeDisplayLabel(n, publishedList)}`;
+      out.push({ id: n.id, label: path });
+      walk(path, n.children);
+    }
+  };
+  walk(`Module: ${sectionTitle}`, section.children);
+  return out;
+}
+
 function insertSlotLabel(
   siblings: PathBranchNode[],
   insertIndex: number,
@@ -668,7 +743,7 @@ function insertSlotLabel(
   return `Between “${branchNodeDisplayLabel(prev, publishedList)}” and “${branchNodeDisplayLabel(next, publishedList)}”`;
 }
 
-/** Label / link / divider rows can get a distinct title on duplicate; course & lesson titles come from the catalog. */
+/** Outline module / link / divider rows can get a distinct title on duplicate; course & lesson titles come from the catalog. */
 function duplicateRootHasEditableTitle(root: PathBranchNode): boolean {
   return root.kind === 'label' || root.kind === 'divider' || root.kind === 'link';
 }
@@ -747,11 +822,28 @@ function PlaceDuplicateBranchModal({
       if (!parentAllowsChildRows(roots, r.id)) continue;
       opts.push({
         id: r.id,
-        label: branchNodeDisplayLabel(r, publishedList),
+        label: `Module: ${branchNodeDisplayLabel(r, publishedList)}`,
       });
+      if (r.kind === 'label') {
+        opts.push(...collectDividerDuplicateParentsUnderSection(roots, r, publishedList));
+      }
     }
-    return opts;
-  }, [sourceSnapshot.kind, roots, publishedList, topLevelOnly]);
+
+    const hideDividerTargets =
+      sourceSnapshot.kind === 'module' || duplicateSubtreeRequiresTopLevelOnly(sourceSnapshot);
+    const moveDescendants =
+      placeMode === 'move' ? collectDescendantBranchIds(roots, sourceSnapshot.id) : null;
+
+    return opts.filter((o) => {
+      if (o.id === null) return true;
+      const node = findBranchNode(roots, o.id);
+      if (!node) return false;
+      if (hideDividerTargets && node.kind === 'divider') return false;
+      if (moveDescendants != null && moveDescendants.has(o.id)) return false;
+      if (placeMode === 'move' && o.id === sourceSnapshot.id) return false;
+      return true;
+    });
+  }, [sourceSnapshot, roots, publishedList, topLevelOnly, placeMode]);
 
   const effectiveParentId = topLevelOnly ? null : parentId;
 
@@ -769,30 +861,36 @@ function PlaceDuplicateBranchModal({
       return;
     }
     const r = rootsRef.current;
+    const defNode = defaultTopParentId != null ? findBranchNode(r, defaultTopParentId) : null;
     const validDefault =
       defaultTopParentId != null &&
-      findBranchNode(r, defaultTopParentId) != null &&
-      findDepthOfBranchId(r, defaultTopParentId) === 0 &&
+      defNode != null &&
       parentAllowsChildRows(r, defaultTopParentId) &&
-      findBranchNode(r, defaultTopParentId)!.kind !== 'divider';
+      (findDepthOfBranchId(r, defaultTopParentId) === 0 || defNode.kind === 'divider');
     setParentId(validDefault ? defaultTopParentId : null);
   }, [open, sourceSnapshot.id, topLevelOnly, defaultTopParentId]);
 
-  /** If the selected top parent row disappears (e.g. tree reload), clear it. Do not reset to default on every rename. */
+  /** If the selected parent disappears or becomes invalid (tree reload, Copy ↔ Move, divider rules), clear it. */
   useEffect(() => {
     if (!open || topLevelOnly) return;
     setParentId((prev) => {
       if (prev == null) return null;
       const r = rootsRef.current;
       const n = findBranchNode(r, prev);
-      const valid =
+      let valid =
         n != null &&
-        findDepthOfBranchId(r, prev) === 0 &&
         parentAllowsChildRows(r, prev) &&
-        n.kind !== 'divider';
-      return valid ? prev : null;
+        (findDepthOfBranchId(r, prev) === 0 || n.kind === 'divider');
+      if (!valid) return null;
+      if (sourceSnapshot.kind === 'module' && n.kind === 'divider') return null;
+      if (duplicateSubtreeRequiresTopLevelOnly(sourceSnapshot) && n.kind === 'divider') return null;
+      if (placeMode === 'move') {
+        if (prev === sourceSnapshot.id) return null;
+        if (collectDescendantBranchIds(r, sourceSnapshot.id).has(prev)) return null;
+      }
+      return prev;
     });
-  }, [roots, open, topLevelOnly]);
+  }, [roots, open, topLevelOnly, placeMode, sourceSnapshot.id, sourceSnapshot.kind]);
 
   useEffect(() => {
     if (!open) return;
@@ -829,7 +927,7 @@ function PlaceDuplicateBranchModal({
   );
 
   const copyNamePlaceholder = useMemo(() => {
-    if (sourceSnapshot.kind === 'label') return 'Enter label name…';
+    if (sourceSnapshot.kind === 'label') return 'Enter module name…';
     if (sourceSnapshot.kind === 'divider') return 'Enter divider text…';
     return 'Enter link title…';
   }, [sourceSnapshot.kind]);
@@ -852,9 +950,11 @@ function PlaceDuplicateBranchModal({
       ? 'Order among top-level rows.'
       : (() => {
           const p = findBranchNode(roots, effectiveParentId);
-          return p
-            ? `Order among rows inside “${branchNodeDisplayLabel(p, publishedList)}”.`
-            : '';
+          if (!p) return '';
+          if (p.kind === 'divider') {
+            return `Order among rows inside the divider group “${branchNodeDisplayLabel(p, publishedList)}”.`;
+          }
+          return `Order among rows inside “${branchNodeDisplayLabel(p, publishedList)}”.`;
         })();
 
   const insertIdx = Math.min(insertIndex, siblings.length);
@@ -909,7 +1009,7 @@ function PlaceDuplicateBranchModal({
                 onFocus={(e) => e.currentTarget.select()}
                 placeholder={copyNamePlaceholder}
                 aria-describedby="place-dup-copy-name-hint"
-                className="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+                className={`mt-1.5 ${PATH_BRANCH_SINGLE_LINE_INPUT_CLASS} font-normal`}
                 autoComplete="off"
               />
             </div>
@@ -970,7 +1070,7 @@ function PlaceDuplicateBranchModal({
           {topLevelOnly ? (
             <p className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-[var(--text-secondary)]">
               This branch has nested rows, so it can only be placed in the <strong>top-level</strong> outline (two levels
-              max: section → sub-rows).
+              max: module → sub-rows).
             </p>
           ) : null}
 
@@ -985,23 +1085,24 @@ function PlaceDuplicateBranchModal({
           <div className="space-y-3">
             {parentOptions.length === 0 ? (
               <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs leading-relaxed text-[var(--text-primary)]">
-                No valid placement target. Top-level outline only accepts section labels — fix the branch type or outline
-                structure first.
+                No valid placement target. Top-level outline only accepts outline modules or catalog units — fix the branch
+                type or outline structure first.
               </p>
             ) : (
               <>
                 <div>
                   <label className="block text-xs font-semibold text-[var(--text-secondary)]" htmlFor="place-dup-parent">
-                    Top parent
+                    Place inside
                   </label>
                   <p id="place-dup-parent-hint" className="mt-1 text-[11px] leading-snug text-[var(--text-muted)]">
-                    Top-level section that will contain this branch, or the main outline list.
+                    Main outline list, an outline module’s row list, or a section divider’s nested list (same idea as
+                    placing under a divider in the course catalog).
                   </p>
                   <select
                     key={parentSelectKey}
                     id="place-dup-parent"
                     aria-describedby="place-dup-parent-hint"
-                    className="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                    className={`mt-1.5 ${PATH_BRANCH_COMPACT_SELECT_CLASS}`}
                     value={effectiveParentId ?? ''}
                     disabled={topLevelOnly}
                     onChange={(e) => {
@@ -1011,7 +1112,7 @@ function PlaceDuplicateBranchModal({
                   >
                     {parentOptions.map((o) => (
                       <option key={o.id ?? 'root'} value={o.id ?? ''}>
-                        {o.id === null ? o.label : `Section: ${o.label}`}
+                        {o.label}
                       </option>
                     ))}
                   </select>
@@ -1028,7 +1129,7 @@ function PlaceDuplicateBranchModal({
                     key={positionSelectKey}
                     id="place-dup-index"
                     aria-describedby="place-dup-subtree-hint"
-                    className="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                    className={`mt-1.5 ${PATH_BRANCH_COMPACT_SELECT_CLASS}`}
                     value={insertIdx}
                     onChange={(e) => setInsertIndex(Number(e.target.value))}
                   >
@@ -1073,6 +1174,98 @@ function pathBranchChildrenAfterTypeChange(
   if (newKind === 'divider') return [];
   if (replaceSource.kind === 'divider') return [];
   return replaceSource.children;
+}
+
+/** First index at or after `from` that is a path section divider, or `L` if none (end of child list). */
+function indexOfNextPathDividerOrEnd(children: readonly PathBranchNode[], from: number): number {
+  let j = from;
+  while (j < children.length && children[j]!.kind !== 'divider') j += 1;
+  return j;
+}
+
+function dedupePathOutlineMergePositions(
+  opts: { insertAt: number; label: string }[]
+): { insertAt: number; label: string }[] {
+  const seen = new Set<number>();
+  const out: { insertAt: number; label: string }[] = [];
+  for (const o of opts) {
+    if (seen.has(o.insertAt)) continue;
+    seen.add(o.insertAt);
+    out.push(o);
+  }
+  return out;
+}
+
+/**
+ * Insert positions when merging one top-level outline module (`label`) into another as a nested **section divider**
+ * holding the source’s nested rows — mirrors the course catalog “Change module type” / “Place divider … after” UX.
+ */
+function pathOutlineMergePositionOptions(
+  targetSection: PathBranchNode,
+  publishedList: Course[]
+): { insertAt: number; label: string }[] {
+  if (targetSection.kind !== 'label') return [];
+  const children = targetSection.children;
+  const L = children.length;
+  if (L === 0) {
+    return [{ insertAt: 0, label: 'Only position in this outline section' }];
+  }
+  const out: { insertAt: number; label: string }[] = [];
+  out.push({ insertAt: 0, label: 'Start of section (before first row)' });
+  for (let i = 0; i < L; i++) {
+    const row = children[i]!;
+    if (row.kind === 'divider') {
+      const raw = branchNodeDisplayLabel(row, publishedList).trim();
+      const t = raw.length > 0 ? raw : 'Untitled divider';
+      const insertAt = indexOfNextPathDividerOrEnd(children, i + 1);
+      out.push({
+        insertAt,
+        label: `After section “${t}” (after its rows, before next divider)`,
+      });
+    }
+  }
+  if (!out.some((o) => o.insertAt === L)) {
+    out.push({ insertAt: L, label: 'End of section (after last row)' });
+  }
+  return dedupePathOutlineMergePositions(out);
+}
+
+/** Merge top-level outline module `sourceId` into top-level outline module `targetId` as a new divider row + moved children. */
+function applyMergeOutlineLabelIntoDividerAt(
+  roots: PathBranchNode[],
+  sourceId: string,
+  targetId: string,
+  insertAt: number
+): PathBranchNode[] | null {
+  if (sourceId === targetId) return null;
+  const srcIdx = roots.findIndex((r) => r.id === sourceId);
+  const tgtIdx = roots.findIndex((r) => r.id === targetId);
+  if (srcIdx < 0 || tgtIdx < 0) return null;
+  const src = roots[srcIdx]!;
+  const tgt = roots[tgtIdx]!;
+  if (src.kind !== 'label' || tgt.kind !== 'label') return null;
+  if (insertAt < 0 || insertAt > tgt.children.length) return null;
+
+  const vis =
+    src.visibleToRoles !== undefined ? ({ visibleToRoles: src.visibleToRoles } as const) : {};
+  const newDivider: PathBranchNode = {
+    id: newMindmapNodeId(),
+    kind: 'divider',
+    label: src.label.trim() || 'Section',
+    children: [...src.children],
+    ...vis,
+  };
+
+  const newTargetChildren = [
+    ...tgt.children.slice(0, insertAt),
+    newDivider,
+    ...tgt.children.slice(insertAt),
+  ];
+  const newTarget: PathBranchNode = { ...tgt, children: newTargetChildren };
+
+  return roots
+    .map((r, i) => (i === tgtIdx ? newTarget : r))
+    .filter((r) => r.id !== sourceId);
 }
 
 /** Ids of nodes that share the same parent as `targetId` (top-level roots are siblings of each other). */
@@ -1126,6 +1319,16 @@ function accordionExpandBranchRow(prev: Set<string>, tree: PathBranchNode[], id:
   return next;
 }
 
+/** Total outline rows (every branch node, including nested). */
+function countPathBranchTreeNodes(nodes: readonly PathBranchNode[]): number {
+  let n = 0;
+  for (const node of nodes) {
+    n += 1;
+    n += countPathBranchTreeNodes(node.children);
+  }
+  return n;
+}
+
 /** Ids of branches that have children (for pruning expand state when the tree changes). */
 function collectBranchIdsWithChildren(nodes: PathBranchNode[]): Set<string> {
   const out = new Set<string>();
@@ -1146,7 +1349,7 @@ function mindmapNodeToPathBranch(n: MindmapTreeNode): PathBranchNode {
   const children = n.children.map(mindmapNodeToPathBranch);
   const vis = pathBranchVisibilityFromMindmap(n);
   if (n.kind === 'divider') {
-    return { id: n.id, kind: 'divider', label: n.label, children: [], ...vis };
+    return { id: n.id, kind: 'divider', label: n.label, children, ...vis };
   }
   if (n.kind === 'module' && n.courseId && n.moduleId) {
     return {
@@ -1182,6 +1385,187 @@ function mindmapNodeToPathBranch(n: MindmapTreeNode): PathBranchNode {
     ...(n.locked ? { locked: true } : {}),
     ...vis,
   };
+}
+
+const PATH_OUTLINE_MERGE_SELECT_CLASS =
+  'min-h-11 w-full max-w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-orange-500/40 focus:ring-2 focus:ring-orange-500/20';
+
+/** Catalog-style “Change module type” for top-level outline modules: merge into another section as a divider + nested rows. */
+function ChangePathOutlineModuleMergeModal({
+  open,
+  sourceId,
+  roots,
+  publishedList,
+  onClose,
+  onConfirm,
+  onPickOtherType,
+}: {
+  open: boolean;
+  sourceId: string;
+  roots: PathBranchNode[];
+  publishedList: Course[];
+  onClose: () => void;
+  onConfirm: (targetId: string, insertAt: number) => void;
+  onPickOtherType: () => void;
+}) {
+  const targets = useMemo(
+    () => roots.filter((r) => r.kind === 'label' && r.id !== sourceId),
+    [roots, sourceId]
+  );
+
+  const [targetId, setTargetId] = useState('');
+  const [insertAt, setInsertAt] = useState(0);
+
+  useEffect(() => {
+    if (!open || targets.length === 0) return;
+    setTargetId((prev) => (targets.some((t) => t.id === prev) ? prev : targets[0]!.id));
+  }, [open, targets]);
+
+  const targetNode = useMemo(
+    () => targets.find((t) => t.id === targetId) ?? targets[0] ?? null,
+    [targets, targetId]
+  );
+
+  const positionOptions = useMemo(() => {
+    if (!targetNode) return [] as { insertAt: number; label: string }[];
+    return pathOutlineMergePositionOptions(targetNode, publishedList);
+  }, [targetNode, publishedList]);
+
+  useEffect(() => {
+    if (!open || !targetNode || positionOptions.length === 0) return;
+    setInsertAt((prev) => (positionOptions.some((o) => o.insertAt === prev) ? prev : positionOptions[0]!.insertAt));
+  }, [open, targetNode, positionOptions, targetId]);
+
+  useDialogKeyboard({ open, onClose });
+
+  if (!open) return null;
+
+  const mergeDialogShell = (body: React.ReactNode) => (
+    <div
+      className="fixed inset-0 z-[200] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <motion.div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="path-outline-merge-module-title"
+        initial={{ y: 24, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.2, ease: 'easeOut' }}
+        className="flex max-h-[min(90dvh,640px)] w-full max-w-lg flex-col rounded-t-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl sm:max-h-[min(85dvh,560px)] sm:rounded-2xl"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-color)] px-4 py-3">
+          <span className="w-10 shrink-0" aria-hidden />
+          <h2
+            id="path-outline-merge-module-title"
+            className="min-w-0 flex-1 text-center text-base font-bold text-[var(--text-primary)] sm:text-lg"
+          >
+            Change module type
+          </h2>
+          <button
+            type="button"
+            className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-lg text-sm font-semibold text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+        </div>
+        {body}
+      </motion.div>
+    </div>
+  );
+
+  if (targets.length === 0) {
+    return mergeDialogShell(
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4">
+        <p className="text-xs leading-relaxed text-[var(--text-muted)]">
+          Add another <span className="font-semibold text-[var(--text-secondary)]">top-level outline module</span> first
+          (use <span className="font-semibold text-[var(--text-secondary)]">Add module here</span> in a gutter) — then you
+          can merge this section into it as a <span className="font-semibold text-[var(--text-secondary)]">section divider</span>
+          , same as <span className="font-semibold text-[var(--text-secondary)]">Change module type</span> in the course
+          catalog. Or pick another branch type for this row below.
+        </p>
+        <button
+          type="button"
+          className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2.5 text-center text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]"
+          onClick={onPickOtherType}
+        >
+          Pick a different branch type instead…
+        </button>
+      </div>
+    );
+  }
+
+  if (!targetNode) return null;
+
+  return mergeDialogShell(
+    <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4">
+      <p className="text-xs leading-relaxed text-[var(--text-muted)]">
+        This module’s title becomes a <span className="font-semibold text-[var(--text-secondary)]">section divider</span>{' '}
+        inside the module you pick. All nested rows from this outline section move under that divider. This top-level
+        module is removed — same idea as merging a course catalog module into another as a section divider.
+      </p>
+      <div className="space-y-3">
+        <label className="block min-w-0">
+          <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
+            Merge into module
+          </span>
+          <select
+            className={PATH_OUTLINE_MERGE_SELECT_CLASS}
+            value={targetId}
+            onChange={(e) => setTargetId(e.target.value)}
+          >
+            {targets.map((t) => (
+              <option key={t.id} value={t.id}>
+                {branchNodeDisplayLabel(t, publishedList)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block min-w-0">
+          <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
+            Place divider and lessons after
+          </span>
+          <select
+            className={PATH_OUTLINE_MERGE_SELECT_CLASS}
+            value={String(insertAt)}
+            onChange={(e) => setInsertAt(Number(e.target.value))}
+          >
+            {positionOptions.map((o) => (
+              <option key={`${o.insertAt}-${o.label}`} value={String(o.insertAt)}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <button
+        type="button"
+        className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
+        onClick={() => onConfirm(targetId, insertAt)}
+      >
+        <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
+          <Minus size={20} className="shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+          Merge as section divider
+          <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Confirm</span>
+        </span>
+        <span className="pl-8 text-xs text-[var(--text-muted)]">
+          Same learner outline behavior as changing a lesson row to a section divider in the catalog.
+        </span>
+      </button>
+      <button
+        type="button"
+        className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2.5 text-center text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]"
+        onClick={onPickOtherType}
+      >
+        Pick a different branch type instead…
+      </button>
+    </div>
+  );
 }
 
 type BranchModalStep =
@@ -1222,7 +1606,7 @@ function AddPathBranchModal({
   mode?: 'add' | 'changeType';
   /** When `mode === 'add'`, skip the kind picker and open the matching step. */
   addPreset?: 'label' | 'course' | 'link' | 'divider' | 'module';
-  /** Root-row change type: only converting to a text label (no course/link/lesson/divider picker). */
+  /** Root-row change type: only converting to an outline module (no course/link/lesson/divider picker). */
   changeTypeRootRowLabelOnly?: boolean;
   /** Section divider rows only make sense under a top-level section, not at the root list. */
   allowSectionDivider?: boolean;
@@ -1230,7 +1614,7 @@ function AddPathBranchModal({
   replaceSource?: PathBranchNode | null;
   /** Under a module row: skip to picking a lesson in that module only. */
   lessonAddContext?: { courseId: string; moduleId: string } | null;
-  /** Show “Course module” in the kind step (top-level outline rows only). */
+  /** Show “Catalog unit” in the kind step (top-level outline rows only). */
   showModuleInKindPicker?: boolean;
 }) {
   const labelCatalog = catalogCoursesForLabels ?? catalogCourses;
@@ -1523,8 +1907,13 @@ function AddPathBranchModal({
             id="path-branch-modal-title"
             className="min-w-0 flex-1 text-center text-base font-bold text-[var(--text-primary)] sm:text-lg"
           >
-            {step === 'kind' && (mode === 'changeType' ? 'Change branch type' : 'Add a branch')}
-            {step === 'label' && (replacing ? 'Text label' : 'Label')}
+            {step === 'kind' &&
+              (mode === 'changeType'
+                ? replaceSource?.kind === 'label'
+                  ? 'Change module type'
+                  : 'Change branch type'
+                : 'Add a branch')}
+            {step === 'label' && (replacing ? 'Rename module' : 'Add module')}
             {step === 'divider' && 'Section divider'}
             {step === 'linkForm' && 'Web link'}
             {step === 'course' && 'Choose course'}
@@ -1551,15 +1940,21 @@ function AddPathBranchModal({
           {step === 'kind' && (
             <div className="flex flex-col gap-3">
               <p className="text-xs leading-relaxed text-[var(--text-muted)]">
-                {mode === 'changeType' ? (
+                {mode === 'changeType' && replaceSource?.kind === 'label' ? (
+                  <>
+                    Pick a new branch type for this outline module. Visibility settings stay the same. Nested rows stay when
+                    the new type allows it. <strong className="text-[var(--text-secondary)]">Section divider</strong> drops
+                    nested rows — same rules as the course catalog when you change module type.
+                  </>
+                ) : mode === 'changeType' ? (
                   <>
                     Pick a new type. Visibility settings stay the same. Nested rows stay under this branch when the new type
                     allows it. <strong className="text-[var(--text-secondary)]">Section divider</strong> drops nested rows.
                   </>
                 ) : (
                   <>
-                    Choose what to add. Use <strong className="text-[var(--text-secondary)]">Add label here</strong> on a
-                    top-level gutter to name a new section label first; under a label, use{' '}
+                    Choose what to add. Use <strong className="text-[var(--text-secondary)]">Add module here</strong> on a
+                    top-level gutter to name a new outline module first; under a module, use{' '}
                     <strong className="text-[var(--text-secondary)]">Add branch here</strong> between nested items (flat
                     list).
                   </>
@@ -1572,11 +1967,11 @@ function AddPathBranchModal({
               >
                 <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
                   <Type size={20} className="shrink-0 text-orange-500" aria-hidden />
-                  Text label
+                  Module
                   <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Fastest</span>
                 </span>
                 <span className="pl-8 text-xs text-[var(--text-muted)]">
-                  Section title or topic (e.g. &quot;Foundations&quot;) — no catalog link yet.
+                  Outline section title or topic (e.g. &quot;Foundations&quot;) — no catalog link yet.
                 </span>
               </button>
               {showModuleInKindPicker ? (
@@ -1591,11 +1986,11 @@ function AddPathBranchModal({
                 >
                   <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
                     <Layers size={20} className="shrink-0 text-indigo-500" aria-hidden />
-                    Course module
+                    Catalog unit
                     <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Top level</span>
                   </span>
                   <span className="pl-8 text-xs text-[var(--text-muted)]">
-                    A catalog module as a section; add only lessons from that module underneath.
+                    A module from the catalog as a section; add only lessons from that unit underneath.
                   </span>
                 </button>
               ) : null}
@@ -1682,7 +2077,7 @@ function AddPathBranchModal({
           {step === 'label' && (
             <div className="space-y-3">
               <label className="block text-xs font-semibold text-[var(--text-secondary)]" htmlFor="path-branch-label-input">
-                Branch label
+                Module title
               </label>
               <input
                 id="path-branch-label-input"
@@ -1694,8 +2089,8 @@ function AddPathBranchModal({
                     commitLabel();
                   }
                 }}
-                placeholder="Enter label name…"
-                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm"
+                placeholder="Enter module name…"
+                className={PATH_BRANCH_SINGLE_LINE_INPUT_CLASS}
                 autoFocus
               />
               <p className="text-xs text-[var(--text-muted)]">
@@ -1707,7 +2102,7 @@ function AddPathBranchModal({
                 onClick={commitLabel}
                 className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-40"
               >
-                {replacing ? 'Save label' : 'Add branch'}
+                {replacing ? 'Save module' : 'Add branch'}
               </button>
             </div>
           )}
@@ -1728,7 +2123,7 @@ function AddPathBranchModal({
                   }
                 }}
                 placeholder="e.g. Week 2, Core concepts"
-                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm"
+                className={PATH_BRANCH_SINGLE_LINE_INPUT_CLASS}
                 autoFocus
               />
               <p className="text-xs text-[var(--text-muted)]">
@@ -1755,7 +2150,7 @@ function AddPathBranchModal({
                 value={linkLabelInput}
                 onChange={(e) => setLinkLabelInput(e.target.value)}
                 placeholder="e.g. Read this blog post"
-                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm"
+                className={`${PATH_BRANCH_SINGLE_LINE_INPUT_CLASS} font-normal`}
                 autoFocus
               />
               <label className="block text-xs font-semibold text-[var(--text-secondary)]" htmlFor="path-branch-link-url">
@@ -1774,7 +2169,7 @@ function AddPathBranchModal({
                   }
                 }}
                 placeholder="https://example.com/article or example.com/path"
-                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 font-mono text-sm"
+                className={`${PATH_BRANCH_SINGLE_LINE_INPUT_CLASS} font-mono font-normal`}
               />
               <p className="text-xs text-[var(--text-muted)]">
                 Opens in a new browser tab for learners. Use a full URL or a domain (https:// is added when omitted).
@@ -1797,7 +2192,7 @@ function AddPathBranchModal({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search by title, category, or id…"
-                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm"
+                className={PATH_BRANCH_COMPACT_SEARCH_INPUT_CLASS}
                 autoFocus
               />
               {filteredCourses.length === 0 ? (
@@ -1843,7 +2238,7 @@ function AddPathBranchModal({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search modules or lessons…"
-                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm"
+                className={PATH_BRANCH_COMPACT_SEARCH_INPUT_CLASS}
                 autoFocus
               />
               {filteredModules.length === 0 ? (
@@ -1880,7 +2275,7 @@ function AddPathBranchModal({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search lessons or modules…"
-                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm"
+                className={PATH_BRANCH_COMPACT_SEARCH_INPUT_CLASS}
                 autoFocus
               />
               {filteredLessons.length === 0 ? (
@@ -1916,11 +2311,12 @@ function AddPathBranchModal({
 function pathBranchKindBadgeShortLabel(kind: PathBranchNode['kind']): string {
   switch (kind) {
     case 'label':
-      return 'Label';
+      return 'Module';
     case 'divider':
       return 'Divider';
+    /** Catalog-backed module row (distinct from a text `Module` / `kind: 'label'` section). */
     case 'module':
-      return 'Module';
+      return 'Unit';
     case 'course':
       return 'Course';
     case 'link':
@@ -1952,14 +2348,14 @@ function pathBranchOutlineVisibility(visibleToRoles: PathOutlineAudienceRole[] |
 
 /** Top-level path inserts: two chips on one gutter (mirrors catalog lesson/module boundary layout). */
 const PATH_TOP_LEVEL_INSERT_PAIR_INNER =
-  'flex w-full min-w-0 flex-col gap-2 max-md:!pl-0 md:flex-row md:flex-wrap md:items-stretch md:justify-center md:gap-2 md:py-1.5';
+  'flex w-full min-w-0 flex-col gap-1.5 max-md:!pl-0 md:flex-row md:flex-wrap md:items-stretch md:justify-center md:gap-1.5 md:py-0.5';
 
 /** Nested path “Add branch here” inner — keep in sync with `CATALOG_LESSON_INSERT_INNER_HOVER` in the course catalog. */
 const PATH_NESTED_BRANCH_INSERT_INNER =
-  'flex w-full pl-3 max-md:!pl-0 items-center justify-center md:min-h-0 md:py-1.5';
+  'flex w-full pl-3 max-md:!pl-0 items-center justify-center md:min-h-0 md:py-0.5';
 
 type PathInsertBranchAtOpts = {
-  /** When adding from a gutter, skip the kind picker and open the matching step (e.g. label name for `preset: 'label'`). */
+  /** When adding from a gutter, skip the kind picker and open the matching step (e.g. module name for `preset: 'label'`). */
   preset?: 'label' | 'course' | 'link' | 'divider' | 'module';
 };
 
@@ -1987,8 +2383,8 @@ function PathBranchInsertSlot({
 }) {
   const atTopLevel = parentId == null;
   const nestedLabel = 'Add branch here';
-  const addLabelHereTitle =
-    'Adds a new top-level section label at this position — choose the name in the dialog (same as picking Text label in Add a branch).';
+  const addModuleHereTitle =
+    'Adds a new top-level outline module at this position — choose the name in the dialog (same as picking Module in Add a branch).';
   const branchUnderAboveTitle =
     'Adds a sub-branch inside the top-level row above this gutter (at the end of that row’s nested list).';
   const nestedTitle = 'Adds a row inside this section at this position among its items.';
@@ -2009,8 +2405,8 @@ function PathBranchInsertSlot({
   } = useInsertStripRevealCursor(true);
   const gutterTitle = atTopLevel
     ? branchUnderAbove
-      ? `${addLabelHereTitle} ${branchUnderAboveTitle}`
-      : addLabelHereTitle
+      ? `${addModuleHereTitle} ${branchUnderAboveTitle}`
+      : addModuleHereTitle
     : nestedTitle;
   return (
     <>
@@ -2033,13 +2429,13 @@ function PathBranchInsertSlot({
             <div className={PATH_TOP_LEVEL_INSERT_PAIR_INNER}>
               <button
                 type="button"
-                title={addLabelHereTitle}
-                aria-label="Add label here"
+                title={addModuleHereTitle}
+                aria-label="Add module here"
                 onClick={() => onInsertBranchAt(parentId, insertIndex, { preset: 'label' })}
                 className={PATH_INSERT_STRIP_CHIP_BTN_EXPAND_ROW_PAIR}
               >
                 <Plus size={14} className="shrink-0 opacity-90" aria-hidden />
-                <span className="text-center">Add label here</span>
+                <span className="text-center">Add module here</span>
               </button>
               <button
                 type="button"
@@ -2058,16 +2454,16 @@ function PathBranchInsertSlot({
               </button>
             </div>
           ) : (
-            <div className="flex w-full max-md:!pl-0 items-center justify-center md:min-h-0 md:py-1.5">
+            <div className="flex w-full max-md:!pl-0 items-center justify-center md:min-h-0 md:py-0.5">
               <button
                 type="button"
-                title={addLabelHereTitle}
-                aria-label="Add label here"
+                title={addModuleHereTitle}
+                aria-label="Add module here"
                 onClick={() => onInsertBranchAt(parentId, insertIndex, { preset: 'label' })}
                 className={PATH_INSERT_STRIP_CHIP_BTN_EXPAND_ROW}
               >
                 <Plus size={14} className="shrink-0 opacity-90" aria-hidden />
-                <span>Add label here</span>
+                <span>Add module here</span>
               </button>
             </div>
           )
@@ -2092,7 +2488,26 @@ function PathBranchInsertSlot({
 
 /** Outline row (nested): one compact row on md — badge, field(s), show, audience, actions (no separate “Title” header row). */
 const PATH_BRANCH_OUTLINE_ROW_GRID =
-  'grid w-full min-w-0 grid-cols-1 gap-y-2 max-md:gap-y-1.5 md:grid-cols-[auto_minmax(0,1fr)_8.25rem_14rem_minmax(7.25rem,max-content)] md:grid-rows-1 md:items-center md:gap-x-3 md:gap-y-1';
+  'grid w-full min-w-0 grid-cols-1 gap-y-1 max-md:gap-y-1 md:grid-cols-[auto_minmax(0,1fr)_8.25rem_14rem_minmax(7.25rem,max-content)] md:grid-rows-1 md:items-center md:gap-x-3 md:gap-y-0';
+
+/**
+ * Same vertical envelope as catalog module title + `ADMIN_CATALOG_KIND_BADGE_BASE` (min-h-11, sm:h-7).
+ * Use for single-line outline fields so rows align with MODULE / LESSON pills.
+ */
+const PATH_BRANCH_SINGLE_LINE_INPUT_CLASS =
+  'box-border min-h-11 w-full min-w-0 rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-0 text-sm font-semibold leading-none text-[var(--text-primary)] placeholder:text-[var(--text-muted)] sm:h-7 sm:min-h-0';
+
+/** Compact search fields in add-branch dialogs (same envelope as outline single-line fields). */
+const PATH_BRANCH_COMPACT_SEARCH_INPUT_CLASS =
+  'box-border min-h-11 w-full min-w-0 rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-0 text-sm font-normal leading-none text-[var(--text-primary)] placeholder:text-[var(--text-muted)] sm:h-7 sm:min-h-0';
+
+/** Compact selects in path modals (matches outline audience select density). */
+const PATH_BRANCH_COMPACT_SELECT_CLASS =
+  'box-border min-h-11 w-full min-w-0 rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-0.5 text-sm leading-none text-[var(--text-primary)] sm:h-7 sm:min-h-0';
+
+/** Path outline row icon buttons (reorder, copy, delete) — same sm+ envelope as single-line fields (`sm:h-7`). */
+const PATH_BRANCH_ROW_ICON_BTN_CLASS =
+  'inline-flex min-h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg text-xs font-semibold disabled:opacity-30 sm:h-7 sm:w-7 sm:min-h-0 sm:min-w-0';
 
 /** Hover / long-press tip for the catalog outline visibility checkbox column. */
 const PATH_BRANCH_SHOW_COLUMN_TIP =
@@ -2119,7 +2534,7 @@ function PathBranchVisibilityCells({
 
   const showCell = (
     <label
-      className="flex min-h-10 cursor-pointer items-center gap-2 touch-manipulation text-xs text-[var(--text-secondary)] md:min-h-0 md:justify-center md:gap-0"
+      className="flex min-h-11 cursor-pointer items-center gap-2 touch-manipulation text-xs text-[var(--text-secondary)] sm:h-7 sm:min-h-0 md:justify-center md:gap-0"
       title={PATH_BRANCH_SHOW_COLUMN_TIP}
     >
       <input
@@ -2153,7 +2568,7 @@ function PathBranchVisibilityCells({
           ? 'Everyone: learners, guests, and admins. Administrators only: row stays in the admin editor but is hidden from the catalog outline for everyone else.'
           : 'Hidden from the catalog outline. Turn on Show to choose who can see this row there.'
       }
-      className={`box-border min-h-10 w-full min-w-0 rounded-lg border px-2 py-2 text-xs sm:px-3 sm:text-sm ${
+      className={`box-border min-h-11 w-full min-w-0 rounded-md border px-2 py-0 text-xs leading-none sm:h-7 sm:min-h-0 sm:px-2 sm:text-sm ${
         showInOutline
           ? 'border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-primary)]'
           : 'cursor-not-allowed border-[var(--border-color)]/50 bg-[var(--bg-secondary)] text-[var(--text-muted)] opacity-60'
@@ -2206,6 +2621,7 @@ function PathBranchRow({
   siblingsLen,
   publishedList,
   expandedBranchIds,
+  rootOutlineLabelCount,
   onToggleCollapse,
   onInsertBranchAt,
   onRemove,
@@ -2224,6 +2640,8 @@ function PathBranchRow({
   publishedList: Course[];
   /** Branch shows nested rows only when its id is in this set. */
   expandedBranchIds: ReadonlySet<string>;
+  /** Depth 0 only: number of top-level `label` rows (for merge-into-module tooltip like the course catalog). */
+  rootOutlineLabelCount?: number;
   onToggleCollapse: (id: string) => void;
   onInsertBranchAt: (
     parentId: string | null,
@@ -2239,11 +2657,13 @@ function PathBranchRow({
   onBranchRowFocus: (id: string) => void;
   onVisibleToRolesChange: (id: string, roles: PathOutlineAudienceRole[]) => void;
 }) {
-  /** Only top-level rows (sections) may hold sub-branches; depth-1 rows are leaves—no sub-sub-branches. */
-  const canNestBranches = b.kind !== 'divider' && depth === 0;
+  /** Section rows (depth 0) and divider rows (grouping) may list sub-branches; other rows are leaves. */
+  const canNestBranches = (depth === 0 && b.kind !== 'divider') || (b.kind === 'divider' && depth >= 1);
   const hasNestedRows = b.children.length > 0;
-  const hasExpandableNested = canNestBranches && hasNestedRows;
-  const isCollapsed = hasExpandableNested && !expandedBranchIds.has(b.id);
+  /** Dividers always use the disclosure control so grouped rows are obvious; collapse only hides when there are children. */
+  const hasExpandableNested =
+    canNestBranches && (hasNestedRows || (b.kind === 'divider' && depth >= 1));
+  const isCollapsed = hasNestedRows && hasExpandableNested && !expandedBranchIds.has(b.id);
   /** Show nested list + insert slots when empty (first sub-branch) or when expanded with children. */
   const showNestedBranchList = canNestBranches && (!hasNestedRows || !isCollapsed);
 
@@ -2262,7 +2682,7 @@ function PathBranchRow({
 
   const rowDivider =
     depth === 0
-      ? 'border-b border-[var(--border-color)]/55 pb-1.5 last:border-b-0 last:pb-0 sm:pb-2'
+      ? ''
       : siblingIndex === 0
         ? 'pt-0 pb-0.5'
         : 'py-0.5';
@@ -2277,56 +2697,93 @@ function PathBranchRow({
     onBranchRowFocus(b.id);
   };
 
-  /** Matches catalog module/lesson: chevron-width column after the kind badge (see `AdminCourseCatalogSection`). */
-  const branchBadgeGroup = (
-    <div className="flex shrink-0 items-center gap-x-1.5">
-      {depth === 0 && b.kind === 'label' && hasExpandableNested ? (
-        <button
-          type="button"
-          data-path-branch-disclosure
-          onMouseDown={(e) => {
-            if (e.button === 0) e.preventDefault();
-          }}
-          onClick={() => onToggleCollapse(b.id)}
-          className={`inline-flex h-7 min-w-[3.25rem] shrink-0 items-center justify-center rounded-md px-3.5 text-[10px] font-bold uppercase leading-none transition-colors hover:bg-[var(--hover-bg)]/80 focus:outline-none focus:ring-2 focus:ring-orange-500/40 ${kindBadgeClass}`}
-          aria-expanded={!isCollapsed}
-          title={isCollapsed ? 'Show nested branches' : 'Hide nested branches'}
-          aria-label={
-            isCollapsed
-              ? `Expand nested branches (${pathBranchKindBadgeShortLabel(b.kind)})`
-              : `Collapse nested branches (${pathBranchKindBadgeShortLabel(b.kind)})`
-          }
-        >
-          {pathBranchKindBadgeShortLabel(b.kind)}
-        </button>
-      ) : depth === 0 && b.kind === 'label' ? (
-        <span
-          className={`inline-flex h-7 min-w-[3.25rem] shrink-0 items-center justify-center rounded-md px-3.5 text-[10px] font-bold uppercase leading-none ${kindBadgeClass}`}
-          title="Section label (edit title in the field)"
-          aria-label={`Branch type: ${pathBranchKindBadgeShortLabel(b.kind)}`}
-        >
-          {pathBranchKindBadgeShortLabel(b.kind)}
-        </span>
-      ) : (
-        <button
-          type="button"
-          onClick={() => onRequestChangeType(b.id)}
-          className={`inline-flex h-7 min-w-[3.25rem] shrink-0 items-center justify-center rounded-md px-3.5 text-[10px] font-bold uppercase leading-none transition-colors hover:ring-2 hover:ring-orange-500/40 focus:outline-none focus:ring-2 focus:ring-orange-500/40 ${kindBadgeClass}`}
-          title="Change branch type"
-          aria-label={`Change branch type, now ${pathBranchKindBadgeShortLabel(b.kind)}`}
-        >
-          {pathBranchKindBadgeShortLabel(b.kind)}
-        </button>
-      )}
-      <span
-        className="inline-flex min-h-11 min-w-11 shrink-0 md:min-h-9 md:min-w-9"
-        aria-hidden
-      />
-    </div>
+  /** Matches catalog module/lesson/divider: kind + chevron on disclosure; sliders open change-type (see `AdminCourseCatalogSection`). */
+  const pathKindBadgeText = pathBranchKindBadgeShortLabel(b.kind);
+  /** Match `ADMIN_CATALOG_KIND_BADGE_BASE`: tall tap target & sm+ fixed height like module pills. */
+  const kindPillSpanClass = `inline-flex min-h-11 min-w-[3.25rem] shrink-0 items-center justify-center rounded-md px-3.5 text-[10px] font-bold uppercase leading-none sm:h-7 sm:min-h-0 ${kindBadgeClass}`;
+
+  const isTopLevelOutlineModuleRow = depth === 0 && b.kind === 'label';
+  const hasAnotherOutlineModuleForMerge =
+    (rootOutlineLabelCount ?? 0) >= 2;
+
+  const changeTypeSlidersButton = (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onRequestChangeType(b.id);
+      }}
+      className="inline-flex min-h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 sm:h-7 sm:w-7 sm:min-h-0 sm:min-w-0"
+      title={
+        isTopLevelOutlineModuleRow
+          ? hasAnotherOutlineModuleForMerge
+            ? 'Change module — merge as section divider into another outline module (pick target and position), or pick another branch type from the next step.'
+            : 'Add another top-level outline module first — then you can merge this section into it as a section divider. You can still pick another branch type from the dialog.'
+          : 'Change branch type'
+      }
+      aria-label={
+        isTopLevelOutlineModuleRow
+          ? `Change module type, now ${pathKindBadgeText}`
+          : `Change branch type, now ${pathKindBadgeText}`
+      }
+    >
+      <SlidersHorizontal size={18} aria-hidden />
+    </button>
   );
 
-  const branchFieldInputClass =
-    'min-h-10 w-full min-w-0 rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]';
+  const branchBadgeGroup = (
+    <div className="flex shrink-0 items-center gap-x-1.5">
+      {hasExpandableNested ? (
+        <>
+          <button
+            type="button"
+            data-path-branch-disclosure
+            onMouseDown={(e) => {
+              if (e.button === 0) e.preventDefault();
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleCollapse(b.id);
+            }}
+            className={`inline-flex min-h-11 min-w-[3.25rem] shrink-0 items-center justify-center gap-1 rounded-md px-3.5 text-[10px] font-bold uppercase leading-none transition-colors hover:bg-[var(--hover-bg)]/80 focus:outline-none focus:ring-2 focus:ring-orange-500/40 sm:h-7 sm:min-h-0 ${kindBadgeClass}`}
+            aria-expanded={!isCollapsed}
+            title={isCollapsed ? 'Show nested branches' : 'Hide nested branches'}
+            aria-label={
+              isCollapsed
+                ? `Expand nested branches (${pathKindBadgeText})`
+                : `Collapse nested branches (${pathKindBadgeText})`
+            }
+          >
+            {pathKindBadgeText}
+            {!isCollapsed ? (
+              <ChevronDown size={14} className="shrink-0 opacity-90" aria-hidden />
+            ) : (
+              <ChevronRight size={14} className="shrink-0 opacity-90" aria-hidden />
+            )}
+          </button>
+          {changeTypeSlidersButton}
+        </>
+      ) : depth === 0 && b.kind === 'label' ? (
+        <>
+          <span
+            className={kindPillSpanClass}
+            title="Module title (edit in the field)"
+            aria-label={`Branch type: ${pathKindBadgeText}`}
+          >
+            {pathKindBadgeText}
+          </span>
+          {changeTypeSlidersButton}
+        </>
+      ) : (
+        <>
+          <span className={kindPillSpanClass} aria-label={`Branch type: ${pathKindBadgeText}`}>
+            {pathKindBadgeText}
+          </span>
+          {changeTypeSlidersButton}
+        </>
+      )}
+    </div>
+  );
 
   const renderOutlineRowMainCells = () => {
     if (b.kind === 'label') {
@@ -2339,9 +2796,9 @@ function PathBranchRow({
             onChange={(e) => onLabelChange(b.id, e.target.value)}
             onClick={(e) => e.stopPropagation()}
             onKeyDown={(e) => e.stopPropagation()}
-            aria-label="Branch label"
-            className={`${branchFieldInputClass} min-w-0 max-md:min-h-10 max-md:flex-1 md:col-start-2 md:row-start-1`}
-            placeholder="Enter label name…"
+            aria-label="Module title"
+            className={`${PATH_BRANCH_SINGLE_LINE_INPUT_CLASS} max-md:flex-1 md:col-start-2 md:row-start-1`}
+            placeholder="Enter module name…"
           />
         </div>
       );
@@ -2357,7 +2814,7 @@ function PathBranchRow({
             onClick={(e) => e.stopPropagation()}
             onKeyDown={(e) => e.stopPropagation()}
             aria-label="Divider text"
-            className={`${branchFieldInputClass} min-w-0 max-md:min-h-10 max-md:flex-1 md:col-start-2 md:row-start-1`}
+            className={`${PATH_BRANCH_SINGLE_LINE_INPUT_CLASS} max-md:flex-1 md:col-start-2 md:row-start-1`}
             placeholder="Divider text (shown in learner outline)"
           />
         </div>
@@ -2376,7 +2833,7 @@ function PathBranchRow({
                 onClick={(e) => e.stopPropagation()}
                 onKeyDown={(e) => e.stopPropagation()}
                 aria-label="Web link title"
-                className="min-h-10 min-w-0 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                className={`${PATH_BRANCH_SINGLE_LINE_INPUT_CLASS} font-normal`}
                 placeholder="Shown in the path outline"
               />
               <input
@@ -2387,7 +2844,7 @@ function PathBranchRow({
                 onClick={(e) => e.stopPropagation()}
                 onKeyDown={(e) => e.stopPropagation()}
                 aria-label="Web link URL"
-                className="min-h-10 min-w-0 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 font-mono text-sm text-[var(--text-primary)]"
+                className={`${PATH_BRANCH_SINGLE_LINE_INPUT_CLASS} font-mono font-normal`}
                 placeholder="https://…"
               />
             </div>
@@ -2398,7 +2855,7 @@ function PathBranchRow({
     return (
       <div className="max-md:flex max-md:min-w-0 max-md:flex-row max-md:flex-wrap max-md:items-center max-md:gap-2 md:contents">
         <div className="flex shrink-0 items-center md:col-start-1 md:row-start-1">{branchBadgeGroup}</div>
-        <span className="flex min-h-10 min-w-0 flex-1 items-center truncate text-sm font-bold text-[var(--text-primary)] max-md:min-h-0 md:col-start-2 md:row-start-1">
+        <span className="flex min-h-11 min-w-0 flex-1 items-center truncate text-sm font-bold leading-none text-[var(--text-primary)] sm:h-7 sm:min-h-0 md:col-start-2 md:row-start-1">
           {branchNodeDisplayLabel(b, publishedList)}
         </span>
       </div>
@@ -2424,7 +2881,7 @@ function PathBranchRow({
           if (e.key === 'ArrowDown' && siblingIndex < siblingsLen - 1)
             onMove(b.id, 1, e.currentTarget);
         }}
-        className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg border border-[var(--border-color)] text-xs font-semibold disabled:opacity-30"
+        className={`${PATH_BRANCH_ROW_ICON_BTN_CLASS} border border-[var(--border-color)]`}
         aria-label="Move up among siblings"
       >
         ↑
@@ -2446,7 +2903,7 @@ function PathBranchRow({
           if (e.key === 'ArrowDown' && siblingIndex < siblingsLen - 1)
             onMove(b.id, 1, e.currentTarget);
         }}
-        className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg border border-[var(--border-color)] text-xs font-semibold disabled:opacity-30"
+        className={`${PATH_BRANCH_ROW_ICON_BTN_CLASS} border border-[var(--border-color)]`}
         aria-label="Move down among siblings"
       >
         ↓
@@ -2457,7 +2914,7 @@ function PathBranchRow({
           e.stopPropagation();
           onCopyBranch(b.id);
         }}
-        className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-[var(--hover-bg)] hover:text-orange-500"
+        className={`${PATH_BRANCH_ROW_ICON_BTN_CLASS} text-[var(--text-muted)] transition-colors hover:bg-[var(--hover-bg)] hover:text-orange-500`}
         aria-label="Copy or move this branch — choose destination in the dialog"
         title="Copy or move branch"
       >
@@ -2466,7 +2923,7 @@ function PathBranchRow({
       <button
         type="button"
         onClick={() => onRemove(b.id)}
-        className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg text-red-400 hover:bg-red-500/10"
+        className={`${PATH_BRANCH_ROW_ICON_BTN_CLASS} text-red-400 hover:bg-red-500/10`}
         aria-label="Remove branch and nested items"
       >
         <Trash2 size={16} />
@@ -2479,10 +2936,12 @@ function PathBranchRow({
       data-path-branch-node-id={b.id}
       className={`min-w-0 list-none ${rowDivider}${
         depth === 0
-          ? `grid grid-cols-1 gap-y-2 px-3 py-2 max-md:gap-y-1.5 max-md:px-2 max-md:py-1.5 sm:px-4 md:grid md:grid-cols-[auto_minmax(0,1fr)_8.25rem_14rem_minmax(7.25rem,max-content)] md:gap-x-3 ${
-              showNestedBranchList ? 'md:grid-rows-[auto_auto] md:gap-y-0' : 'md:grid-rows-1 md:items-center md:gap-y-1'
+          ? `grid grid-cols-1 gap-y-1 px-2 py-1 max-md:gap-y-1 max-md:px-2 max-md:py-1 sm:px-3 md:grid md:grid-cols-[auto_minmax(0,1fr)_8.25rem_14rem_minmax(7.25rem,max-content)] md:items-stretch md:gap-x-3 md:px-4 md:py-1 ${
+              showNestedBranchList ? 'md:grid-rows-[auto_auto] md:gap-y-0' : 'md:grid-rows-1 md:gap-y-0'
             }`
-          : ''
+          : showNestedBranchList
+            ? 'flex w-full min-w-0 flex-col'
+            : ''
       }`}
       onFocusCapture={depth === 0 ? onBranchRowFocusCapture : undefined}
     >
@@ -2497,7 +2956,7 @@ function PathBranchRow({
             topLevelGridSecondRow
           />
           <div className="max-md:flex max-md:w-full max-md:justify-end md:contents">
-            <div className="flex items-center justify-end gap-1 max-md:col-span-full max-md:col-start-1 max-md:row-auto md:col-start-5 md:row-start-1 md:self-center">
+            <div className="flex items-center justify-end gap-1 max-md:col-span-full max-md:col-start-1 max-md:row-auto md:col-start-5 md:row-start-1 md:justify-end">
               {branchActionButtons}
             </div>
           </div>
@@ -2506,8 +2965,8 @@ function PathBranchRow({
         <div
           className={`${PATH_BRANCH_OUTLINE_ROW_GRID} ${
             siblingIndex === 0
-              ? 'max-md:pb-1.5 max-md:pt-0 pb-2 pt-0 sm:pb-2 sm:pt-0'
-              : 'max-md:py-1.5 py-2 sm:py-2'
+              ? 'max-md:pb-1 max-md:pt-0 pb-1.5 pt-0 sm:pb-1.5 sm:pt-0'
+              : 'max-md:py-1 py-1.5 sm:py-1.5'
           }`}
           onFocusCapture={onBranchRowFocusCapture}
           role="group"
@@ -2529,7 +2988,7 @@ function PathBranchRow({
         </div>
       )}
       {showNestedBranchList ? (
-        <div className="col-span-full min-w-0 md:row-start-2">
+        <div className="col-span-full min-w-0 w-full md:row-start-2">
           <PathBranchTreeList
             parentId={b.id}
             nodes={b.children}
@@ -2591,13 +3050,16 @@ function PathBranchTreeList({
   onVisibleToRolesChange: (id: string, roles: PathOutlineAudienceRole[]) => void;
 }) {
   const insKey = parentId ?? 'root';
+  /** At depth 0 only: count of top-level outline modules (`label`), for catalog-style “Change module type” merge UX. */
+  const rootOutlineLabelCount =
+    depth === 0 ? nodes.filter((n) => n.kind === 'label').length : undefined;
   const list = (
     <ul
       className={
         depth > 0
           ? 'space-y-0 border-l border-[var(--border-color)]/50 pl-2 sm:pl-3'
-          : // Reserve space so the first md “between rows” insert strip does not overlap controls above the list.
-            'space-y-0 pt-3 md:pt-4'
+            : // Reserve a little space so the first md “between rows” insert strip does not overlap controls above the list.
+            'space-y-0 pt-0 sm:pt-0.5 md:pt-1'
       }
     >
       <Fragment key={`ins-${insKey}-0`}>
@@ -2620,6 +3082,7 @@ function PathBranchTreeList({
             siblingsLen={nodes.length}
             publishedList={publishedList}
             expandedBranchIds={expandedBranchIds}
+            rootOutlineLabelCount={rootOutlineLabelCount}
             onToggleCollapse={onToggleCollapse}
             onInsertBranchAt={onInsertBranchAt}
             onRemove={onRemove}
@@ -2634,8 +3097,8 @@ function PathBranchTreeList({
           {/* Trailing nested gutter duplicates the top-level strip’s “Add branch here” (append under the parent row). */}
           {!(parentId !== null && depth > 0 && i === nodes.length - 1) ? (
             <PathBranchInsertSlot
-              parentId={parentId}
-              insertIndex={i + 1}
+              parentId={b.kind === 'divider' ? b.id : parentId}
+              insertIndex={b.kind === 'divider' ? b.children.length : i + 1}
               previousTopLevelSibling={parentId === null ? b : undefined}
               onInsertBranchAt={onInsertBranchAt}
             />
@@ -2692,6 +3155,14 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
   const [pathSelector, setPathSelector] = useState<string>('');
   /** Bumps when starting a new path draft so we focus Path title even if the allocated id matches the previous draft. */
   const [pathTitleFocusKey, setPathTitleFocusKey] = useState(0);
+  /** Collapsible path title / description (matches Course details in the catalog). */
+  const [pathDetailsOpen, setPathDetailsOpen] = useState(false);
+  const pathDetailsDisclosureRef = useRef<HTMLDivElement | null>(null);
+  const prevPathDetailsOpenRef = useRef(false);
+  /** Mirrors catalog picker state so we keep Path details open after first save (`__new__` → same id). */
+  const prevPathPickerRef = useRef<{ selector: string; draftId?: string }>({ selector: '' });
+  /** Set when save rejected empty title — red border until the user edits the title. */
+  const [showPathTitleRequiredHint, setShowPathTitleRequiredHint] = useState(false);
   /** Shown after Save when the path has no courses (inline hint like module field errors). */
   const [showPathCourseRequiredHint, setShowPathCourseRequiredHint] = useState(false);
   const [pathDraft, setPathDraft] = useState<LearningPath | null>(null);
@@ -2722,6 +3193,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
         lessonAddContext?: { courseId: string; moduleId: string };
       }
     | { kind: 'changeType'; nodeId: string }
+    | { kind: 'changeOutlineModuleMerge'; nodeId: string }
     | { kind: 'duplicatePlace'; sourceSnapshot: PathBranchNode; sourceParentId: string | null };
   const [branchModal, setBranchModal] = useState<BranchModalState>({ kind: 'closed' });
   /** Branch rows with children are collapsed unless their id is in this set. Siblings accordion (only one expanded among same-parent children at any depth). */
@@ -2735,6 +3207,15 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     | { kind: 'duplicatePath' };
 
   const [pathConfirmDialog, setPathConfirmDialog] = useState<PathConfirmKind | null>(null);
+
+  /** Divider delete: choose hoist nested rows vs delete subtree (only when divider has children). */
+  const [dividerRemovePending, setDividerRemovePending] = useState<{
+    id: string;
+    label: string;
+    nestedCount: number;
+  } | null>(null);
+
+  const closeDividerRemoveDialog = useCallback(() => setDividerRemovePending(null), []);
 
   const toggleBranchCollapse = useCallback(
     (id: string) => {
@@ -2762,11 +3243,22 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
 
   const handleRemoveBranch = useCallback(
     (id: string) => {
-      const before = deepClone(pathBranchTreeRef.current);
-      const removed = findBranchNode(before, id);
+      const roots = pathBranchTreeRef.current;
+      const removed = findBranchNode(roots, id);
+      if (removed?.kind === 'divider' && removed.children.length > 0) {
+        const raw = branchNodeDisplayLabel(removed, publishedList);
+        const label = raw.length > 72 ? `${raw.slice(0, 70)}…` : raw;
+        setDividerRemovePending({
+          id,
+          label,
+          nestedCount: removed.children.length,
+        });
+        return;
+      }
+      const before = deepClone(roots);
       const raw = removed ? branchNodeDisplayLabel(removed, publishedList) : 'Branch';
       const label = raw.length > 72 ? `${raw.slice(0, 70)}…` : raw;
-      setPathBranchTree((roots) => removeNodeById(roots, id));
+      setPathBranchTree((r) => removeNodeById(r, id));
       showActionToast(`“${label}” removed.`, {
         variant: 'neutral',
         undo: () => setPathBranchTree(before),
@@ -2775,6 +3267,51 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     },
     [publishedList, showActionToast]
   );
+
+  const confirmDividerRemoveHoistNested = useCallback(() => {
+    const pending = dividerRemovePending;
+    if (!pending) return;
+    const beforeOp = deepClone(pathBranchTreeRef.current);
+    const next = hoistDividerChildrenInForest(beforeOp, pending.id);
+    if (next == null) {
+      showActionToast('Could not remove that divider from the outline.', 'danger');
+      setDividerRemovePending(null);
+      return;
+    }
+    setPathBranchTree(next);
+    setExpandedBranchIds((prev) => {
+      const n = new Set(prev);
+      n.delete(pending.id);
+      return n;
+    });
+    setDividerRemovePending(null);
+    showActionToast(`Divider removed; ${pending.nestedCount} row(s) kept in the module list.`, {
+      variant: 'neutral',
+      undo: () => setPathBranchTree(beforeOp),
+      undoLabel: 'Undo',
+    });
+  }, [dividerRemovePending, showActionToast]);
+
+  const confirmDividerRemoveDeleteNested = useCallback(() => {
+    const pending = dividerRemovePending;
+    if (!pending) return;
+    const beforeOp = deepClone(pathBranchTreeRef.current);
+    const removed = findBranchNode(beforeOp, pending.id);
+    setPathBranchTree((r) => removeNodeById(r, pending.id));
+    setExpandedBranchIds((prev) => {
+      const n = new Set(prev);
+      stripBranchExpandState(n, beforeOp, pending.id);
+      return n;
+    });
+    setDividerRemovePending(null);
+    const raw = removed ? branchNodeDisplayLabel(removed, publishedList) : 'Divider';
+    const label = raw.length > 72 ? `${raw.slice(0, 70)}…` : raw;
+    showActionToast(`“${label}” and all rows under it removed.`, {
+      variant: 'neutral',
+      undo: () => setPathBranchTree(beforeOp),
+      undoLabel: 'Undo',
+    });
+  }, [dividerRemovePending, publishedList, showActionToast]);
 
   const handleDuplicateBranch = useCallback((id: string) => {
     const roots = pathBranchTreeRef.current;
@@ -2957,6 +3494,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
 
   useEffect(() => {
     if (pathSelector !== '__new__' || !pathDraft || pathTitleFocusKey === 0) return;
+    if (!pathDetailsOpen) return;
     const rafId = requestAnimationFrame(() => {
       const el = document.getElementById('admin-path-title') as HTMLInputElement | null;
       if (!el) return;
@@ -2964,7 +3502,111 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
       el.focus({ preventScroll: true });
     });
     return () => cancelAnimationFrame(rafId);
-  }, [pathSelector, pathDraft?.id, pathTitleFocusKey]);
+  }, [pathSelector, pathDraft?.id, pathTitleFocusKey, pathDetailsOpen]);
+
+  /** Match catalog: new path shows details expanded; switching paths collapses unless first save keeps same id. */
+  useEffect(() => {
+    const prev = prevPathPickerRef.current;
+    const did = pathDraft?.id;
+
+    if (pathSelector === '__new__') {
+      setPathDetailsOpen(true);
+      prevPathPickerRef.current = { selector: '__new__', draftId: did };
+      return;
+    }
+    if (!pathSelector) {
+      setPathDetailsOpen(false);
+      setShowPathTitleRequiredHint(false);
+      prevPathPickerRef.current = { selector: '', draftId: undefined };
+      return;
+    }
+
+    if (prev.selector === '__new__' && did && pathSelector === did) {
+      prevPathPickerRef.current = { selector: pathSelector, draftId: did };
+      return;
+    }
+
+    setPathDetailsOpen(false);
+    setShowPathTitleRequiredHint(false);
+    prevPathPickerRef.current = { selector: pathSelector, draftId: did };
+  }, [pathSelector, pathDraft?.id]);
+
+  /** Whenever Path details goes from collapsed → expanded, scroll the panel to the top. */
+  useLayoutEffect(() => {
+    const wasOpen = prevPathDetailsOpenRef.current;
+    prevPathDetailsOpenRef.current = pathDetailsOpen;
+    if (!pathDetailsOpen || wasOpen) return;
+    scrollDisclosureRowToTop(null, pathDetailsDisclosureRef.current);
+  }, [pathDetailsOpen]);
+
+  const tipsNarrowViewport = useTipsNarrowViewport();
+  const pathOutlineTipsWrapRef = useRef<HTMLSpanElement | null>(null);
+  const pathOutlineTipBtnRef = useRef<HTMLButtonElement | null>(null);
+  const [pathOutlineTipsOpen, setPathOutlineTipsOpen] = useState(false);
+  const [pathOutlineTipFixedTop, setPathOutlineTipFixedTop] = useState(-1);
+
+  const syncPathOutlineTipTop = useCallback(() => {
+    if (!tipsNarrowViewport || !pathOutlineTipsOpen || !pathOutlineTipBtnRef.current) return;
+    setPathOutlineTipFixedTop(readFixedTipTopBelowAnchor(pathOutlineTipBtnRef.current));
+  }, [tipsNarrowViewport, pathOutlineTipsOpen]);
+
+  useLayoutEffect(() => {
+    if (!pathOutlineTipsOpen) {
+      setPathOutlineTipFixedTop(-1);
+      return;
+    }
+    if (!tipsNarrowViewport || !pathOutlineTipBtnRef.current) {
+      setPathOutlineTipFixedTop(-1);
+      return;
+    }
+    setPathOutlineTipFixedTop(readFixedTipTopBelowAnchor(pathOutlineTipBtnRef.current));
+  }, [pathOutlineTipsOpen, tipsNarrowViewport]);
+
+  useEffect(() => {
+    if (!tipsNarrowViewport) {
+      setPathOutlineTipFixedTop(-1);
+    }
+  }, [tipsNarrowViewport]);
+
+  useEffect(() => {
+    if (!pathDraft) setPathOutlineTipsOpen(false);
+  }, [pathDraft]);
+
+  useEffect(() => {
+    setPathOutlineTipsOpen(false);
+  }, [pathSelector]);
+
+  useEffect(() => {
+    if (!pathOutlineTipsOpen) return;
+    const onDoc = (e: PointerEvent) => {
+      const t = e.target;
+      if (!(t instanceof Node)) return;
+      if (pathOutlineTipsWrapRef.current?.contains(t)) return;
+      setPathOutlineTipsOpen(false);
+    };
+    document.addEventListener('pointerdown', onDoc, true);
+    return () => document.removeEventListener('pointerdown', onDoc, true);
+  }, [pathOutlineTipsOpen]);
+
+  useEffect(() => {
+    if (!pathOutlineTipsOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPathOutlineTipsOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [pathOutlineTipsOpen]);
+
+  useEffect(() => {
+    if (!tipsNarrowViewport || !pathOutlineTipsOpen || pathOutlineTipFixedTop < 0) return;
+    const onMove = () => syncPathOutlineTipTop();
+    window.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
+    return () => {
+      window.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
+    };
+  }, [tipsNarrowViewport, pathOutlineTipsOpen, pathOutlineTipFixedTop, syncPathOutlineTipTop]);
 
   useEffect(() => {
     if (!pathSelector) {
@@ -3066,7 +3708,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
   }, [branchModal, pathBranchTree, changeTypeSource]);
 
   useEffect(() => {
-    if (branchModal.kind !== 'changeType') return;
+    if (branchModal.kind !== 'changeType' && branchModal.kind !== 'changeOutlineModuleMerge') return;
     if (!findBranchNode(pathBranchTree, branchModal.nodeId)) {
       setBranchModal({ kind: 'closed' });
     }
@@ -3074,8 +3716,12 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
 
   const branchModalContextHint = useMemo(() => {
     if (branchModal.kind === 'changeType') {
+      const src = findBranchNode(pathBranchTree, branchModal.nodeId);
+      if (isRootBranchId(pathBranchTree, branchModal.nodeId) && src?.kind === 'label') {
+        return 'Outline module: pick a new branch type. Nested rows stay when the new type allows; a section divider drops nested rows.';
+      }
       if (isRootBranchId(pathBranchTree, branchModal.nodeId)) {
-        return 'Top-level rows are a section label or a course module. Pick a new type; nested rows stay when the new type allows.';
+        return 'Top-level rows are an outline module or a catalog unit. Pick a new type; nested rows stay when the new type allows.';
       }
       return 'Pick a new type. Nested rows are removed if you choose a section divider; otherwise they stay when the new type allows.';
     }
@@ -3085,15 +3731,15 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
           ? ' Inserts at the position you chose in the list.'
           : '';
       if (branchModal.parentId == null) {
-        return `Top level: Add label here opens the name step first; or pick module, course, link, or (where allowed) divider below.${pos}`;
+        return `Top level: Add module here opens the name step first; or pick catalog unit, whole course, link, or (where allowed) divider below.${pos}`;
       }
       const p = findBranchNode(pathBranchTree, branchModal.parentId);
       if (p?.kind === 'module') {
         return `Under module: ${branchNodeDisplayLabel(p, publishedList)} — pick a lesson from this module only.${pos}`;
       }
       return p
-        ? `Inside section: ${branchNodeDisplayLabel(p, publishedList)}.${pos}`
-        : `Inside section.${pos}`;
+        ? `Inside module: ${branchNodeDisplayLabel(p, publishedList)}.${pos}`
+        : `Inside module.${pos}`;
     }
     return undefined;
   }, [branchModal, pathBranchTree, publishedList]);
@@ -3102,6 +3748,12 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     () => collectPathBranchStructureIssues(pathBranchTree, publishedList),
     [pathBranchTree, publishedList]
   );
+
+  const pathOutlineCounts = useMemo(() => {
+    const topLevelCount = pathBranchTree.length;
+    const totalRowCount = countPathBranchTreeNodes(pathBranchTree);
+    return { topLevelCount, totalRowCount };
+  }, [pathBranchTree]);
 
   const applyPickNewPath = useCallback(async () => {
     const reserveIds = pathSelector === '__new__' && pathDraft?.id ? [pathDraft.id] : [];
@@ -3319,12 +3971,24 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     }
   }, [pathConfirmDialog, pathSelector, pathDraft]);
 
-  useBodyScrollLock(!!pathConfirmDialog || branchModal.kind !== 'closed' || pathTitleConflict !== null);
+  useBodyScrollLock(
+    !!pathConfirmDialog ||
+      branchModal.kind !== 'closed' ||
+      pathTitleConflict !== null ||
+      dividerRemovePending !== null
+  );
 
   useDialogKeyboard({
     open: !!pathConfirmDialog,
     onClose: closePathConfirmDialog,
     onPrimaryAction: confirmPathDialogPrimary,
+  });
+
+  useDialogKeyboard({
+    open: !!dividerRemovePending,
+    onClose: closeDividerRemoveDialog,
+    /** Safe default: keep nested rows (same as the primary “Keep rows” action). */
+    onPrimaryAction: confirmDividerRemoveHoistNested,
   });
 
   useEffect(() => {
@@ -3346,7 +4010,15 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     if (!pathDraft) return;
     if (!pathDraft.title.trim()) {
       setShowPathCourseRequiredHint(false);
+      setShowPathTitleRequiredHint(true);
+      setPathDetailsOpen(true);
       showActionToast('Add a path title before saving.', 'danger');
+      requestAnimationFrame(() => {
+        const el = document.getElementById('admin-path-title') as HTMLInputElement | null;
+        if (!el) return;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.focus({ preventScroll: true });
+      });
       return;
     }
 
@@ -3477,6 +4149,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
         savingLabel="path"
         conflict={pathTitleConflict}
         renameFieldId="admin-path-title"
+        onPrepareRenameField={() => setPathDetailsOpen(true)}
         onClose={() => setPathTitleConflict(null)}
       />
       {actionToast}
@@ -3492,131 +4165,118 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
       )}
 
       <div className="space-y-3">
-        <div className="flex flex-col gap-3 md:grid md:grid-cols-[minmax(0,1.5fr)_minmax(0,0.85fr)_minmax(0,0.85fr)_auto] md:items-start md:gap-x-3 md:gap-y-3">
-          <div className="flex min-w-0 flex-col gap-1">
-            <AdminLabelInfoTip
-              htmlFor="admin-learning-path-select"
-              label="Path"
-              tipId="admin-path-field-tips"
-              tipRegionAriaLabel="Path field tips"
-              tipSubject="Path"
+        <div className="min-w-0 pb-0.5 md:overflow-x-auto md:overflow-y-visible md:[-webkit-overflow-scrolling:touch]">
+          <div className="flex w-full min-w-0 flex-col gap-3 md:min-w-[min(100%,920px)] lg:flex-row lg:flex-nowrap lg:items-center lg:gap-3 lg:overflow-x-auto lg:overflow-y-visible lg:[-webkit-overflow-scrolling:touch] lg:[scrollbar-width:none] lg:[&::-webkit-scrollbar]:hidden">
+            <div className="flex min-h-6 min-w-0 shrink-0 flex-wrap items-center gap-x-1.5 gap-y-1 lg:shrink-0">
+              <AdminLabelInfoTip
+                htmlFor="admin-learning-path-select"
+                label="Path"
+                tipId="admin-path-field-tips"
+                tipRegionAriaLabel="Path field tips"
+                tipSubject="Path"
+              >
+                <li>
+                  {isCreatorPaths
+                    ? 'Saves to your private creator path + outline (Firestore).'
+                    : 'Saves go to the live path and outline (Firestore).'}
+                </li>
+                <li>
+                  Open <strong className="font-semibold text-[var(--text-secondary)]">Path</strong> once to load titles.
+                </li>
+                {isCreatorPaths ? (
+                  <li>
+                    <strong className="font-semibold text-[var(--text-secondary)]">Create new path</strong> assigns a
+                    unique id automatically; paths are listed A–Z by title.
+                  </li>
+                ) : (
+                  <li>
+                    <strong className="font-semibold text-[var(--text-secondary)]">Create new path</strong>: next id{' '}
+                    <code className="text-orange-500/90">P1</code>, <code className="text-orange-500/90">P2</code>…; list
+                    A–Z.
+                  </li>
+                )}
+                <li>
+                  {isCreatorPaths
+                    ? 'Add courses from the Catalog tab to the outline — path rows only offer courses you have created there.'
+                    : 'Add any course from the live catalog. Learners only see course/lesson rows when the course is published in the Catalog tab and Show is on for that row.'}
+                </li>
+              </AdminLabelInfoTip>
+            </div>
+            <select
+              id="admin-learning-path-select"
+              value={pathSelector}
+              onChange={(e) => pickPath(e.target.value)}
+              disabled={pathsLoading}
+              className="admin-toolbar-main-select box-border min-h-11 min-w-0 w-full touch-manipulation rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50 md:text-sm lg:min-w-[12rem] lg:flex-1 lg:max-w-none"
             >
-              <li>
-                {isCreatorPaths
-                  ? 'Saves to your private creator path + outline (Firestore).'
-                  : 'Saves go to the live path and outline (Firestore).'}
-              </li>
-              <li>
-                Open <strong className="font-semibold text-[var(--text-secondary)]">Path</strong> once to load titles.
-              </li>
-              {isCreatorPaths ? (
-                <li>
-                  <strong className="font-semibold text-[var(--text-secondary)]">Create new path</strong> assigns a
-                  unique id automatically; paths are listed A–Z by title.
-                </li>
-              ) : (
-                <li>
-                  <strong className="font-semibold text-[var(--text-secondary)]">Create new path</strong>: next id{' '}
-                  <code className="text-orange-500/90">P1</code>, <code className="text-orange-500/90">P2</code>…; list
-                  A–Z.
-                </li>
+              <option value="" disabled>
+                Choose a path…
+              </option>
+              {!pathsLoading && (
+                <>
+                  <option value="__new__">+ Create new path</option>
+                  {sortedPaths.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.title || p.id} ({p.id})
+                    </option>
+                  ))}
+                </>
               )}
-              <li>
-                {isCreatorPaths
-                  ? 'Add courses from the Catalog tab to the outline — path rows only offer courses you have created there.'
-                  : 'Add any course from the live catalog. Learners only see course/lesson rows when the course is published in the Catalog tab and Show is on for that row.'}
-              </li>
-            </AdminLabelInfoTip>
-            <div className="flex min-w-0 items-stretch gap-2">
-              <select
-                id="admin-learning-path-select"
-                value={pathSelector}
-                onChange={(e) => pickPath(e.target.value)}
-                disabled={pathsLoading}
-                className="box-border min-h-11 min-w-0 flex-1 touch-manipulation rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-[42px] sm:text-sm"
-              >
-                <option value="" disabled>
-                  Choose a path…
-                </option>
-                {!pathsLoading && (
-                  <>
-                    <option value="__new__">+ Create new path</option>
-                    {sortedPaths.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.title || p.id} ({p.id})
-                      </option>
-                    ))}
-                  </>
-                )}
-              </select>
-              {pathSelector !== '__new__' && pathSelector !== '' ? (
-                <button
-                  type="button"
-                  disabled={
-                    pathsLoading ||
-                    !pathSelector ||
-                    !paths.some((p) => p.id === pathSelector)
-                  }
-                  onClick={requestDuplicatePathOrConfirm}
-                  title="Clone the selected path into a new draft with a new path id"
-                  aria-label="Duplicate path as new draft"
-                  className="inline-flex shrink-0 items-center justify-center rounded-lg border border-[var(--border-color)] px-2.5 min-h-[42px] min-w-[42px] hover:bg-[var(--hover-bg)] disabled:pointer-events-none disabled:opacity-40"
+            </select>
+            <div className="flex min-w-0 flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:justify-between md:gap-x-4 md:gap-y-2 lg:flex-row lg:flex-nowrap lg:items-center lg:justify-start lg:gap-x-3 lg:gap-y-0 lg:shrink-0">
+              <div className="flex w-full min-w-0 flex-row flex-nowrap items-center gap-2 overflow-x-auto overflow-y-visible overscroll-x-contain border-t border-[var(--border-color)]/60 pt-3 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] md:w-auto md:max-w-[min(100%,42rem)] md:flex-wrap md:overflow-visible md:border-t-0 md:pt-0 lg:w-auto lg:max-w-none lg:flex-nowrap lg:shrink-0 [&::-webkit-scrollbar]:hidden">
+                <div className="flex min-w-0 shrink-0 flex-nowrap items-center gap-2">
+                  <div
+                    className="box-border flex min-w-0 max-w-full shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm font-mono text-[var(--text-primary)] md:px-2.5"
+                    aria-live="polite"
+                    title="Firestore document id"
+                  >
+                    <Hash size={16} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+                    {pathDraft ? (
+                      <span className="truncate text-orange-500/90">{pathDraft.id}</span>
+                    ) : (
+                      <span className="text-[var(--text-muted)]">—</span>
+                    )}
+                  </div>
+                  {pathSelector !== '__new__' && pathSelector !== '' ? (
+                    <button
+                      type="button"
+                      disabled={
+                        pathsLoading || !pathSelector || !paths.some((p) => p.id === pathSelector)
+                      }
+                      onClick={requestDuplicatePathOrConfirm}
+                      title="Clone the selected path into a new draft with a new path id"
+                      aria-label="Duplicate path as new draft"
+                      className="inline-flex size-11 shrink-0 touch-manipulation items-center justify-center rounded-lg border border-[var(--border-color)] hover:bg-[var(--hover-bg)] disabled:pointer-events-none disabled:opacity-40"
+                    >
+                      <Copy size={18} aria-hidden />
+                    </button>
+                  ) : null}
+                </div>
+                <div
+                  className="box-border flex min-h-11 min-w-[7.5rem] max-w-[min(100%,16rem)] shrink-0 items-center gap-1.5 rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm text-[var(--text-primary)] md:max-w-none md:px-2.5"
+                  aria-live="polite"
+                  title="Distinct courses referenced in this path outline"
                 >
-                  <Copy size={18} aria-hidden />
-                </button>
-              ) : null}
-            </div>
-          </div>
-          <div className="grid min-w-0 grid-cols-2 gap-2 md:contents">
-            <div className="flex min-w-0 flex-col gap-1">
-              <div className="flex min-h-6 min-w-0 items-center">
-                <span className="text-xs font-semibold leading-none text-[var(--text-secondary)]">Path id</span>
+                  <Layers size={16} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+                  {pathDraft ? (
+                    <span className="min-w-0 truncate">
+                      {pathDraft.courseIds.length === 0
+                        ? 'None yet'
+                        : pathDraft.courseIds.length === 1
+                          ? '1 course'
+                          : `${pathDraft.courseIds.length} courses`}
+                    </span>
+                  ) : (
+                    <span className="text-[var(--text-muted)]">—</span>
+                  )}
+                </div>
               </div>
               <div
-                className="box-border flex min-h-[42px] w-full min-w-0 items-center rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm font-mono text-[var(--text-primary)] md:px-3"
-                aria-live="polite"
-                title="Firestore document id"
+                className="flex w-full min-w-0 shrink-0 flex-row flex-nowrap items-center gap-1.5 overflow-x-auto overflow-y-visible overscroll-x-contain border-t border-[var(--border-color)]/60 py-1 pt-3 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] md:ml-auto md:w-auto md:flex-wrap md:justify-end md:gap-2 md:overflow-visible md:border-t-0 md:py-0 md:pt-0 lg:ml-0 lg:w-auto lg:shrink-0 lg:justify-start [&::-webkit-scrollbar]:hidden"
+                role="group"
+                aria-label="Path actions"
               >
-                {pathDraft ? (
-                  <span className="truncate text-orange-500/90">{pathDraft.id}</span>
-                ) : (
-                  <span className="text-[var(--text-muted)]">—</span>
-                )}
-              </div>
-            </div>
-            <div className="flex min-w-0 flex-col gap-1">
-              <div className="flex min-h-6 min-w-0 items-center">
-                <span className="text-xs font-semibold leading-none text-[var(--text-secondary)]">Linked courses</span>
-              </div>
-              <div
-                className="box-border flex min-h-[42px] w-full min-w-0 items-center rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm text-[var(--text-primary)] md:px-3"
-                aria-live="polite"
-              >
-                {pathDraft ? (
-                  <span>
-                    {pathDraft.courseIds.length === 0
-                      ? 'None yet'
-                      : pathDraft.courseIds.length === 1
-                        ? '1 course'
-                        : `${pathDraft.courseIds.length} courses`}
-                  </span>
-                ) : (
-                  <span className="text-[var(--text-muted)]">—</span>
-                )}
-              </div>
-            </div>
-          </div>
-          <div className="flex min-w-0 w-full flex-col gap-1 md:w-auto md:max-w-full">
-            <div className="flex min-h-6 min-w-0 items-center">
-              <span className="text-xs font-semibold leading-none text-[var(--text-secondary)] max-md:sr-only">
-                Actions
-              </span>
-            </div>
-            <div
-              className="flex min-w-0 flex-nowrap items-center justify-start gap-2 overflow-x-auto pb-0.5 [-webkit-overflow-scrolling:touch] md:justify-end"
-              role="group"
-              aria-label="Path actions"
-            >
               <div className="flex min-w-0 items-center gap-2">
                 <button
                   type="button"
@@ -3744,6 +4404,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
             </div>
           </div>
         </div>
+        </div>
         {!isCreatorPaths &&
         pathDraft &&
         isLearningPathCatalogPublished(pathDraft) &&
@@ -3768,59 +4429,157 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
       ) : null}
 
       {pathDraft ? (
-        <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block min-w-0 space-y-1 sm:col-span-2" htmlFor="admin-path-title">
-              <span className="text-xs font-semibold text-[var(--text-secondary)]">Title</span>
-              <input
-                id="admin-path-title"
-                value={pathDraft.title}
-                onChange={(e) => setPathDraft((p) => (p ? { ...p, title: e.target.value } : p))}
-                placeholder="Short name shown to learners (e.g. Full-Stack Track)"
-                className="w-full min-w-0 rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-base sm:text-sm"
-              />
-            </label>
-            <label className="block min-w-0 space-y-1 sm:col-span-2">
-              <span className="text-xs font-semibold text-[var(--text-secondary)]">Description (optional)</span>
-              <textarea
-                value={pathDraft.description ?? ''}
-                onChange={(e) =>
-                  setPathDraft((p) => (p ? { ...p, description: e.target.value || undefined } : p))
-                }
-                rows={2}
-                className="w-full resize-y rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-base sm:text-sm"
-              />
-            </label>
+        <div className="space-y-3">
+          <div
+            ref={pathDetailsDisclosureRef}
+            className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/20"
+          >
+            <button
+              type="button"
+              onClick={() => setPathDetailsOpen((v) => !v)}
+              className="flex w-full min-w-0 items-center justify-between gap-2 px-4 py-3 text-left"
+              aria-expanded={pathDetailsOpen}
+              aria-label={`Path details, ${pathOutlineCounts.topLevelCount} top-level outline row${
+                pathOutlineCounts.topLevelCount === 1 ? '' : 's'
+              }, ${pathOutlineCounts.totalRowCount} total row${pathOutlineCounts.totalRowCount === 1 ? '' : 's'}`}
+            >
+              <span className="min-w-0 truncate text-sm font-bold text-[var(--text-primary)]">Path details</span>
+              <span className="flex min-w-0 shrink-0 items-center gap-2 sm:gap-3">
+                <span className="text-right text-xs font-medium tabular-nums text-[var(--text-muted)]">
+                  {pathOutlineCounts.topLevelCount}{' '}
+                  {pathOutlineCounts.topLevelCount === 1 ? 'top-level row' : 'top-level rows'}
+                  <span aria-hidden> . </span>
+                  {pathOutlineCounts.totalRowCount}{' '}
+                  {pathOutlineCounts.totalRowCount === 1 ? 'row' : 'rows'} total
+                </span>
+                {pathDetailsOpen ? (
+                  <ChevronDown size={16} className="shrink-0 text-[var(--text-secondary)]" aria-hidden />
+                ) : (
+                  <ChevronRight size={16} className="shrink-0 text-[var(--text-secondary)]" aria-hidden />
+                )}
+              </span>
+            </button>
+            {pathDetailsOpen && (
+              <div className="border-t border-[var(--border-color)] p-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <label className="block min-w-0 space-y-1 sm:col-span-2" htmlFor="admin-path-title">
+                    <span className="text-xs font-semibold text-[var(--text-secondary)]">Path title</span>
+                    <input
+                      id="admin-path-title"
+                      value={pathDraft.title}
+                      onChange={(e) => {
+                        setShowPathTitleRequiredHint(false);
+                        setPathDraft((p) => (p ? { ...p, title: e.target.value } : p));
+                      }}
+                      placeholder="Short name shown to learners (e.g. Full-Stack Track)"
+                      className={`w-full min-w-0 rounded-lg border bg-[var(--bg-primary)] px-3 py-2 text-sm ${
+                        showPathTitleRequiredHint ? 'border-red-500' : 'border-[var(--border-color)]'
+                      }`}
+                    />
+                  </label>
+                  <label className="block min-w-0 space-y-1 sm:col-span-2">
+                    <span className="text-xs font-semibold text-[var(--text-secondary)]">Description (optional)</span>
+                    <textarea
+                      value={pathDraft.description ?? ''}
+                      onChange={(e) =>
+                        setPathDraft((p) => (p ? { ...p, description: e.target.value || undefined } : p))
+                      }
+                      rows={2}
+                      className="w-full resize-y rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm"
+                    />
+                  </label>
+                </div>
+              </div>
+            )}
           </div>
 
           <div
             id="admin-path-branches"
-            className={`space-y-3 ${pathMindmapLoading ? 'pointer-events-none opacity-60' : ''}`}
+            className={`space-y-1.5 ${pathMindmapLoading ? 'pointer-events-none opacity-60' : ''}`}
           >
-            <div className="space-y-2">
-              <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
-                <h3 className="sr-only">Outline</h3>
-                <AdminLabelInfoTip
-                  controlOnly
-                  tipId="admin-path-outline-tips"
-                  tipRegionAriaLabel="Outline tips"
-                  tipSubject="Outline"
-                >
-                  <li>
-                    <strong className="font-semibold text-[var(--text-secondary)]">Section divider</strong> — in-section
-                    subheading (not collapsible).
-                  </li>
-                  <li>
-                    Courses and lessons update{' '}
-                    <strong className="font-semibold text-[var(--text-secondary)]">Linked courses</strong>.
-                  </li>
-                  <li>
-                    <strong className="font-semibold text-[var(--text-secondary)]">Show</strong> off hides the row for
-                    everyone. On: <strong className="font-semibold text-[var(--text-secondary)]">User</strong> or{' '}
-                    <strong className="font-semibold text-[var(--text-secondary)]">Administrators only</strong>. Course
-                    rows: learners need catalog publish too.
-                  </li>
-                </AdminLabelInfoTip>
+            <div className="space-y-1">
+              <div className="relative z-20 mb-1 flex flex-wrap items-start gap-2 pb-0 sm:mb-1.5 sm:pb-0">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+                  <h3 className="text-xs font-semibold text-[var(--text-secondary)]">Outline</h3>
+                  <span ref={pathOutlineTipsWrapRef} className="relative z-10 inline-flex shrink-0 items-center gap-1">
+                    <button
+                      ref={pathOutlineTipBtnRef}
+                      type="button"
+                      onClick={() => setPathOutlineTipsOpen((o) => !o)}
+                      aria-expanded={pathOutlineTipsOpen}
+                      aria-controls="admin-path-outline-tips"
+                      aria-label={pathOutlineTipsOpen ? 'Close outline tips' : 'Open outline tips'}
+                      className={`inline-flex size-6 shrink-0 touch-manipulation items-center justify-center rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 active:opacity-90 ${
+                        pathOutlineTipsOpen ? 'border-orange-500/50 text-orange-500' : ''
+                      }`}
+                    >
+                      <Info size={14} className="text-orange-500/90" aria-hidden />
+                    </button>
+                    <div
+                      id="admin-path-outline-tips"
+                      role="region"
+                      aria-label="Path outline tips"
+                      tabIndex={
+                        pathOutlineTipsOpen && tipsNarrowViewport && pathOutlineTipFixedTop >= 0
+                          ? -1
+                          : undefined
+                      }
+                      onPointerDown={
+                        pathOutlineTipsOpen && tipsNarrowViewport && pathOutlineTipFixedTop >= 0
+                          ? (e) => (e.currentTarget as HTMLElement).focus({ preventScroll: true })
+                          : undefined
+                      }
+                      className={
+                        !pathOutlineTipsOpen
+                          ? 'hidden'
+                          : tipsNarrowViewport
+                            ? pathOutlineTipFixedTop >= 0
+                              ? 'fixed z-[120] left-3 right-3 w-auto max-w-none translate-x-0 overflow-y-auto overflow-x-hidden overscroll-y-contain [-webkit-overflow-scrolling:touch] touch-pan-y max-h-[calc(100dvh-var(--admin-tip-top)-env(safe-area-inset-bottom,0px)-0.75rem)] rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-3.5 text-left text-sm leading-relaxed text-[var(--text-primary)] shadow-xl pointer-events-auto outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40'
+                              : 'hidden'
+                            : 'absolute left-0 top-full z-[100] mt-2 w-[min(22rem,calc(100vw-2rem))] max-w-sm rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-3 text-left text-xs leading-snug text-[var(--text-primary)] shadow-lg pointer-events-auto'
+                      }
+                      style={
+                        pathOutlineTipsOpen && tipsNarrowViewport && pathOutlineTipFixedTop >= 0
+                          ? narrowAdminTipPanelStyle(pathOutlineTipFixedTop)
+                          : undefined
+                      }
+                    >
+                      <ul className="list-disc space-y-1.5 pl-4 text-[var(--text-muted)] marker:text-orange-500/70 sm:space-y-1">
+                        <li>
+                          <strong className="font-semibold text-[var(--text-secondary)]">Add module here</strong> before
+                          the first top-level row and between rows. On desktop, when the path already has rows, hover or
+                          focus the gap between cards to reveal the control.
+                        </li>
+                        <li>
+                          <strong className="font-semibold text-[var(--text-secondary)]">Add branch here</strong> at the
+                          start and between rows (hover or focus the gap on desktop) — pick catalog unit, whole course,
+                          link, lesson, or (where allowed) section divider.
+                        </li>
+                        <li>
+                          <strong className="font-semibold text-[var(--text-secondary)]">Section divider</strong> groups
+                          rows beneath it; use the kind badge chevron to expand or collapse that group in the builder
+                          (learners get the same on desktop).
+                        </li>
+                        <li>
+                          Courses and lessons in the outline update{' '}
+                          <strong className="font-semibold text-[var(--text-secondary)]">Linked courses</strong> in the path
+                          toolbar.
+                        </li>
+                        <li>
+                          <strong className="font-semibold text-[var(--text-secondary)]">Show</strong> off hides the row
+                          for everyone. On: <strong className="font-semibold text-[var(--text-secondary)]">User</strong> or{' '}
+                          <strong className="font-semibold text-[var(--text-secondary)]">Administrators only</strong>.
+                          Course rows: learners need the course published in the Catalog tab too.
+                        </li>
+                        <li>Reorder: row ↑/↓, or Arrow keys when a reorder control is focused.</li>
+                        <li>
+                          <strong className="font-semibold text-[var(--text-secondary)]">Copy</strong> on a row opens
+                          placement for duplicate or move (same idea as the course catalog).
+                        </li>
+                      </ul>
+                    </div>
+                  </span>
+                </div>
               </div>
               {pathBranchFlatnessIssues.length > 0 ? (
                 <div
@@ -3866,19 +4625,19 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                     <p className="mt-2 text-center text-xs leading-relaxed text-[var(--text-muted)]">
                       {pathSelector === '__new__' ? (
                         <>
-                          Add your first section with{' '}
-                          <strong className="text-[var(--text-secondary)]">Add label here</strong> — you type the name in
+                          Add your first outline module with{' '}
+                          <strong className="text-[var(--text-secondary)]">Add module here</strong> — you type the name in
                           the dialog. Then use gutters between top-level rows or{' '}
-                          <strong className="text-[var(--text-secondary)]">Add branch here</strong> under a label for nested
+                          <strong className="text-[var(--text-secondary)]">Add branch here</strong> under a module for nested
                           items. After you save, you can add a top-level{' '}
-                          <strong className="text-[var(--text-secondary)]">course module</strong> from the branch picker.
+                          <strong className="text-[var(--text-secondary)]">catalog unit</strong> from the branch picker.
                         </>
                       ) : (
                         <>
-                          Top-level rows are usually a <strong className="text-[var(--text-secondary)]">text label</strong> or a{' '}
-                          <strong className="text-[var(--text-secondary)]">course module</strong>. Under a label, add courses,
-                          lessons, links, or dividers. Under a module, add{' '}
-                          <strong className="text-[var(--text-secondary)]">only lessons</strong> from that module.
+                          Top-level rows are usually an <strong className="text-[var(--text-secondary)]">outline module</strong> or a{' '}
+                          <strong className="text-[var(--text-secondary)]">catalog unit</strong>. Under an outline module, add courses,
+                          lessons, links, or dividers. Under a catalog unit, add{' '}
+                          <strong className="text-[var(--text-secondary)]">only lessons</strong> from that unit.
                         </>
                       )}
                     </p>
@@ -3891,25 +4650,25 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                       >
                         <span className="flex w-full items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
                           <Plus size={18} className="shrink-0 text-orange-500" aria-hidden />
-                          Add label here
+                          Add module here
                         </span>
                         <span className="pl-[1.625rem] text-xs text-[var(--text-muted)]">
-                          Opens the dialog to enter the section name before it appears in the outline
+                          Opens the dialog to enter the module name before it appears in the outline
                         </span>
                       </button>
                     </div>
                     <p className="mt-4 text-center text-[11px] leading-relaxed text-[var(--text-muted)]">
                       {pathSelector === '__new__' ? (
                         <>
-                          More sections: hover a top-level gutter for{' '}
-                          <strong className="text-[var(--text-secondary)]">Add label here</strong>
+                          More outline modules: hover a top-level gutter for{' '}
+                          <strong className="text-[var(--text-secondary)]">Add module here</strong>
                           {', '}
                           or <strong className="text-[var(--text-secondary)]">Add branch here</strong> to append under the row above.
                         </>
                       ) : (
                         <>
-                          More top-level sections: hover for{' '}
-                          <strong className="text-[var(--text-secondary)]">Add label here</strong>. Under a module, use{' '}
+                          More top-level modules: hover for{' '}
+                          <strong className="text-[var(--text-secondary)]">Add module here</strong>. Under a module, use{' '}
                           <strong className="text-[var(--text-secondary)]">Add branch here</strong> for lessons only.
                         </>
                       )}
@@ -3976,7 +4735,17 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                           )
                         )
                       }
-                      onRequestChangeType={(id) => setBranchModal({ kind: 'changeType', nodeId: id })}
+                      onRequestChangeType={(id) => {
+                        const roots = pathBranchTreeRef.current;
+                        const node = findBranchNode(roots, id);
+                        /** Same entry point as course catalog Change module type: merge dialog first for every top-level outline module (`label`). */
+                        if (node?.kind === 'label' && isRootBranchId(roots, id)) {
+                          setExpandedBranchIds(collectBranchIdsWithChildren(roots));
+                          setBranchModal({ kind: 'changeOutlineModuleMerge', nodeId: id });
+                        } else {
+                          setBranchModal({ kind: 'changeType', nodeId: id });
+                        }
+                      }}
                       onVisibleToRolesChange={(id, roles) =>
                         setPathBranchTree((roots) =>
                           mapBranchNodeById(roots, id, (n) => ({
@@ -4039,6 +4808,41 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
             }}
           />
 
+          {branchModal.kind === 'changeOutlineModuleMerge' ? (
+            <ChangePathOutlineModuleMergeModal
+              open
+              sourceId={branchModal.nodeId}
+              roots={pathBranchTree}
+              publishedList={publishedList}
+              onClose={() => setBranchModal({ kind: 'closed' })}
+              onPickOtherType={() => setBranchModal({ kind: 'changeType', nodeId: branchModal.nodeId })}
+              onConfirm={(targetId, insertAt) => {
+                const sourceId = branchModal.nodeId;
+                const next = applyMergeOutlineLabelIntoDividerAt(
+                  pathBranchTreeRef.current,
+                  sourceId,
+                  targetId,
+                  insertAt
+                );
+                if (!next) {
+                  showActionToast(
+                    'Could not merge — pick another outline module or position. Source and target must be different outline modules.',
+                    'danger'
+                  );
+                  return;
+                }
+                setPathBranchTree(next);
+                setExpandedBranchIds((prev) => {
+                  const n = new Set(prev);
+                  stripBranchExpandState(n, next, sourceId);
+                  return accordionExpandBranchRow(n, next, targetId);
+                });
+                setBranchModal({ kind: 'closed' });
+                showActionToast('Outline module merged as a section divider at the position you chose.', 'neutral');
+              }}
+            />
+          ) : null}
+
           {branchModal.kind === 'duplicatePlace' ? (
             <PlaceDuplicateBranchModal
               open
@@ -4052,11 +4856,11 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                 if (payload.mode === 'copy') {
                   const br = payload.branch;
                   if (parentId === null && br.kind !== 'label' && br.kind !== 'module') {
-                    showActionToast('Only section labels or course modules can be placed at the top level.', 'danger');
+                    showActionToast('Only outline modules or catalog units can be placed at the top level.', 'danger');
                     return;
                   }
                   if (br.kind === 'module' && parentId !== null) {
-                    showActionToast('Course modules can only be placed at the top level.', 'danger');
+                    showActionToast('Catalog units can only be placed at the top level.', 'danger');
                     return;
                   }
                   if (duplicateSubtreeRequiresTopLevelOnly(br) && parentId !== null) {
@@ -4094,11 +4898,11 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                   return;
                 }
                 if (parentId === null && snap.kind !== 'label' && snap.kind !== 'module') {
-                  showActionToast('Only section labels or course modules can be placed at the top level.', 'danger');
+                  showActionToast('Only outline modules or catalog units can be placed at the top level.', 'danger');
                   return;
                 }
                 if (snap.kind === 'module' && parentId !== null) {
-                  showActionToast('Course modules can only be placed at the top level.', 'danger');
+                  showActionToast('Catalog units can only be placed at the top level.', 'danger');
                   return;
                 }
                 if (duplicateSubtreeRequiresTopLevelOnly(snap) && parentId !== null) {
@@ -4141,7 +4945,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
       <AnimatePresence>
         {pathConfirmDialog && pathConfirmCopy && (
           <div
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50"
             role="dialog"
             aria-modal="true"
             aria-labelledby="path-builder-confirm-title"
@@ -4196,6 +5000,71 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
           </div>
         )}
       </AnimatePresence>
+
+      {dividerRemovePending ? (
+        <div
+          className="fixed inset-0 z-[190] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeDividerRemoveDialog();
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="path-divider-remove-title"
+            className="flex max-h-[min(90dvh,520px)] w-full max-w-lg flex-col rounded-t-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl sm:rounded-2xl"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-color)] px-4 py-3">
+              <span className="inline-flex min-h-10 min-w-10 shrink-0" aria-hidden />
+              <h2
+                id="path-divider-remove-title"
+                className="min-w-0 flex-1 text-center text-base font-bold text-[var(--text-primary)] sm:text-lg"
+              >
+                Remove divider?
+              </h2>
+              <button
+                type="button"
+                onClick={closeDividerRemoveDialog}
+                className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-full text-red-500 transition-colors hover:bg-red-500/15 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300"
+                aria-label="Close"
+              >
+                <X size={20} strokeWidth={2.25} aria-hidden />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4">
+              <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
+                <strong className="text-[var(--text-primary)]">“{dividerRemovePending.label}”</strong> groups{' '}
+                <strong className="text-[var(--text-primary)]">{dividerRemovePending.nestedCount}</strong> nested outline
+                row{dividerRemovePending.nestedCount === 1 ? '' : 's'} (courses, lessons, links, etc.).
+              </p>
+              <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
+                <strong className="text-[var(--text-primary)]">Keep rows</strong> — drop the divider and leave those rows
+                in the module list. <strong className="text-[var(--text-primary)]">Delete all</strong> — remove the divider
+                and everything under it. Use the close control above to dismiss without changes.
+              </p>
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end sm:gap-3">
+                <button
+                  type="button"
+                  onClick={() => void confirmDividerRemoveDeleteNested()}
+                  className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-red-500/50 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-600 transition-colors hover:bg-red-500/20 dark:text-red-400 sm:w-auto"
+                >
+                  Delete all
+                </button>
+                <button
+                  type="button"
+                  autoFocus
+                  onClick={() => void confirmDividerRemoveHoistNested()}
+                  className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-4 py-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-orange-600 sm:w-auto"
+                >
+                  Keep rows
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 });

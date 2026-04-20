@@ -57,7 +57,7 @@ function MiniToolbar({ editor }: { editor: Editor | null }) {
   if (!editor) return null;
   return (
     <div
-      className="flex shrink-0 flex-wrap items-center gap-0.5 border-b border-[var(--border-color)]/80 bg-[var(--bg-primary)]/50 px-1 py-0.5"
+      className="absolute bottom-full left-0 right-0 z-[60] mb-0.5 hidden flex-wrap items-center justify-start gap-0.5 rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] px-1 py-0.5 shadow-lg group-focus-within/catalog-mini-rich:flex"
       role="toolbar"
       aria-label="Text formatting"
     >
@@ -161,7 +161,7 @@ export function CatalogMiniRichEditor({
       attributes: {
         class:
           variant === 'title'
-            ? 'catalog-mini-rich ProseMirror min-h-9 w-full max-w-full px-2 py-1.5 text-sm font-semibold leading-snug outline-none focus:outline-none [&_p]:m-0 [&_p]:inline [&_p]:leading-snug'
+            ? 'catalog-mini-rich ProseMirror flex min-h-0 w-full min-w-0 flex-1 items-center px-2 py-0 text-sm font-semibold leading-none outline-none focus:outline-none [&_p]:m-0 [&_p]:flex [&_p]:min-h-0 [&_p]:flex-1 [&_p]:items-center [&_p]:leading-none [&_p]:pb-0 [&_p_br]:m-0 [&_p_br]:block [&_p_br]:h-0 [&_p_br]:leading-none [&_p_br]:overflow-hidden'
             : 'catalog-mini-rich ProseMirror min-h-[4.5rem] w-full max-w-full px-2.5 py-1.5 text-sm leading-relaxed outline-none focus:outline-none sm:px-3 sm:py-2 [&_p]:my-1 [&_p]:first:mt-0 [&_p]:last:mb-0',
         'aria-label': ariaLabel,
       },
@@ -185,10 +185,21 @@ export function CatalogMiniRichEditor({
     <div
       id={id}
       data-catalog-mini-rich
-      className={`min-w-0 w-full overflow-hidden rounded-md border bg-[var(--bg-primary)] ${borderClass}`}
+      className={`group/catalog-mini-rich relative z-0 min-w-0 w-full overflow-visible rounded-md border bg-[var(--bg-primary)] ${borderClass}`}
     >
       <MiniToolbar editor={editor} />
-      <EditorContent editor={editor} />
+      {variant === 'title' ? (
+        <div className="flex min-h-11 min-w-0 items-stretch overflow-hidden rounded-md sm:min-h-7">
+          <EditorContent
+            editor={editor}
+            className="flex min-h-0 min-w-0 flex-1 [&_.tiptap]:flex [&_.tiptap]:min-h-0 [&_.tiptap]:flex-1 [&_.tiptap]:items-stretch"
+          />
+        </div>
+      ) : (
+        <div className="min-w-0 overflow-hidden rounded-md">
+          <EditorContent editor={editor} />
+        </div>
+      )}
     </div>
   );
 }

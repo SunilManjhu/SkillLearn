@@ -912,14 +912,74 @@ function OutlineNode({
   }
 
   if (depth === 1 && nk === 'divider') {
+    const hasNested = node.children.length > 0;
+    if (!hasNested) {
+      return (
+        <div
+          className="min-w-0 border-t border-[var(--border-color)]/60 pt-2.5 mt-2 first:mt-0 first:border-t-0 first:pt-0"
+          role="presentation"
+        >
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] [overflow-wrap:anywhere]">
+            {label}
+          </p>
+        </div>
+      );
+    }
+    const nestedOpen = isBranchExpanded(node.id);
+    const panelId = `path-branch-panel-${node.id}`;
     return (
-      <div
-        className="min-w-0 border-t border-[var(--border-color)]/60 pt-2.5 mt-2 first:mt-0 first:border-t-0 first:pt-0"
-        role="presentation"
-      >
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] [overflow-wrap:anywhere]">
-          {label}
-        </p>
+      <div className="min-w-0 border-t border-[var(--border-color)]/60 pt-2.5 mt-2 first:mt-0 first:border-t-0 first:pt-0">
+        <div
+          className={`flex min-w-0 max-w-full items-start gap-1 py-0.5 pr-0 sm:items-center sm:gap-1.5 sm:py-0.5 sm:pl-0.5 sm:pr-1${
+            !outlineCompactMobile
+              ? ' min-h-10 cursor-pointer rounded-lg transition-colors hover:bg-[var(--hover-bg)]/50 sm:min-h-11'
+              : ''
+          }`}
+          onClick={
+            !outlineCompactMobile
+              ? (e) => handleOutlineBranchHeaderClick(e, true, node.id, toggleBranch)
+              : undefined
+          }
+        >
+          <OutlineBranchExpandControl nodeId={node.id} hasChildren expanded={nestedOpen} />
+          {!outlineCompactMobile ? (
+            <OutlineBranchStatusLeadSlot
+              hasNested
+              isLabel={false}
+              depth={1}
+              status={rowStatus}
+              externalLink={false}
+            />
+          ) : null}
+          <div className="flex min-w-0 max-w-full flex-1 flex-col gap-0.5 max-md:pl-2 md:min-w-0 md:flex-1">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] [overflow-wrap:anywhere]">
+              {label}
+            </p>
+          </div>
+        </div>
+        <div id={panelId} hidden={!nestedOpen}>
+          <OutlineNestedBranch parentDepth={1}>
+            {node.children.map((ch) => (
+              <OutlineNestedBranchItem key={ch.id}>
+                <OutlineNode
+                  node={ch}
+                  depth={2}
+                  sectionIndex={sectionIndex}
+                  catalogCourses={catalogCourses}
+                  onOpenCourse={onOpenCourse}
+                  onOpenLesson={onOpenLesson}
+                  progressUserId={progressUserId}
+                  progressSnapshotVersion={progressSnapshotVersion}
+                  isSectionExpanded={isSectionExpanded}
+                  toggleSection={toggleSection}
+                  isBranchExpanded={isBranchExpanded}
+                  toggleBranch={toggleBranch}
+                  outlineCompactMobile={outlineCompactMobile}
+                />
+              </OutlineNestedBranchItem>
+            ))}
+          </OutlineNestedBranch>
+        </div>
       </div>
     );
   }

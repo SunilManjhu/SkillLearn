@@ -122,3 +122,10 @@ body.light .lesson-notes-editor .lesson-note-ts-active {
   background: rgba(251, 191, 36, 0.45);
   box-shadow: 0 0 0 1px rgba(217, 119, 6, 0.35);
 }
+
+/* Admin Content: main course / path `<select>` — drop default focus ring (thick blue outline on Chrome/Safari). */
+.admin-toolbar-main-select:focus,
+.admin-toolbar-main-select:focus-visible {
+  outline: none;
+  box-shadow: none;
+}

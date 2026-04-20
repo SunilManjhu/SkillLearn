@@ -10,6 +10,7 @@ import {
   Globe,
   Hash,
   Info,
+  Layers,
   Loader2,
   Plus,
   Route,
@@ -33,8 +34,14 @@ import {
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { useDialogKeyboard } from '../../hooks/useDialogKeyboard';
 import { useInsertStripRevealCursor } from '../../hooks/useInsertStripRevealCursor';
+import { useLearningAssistantSiteEnabled } from '../../hooks/useLearningAssistantSiteEnabled';
 import { useAdminActionToast } from './useAdminActionToast';
 import { AdminLabelInfoTip } from './adminLabelInfoTip';
+import {
+  narrowAdminTipPanelStyle,
+  readFixedTipTopBelowAnchor,
+  useTipsNarrowViewport,
+} from './adminTipPanelLayout';
 import {
   PathBuilderSection,
   type PathBuilderSectionHandle,
@@ -533,42 +540,48 @@ function newSeededDefaultPlayableCatalogLesson(): LessonWithAdminKey {
 }
 
 /**
- * Remove a section divider at `li`, keep rows above in the current module, insert a new module after it with rows
- * below (divider label becomes the new module title). Seeds a default video lesson when either side would otherwise
- * lack a playable row (same rules as adding a module / validation).
+ * Remove a section divider at `li`, keep rows above it plus rows from the **next** divider onward in this module, and
+ * insert a new module at `insertNewModuleAt` in the module list. The new module title comes from the divider; its
+ * lessons are only rows **under** that divider until the next divider (or end of module). Seeds a default video lesson
+ * when either side would otherwise lack a playable row (same rules as adding a module / validation).
  */
 function applySplitDividerIntoNewModule(
   course: Course,
   mi: number,
-  li: number
+  li: number,
+  insertNewModuleAt: number
 ): { next: Course; newModuleIndex: number } | null {
   const mod = course.modules[mi];
   if (!mod || !mod.lessons[li] || mod.lessons[li].contentKind !== 'divider') return null;
 
   const moduleTitleFromDivider = catalogMiniRichPlainText(mod.lessons[li]!.title);
 
-  const originalBeforeLen = mod.lessons.slice(0, li).length;
-  let beforeSrc = mod.lessons.slice(0, li);
-  let afterSrc = mod.lessons.slice(li + 1);
+  const nextDividerIdx = indexOfNextDividerOrEnd(mod, li + 1);
+  const beforeSrc = mod.lessons.slice(0, li);
+  const sectionSrc = mod.lessons.slice(li + 1, nextDividerIdx);
+  const remainderSrc = mod.lessons.slice(nextDividerIdx);
 
-  const beforeWasEmptyNeedsSeed = originalBeforeLen === 0;
-  if (beforeWasEmptyNeedsSeed) {
-    beforeSrc = [newSeededDefaultPlayableCatalogLesson()];
-  } else if (!beforeSrc.some(isPlayableCatalogLesson)) {
+  let currentCombined = [...beforeSrc, ...remainderSrc];
+  let sectionForNew = [...sectionSrc];
+
+  if (!sectionForNew.some(isPlayableCatalogLesson)) {
+    sectionForNew = [newSeededDefaultPlayableCatalogLesson(), ...sectionForNew];
+  }
+
+  const currentWasCompletelyEmpty = currentCombined.length === 0;
+  if (currentWasCompletelyEmpty) {
+    currentCombined = [newSeededDefaultPlayableCatalogLesson()];
+  } else if (!currentCombined.some(isPlayableCatalogLesson)) {
     return null;
   }
 
-  if (!afterSrc.some(isPlayableCatalogLesson)) {
-    afterSrc = [newSeededDefaultPlayableCatalogLesson(), ...afterSrc];
-  }
-
-  const beforeLessons: LessonWithAdminKey[] = beforeSrc.map((les) => {
+  const currentLessons: LessonWithAdminKey[] = currentCombined.map((les) => {
     const c = deepClone(les) as LessonWithAdminKey;
     if (!c.__adminRowKey) c.__adminRowKey = crypto.randomUUID();
     return c;
   });
 
-  const afterLessons: LessonWithAdminKey[] = afterSrc.map(
+  const newModuleLessons: LessonWithAdminKey[] = sectionForNew.map(
     (les) =>
       ({
         ...deepClone(les),
@@ -578,17 +591,21 @@ function applySplitDividerIntoNewModule(
 
   const updatedCurrent: Module = {
     ...mod,
-    lessons: beforeLessons as Lesson[],
+    lessons: currentLessons as Lesson[],
   };
   const newModule: Module = {
     id: '',
     title: moduleTitleFromDivider,
-    lessons: afterLessons as Lesson[],
+    lessons: newModuleLessons as Lesson[],
   };
 
-  const modules = [...course.modules.slice(0, mi), updatedCurrent, newModule, ...course.modules.slice(mi + 1)];
+  const base = [...course.modules.slice(0, mi), updatedCurrent, ...course.modules.slice(mi + 1)];
+  const insertPos = Math.max(0, Math.min(insertNewModuleAt, base.length));
+  const modules = [...base.slice(0, insertPos), newModule, ...base.slice(insertPos)];
+  const newModuleIndex = insertPos;
+  const updatedModuleIndex = insertPos <= mi ? mi + 1 : mi;
+
   let next: Course = { ...course, modules };
-  const newModuleIndex = mi + 1;
 
   if (isStructuredCourseId(next.id)) {
     next = remapStructuredCourseModuleLessonIdsByOrder(next);
@@ -617,12 +634,12 @@ function applySplitDividerIntoNewModule(
     };
   }
 
-  if (beforeWasEmptyNeedsSeed) {
+  if (currentWasCompletelyEmpty) {
     const newLid = nextLessonIdLegacy(next);
     next = {
       ...next,
       modules: next.modules.map((m, i) =>
-        i !== mi
+        i !== updatedModuleIndex
           ? m
           : {
               ...m,
@@ -633,6 +650,184 @@ function applySplitDividerIntoNewModule(
   }
 
   return { next, newModuleIndex };
+}
+
+/** First index at or after `from` that is a divider, or `L` if none (end of module). */
+function indexOfNextDividerOrEnd(mod: Module, from: number): number {
+  const L = mod.lessons.length;
+  let j = from;
+  while (j < L && mod.lessons[j]!.contentKind !== 'divider') j += 1;
+  return j;
+}
+
+/** Lesson rows after divider `dividerLi` until the next divider or end (not counting the next divider). */
+function countRowsUnderCatalogDivider(mod: Module, dividerLi: number): number {
+  const end = indexOfNextDividerOrEnd(mod, dividerLi + 1);
+  return Math.max(0, end - (dividerLi + 1));
+}
+
+function clearDividerCollapseKeysForModule(
+  prev: Record<string, boolean>,
+  mi: number
+): Record<string, boolean> {
+  const next = { ...prev };
+  for (const k of Object.keys(next)) {
+    if (k.startsWith(`${mi}:`)) delete next[k];
+  }
+  return next;
+}
+
+/** Remove section divider and every row until the next divider; module must still have a playable lesson. */
+function removeCatalogDividerAndNestedLessonRows(
+  course: Course,
+  mi: number,
+  dividerLi: number
+): Course | null {
+  const mod = course.modules[mi];
+  if (!mod || !mod.lessons[dividerLi] || mod.lessons[dividerLi]!.contentKind !== 'divider') return null;
+  const end = indexOfNextDividerOrEnd(mod, dividerLi + 1);
+  const nextLessons = [...mod.lessons.slice(0, dividerLi), ...mod.lessons.slice(end)];
+  if (!nextLessons.some(isPlayableCatalogLesson)) return null;
+  let next: Course = {
+    ...course,
+    modules: course.modules.map((m, i) => (i !== mi ? m : { ...m, lessons: nextLessons })),
+  };
+  next = ensureCourseLessonRowKeys(normalizeCourseTaxonomy(next));
+  if (isStructuredCourseId(next.id)) next = remapStructuredCourseModuleLessonIdsByOrder(next);
+  return next;
+}
+
+/** Nearest section divider strictly above `lessonIndex`, or null if this row is before any divider in the module. */
+function nearestSectionDividerIndexAbove(mod: Module, lessonIndex: number): number | null {
+  for (let i = lessonIndex - 1; i >= 0; i -= 1) {
+    if (mod.lessons[i]?.contentKind === 'divider') return i;
+  }
+  return null;
+}
+
+/** Playable rows under a collapsed section divider are omitted from the catalog list UI. */
+function lessonRowHiddenUnderCollapsedDivider(
+  mod: Module,
+  mi: number,
+  li: number,
+  sectionsCollapsed: Record<string, boolean>
+): boolean {
+  const row = mod.lessons[li];
+  if (!row || row.contentKind === 'divider') return false;
+  const d = nearestSectionDividerIndexAbove(mod, li);
+  if (d === null) return false;
+  return !!sectionsCollapsed[`${mi}:${d}`];
+}
+
+/** Playable row sits in a subsection (nearest divider above in this module). */
+function lessonRowInSectionUnderDivider(mod: Module, li: number): boolean {
+  const row = mod.lessons[li];
+  if (!row || row.contentKind === 'divider') return false;
+  return nearestSectionDividerIndexAbove(mod, li) !== null;
+}
+
+/** Insert position `insertAt` is inside a subsection (after a divider, before the next divider). */
+function lessonInsertSlotInSectionUnderDivider(mod: Module, insertAt: number): boolean {
+  return nearestSectionDividerIndexAbove(mod, insertAt) !== null;
+}
+
+/** Indents catalog rows / gaps that belong under a section divider (mobile-first). */
+const CATALOG_LESSON_SECTION_UNDER_DIVIDER_INDENT =
+  'ml-0.5 min-w-0 border-l border-[var(--border-color)]/45 pl-1.5 sm:ml-1 sm:pl-2';
+
+/**
+ * Insert positions when merging a module into another as a section divider + that module’s lessons.
+ * “After divider: …” means after that divider **and all lessons under it** (until the next divider or module end),
+ * not immediately after the divider row.
+ */
+function moduleDividerMergePositionOptions(mod: Module): { insertAt: number; label: string }[] {
+  const L = mod.lessons.length;
+  if (L === 0) {
+    return [{ insertAt: 0, label: 'Only position in this module' }];
+  }
+  const out: { insertAt: number; label: string }[] = [];
+  out.push({ insertAt: 0, label: 'Start of module (before first row)' });
+  for (let li = 0; li < L; li++) {
+    const les = mod.lessons[li]!;
+    if (les.contentKind === 'divider') {
+      const t = catalogMiniRichPlainText(les.title ?? '') || 'Untitled divider';
+      const insertAt = indexOfNextDividerOrEnd(mod, li + 1);
+      out.push({
+        insertAt,
+        label: `After section “${t}” (after its lessons, before next divider)`,
+      });
+    }
+  }
+  if (!out.some((o) => o.insertAt === L)) {
+    out.push({ insertAt: L, label: 'End of module (after last row)' });
+  }
+  return out;
+}
+
+/**
+ * Turn `sourceModuleIndex` into a **section divider** (title = that module’s title) inserted at `insertAt` inside
+ * `targetModuleIndex`, then append that module’s lessons. Removes the source module. `insertAt` is 0…target.lessons.length
+ * (same semantics as lesson insert index). Requires `sourceModuleIndex !== targetModuleIndex` and a playable lesson in
+ * the merged module afterward.
+ */
+function applyConvertModuleIntoDividerAt(
+  course: Course,
+  sourceModuleIndex: number,
+  targetModuleIndex: number,
+  insertAt: number
+): Course | null {
+  if (sourceModuleIndex === targetModuleIndex) return null;
+  const src = course.modules[sourceModuleIndex];
+  const tgt = course.modules[targetModuleIndex];
+  if (!src || !tgt) return null;
+  if (insertAt < 0 || insertAt > tgt.lessons.length) return null;
+
+  const structured = isStructuredCourseId(course.id);
+  const lid = structured ? nextDividerIdInModule(course, targetModuleIndex) : nextDividerIdLegacy();
+
+  const dividerLesson: LessonWithAdminKey = {
+    id: lid,
+    title: src.title,
+    videoUrl: '',
+    contentKind: 'divider' as const,
+    __adminRowKey: crypto.randomUUID(),
+  };
+
+  const tgtCloned: LessonWithAdminKey[] = tgt.lessons.map((les) => {
+    const c = deepClone(les) as LessonWithAdminKey;
+    if (!c.__adminRowKey) c.__adminRowKey = crypto.randomUUID();
+    return c;
+  });
+  const srcCloned: LessonWithAdminKey[] = src.lessons.map((les) => {
+    const c = deepClone(les) as LessonWithAdminKey;
+    if (!c.__adminRowKey) c.__adminRowKey = crypto.randomUUID();
+    return c;
+  });
+
+  const mergedLessons = [
+    ...tgtCloned.slice(0, insertAt),
+    dividerLesson,
+    ...srcCloned,
+    ...tgtCloned.slice(insertAt),
+  ] as Lesson[];
+
+  const newModules = course.modules.flatMap((m, i) => {
+    if (i === sourceModuleIndex) return [];
+    if (i === targetModuleIndex) return [{ ...tgt, lessons: mergedLessons }];
+    return [m];
+  });
+
+  let next: Course = { ...course, modules: newModules };
+
+  if (structured) {
+    next = remapStructuredCourseModuleLessonIdsByOrder(next);
+  }
+
+  const mergedModuleIndex = sourceModuleIndex < targetModuleIndex ? targetModuleIndex - 1 : targetModuleIndex;
+  const mergedMod = next.modules[mergedModuleIndex];
+  if (!mergedMod || !mergedMod.lessons.some(isPlayableCatalogLesson)) return null;
+
+  return next;
 }
 
 function catalogLessonRowSummary(lesson: Lesson): string {
@@ -664,6 +859,34 @@ function catalogModuleTitleLine(mod: Module, indexOneBased: number): string {
   return `Module ${indexOneBased}: ${id} — ${title}`;
 }
 
+/** Insert index for the new module (0…n) when splitting a divider inside module `mi` (`n` = current module count). */
+function splitDividerIntoNewModuleInsertOptions(course: Course, mi: number): { insertAt: number; label: string }[] {
+  const n = course.modules.length;
+  if (!course.modules[mi]) return [{ insertAt: 0, label: 'Start of course' }];
+  const cur = course.modules[mi]!;
+  const curLabel = catalogModuleTitleLine(cur, mi + 1);
+  const out: { insertAt: number; label: string }[] = [];
+  for (let p = 0; p <= n; p += 1) {
+    if (p === 0) {
+      out.push({ insertAt: 0, label: 'Start of course' });
+      continue;
+    }
+    const prev = p - 1;
+    let label: string;
+    if (prev < mi) {
+      const ref = course.modules[prev]!;
+      label = `After ${catalogModuleTitleLine(ref, prev + 1)}`;
+    } else if (prev === mi) {
+      label = `After ${curLabel} (this module after split)`;
+    } else {
+      const ref = course.modules[prev]!;
+      label = `After ${catalogModuleTitleLine(ref, prev + 1)}`;
+    }
+    out.push({ insertAt: p, label });
+  }
+  return out;
+}
+
 const ADMIN_CATALOG_KIND_BADGE_BASE =
   'inline-flex min-h-11 min-w-[3.25rem] shrink-0 touch-manipulation items-center justify-center rounded-md px-3.5 text-[10px] font-bold uppercase leading-none transition-colors focus:outline-none sm:h-7 sm:min-h-0';
 
@@ -687,9 +910,9 @@ function catalogLessonBranchKindModalLabel(lesson: Lesson): string {
 const CATALOG_LESSON_INSERT_OUTER_HOVER =
   `group/ins relative z-0 mb-0 min-w-0 min-h-0 ${CATALOG_INSERT_OUTER_EXPAND_HOVER}`;
 const CATALOG_LESSON_INSERT_OUTER_PERSIST =
-  'group/ins relative z-0 mb-0 min-w-0 overflow-visible py-0.5';
+  'group/ins relative z-0 mb-0 min-w-0 overflow-visible py-0';
 const CATALOG_LESSON_INSERT_INNER_HOVER =
-  'flex w-full pl-3 max-md:!pl-0 items-center justify-center md:min-h-0 md:py-1.5';
+  'flex w-full pl-3 max-md:!pl-0 items-center justify-center md:min-h-0 md:py-0.5';
 const CATALOG_LESSON_INSERT_INNER_PERSIST = 'flex w-full pl-3 max-md:!pl-0 justify-center';
 
 function CatalogLessonInsertSlot({
@@ -751,13 +974,13 @@ function CatalogLessonInsertSlot({
 const CATALOG_MODULE_INSERT_OUTER_HOVER =
   `group/ins relative z-0 mb-0 min-w-0 min-h-0 ${CATALOG_INSERT_OUTER_EXPAND_HOVER}`;
 const CATALOG_MODULE_INSERT_OUTER_PERSIST =
-  'group/ins relative z-0 mb-0 min-w-0 overflow-visible py-0.5';
+  'group/ins relative z-0 mb-0 min-w-0 overflow-visible py-0';
 const CATALOG_MODULE_INSERT_INNER_HOVER =
-  'flex w-full max-md:!pl-0 items-center justify-center md:min-h-0 md:py-1.5';
+  'flex w-full max-md:!pl-0 items-center justify-center md:min-h-0 md:py-0.5';
 const CATALOG_MODULE_INSERT_INNER_PERSIST = 'flex w-full max-md:!pl-0 justify-center';
 
 const CATALOG_LESSON_MODULE_BOUNDARY_INNER_HOVER =
-  'flex w-full min-w-0 flex-col gap-2 pl-3 max-md:!pl-0 md:flex-row md:flex-wrap md:items-stretch md:justify-center md:gap-2 md:py-1.5';
+  'flex w-full min-w-0 flex-col gap-2 pl-3 max-md:!pl-0 md:flex-row md:flex-wrap md:items-stretch md:justify-center md:gap-2 md:py-0.5';
 const CATALOG_LESSON_MODULE_BOUNDARY_INNER_PERSIST =
   'flex w-full min-w-0 flex-col gap-2 pl-3 max-md:!pl-0 md:flex-row md:flex-wrap md:items-stretch md:justify-center md:gap-2';
 
@@ -999,36 +1222,6 @@ interface RequiredFieldTarget {
   lessonKeys?: string[];
 }
 
-/** Matches Tailwind `sm` breakpoint (640px); tips use fixed + measured top below this width. */
-const TIPS_NARROW_MAX_PX = 639;
-
-function useTipsNarrowViewport(): boolean {
-  const [narrow, setNarrow] = useState(() =>
-    typeof window !== 'undefined' ? window.innerWidth <= TIPS_NARROW_MAX_PX : false
-  );
-  useEffect(() => {
-    const mq = window.matchMedia(`(max-width: ${TIPS_NARROW_MAX_PX}px)`);
-    const fn = () => setNarrow(mq.matches);
-    fn();
-    mq.addEventListener('change', fn);
-    return () => mq.removeEventListener('change', fn);
-  }, []);
-  return narrow;
-}
-
-/** Fixed-position `top` (viewport px): strictly below the anchor — never overlaps the tab/button. User scrolls manually if the panel extends off-screen. */
-function readFixedTipTopBelowAnchor(anchorEl: HTMLElement, gapPx = 8): number {
-  return anchorEl.getBoundingClientRect().bottom + gapPx;
-}
-
-/** Narrow-only: `top` + CSS var for `max-h` so the panel shrink-wraps content up to remaining viewport. */
-function narrowAdminTipPanelStyle(topPx: number): React.CSSProperties {
-  return {
-    top: topPx,
-    ['--admin-tip-top' as string]: `${topPx}px`,
-  };
-}
-
 export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps> = ({
   onCatalogChanged,
   onDraftDirtyChange,
@@ -1075,6 +1268,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const [courseDetailsOpen, setCourseDetailsOpen] = useState(false);
   const [openModules, setOpenModules] = useState<Record<number, boolean>>({});
   const [openLessons, setOpenLessons] = useState<Record<string, boolean>>({});
+  /** Divider row key `mi:li` → true hides playable rows under that divider until the next divider (default: expanded). */
+  const [dividerSectionsCollapsed, setDividerSectionsCollapsed] = useState<Record<string, boolean>>({});
   /** After a successful save while a lesson was expanded: offer “add another” at this insert index. */
   const [addAnotherLessonAfterSave, setAddAnotherLessonAfterSave] = useState<{
     mi: number;
@@ -1082,6 +1277,25 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   } | null>(null);
   /** Section divider row: “Change branch type” modal (same flow as Path builder). */
   const [changeLessonKindModal, setChangeLessonKindModal] = useState<{ mi: number; li: number } | null>(null);
+  /** Merge source module into a chosen module as section divider + lessons (see modal fields). */
+  const [changeModuleKindModal, setChangeModuleKindModal] = useState<{
+    sourceMi: number;
+    targetMi: number;
+    insertAt: number;
+  } | null>(null);
+  /** Section divider → new module: choose where the new module appears in the course. */
+  const [splitDividerNewModuleModal, setSplitDividerNewModuleModal] = useState<{
+    mi: number;
+    li: number;
+    insertAt: number;
+  } | null>(null);
+  /** Deleting a section divider that still has rows under it (same choice as Path builder). */
+  const [catalogDividerRemovePending, setCatalogDividerRemovePending] = useState<{
+    mi: number;
+    li: number;
+    label: string;
+    nestedCount: number;
+  } | null>(null);
   /** Insert lesson or section divider after choosing in “Add branch” modal. */
   const [addLessonBranchModal, setAddLessonBranchModal] = useState<{ mi: number; insertAt: number } | null>(null);
   /** Copy/move placement for modules or lesson rows (Path builder–style). */
@@ -1153,6 +1367,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   );
 
   const tipsNarrowViewport = useTipsNarrowViewport();
+  const { siteAssistantEnabled, siteAssistantLoading } = useLearningAssistantSiteEnabled();
   const catalogTipsWrapRef = useRef<HTMLSpanElement | null>(null);
   const catalogTipBtnRef = useRef<HTMLButtonElement | null>(null);
   const modulesTipsWrapRef = useRef<HTMLSpanElement | null>(null);
@@ -2013,17 +2228,23 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     setCourseDetailsOpen(false);
   };
 
-  const splitDividerIntoNewModuleAt = useCallback(
-    (mi: number, li: number) => {
+  const openSplitDividerNewModuleModal = useCallback((mi: number, li: number) => {
+    const d = draftRef.current;
+    if (!d?.modules[mi]?.lessons[li] || d.modules[mi].lessons[li].contentKind !== 'divider') return;
+    setSplitDividerNewModuleModal({ mi, li, insertAt: mi + 1 });
+  }, []);
+
+  const commitSplitDividerIntoNewModuleAt = useCallback(
+    (mi: number, li: number, insertAt: number): boolean => {
       const d = draftRef.current;
-      if (!d?.modules[mi]?.lessons[li] || d.modules[mi].lessons[li].contentKind !== 'divider') return;
-      const r = applySplitDividerIntoNewModule(d, mi, li);
+      if (!d?.modules[mi]?.lessons[li] || d.modules[mi].lessons[li].contentKind !== 'divider') return false;
+      const r = applySplitDividerIntoNewModule(d, mi, li, insertAt);
       if (!r) {
         showActionToast(
-          'Cannot create a module here unless there is at least one playable lesson above this divider.',
+          'Cannot split here: this module needs at least one playable lesson outside this divider’s section (rows above the divider plus any rows from the next divider onward).',
           'danger'
         );
-        return;
+        return false;
       }
       setDraft(r.next);
       setCourseDetailsOpen(false);
@@ -2031,7 +2252,10 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       pendingOpenNewModuleIndexRef.current = r.newModuleIndex;
       pendingScrollToNewModuleTitleMiRef.current = r.newModuleIndex;
       setOpenModules({ [r.newModuleIndex]: true });
-      showActionToast('New module created; lessons below the divider moved into it.');
+      showActionToast(
+        'New module created; lessons under this divider (until the next divider or end of module) moved into it.'
+      );
+      return true;
     },
     [showActionToast]
   );
@@ -2198,10 +2422,22 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     showActionToast,
   ]);
 
+  const closeCatalogDividerRemoveDialog = useCallback(() => setCatalogDividerRemovePending(null), []);
+
   const removeLesson = (mi: number, li: number) => {
     if (!draft) return;
     const target = draft.modules[mi];
     if (!target || target.lessons.length <= 1) return;
+    const row = target.lessons[li];
+    if (row?.contentKind === 'divider') {
+      const under = countRowsUnderCatalogDivider(target, li);
+      if (under > 0) {
+        const raw = catalogMiniRichPlainText(row.title ?? '') || 'Divider';
+        const label = raw.length > 72 ? `${raw.slice(0, 70)}…` : raw;
+        setCatalogDividerRemovePending({ mi, li, label, nestedCount: under });
+        return;
+      }
+    }
     const wouldRemain = target.lessons.filter((_, j) => j !== li);
     if (!wouldRemain.some(isPlayableCatalogLesson)) return;
     setDraft((d) => {
@@ -2217,6 +2453,55 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     });
     showActionToast('Lesson deleted.');
   };
+
+  const confirmCatalogDividerRemoveKeepRows = useCallback(() => {
+    const pending = catalogDividerRemovePending;
+    if (!pending || !draft) return;
+    const before = deepClone(draft);
+    const { mi, li, nestedCount } = pending;
+    setDraft((d) => {
+      if (!d) return null;
+      const modules = d.modules.map((m, i) => {
+        if (i !== mi) return m;
+        if (m.lessons.length <= 1) return m;
+        const nextLessons = m.lessons.filter((_, j) => j !== li);
+        if (!nextLessons.some(isPlayableCatalogLesson)) return m;
+        return { ...m, lessons: nextLessons };
+      });
+      return { ...d, modules };
+    });
+    setDividerSectionsCollapsed((prev) => clearDividerCollapseKeysForModule(prev, mi));
+    setCatalogDividerRemovePending(null);
+    showActionToast(`Divider removed; ${nestedCount} row(s) kept in this module.`, {
+      variant: 'neutral',
+      undo: () => setDraft(before),
+      undoLabel: 'Undo',
+    });
+  }, [catalogDividerRemovePending, draft, showActionToast]);
+
+  const confirmCatalogDividerRemoveDeleteAll = useCallback(() => {
+    const pending = catalogDividerRemovePending;
+    if (!pending || !draft) return;
+    const before = deepClone(draft);
+    const { mi, li, label } = pending;
+    const next = removeCatalogDividerAndNestedLessonRows(draft, mi, li);
+    if (!next) {
+      showActionToast(
+        'Each module must keep at least one playable lesson (video, page, or quiz). Remove or move lessons first.',
+        'danger'
+      );
+      setCatalogDividerRemovePending(null);
+      return;
+    }
+    setDraft(next);
+    setDividerSectionsCollapsed((prev) => clearDividerCollapseKeysForModule(prev, mi));
+    setCatalogDividerRemovePending(null);
+    showActionToast(`“${label}” and all rows under it removed.`, {
+      variant: 'neutral',
+      undo: () => setDraft(before),
+      undoLabel: 'Undo',
+    });
+  }, [catalogDividerRemovePending, draft, showActionToast]);
 
   const baselineCourseSnapshot = useMemo((): Course | null => {
     if (!baselineJson) return null;
@@ -2302,6 +2587,27 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     return next;
   };
 
+  const remapDividerSectionsCollapsedAfterModuleSwap = (
+    prev: Record<string, boolean>,
+    a: number,
+    b: number
+  ): Record<string, boolean> => {
+    const next: Record<string, boolean> = {};
+    for (const [k, v] of Object.entries(prev)) {
+      if (!v) continue;
+      const colon = k.indexOf(':');
+      if (colon < 0) continue;
+      const mi = Number(k.slice(0, colon));
+      const rest = k.slice(colon + 1);
+      if (!Number.isInteger(mi)) continue;
+      let nmi = mi;
+      if (mi === a) nmi = b;
+      else if (mi === b) nmi = a;
+      next[`${nmi}:${rest}`] = true;
+    }
+    return next;
+  };
+
   const moveModule = (
     mi: number,
     delta: -1 | 1,
@@ -2337,6 +2643,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       return next;
     });
     setOpenLessons((prev) => remapOpenLessonsAfterModuleSwap(prev, a, b));
+    setDividerSectionsCollapsed((prev) => remapDividerSectionsCollapsedAfterModuleSwap(prev, a, b));
 
     setModuleReorderLayoutTick((t) => t + 1);
   };
@@ -2378,6 +2685,17 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         delete next[k2];
         if (o1) next[k2] = true;
         if (o2) next[k1] = true;
+        return next;
+      });
+      setDividerSectionsCollapsed((prev) => {
+        const c1 = prev[k1];
+        const c2 = prev[k2];
+        if (!c1 && !c2) return prev;
+        const next = { ...prev };
+        delete next[k1];
+        delete next[k2];
+        if (c1) next[k2] = true;
+        if (c2) next[k1] = true;
         return next;
       });
     }
@@ -2423,6 +2741,16 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       return { [key]: true };
     });
   };
+
+  const toggleDividerSection = useCallback((mi: number, li: number) => {
+    const k = `${mi}:${li}`;
+    setDividerSectionsCollapsed((prev) => {
+      const next = { ...prev };
+      if (next[k]) delete next[k];
+      else next[k] = true;
+      return next;
+    });
+  }, []);
 
   const catalogDisclosureLessonKey = useMemo(() => {
     const k = Object.keys(openLessons).find((key) => openLessons[key]);
@@ -3132,9 +3460,12 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       courseLeaveDialog !== null ||
       courseTitleConflict !== null ||
       changeLessonKindModal !== null ||
+      splitDividerNewModuleModal !== null ||
+      changeModuleKindModal !== null ||
       addLessonBranchModal !== null ||
       addAnotherLessonAfterSave !== null ||
-      catalogPlaceModal !== null
+      catalogPlaceModal !== null ||
+      catalogDividerRemovePending !== null
   );
 
   /** Ref updated by PathBuilder via onPathsDirtyChange — read before opening catalog tab confirm. */
@@ -3390,10 +3721,22 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   });
 
   const closeChangeLessonKindModal = useCallback(() => setChangeLessonKindModal(null), []);
+  const closeChangeModuleKindModal = useCallback(() => setChangeModuleKindModal(null), []);
+  const closeSplitDividerNewModuleModal = useCallback(() => setSplitDividerNewModuleModal(null), []);
 
   useDialogKeyboard({
     open: changeLessonKindModal !== null,
     onClose: closeChangeLessonKindModal,
+  });
+
+  useDialogKeyboard({
+    open: splitDividerNewModuleModal !== null,
+    onClose: closeSplitDividerNewModuleModal,
+  });
+
+  useDialogKeyboard({
+    open: changeModuleKindModal !== null,
+    onClose: closeChangeModuleKindModal,
   });
 
   const closeAddLessonBranchModal = useCallback(() => setAddLessonBranchModal(null), []);
@@ -3421,6 +3764,12 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   useDialogKeyboard({
     open: catalogPlaceModal !== null,
     onClose: closeCatalogPlaceModal,
+  });
+
+  useDialogKeyboard({
+    open: catalogDividerRemovePending !== null,
+    onClose: closeCatalogDividerRemoveDialog,
+    onPrimaryAction: confirmCatalogDividerRemoveKeepRows,
   });
 
   useEffect(() => {
@@ -3457,6 +3806,28 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     const row = draft.modules[mi]?.lessons[li];
     if (!row) setChangeLessonKindModal(null);
   }, [draft, changeLessonKindModal]);
+
+  useEffect(() => {
+    if (!splitDividerNewModuleModal || !draft) return;
+    const { mi, li, insertAt } = splitDividerNewModuleModal;
+    const row = draft.modules[mi]?.lessons[li];
+    if (!row || row.contentKind !== 'divider') {
+      setSplitDividerNewModuleModal(null);
+      return;
+    }
+    const maxAt = draft.modules.length;
+    if (insertAt < 0 || insertAt > maxAt) {
+      setSplitDividerNewModuleModal((prev) =>
+        prev ? { ...prev, insertAt: Math.max(0, Math.min(prev.insertAt, maxAt)) } : null
+      );
+    }
+  }, [draft, splitDividerNewModuleModal]);
+
+  useEffect(() => {
+    if (changeModuleKindModal == null || !draft) return;
+    const { sourceMi } = changeModuleKindModal;
+    if (draft.modules.length < 2 || !draft.modules[sourceMi]) setChangeModuleKindModal(null);
+  }, [draft, changeModuleKindModal]);
 
   useEffect(() => {
     if (!addLessonBranchModal || !draft) return;
@@ -3536,6 +3907,14 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     if (mi < 0 || mi >= draft.modules.length) return;
     if (li < 0 || li >= draft.modules[mi].lessons.length) return;
     setOpenLessons({ [key]: true });
+    const added = draft.modules[mi]?.lessons[li];
+    if (added?.contentKind === 'divider') {
+      setDividerSectionsCollapsed((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    }
     // Ensure the containing module is visible too.
     setOpenModules({ [mi]: true });
     pendingOpenNewLessonKeyRef.current = null;
@@ -3822,7 +4201,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               onFocus={openCourseCatalogOnce}
               onMouseDown={openCourseCatalogOnce}
               onChange={onCourseSelectChange}
-              className="box-border min-h-11 min-w-0 w-full touch-manipulation rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] md:text-sm lg:min-w-[12rem] lg:flex-1 lg:max-w-none"
+              className="admin-toolbar-main-select box-border min-h-11 min-w-0 w-full touch-manipulation rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] md:text-sm lg:min-w-[12rem] lg:flex-1 lg:max-w-none"
             >
               <option value="" disabled>
                 {!catalogRequested
@@ -4036,7 +4415,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
         {draft && (
           <div className="space-y-4">
-          {!isCreatorCatalog ? (
+          {!isCreatorCatalog && !siteAssistantLoading && siteAssistantEnabled ? (
             <AdminCourseAiAssistant
               draft={draft}
               apiKey={getGeminiApiKey()}
@@ -4422,7 +4801,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           </div>
 
           <div className="space-y-0">
-            <div className="relative z-20 mb-2.5 flex flex-wrap items-start gap-2 pb-1 sm:mb-4 sm:pb-2">
+            <div className="relative z-20 mb-1 flex flex-wrap items-start gap-2 pb-0 sm:mb-1.5 sm:pb-0">
               <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
                 <h3 className="text-xs font-semibold text-[var(--text-secondary)]">Modules and lessons</h3>
                 <span ref={modulesTipsWrapRef} className="relative z-10 inline-flex shrink-0 items-center gap-1">
@@ -4486,6 +4865,12 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         playable lesson when you move).
                       </li>
                       <li>
+                        <strong className="font-semibold text-[var(--text-secondary)]">Change module type</strong> (sliders
+                        next to Module, needs at least two modules): pick another module and where to insert — after a
+                        section divider, at the start, or at the end — then this module becomes a divider plus its lessons
+                        in that spot (same outline effect as changing a lesson to a divider).
+                      </li>
+                      <li>
                         Structured ids (<code className="text-orange-500/90">C1</code>…): playable lessons use{' '}
                         <code className="text-orange-500/90">…M1L1</code>, section dividers use{' '}
                         <code className="text-orange-500/90">…M1D1</code> (not L). Ids renumber when you reorder.
@@ -4502,16 +4887,28 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               onClick={() => addModuleAt(0)}
             />
 
-            {draft.modules.map((mod, mi) => (
+            {draft.modules.map((mod, mi) => {
+              const toggleThisModuleRow = () => {
+                const wasOpen = !!openModules[mi];
+                toggleModuleOpen(mi);
+                if (!wasOpen) {
+                  requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                      focusCatalogMiniRichById(`admin-module-title-${mi}`, {
+                        preventScroll: false,
+                      });
+                    });
+                  });
+                }
+              };
+              return (
               <Fragment key={`module-slot-${mi}`}>
               <div
                 data-admin-module-index={mi}
-                className={`space-y-0 pb-0 ${
-                  mi === 0 ? 'pt-0.5 sm:pt-1' : ''
-                }`}
+                className="space-y-0 pb-0 pt-0"
               >
                 <div
-                  className={`flex flex-col items-stretch gap-2 md:flex-row md:flex-wrap md:items-center md:justify-between md:gap-x-2 md:gap-y-1.5 ${
+                  className={`flex flex-col items-stretch gap-1.5 md:flex-row md:flex-wrap md:items-center md:justify-between md:gap-x-2 md:gap-y-1 ${
                     openModules[mi] ? 'pb-0' : ''
                   }`}
                 >
@@ -4521,30 +4918,49 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         <div className="flex min-w-0 shrink-0 items-center gap-x-1.5 sm:contents">
                         <button
                           type="button"
-                          className={ADMIN_CATALOG_MODULE_BADGE_CLASS}
+                          className={`${ADMIN_CATALOG_MODULE_BADGE_CLASS} items-center gap-1`}
                           title={openModules[mi] ? 'Collapse module lessons' : 'Expand module lessons'}
                           aria-expanded={!!openModules[mi]}
-                          aria-label={`${openModules[mi] ? 'Collapse' : 'Expand'} module ${mi + 1} (${mod.id.trim() || 'no id'}). ${mod.lessons.length} lesson${mod.lessons.length === 1 ? '' : 's'}.`}
-                          onClick={() => {
-                            const wasOpen = !!openModules[mi];
-                            toggleModuleOpen(mi);
-                            if (!wasOpen) {
-                              requestAnimationFrame(() => {
-                                requestAnimationFrame(() => {
-                                  focusCatalogMiniRichById(`admin-module-title-${mi}`, {
-                                    preventScroll: false,
-                                  });
-                                });
-                              });
-                            }
-                          }}
+                          aria-label={`${openModules[mi] ? 'Collapse' : 'Expand'} module ${mi + 1} (${mod.id.trim() || 'no id'}) lessons`}
+                          onClick={toggleThisModuleRow}
                         >
                           Module
+                          {openModules[mi] ? (
+                            <ChevronDown size={14} className="shrink-0 opacity-90" aria-hidden />
+                          ) : (
+                            <ChevronRight size={14} className="shrink-0 opacity-90" aria-hidden />
+                          )}
                         </button>
-                        <span
-                          className="inline-flex min-h-11 min-w-11 shrink-0 md:min-h-9 md:min-w-9"
-                          aria-hidden
-                        />
+                        <button
+                          type="button"
+                          disabled={!draft || draft.modules.length < 2}
+                          onClick={() => {
+                            const d = draftRef.current;
+                            if (!d || d.modules.length < 2) return;
+                            const defaultTarget = d.modules.findIndex((_, i) => i !== mi);
+                            if (defaultTarget < 0) return;
+                            const len = d.modules[defaultTarget]?.lessons.length ?? 0;
+                            /** Show full outline (every module + divider subsections) before merge / “Place divider…” options. */
+                            setOpenModules(() => {
+                              const next: Record<number, boolean> = {};
+                              d.modules.forEach((_, i) => {
+                                next[i] = true;
+                              });
+                              return next;
+                            });
+                            setDividerSectionsCollapsed({});
+                            setChangeModuleKindModal({ sourceMi: mi, targetMi: defaultTarget, insertAt: len });
+                          }}
+                          className="inline-flex min-h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40 disabled:pointer-events-none disabled:opacity-30 md:min-h-9 md:min-w-9"
+                          title={
+                            !draft || draft.modules.length < 2
+                              ? 'Add another module first — then you can merge this one into it as a section divider.'
+                              : 'Change module — merge as section divider into another module (pick target and position)'
+                          }
+                          aria-label="Change module type"
+                        >
+                          <SlidersHorizontal size={18} aria-hidden />
+                        </button>
                         <span
                           id={`admin-module-id-${mi}`}
                           tabIndex={-1}
@@ -4710,13 +5126,20 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   <div>
                   {mod.lessons.map((lesson, li) => {
                     const lessonRowKey = lessonRowDomKey(lesson, mi, li);
+                    if (lessonRowHiddenUnderCollapsedDivider(mod, mi, li, dividerSectionsCollapsed)) {
+                      return <Fragment key={lessonRowKey} />;
+                    }
                     return (
                     <Fragment key={lessonRowKey}>
                     <div
                       data-admin-lesson-row={lessonRowKey}
                       data-lesson-mi={mi}
                       data-lesson-li={li}
-                      className="space-y-1.5 py-0 sm:space-y-2"
+                      className={`space-y-1.5 py-0 sm:space-y-2${
+                        lessonRowInSectionUnderDivider(mod, li)
+                          ? ` ${CATALOG_LESSON_SECTION_UNDER_DIVIDER_INDENT}`
+                          : ''
+                      }`}
                     >
                       <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
                         {lesson.contentKind === 'divider' ? (
@@ -4728,12 +5151,24 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             <div className="flex shrink-0 items-center gap-1.5 sm:contents">
                             <button
                               type="button"
-                              onClick={() => splitDividerIntoNewModuleAt(mi, li)}
-                              className={ADMIN_CATALOG_BRANCH_KIND_BADGE_CLASS}
-                              title="New module here — divider label becomes the module title; rows below move into it"
-                              aria-label="Turn divider into a new module; content below moves to that module"
+                              onClick={() => toggleDividerSection(mi, li)}
+                              className={`${ADMIN_CATALOG_BRANCH_KIND_BADGE_CLASS} items-center gap-1`}
+                              aria-expanded={!dividerSectionsCollapsed[`${mi}:${li}`]}
+                              title={
+                                dividerSectionsCollapsed[`${mi}:${li}`]
+                                  ? 'Show lessons under this divider'
+                                  : 'Hide lessons under this divider'
+                              }
+                              aria-label={`${
+                                dividerSectionsCollapsed[`${mi}:${li}`] ? 'Show' : 'Hide'
+                              } lessons under section divider ${li + 1}`}
                             >
                               Divider
+                              {!dividerSectionsCollapsed[`${mi}:${li}`] ? (
+                                <ChevronDown size={14} className="shrink-0 opacity-90" aria-hidden />
+                              ) : (
+                                <ChevronRight size={14} className="shrink-0 opacity-90" aria-hidden />
+                              )}
                             </button>
                             <button
                               type="button"
@@ -4763,25 +5198,31 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             <div className="flex min-w-0 shrink-0 items-center gap-x-1.5 sm:contents">
                               <button
                                 type="button"
-                                onClick={() => setChangeLessonKindModal({ mi, li })}
-                                className={ADMIN_CATALOG_LESSON_BADGE_CLASS}
-                                title="Change branch type"
-                                aria-label={`Change branch type, now ${catalogLessonBranchKindModalLabel(lesson)}`}
-                              >
-                                Lesson
-                              </button>
-                              <button
-                                type="button"
                                 onClick={() => toggleLessonOpen(mi, li)}
-                                className="inline-flex min-h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 md:min-h-9 md:min-w-9"
+                                className={`${ADMIN_CATALOG_LESSON_BADGE_CLASS} items-center gap-1`}
+                                title={
+                                  openLessons[`${mi}:${li}`]
+                                    ? 'Collapse lesson details'
+                                    : 'Expand lesson details'
+                                }
                                 aria-expanded={!!openLessons[`${mi}:${li}`]}
                                 aria-label={`${openLessons[`${mi}:${li}`] ? 'Collapse' : 'Expand'} lesson ${li + 1} (${lesson.id.trim() || 'no id'}) details`}
                               >
+                                Lesson
                                 {openLessons[`${mi}:${li}`] ? (
-                                  <ChevronDown size={16} className="shrink-0" aria-hidden />
+                                  <ChevronDown size={14} className="shrink-0 opacity-90" aria-hidden />
                                 ) : (
-                                  <ChevronRight size={16} className="shrink-0" aria-hidden />
+                                  <ChevronRight size={14} className="shrink-0 opacity-90" aria-hidden />
                                 )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setChangeLessonKindModal({ mi, li })}
+                                className="inline-flex min-h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40 md:min-h-9 md:min-w-9"
+                                title="Change branch type (video, external page, or quiz)"
+                                aria-label={`Change branch type, now ${catalogLessonBranchKindModalLabel(lesson)}`}
+                              >
+                                <SlidersHorizontal size={18} aria-hidden />
                               </button>
                               <span
                                 id={`admin-lesson-id-${mi}-${li}`}
@@ -4963,7 +5404,9 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           </button>
                         </div>
                       </div>
-                      {(openLessons[`${mi}:${li}`] || lesson.contentKind === 'divider') && (
+                      {(lesson.contentKind === 'divider'
+                        ? !dividerSectionsCollapsed[`${mi}:${li}`]
+                        : !!openLessons[`${mi}:${li}`]) && (
                         <>
                       {lesson.contentKind === 'divider' &&
                       showValidationHints &&
@@ -5427,11 +5870,19 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       )}
                     </div>
                     {li < mod.lessons.length - 1 && (
-                      <CatalogLessonInsertSlot
-                        persistVisibleOnMd={false}
-                        ariaLabel={`Add branch here after row ${li + 1} in this module`}
-                        onClick={() => setAddLessonBranchModal({ mi, insertAt: li + 1 })}
-                      />
+                      <div
+                        className={
+                          lessonInsertSlotInSectionUnderDivider(mod, li + 1)
+                            ? CATALOG_LESSON_SECTION_UNDER_DIVIDER_INDENT
+                            : undefined
+                        }
+                      >
+                        <CatalogLessonInsertSlot
+                          persistVisibleOnMd={false}
+                          ariaLabel={`Add branch here after row ${li + 1} in this module`}
+                          onClick={() => setAddLessonBranchModal({ mi, insertAt: li + 1 })}
+                        />
+                      </div>
                     )}
                     </Fragment>
                   );
@@ -5458,7 +5909,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 />
               )}
               </Fragment>
-            ))}
+            );
+            })}
           </div>
           </div>
         )}
@@ -5529,7 +5981,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       <AnimatePresence>
         {pathSubTabSwitchConfirmOpen && (
           <div
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50"
             role="dialog"
             aria-modal="true"
             aria-labelledby="admin-path-subtab-switch-title"
@@ -5586,7 +6038,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       <AnimatePresence>
         {subTabSwitchConfirmOpen && (
           <div
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50"
             role="dialog"
             aria-modal="true"
             aria-labelledby="admin-catalog-subtab-switch-title"
@@ -5643,7 +6095,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       <AnimatePresence>
         {courseLeaveDialog && (
           <div
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50"
             role="dialog"
             aria-modal="true"
             aria-labelledby="admin-catalog-course-leave-title"
@@ -5702,7 +6154,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       <AnimatePresence>
         {changeLessonKindModal && draft && (
           <div
-            className="fixed inset-0 z-[102] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+            className="fixed inset-0 z-[102] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
             role="presentation"
             onMouseDown={(e) => {
               if (e.target === e.currentTarget) closeChangeLessonKindModal();
@@ -5740,8 +6192,9 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   {draft.modules[changeLessonKindModal.mi]?.lessons[changeLessonKindModal.li]?.contentKind ===
                   'divider' ? (
                     <>
-                      For <span className="font-semibold text-[var(--text-secondary)]">New module</span>, use the
-                      Divider control on the row. Here you can switch this row to a playable type. On structured
+                      Turn this section into its own module (same as the row’s{' '}
+                      <span className="font-semibold text-[var(--text-secondary)]">Divider</span> control) — you’ll pick
+                      where the new module sits in the course — or switch this row to a playable type below. On structured
                       courses, ids renumber after you change type.
                     </>
                   ) : (
@@ -5752,6 +6205,29 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   )}
                 </p>
                 <div className="flex flex-col gap-3">
+                  {draft.modules[changeLessonKindModal.mi]?.lessons[changeLessonKindModal.li]?.contentKind ===
+                    'divider' && (
+                    <button
+                      type="button"
+                      className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
+                      onClick={() => {
+                        const { mi: m, li: l } = changeLessonKindModal;
+                        closeChangeLessonKindModal();
+                        openSplitDividerNewModuleModal(m, l);
+                      }}
+                    >
+                      <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
+                        <Layers size={20} className="shrink-0 text-violet-500 dark:text-violet-400" aria-hidden />
+                        New module from this section
+                        <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Own module</span>
+                      </span>
+                      <span className="pl-8 text-xs text-[var(--text-muted)]">
+                        Next, choose where the new module appears. Divider label becomes the module title; lessons under
+                        this divider until the next divider (or end of module) move into it; the rest of this module
+                        stays here.
+                      </span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
@@ -5871,9 +6347,298 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       </AnimatePresence>
 
       <AnimatePresence>
+        {splitDividerNewModuleModal != null && draft && (
+          <div
+            className="fixed inset-0 z-[102] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+            role="presentation"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) closeSplitDividerNewModuleModal();
+            }}
+          >
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="admin-split-divider-new-module-title"
+              initial={{ y: 24, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 24, opacity: 0 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              className="flex max-h-[min(90dvh,640px)] w-full max-w-lg flex-col rounded-t-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl sm:max-h-[min(85dvh,560px)] sm:rounded-2xl"
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-color)] px-4 py-3">
+                <span className="w-10 shrink-0" aria-hidden />
+                <h2
+                  id="admin-split-divider-new-module-title"
+                  className="min-w-0 flex-1 text-center text-base font-bold text-[var(--text-primary)] sm:text-lg"
+                >
+                  New module from section
+                </h2>
+                <button
+                  type="button"
+                  className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-lg text-sm font-semibold text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
+                  onClick={closeSplitDividerNewModuleModal}
+                >
+                  Cancel
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4">
+                <p className="text-xs leading-relaxed text-[var(--text-muted)]">
+                  The divider label becomes the new module’s title. Only lessons under this divider until the next divider
+                  (or end of this module) move into it; other rows stay in the current module. On structured courses, ids
+                  renumber after you confirm.
+                </p>
+                <label className="block min-w-0">
+                  <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
+                    Place new module in the course
+                  </span>
+                  <select
+                    className="min-h-11 w-full max-w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-orange-500/40 focus:ring-2 focus:ring-orange-500/20"
+                    value={String(splitDividerNewModuleModal.insertAt)}
+                    onChange={(e) => {
+                      const insertAt = Number(e.target.value);
+                      setSplitDividerNewModuleModal((prev) => (prev ? { ...prev, insertAt } : null));
+                    }}
+                  >
+                    {splitDividerIntoNewModuleInsertOptions(
+                      draft,
+                      splitDividerNewModuleModal.mi
+                    ).map((o) => (
+                      <option key={String(o.insertAt)} value={String(o.insertAt)}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
+                  onClick={() => {
+                    const ctx = splitDividerNewModuleModal;
+                    if (!ctx) return;
+                    if (commitSplitDividerIntoNewModuleAt(ctx.mi, ctx.li, ctx.insertAt)) {
+                      closeSplitDividerNewModuleModal();
+                    }
+                  }}
+                >
+                  <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
+                    <Layers size={20} className="shrink-0 text-violet-500 dark:text-violet-400" aria-hidden />
+                    Create new module
+                    <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Confirm</span>
+                  </span>
+                  <span className="pl-8 text-xs text-[var(--text-muted)]">
+                    Same result as the row’s Divider control, with the placement you chose above.
+                  </span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {catalogDividerRemovePending ? (
+        <div
+          className="fixed inset-0 z-[190] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeCatalogDividerRemoveDialog();
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="catalog-divider-remove-title"
+            className="flex max-h-[min(90dvh,520px)] w-full max-w-lg flex-col rounded-t-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl sm:rounded-2xl"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-color)] px-4 py-3">
+              <span className="inline-flex min-h-10 min-w-10 shrink-0" aria-hidden />
+              <h2
+                id="catalog-divider-remove-title"
+                className="min-w-0 flex-1 text-center text-base font-bold text-[var(--text-primary)] sm:text-lg"
+              >
+                Remove divider?
+              </h2>
+              <button
+                type="button"
+                onClick={closeCatalogDividerRemoveDialog}
+                className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-full text-red-500 transition-colors hover:bg-red-500/15 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300"
+                aria-label="Close"
+              >
+                <X size={20} strokeWidth={2.25} aria-hidden />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4">
+              <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
+                <strong className="text-[var(--text-primary)]">“{catalogDividerRemovePending.label}”</strong> still has{' '}
+                <strong className="text-[var(--text-primary)]">{catalogDividerRemovePending.nestedCount}</strong> row
+                {catalogDividerRemovePending.nestedCount === 1 ? '' : 's'} under it in this module (until the next divider
+                or the end of the module).
+              </p>
+              <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
+                <strong className="text-[var(--text-primary)]">Keep rows</strong> — remove only the divider and leave those
+                rows in the module list. <strong className="text-[var(--text-primary)]">Delete all</strong> — remove the
+                divider and every row under it until the next divider. Use the close control above to dismiss without
+                changes.
+              </p>
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end sm:gap-3">
+                <button
+                  type="button"
+                  onClick={() => void confirmCatalogDividerRemoveDeleteAll()}
+                  className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-red-500/50 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-600 transition-colors hover:bg-red-500/20 dark:text-red-400 sm:w-auto"
+                >
+                  Delete all
+                </button>
+                <button
+                  type="button"
+                  autoFocus
+                  onClick={() => void confirmCatalogDividerRemoveKeepRows()}
+                  className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-4 py-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-orange-600 sm:w-auto"
+                >
+                  Keep rows
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <AnimatePresence>
+        {changeModuleKindModal != null && draft && (
+          <div
+            className="fixed inset-0 z-[102] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+            role="presentation"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) closeChangeModuleKindModal();
+            }}
+          >
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="admin-module-change-kind-title"
+              initial={{ y: 24, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 24, opacity: 0 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              className="flex max-h-[min(90dvh,640px)] w-full max-w-lg flex-col rounded-t-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl sm:max-h-[min(85dvh,560px)] sm:rounded-2xl"
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-color)] px-4 py-3">
+                <span className="w-10 shrink-0" aria-hidden />
+                <h2
+                  id="admin-module-change-kind-title"
+                  className="min-w-0 flex-1 text-center text-base font-bold text-[var(--text-primary)] sm:text-lg"
+                >
+                  Change module type
+                </h2>
+                <button
+                  type="button"
+                  className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-lg text-sm font-semibold text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
+                  onClick={closeChangeModuleKindModal}
+                >
+                  Cancel
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4">
+                <p className="text-xs leading-relaxed text-[var(--text-muted)]">
+                  This module’s title becomes a <span className="font-semibold text-[var(--text-secondary)]">section divider</span> inside the module you pick. All of this module’s lessons are inserted at that position. For a divider section, that is{' '}
+                  <span className="font-semibold text-[var(--text-secondary)]">after every lesson under that divider</span>{' '}
+                  (up to the next divider), then any rows that were already below that point follow. This module is removed.
+                  On structured courses, ids renumber after you confirm.
+                </p>
+                <div className="space-y-3">
+                  <label className="block min-w-0">
+                    <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
+                      Merge into module
+                    </span>
+                    <select
+                      className="min-h-11 w-full max-w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-orange-500/40 focus:ring-2 focus:ring-orange-500/20"
+                      value={String(changeModuleKindModal.targetMi)}
+                      onChange={(e) => {
+                        const nextT = Number(e.target.value);
+                        setChangeModuleKindModal((prev) => {
+                          if (!prev) return prev;
+                          const d = draftRef.current;
+                          const len = d?.modules[nextT]?.lessons.length ?? 0;
+                          return { ...prev, targetMi: nextT, insertAt: len };
+                        });
+                      }}
+                    >
+                      {draft.modules.map((m, i) =>
+                        i === changeModuleKindModal.sourceMi ? null : (
+                          <option key={i} value={String(i)}>
+                            {catalogModuleTitleLine(m, i + 1)}
+                          </option>
+                        )
+                      )}
+                    </select>
+                  </label>
+                  <label className="block min-w-0">
+                    <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
+                      Place divider and lessons after
+                    </span>
+                    <select
+                      className="min-h-11 w-full max-w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-orange-500/40 focus:ring-2 focus:ring-orange-500/20"
+                      value={String(changeModuleKindModal.insertAt)}
+                      onChange={(e) => {
+                        const insertAt = Number(e.target.value);
+                        setChangeModuleKindModal((prev) => (prev ? { ...prev, insertAt } : null));
+                      }}
+                    >
+                      {moduleDividerMergePositionOptions(
+                        draft.modules[changeModuleKindModal.targetMi] ?? { id: '', title: '', lessons: [] }
+                      ).map((o) => (
+                        <option key={`${o.insertAt}-${o.label}`} value={String(o.insertAt)}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <button
+                  type="button"
+                  className="flex min-h-[3.25rem] w-full flex-col items-start gap-0.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-left hover:border-orange-500/40 hover:bg-[var(--hover-bg)]"
+                  onClick={() => {
+                    const ctx = changeModuleKindModal;
+                    if (!ctx) return;
+                    const { sourceMi, targetMi, insertAt } = ctx;
+                    const d = draftRef.current;
+                    if (!d) return;
+                    const next = applyConvertModuleIntoDividerAt(d, sourceMi, targetMi, insertAt);
+                    if (!next) {
+                      showActionToast(
+                        'Could not merge. Pick a different target or position — the merged module must keep at least one playable lesson, and the source cannot be the same as the target.',
+                        'danger'
+                      );
+                      return;
+                    }
+                    const mergedModuleIndex = sourceMi < targetMi ? targetMi - 1 : targetMi;
+                    setDraft(ensureCourseLessonRowKeys(next));
+                    closeChangeModuleKindModal();
+                    setOpenModules({ [mergedModuleIndex]: true });
+                    setOpenLessons({});
+                    showActionToast('Module merged as a section divider at the position you chose.', 'neutral');
+                  }}
+                >
+                  <span className="flex w-full items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
+                    <Minus size={20} className="shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+                    Merge as section divider
+                    <span className="ml-auto text-xs font-normal text-[var(--text-muted)]">Confirm</span>
+                  </span>
+                  <span className="pl-8 text-xs text-[var(--text-muted)]">
+                    Same learner outline behavior as changing a lesson row to a section divider.
+                  </span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {addAnotherLessonAfterSave && draft && (
           <div
-            className="fixed inset-0 z-[102] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+            className="fixed inset-0 z-[102] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
             role="presentation"
             onMouseDown={(e) => {
               if (e.target === e.currentTarget) closeAddAnotherLessonAfterSave();
@@ -5929,7 +6694,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       <AnimatePresence>
         {addLessonBranchModal && draft && (
           <div
-            className="fixed inset-0 z-[102] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+            className="fixed inset-0 z-[102] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
             role="presentation"
             onMouseDown={(e) => {
               if (e.target === e.currentTarget) closeAddLessonBranchModal();
@@ -6014,7 +6779,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
       {catalogPlaceModal && draft ? (
         <div
-          className="fixed inset-0 z-[103] flex items-end justify-center bg-black/50 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+          className="fixed inset-0 z-[103] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
           role="presentation"
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) closeCatalogPlaceModal();
@@ -6267,7 +7032,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       <AnimatePresence>
         {deleteDialogOpen && draft && (
           <div
-            className="fixed inset-0 z-[101] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+            className="fixed inset-0 z-[101] flex items-center justify-center bg-black/50 p-4"
             role="dialog"
             aria-modal="true"
             aria-labelledby="admin-catalog-delete-title"

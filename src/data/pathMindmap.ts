@@ -20,7 +20,7 @@ export type MindmapTreeNode = {
   locked?: boolean;
   /** `kind: 'link'` — opens in a new tab in the path outline (blog, article, etc.). */
   externalUrl?: string;
-  /** `kind: 'divider'` — non-collapsible subheading under a section; must have no children. */
+  /** `kind: 'divider'` — subheading under a section; may group outline rows in `children` (flat list under the group). */
   /**
    * Restrict visibility to these roles. Omit or both roles = everyone (signed-in admin or user, and guests count as user).
    * `[]` = hidden from everyone in the catalog outline (including admins). `['admin']` = administrators only.
@@ -96,49 +96,81 @@ function nodeKindForFlatten(n: MindmapTreeNode): 'label' | 'course' | 'lesson' |
  * Flatten legacy nested rows under a section for display (learner + filter pipeline).
  * Copies `visibleToRoles` onto synthetic dividers from structural labels.
  */
+/**
+ * Hoist legacy nesting into a linear list of rows (each row’s own `children` cleared except
+ * divider groups, which keep a flat list produced by the same rules).
+ */
+function appendFlattenedOutlineSiblings(out: MindmapTreeNode[], nodes: MindmapTreeNode[]): void {
+  for (const n of nodes) {
+    if (n.kind === 'divider') {
+      const inner =
+        n.children.length > 0 ? flattenDividerGroupChildrenForOutline(n.children) : [];
+      out.push({ ...n, children: inner });
+      continue;
+    }
+    const nk = nodeKindForFlatten(n);
+    if (nk === 'module') {
+      const div: MindmapTreeNode = {
+        id: `mod-div-${n.id}`,
+        label: n.label.trim() || 'Module',
+        children: [],
+        kind: 'divider',
+      };
+      if (n.visibleToRoles) div.visibleToRoles = n.visibleToRoles;
+      out.push(div);
+      if (n.children.length > 0) appendFlattenedOutlineSiblings(out, n.children);
+      continue;
+    }
+    if (nk === 'label' && n.children.length > 0) {
+      const div: MindmapTreeNode = {
+        id: `legacy-div-${n.id}`,
+        label: n.label.trim() || 'Topic',
+        children: [],
+        kind: 'divider',
+      };
+      if (n.visibleToRoles) div.visibleToRoles = n.visibleToRoles;
+      out.push(div);
+      appendFlattenedOutlineSiblings(out, n.children);
+      continue;
+    }
+    if (nk !== 'label' && n.children.length > 0) {
+      out.push({ ...n, children: [] });
+      appendFlattenedOutlineSiblings(out, n.children);
+      continue;
+    }
+    out.push({ ...n, children: [] });
+  }
+}
+
+/** Flatten one level of legacy nesting for rows stored under a divider group. */
+function flattenDividerGroupChildrenForOutline(nodes: MindmapTreeNode[]): MindmapTreeNode[] {
+  const out: MindmapTreeNode[] = [];
+  appendFlattenedOutlineSiblings(out, nodes);
+  return out;
+}
+
 export function flattenSectionChildrenForOutline(children: MindmapTreeNode[]): MindmapTreeNode[] {
   const out: MindmapTreeNode[] = [];
-  const walk = (nodes: MindmapTreeNode[]) => {
-    for (const n of nodes) {
-      if (n.kind === 'divider') {
-        out.push({ ...n, children: [] });
-        continue;
-      }
-      const nk = nodeKindForFlatten(n);
-      if (nk === 'module') {
-        const div: MindmapTreeNode = {
-          id: `mod-div-${n.id}`,
-          label: n.label.trim() || 'Module',
-          children: [],
-          kind: 'divider',
-        };
-        if (n.visibleToRoles) div.visibleToRoles = n.visibleToRoles;
-        out.push(div);
-        if (n.children.length > 0) walk(n.children);
-        continue;
-      }
-      if (nk === 'label' && n.children.length > 0) {
-        const div: MindmapTreeNode = {
-          id: `legacy-div-${n.id}`,
-          label: n.label.trim() || 'Topic',
-          children: [],
-          kind: 'divider',
-        };
-        if (n.visibleToRoles) div.visibleToRoles = n.visibleToRoles;
-        out.push(div);
-        walk(n.children);
-        continue;
-      }
-      if (nk !== 'label' && n.children.length > 0) {
-        out.push({ ...n, children: [] });
-        walk(n.children);
-        continue;
-      }
-      out.push({ ...n, children: [] });
-    }
-  };
-  walk(children);
+  appendFlattenedOutlineSiblings(out, children);
   return out;
+}
+
+function filterOutlineSectionRowForViewer(
+  row: MindmapTreeNode,
+  viewerIsAdmin: boolean,
+  cat: ReadonlySet<string> | null
+): MindmapTreeNode | null {
+  if (!mindmapNodeVisibleToViewer(row, viewerIsAdmin) || !mindmapNodeCatalogVisible(row, cat)) {
+    return null;
+  }
+  if (row.kind === 'divider' && row.children.length > 0) {
+    const kids = row.children
+      .map((c) => filterOutlineSectionRowForViewer(c, viewerIsAdmin, cat))
+      .filter((x): x is MindmapTreeNode => x != null);
+    if (kids.length === 0) return null;
+    return { ...row, children: kids };
+  }
+  return { ...row, children: [] };
 }
 
 /** Top-level sections and each section’s flat rows, visibility-filtered for the current viewer. */
@@ -155,10 +187,9 @@ export function filterOutlineBranchesForViewer(
     )
     .map((sec) => ({
       ...sec,
-      children: flattenSectionChildrenForOutline(sec.children).filter(
-        (row) =>
-          mindmapNodeVisibleToViewer(row, viewerIsAdmin) && mindmapNodeCatalogVisible(row, cat)
-      ),
+      children: flattenSectionChildrenForOutline(sec.children)
+        .map((row) => filterOutlineSectionRowForViewer(row, viewerIsAdmin, cat))
+        .filter((x): x is MindmapTreeNode => x != null),
     }));
 }
 
@@ -199,7 +230,7 @@ export function normalizeMindmapNode(raw: unknown): MindmapTreeNode | null {
     if (n) parsedChildren.push(n);
   }
   if (o.kind === 'divider') {
-    return mergeVisibleToRoles({ id: o.id, label: o.label, children: [], kind: 'divider' }, o);
+    return mergeVisibleToRoles({ id: o.id, label: o.label, children: parsedChildren, kind: 'divider' }, o);
   }
   const base: MindmapTreeNode = { id: o.id, label: o.label, children: parsedChildren };
   let node: MindmapTreeNode;
