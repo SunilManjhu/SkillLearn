@@ -137,7 +137,7 @@ export const AuthGatePage: React.FC<AuthGatePageProps> = ({
             <button
               type="button"
               onClick={() => onNavigate('privacy', false)}
-              className="font-medium text-orange-500 underline decoration-orange-500/50 underline-offset-2 hover:text-orange-400"
+              className="font-medium text-[var(--text-primary)] underline decoration-[var(--text-muted)] underline-offset-2 hover:opacity-90"
             >
               Privacy Policy
             </button>
@@ -151,18 +151,18 @@ export const AuthGatePage: React.FC<AuthGatePageProps> = ({
                 <button
                   type="button"
                   onClick={() => onNavigate('signin', false)}
-                  className="font-semibold text-orange-500 hover:text-orange-400"
+                  className="font-semibold text-[var(--text-primary)] hover:opacity-90"
                 >
                   Sign in
                 </button>
               </>
             ) : (
               <>
-                New to i-Golden?{' '}
+                New to <span className="font-semibold text-brand-500">i-Golden</span>?{' '}
                 <button
                   type="button"
                   onClick={() => onNavigate('signup', false)}
-                  className="font-semibold text-orange-500 hover:text-orange-400"
+                  className="font-semibold text-[var(--text-primary)] hover:opacity-90"
                 >
                   Create an account
                 </button>

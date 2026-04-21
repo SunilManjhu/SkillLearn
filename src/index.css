@@ -62,6 +62,10 @@ html {
   scroll-padding-top: 4rem;
 }
 
+/*
+ * Theme colors: see docs/theme-and-color-palette.md (neutral ramp + orange rules).
+ * Neutral hex ramp reference: https://colorkit.co/palette/272828-393a3a-4c4d4d-616161-757676-8b8c8c-a1a2a2-b8b8b8-cfcfcf-e7e7e7/
+ */
 :root {
   /* Dark theme — layered neutrals from product palette */
   --tone-950: #272828;
@@ -112,6 +116,19 @@ body {
   min-height: 100vh;
   background: var(--bg-primary);
   color: var(--text-primary);
+}
+
+/* Real hyperlinks: standard hand pointer (explicit so theme / components never show I-beam on links). */
+a[href] {
+  cursor: pointer;
+}
+
+/* Native <button>: hand when clickable; blocked when disabled (overridable e.g. cursor-grab via utilities). */
+button:enabled {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
 }
 
 /*

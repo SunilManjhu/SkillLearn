@@ -8,7 +8,7 @@ This guide orients **developers** and **AI assistants** on how the app is struct
 |--------|------------|
 | UI | React 19, TypeScript |
 | Build | Vite 6, `@vitejs/plugin-react` |
-| Styling | Tailwind CSS 4 (`@tailwindcss/vite`) |
+| Styling | Tailwind CSS 4 (`@tailwindcss/vite`); theme tokens in [`src/index.css`](../src/index.css) — see [**theme-and-color-palette.md**](./theme-and-color-palette.md) for allowed neutrals + orange. |
 | Motion | `motion` (`motion/react`) |
 | Icons | `lucide-react` |
 | Backend (client) | Firebase Auth + Firestore (`src/firebase.ts`) |

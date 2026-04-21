@@ -7,6 +7,7 @@ Notes for **contributors** and **AI assistants**: architecture pointers, debuggi
 | Doc | When to read it |
 |-----|------------------|
 | [**development-and-debugging.md**](./development-and-debugging.md) | Stack, env vars, folder map, navigation/history, Firebase & Gemini troubleshooting, mobile conventions, pre-flight checklists. |
+| [**theme-and-color-palette.md**](./theme-and-color-palette.md) | **Light/dark UI colors:** allowed neutral ramp, real `brand-*` orange vs remapped `orange-*`, semantic CSS variables — implemented in [`src/index.css`](../src/index.css); [ColorKit reference palette](https://colorkit.co/palette/272828-393a3a-4c4d4d-616161-757676-8b8c8c-a1a2a2-b8b8b8-cfcfcf-e7e7e7/). |
 | [**app-shell-app-tsx.md**](./app-shell-app-tsx.md) | **Root shell:** [`App.tsx`](../src/App.tsx) view state, URL/history sync, catalog hydration, enrollment, overview/player/admin/profile flows, notifications. |
 | [**video-player-and-history.md**](./video-player-and-history.md) | **Course player:** YouTube vs native video, lesson id in URL / reload, Back button & path-scoped history (`historySkipSyncRef`, `shouldPushCourseOverviewBeforePlayer`), volume/mute `localStorage`, related Firestore rules. |
 | [**access-control-roadmap.md**](./access-control-roadmap.md) | **Roles & creator isolation:** admin / creator / user, `ownerUid`, Firestore rules, phased tasks with dependencies and test criteria. |
