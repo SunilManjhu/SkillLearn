@@ -295,6 +295,7 @@ function collectPathBranchStructureIssues(roots: PathBranchNode[], publishedList
       }
     }
   }
+  issues.push(...collectPathBranchSiblingTitleDuplicateIssues(roots, publishedList));
   return issues;
 }
 
@@ -628,6 +629,66 @@ function branchNodeDisplayLabel(n: PathBranchNode, publishedList: Course[]): str
     }
   }
   return t;
+}
+
+/** Case-insensitive plain text — duplicate title checks among sibling path rows (titles may store mini-HTML). */
+function normPathBranchSiblingDisplayKey(display: string): string {
+  return catalogMiniRichPlainText(display).toLowerCase();
+}
+
+function findFirstPathSiblingTitleDuplicatePair(
+  siblings: PathBranchNode[],
+  publishedList: Course[]
+): { earlier: number; later: number } | null {
+  const seen = new Map<string, number>();
+  for (let i = 0; i < siblings.length; i += 1) {
+    const key = normPathBranchSiblingDisplayKey(branchNodeDisplayLabel(siblings[i], publishedList));
+    if (!key) continue;
+    const ord = i + 1;
+    const prevOrd = seen.get(key);
+    if (prevOrd !== undefined) return { earlier: prevOrd, later: ord };
+    seen.set(key, ord);
+  }
+  return null;
+}
+
+function pathSiblingTitleDuplicateMessage(parentDisplay: string, hit: { earlier: number; later: number }): string {
+  return `Under “${parentDisplay}”, two rows share the same title — rename one (same name as row ${hit.earlier} and row ${hit.later}).`;
+}
+
+function collectPathBranchSiblingTitleDuplicateIssues(roots: PathBranchNode[], publishedList: Course[]): string[] {
+  const issues: string[] = [];
+  function visitChildLists(parentDisplay: string, children: PathBranchNode[]) {
+    const dup = findFirstPathSiblingTitleDuplicatePair(children, publishedList);
+    if (dup) issues.push(pathSiblingTitleDuplicateMessage(parentDisplay, dup));
+    for (const ch of children) {
+      if (ch.kind === 'divider' && ch.children.length > 0) {
+        const sec = branchNodeDisplayLabel(ch, publishedList).trim() || 'Section';
+        visitChildLists(sec, ch.children);
+      }
+    }
+  }
+  for (const root of roots) {
+    if (!root.children.length) continue;
+    if (root.kind === 'label' || root.kind === 'module' || root.kind === 'course') {
+      visitChildLists(branchNodeDisplayLabel(root, publishedList), root.children);
+    }
+  }
+  return issues;
+}
+
+/** When `parentId` is null (top-level row), titles may match other top-level modules — no sibling constraint. */
+function pathSiblingTitleConflictAfterEdit(
+  next: PathBranchNode[],
+  parentId: string | null,
+  publishedList: Course[]
+): string | null {
+  if (parentId === null) return null;
+  const parent = findBranchNode(next, parentId);
+  if (!parent) return null;
+  const pd = branchNodeDisplayLabel(parent, publishedList);
+  const dup = findFirstPathSiblingTitleDuplicatePair(parent.children, publishedList);
+  return dup ? pathSiblingTitleDuplicateMessage(pd, dup) : null;
 }
 
 function findBranchNode(roots: PathBranchNode[], id: string): PathBranchNode | null {
@@ -4861,18 +4922,32 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                       onCopyBranch={handleDuplicateBranch}
                       onMove={moveBranchAmongSiblings}
                       onLabelChange={(id, label) =>
-                        setPathBranchTree((roots) =>
-                          mapBranchNodeById(roots, id, (n) =>
+                        setPathBranchTree((roots) => {
+                          const next = mapBranchNodeById(roots, id, (n) =>
                             n.kind === 'label' || n.kind === 'divider' ? { ...n, label } : n
-                          )
-                        )
+                          );
+                          const pid = findParentIdOfBranch(next, id);
+                          const msg = pathSiblingTitleConflictAfterEdit(next, pid, publishedList);
+                          if (msg) {
+                            queueMicrotask(() => showActionToast(msg, 'danger'));
+                            return roots;
+                          }
+                          return next;
+                        })
                       }
                       onLinkBranchChange={(id, patch) =>
-                        setPathBranchTree((roots) =>
-                          mapBranchNodeById(roots, id, (n) =>
+                        setPathBranchTree((roots) => {
+                          const next = mapBranchNodeById(roots, id, (n) =>
                             n.kind === 'link' ? { ...n, ...patch } : n
-                          )
-                        )
+                          );
+                          const pid = findParentIdOfBranch(next, id);
+                          const msg = pathSiblingTitleConflictAfterEdit(next, pid, publishedList);
+                          if (msg) {
+                            queueMicrotask(() => showActionToast(msg, 'danger'));
+                            return roots;
+                          }
+                          return next;
+                        })
                       }
                       onRequestChangeType={(id) => {
                         const roots = pathBranchTreeRef.current;
@@ -4928,7 +5003,15 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
             mode={branchModal.kind === 'changeType' ? 'changeType' : 'add'}
             onCommit={(branch) => {
               if (branchModal.kind === 'changeType') {
-                setPathBranchTree((roots) => mapBranchNodeById(roots, branchModal.nodeId, () => branch));
+                const roots = pathBranchTreeRef.current;
+                const next = mapBranchNodeById(roots, branchModal.nodeId, () => branch);
+                const pid = findParentIdOfBranch(next, branchModal.nodeId);
+                const msg = pathSiblingTitleConflictAfterEdit(next, pid, publishedList);
+                if (msg) {
+                  showActionToast(msg, 'danger');
+                  return;
+                }
+                setPathBranchTree(next);
                 setBranchModal({ kind: 'closed' });
                 return;
               }
@@ -4938,6 +5021,13 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                   branchModal.insertIndex !== undefined
                     ? insertChildAtParent(roots, branchModal.parentId, branchModal.insertIndex, branch)
                     : addChildAtParent(roots, branchModal.parentId, branch);
+                if (branchModal.parentId != null) {
+                  const msg = pathSiblingTitleConflictAfterEdit(next, branchModal.parentId, publishedList);
+                  if (msg) {
+                    showActionToast(msg, 'danger');
+                    return;
+                  }
+                }
                 setPathBranchTree(next);
                 if (branchModal.parentId != null) {
                   setExpandedBranchIds((prev) => accordionExpandBranchRow(prev, next, branchModal.parentId!));
@@ -5011,6 +5101,13 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                     showActionToast('Could not place the copy.', 'danger');
                     return;
                   }
+                  if (parentId != null) {
+                    const msg = pathSiblingTitleConflictAfterEdit(next, parentId, publishedList);
+                    if (msg) {
+                      showActionToast(msg, 'danger');
+                      return;
+                    }
+                  }
                   setPathBranchTree(next);
                   if (parentId != null) {
                     setExpandedBranchIds((prev) => accordionExpandBranchRow(prev, next, parentId));
@@ -5066,6 +5163,13 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                 if (findBranchNode(next, extracted.id) == null) {
                   showActionToast('Could not place the branch.', 'danger');
                   return;
+                }
+                if (parentId != null) {
+                  const msg = pathSiblingTitleConflictAfterEdit(next, parentId, publishedList);
+                  if (msg) {
+                    showActionToast(msg, 'danger');
+                    return;
+                  }
                 }
                 setPathBranchTree(next);
                 if (parentId != null) {

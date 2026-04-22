@@ -15,6 +15,13 @@ function lower(s: string): string {
   return s.trim().toLowerCase();
 }
 
+/** Case- and accent-insensitive sort for stable catalog chip ordering (numeric segments sort numerically). */
+export function sortLabelsLocaleCi(list: readonly string[]): string[] {
+  return [...list].sort((a, b) =>
+    a.trim().localeCompare(b.trim(), undefined, { sensitivity: 'base', numeric: true })
+  );
+}
+
 /** Remove every occurrence of label (case-insensitive); preserve order of the rest. */
 export function orderWithoutLabel(list: readonly string[], label: string): string[] {
   const k = lower(label);
@@ -66,7 +73,7 @@ export function readCatalogTaxonomyAdminOrder(kind: CatalogTaxonomyAdminOrderKin
 export function writeCatalogTaxonomyAdminOrder(kind: CatalogTaxonomyAdminOrderKind, order: readonly string[]): void {
   if (typeof localStorage === 'undefined') return;
   try {
-    localStorage.setItem(storageKey(kind), JSON.stringify([...order]));
+    localStorage.setItem(storageKey(kind), JSON.stringify(sortLabelsLocaleCi(order)));
   } catch {
     // ignore quota / private mode
   }
@@ -81,7 +88,7 @@ export function mergeUniverseWithAdminOrder(
   adminOrder: readonly string[] | null
 ): string[] {
   if (!adminOrder || adminOrder.length === 0) {
-    return [...universe];
+    return sortLabelsLocaleCi(universe);
   }
   const universeLower = new Set(universe.map((x) => lower(x)));
   const seen = new Set<string>();
@@ -97,14 +104,15 @@ export function mergeUniverseWithAdminOrder(
     out.push(canonical);
   }
 
+  const appendix: string[] = [];
   for (const raw of universe) {
     const t = raw.trim();
     if (!t) continue;
     const k = lower(t);
     if (seen.has(k)) continue;
     seen.add(k);
-    out.push(raw);
+    appendix.push(raw);
   }
 
-  return out;
+  return sortLabelsLocaleCi([...out, ...appendix]);
 }

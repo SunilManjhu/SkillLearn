@@ -2918,19 +2918,6 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           lessonKeys: [`${mi}:0`],
         };
       }
-      const moduleTitleKey = catalogMiniRichPlainText(m.title).toLowerCase();
-      for (let pj = 0; pj < mi; pj += 1) {
-        const prev = c.modules[pj];
-        const prevPlain = catalogMiniRichPlainText(prev.title);
-        if (prevPlain && prevPlain.toLowerCase() === moduleTitleKey) {
-          return {
-            targetId: `admin-module-title-${mi}`,
-            scope: 'module',
-            moduleIndex: mi,
-            lessonKeys: [`${mi}:0`],
-          };
-        }
-      }
       if (!m.lessons.length) {
         return {
           targetId: `admin-module-title-${mi}`,
@@ -2960,20 +2947,16 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           };
         }
         const lessonTitleKey = catalogMiniRichPlainText(l.title).toLowerCase();
-        for (let mi2 = 0; mi2 < c.modules.length; mi2 += 1) {
-          for (let li2 = 0; li2 < c.modules[mi2].lessons.length; li2 += 1) {
-            if (mi2 === mi && li2 === li) continue;
-            if (mi2 > mi || (mi2 === mi && li2 > li)) continue;
-            const other = c.modules[mi2].lessons[li2];
-            const otherPlain = catalogMiniRichPlainText(other.title);
-            if (otherPlain && otherPlain.toLowerCase() === lessonTitleKey) {
-              return {
-                targetId: `admin-lesson-title-${mi}-${li}`,
-                scope: 'module',
-                moduleIndex: mi,
-                lessonKeys: openKeys,
-              };
-            }
+        for (let li2 = 0; li2 < li; li2 += 1) {
+          const other = m.lessons[li2];
+          const otherPlain = catalogMiniRichPlainText(other.title);
+          if (otherPlain && otherPlain.toLowerCase() === lessonTitleKey) {
+            return {
+              targetId: `admin-lesson-title-${mi}-${li}`,
+              scope: 'module',
+              moduleIndex: mi,
+              lessonKeys: openKeys,
+            };
           }
         }
         if (l.contentKind === 'web') {
@@ -3039,17 +3022,6 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       const m = draft.modules[mi];
       if (!m.id.trim()) out.moduleId.add(mi);
       if (catalogMiniRichIsEffectivelyEmpty(m.title)) out.moduleTitle.add(mi);
-      const mt = catalogMiniRichPlainText(m.title).toLowerCase();
-      if (mt) {
-        for (let pj = 0; pj < mi; pj += 1) {
-          const prev = draft.modules[pj];
-          const prevPlain = catalogMiniRichPlainText(prev.title);
-          if (prevPlain && prevPlain.toLowerCase() === mt) {
-            out.moduleTitle.add(mi);
-            out.moduleTitle.add(pj);
-          }
-        }
-      }
       for (let li = 0; li < m.lessons.length; li += 1) {
         const l = m.lessons[li];
         const key = `${mi}:${li}`;
@@ -3065,21 +3037,18 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       }
     }
     for (let mi = 0; mi < draft.modules.length; mi += 1) {
-      for (let li = 0; li < draft.modules[mi].lessons.length; li += 1) {
-        const l = draft.modules[mi].lessons[li];
+      const mod = draft.modules[mi];
+      for (let li = 0; li < mod.lessons.length; li += 1) {
+        const l = mod.lessons[li];
         const key = `${mi}:${li}`;
         const lt = catalogMiniRichPlainText(l.title).toLowerCase();
         if (!lt) continue;
-        for (let mi2 = 0; mi2 < draft.modules.length; mi2 += 1) {
-          for (let li2 = 0; li2 < draft.modules[mi2].lessons.length; li2 += 1) {
-            if (mi2 === mi && li2 === li) continue;
-            if (mi2 > mi || (mi2 === mi && li2 > li)) continue;
-            const o = draft.modules[mi2].lessons[li2];
-            const oPlain = catalogMiniRichPlainText(o.title);
-            if (oPlain && oPlain.toLowerCase() === lt) {
-              out.lessonTitle.add(key);
-              out.lessonTitle.add(`${mi2}:${li2}`);
-            }
+        for (let li2 = 0; li2 < li; li2 += 1) {
+          const o = mod.lessons[li2];
+          const oPlain = catalogMiniRichPlainText(o.title);
+          if (oPlain && oPlain.toLowerCase() === lt) {
+            out.lessonTitle.add(key);
+            out.lessonTitle.add(`${mi}:${li2}`);
           }
         }
       }
@@ -5104,11 +5073,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             <p className="text-[#a1a2a2]">Module ID is required.</p>
                           )}
                           {fieldErrors.moduleTitle.has(mi) && (
-                            <p className="text-[#a1a2a2]">
-                              {catalogMiniRichIsEffectivelyEmpty(mod.title)
-                                ? 'Module title is required.'
-                                : 'Module title must be unique in this course.'}
-                            </p>
+                            <p className="text-[#a1a2a2]">Module title is required.</p>
                           )}
                         </div>
                       )}
@@ -5359,7 +5324,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                                   <p className="text-[#a1a2a2]">
                                     {catalogMiniRichIsEffectivelyEmpty(lesson.title)
                                       ? 'Lesson title is required.'
-                                      : 'Lesson title must be unique in this course.'}
+                                      : 'Lesson title must be unique in this module.'}
                                   </p>
                                 )}
                               </div>
@@ -5512,7 +5477,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           <span className="block text-[11px] text-[#a1a2a2]">
                             {catalogMiniRichIsEffectivelyEmpty(lesson.title)
                               ? 'Divider label is required.'
-                              : 'This label must be unique in this course.'}
+                              : 'This label must be unique in this module.'}
                           </span>
                         </div>
                       ) : null}

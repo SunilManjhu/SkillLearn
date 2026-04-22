@@ -71,13 +71,6 @@ export function validateCourseDraft(c: Course): string | null {
     const m = c.modules[mi];
     if (!m.id.trim()) return `Module ${mi + 1}: Module ID is required.`;
     if (catalogMiniRichIsEffectivelyEmpty(m.title)) return `Module ${mi + 1}: Module title is required.`;
-    const moduleTitleKey = normCourseDisplayTitle(m.title);
-    for (let pj = 0; pj < mi; pj += 1) {
-      const prev = c.modules[pj];
-      if (catalogMiniRichPlainText(prev.title) && normCourseDisplayTitle(prev.title) === moduleTitleKey) {
-        return `Module ${mi + 1}: Module title must be unique in this course (same as module ${pj + 1}).`;
-      }
-    }
     if (!m.lessons.length) return 'Each module needs at least one lesson.';
     const playableInModule = m.lessons.filter((les) => les.contentKind !== 'divider').length;
     if (playableInModule === 0) {
@@ -88,14 +81,10 @@ export function validateCourseDraft(c: Course): string | null {
       if (!l.id.trim()) return `Module ${mi + 1}, Lesson ${li + 1}: Lesson ID is required.`;
       if (catalogMiniRichIsEffectivelyEmpty(l.title)) return `Module ${mi + 1}, Lesson ${li + 1}: Lesson title is required.`;
       const lessonTitleKey = normCourseDisplayTitle(l.title);
-      for (let mi2 = 0; mi2 < c.modules.length; mi2 += 1) {
-        for (let li2 = 0; li2 < c.modules[mi2].lessons.length; li2 += 1) {
-          if (mi2 === mi && li2 === li) continue;
-          if (mi2 > mi || (mi2 === mi && li2 > li)) continue;
-          const other = c.modules[mi2].lessons[li2];
-          if (catalogMiniRichPlainText(other.title) && normCourseDisplayTitle(other.title) === lessonTitleKey) {
-            return `Module ${mi + 1}, Lesson ${li + 1}: Lesson title must be unique in this course.`;
-          }
+      for (let li2 = 0; li2 < li; li2 += 1) {
+        const other = m.lessons[li2];
+        if (catalogMiniRichPlainText(other.title) && normCourseDisplayTitle(other.title) === lessonTitleKey) {
+          return `Module ${mi + 1}, Lesson ${li + 1}: Lesson title must be unique in this module (same as lesson ${li2 + 1}).`;
         }
       }
       if (l.contentKind === 'web') {

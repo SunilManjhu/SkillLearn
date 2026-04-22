@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { Check, GripVertical, Plus, Search, Trash2, X } from 'lucide-react';
+import { Check, GripVertical, Pin, PinOff, Search, Trash2, X } from 'lucide-react';
 import { auth } from '../../firebase';
 import { AnimatePresence, motion } from 'motion/react';
 import type { Course } from '../../data/courses';
@@ -25,14 +25,15 @@ import {
   orderInsertBefore,
   orderWithoutLabel,
   readCatalogTaxonomyAdminOrder,
+  sortLabelsLocaleCi,
   writeCatalogTaxonomyAdminOrder,
 } from '../../utils/catalogTaxonomyAdminOrder';
 import {
   filterPopularTopicsToUniverse,
+  popularTopicsHasLabel,
   popularTopicsInsertCopyBefore,
   popularTopicsRemoveLabel,
   popularTopicsRenameLabel,
-  popularTopicsReorder,
   readCatalogPopularTopics,
   writeCatalogPopularTopics,
 } from '../../utils/catalogPopularTopics';
@@ -49,13 +50,43 @@ type TaxonomyKind = 'category' | 'skill';
 
 const TAXONOMY_DRAG_MIME = 'application/x-skilllearn-taxonomy';
 
+/** WebKit often omits custom MIME from `dataTransfer.types` during `dragover`; mirror JSON on `text/plain` for reliable drops. */
+const TAXONOMY_DRAG_TEXT_PREFIX = '__skilllearn_taxonomy__:';
+
 type TaxonomyDragPayload =
   | { scope: 'taxonomy'; kind: TaxonomyKind; label: string }
   | { scope: 'popular'; label: string };
 
+function writeTaxonomyDragPayload(dt: DataTransfer, payload: TaxonomyDragPayload): void {
+  const json = JSON.stringify(payload);
+  dt.setData(TAXONOMY_DRAG_MIME, json);
+  dt.setData('text/plain', `${TAXONOMY_DRAG_TEXT_PREFIX}${json}`);
+}
+
+/** True while dragging our taxonomy payload — `getData` is often empty during `dragover` for custom MIME types. */
+function taxonomyDragMimeIsOnTransfer(e: React.DragEvent): boolean {
+  try {
+    const types = [...e.dataTransfer.types].map((t) => t.toLowerCase());
+    if (types.includes(TAXONOMY_DRAG_MIME.toLowerCase())) return true;
+    if (types.some((t) => t === 'text/plain' || t === 'text')) {
+      const plain = e.dataTransfer.getData('text/plain');
+      return typeof plain === 'string' && plain.startsWith(TAXONOMY_DRAG_TEXT_PREFIX);
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
 function readTaxonomyDragPayload(e: React.DragEvent): TaxonomyDragPayload | null {
   try {
-    const raw = e.dataTransfer.getData(TAXONOMY_DRAG_MIME);
+    let raw = e.dataTransfer.getData(TAXONOMY_DRAG_MIME);
+    if (!raw) {
+      const plain = e.dataTransfer.getData('text/plain');
+      if (typeof plain === 'string' && plain.startsWith(TAXONOMY_DRAG_TEXT_PREFIX)) {
+        raw = plain.slice(TAXONOMY_DRAG_TEXT_PREFIX.length);
+      }
+    }
     if (!raw) return null;
     const o = JSON.parse(raw) as { scope?: string; kind?: string; label?: string };
     if (typeof o.label !== 'string' || !o.label.trim()) return null;
@@ -275,6 +306,8 @@ function TaxonomySection({
   onRenameEverywhere,
   onRemoveEverywhere,
   onDragDrop,
+  popularTopicsPinned,
+  onTogglePopularPin,
   onApproveProposal,
   onRejectProposal,
 }: {
@@ -293,6 +326,10 @@ function TaxonomySection({
   onRenameEverywhere: (fromExact: string, toExact: string) => Promise<void>;
   onRemoveEverywhere: (name: string) => Promise<void>;
   onDragDrop: (payload: Extract<TaxonomyDragPayload, { scope: 'taxonomy' }>, targetKind: TaxonomyKind, beforeLabel: string | null) => void;
+  /** Current Popular list (this device) for pin / unpin UI. */
+  popularTopicsPinned: readonly string[];
+  /** Pin when absent from Popular; unpin when already pinned. */
+  onTogglePopularPin: (label: string) => void;
   onApproveProposal: (p: CatalogTaxonomyProposal) => void;
   onRejectProposal: (p: CatalogTaxonomyProposal) => void;
 }) {
@@ -310,8 +347,15 @@ function TaxonomySection({
   /** Always show pending rows (do not hide behind global search — admins must always see Approve/Reject). */
   const pendingVisible = pendingProposals;
 
-  const searchBlocksDrag = globalTrimmed.length > 0;
-  const dragEnabled = !readOnlyTaxonomy && !busy && !searchBlocksDrag && editingLabel == null;
+  /** Pin / unpin (Popular) and taxonomy drag handles — allowed when not busy, even if taxonomy is read-only or filtered. */
+  const pinDragEnabled = !busy && editingLabel == null;
+  /** Reorder within column / migrate category ↔ skill — admin only. */
+  const taxonomyReorderEnabled = pinDragEnabled && !readOnlyTaxonomy;
+
+  const popularPinnedLower = useMemo(
+    () => new Set(popularTopicsPinned.map((x) => lower(x))),
+    [popularTopicsPinned]
+  );
 
   const startInlineEdit = (src: string) => {
     if (readOnlyTaxonomy) return;
@@ -341,7 +385,7 @@ function TaxonomySection({
   const chipListClassName =
     listLayout === 'grid'
       ? 'grid min-h-0 max-h-[70dvh] min-w-0 flex-1 grid-cols-1 content-start gap-1.5 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch] sm:grid-cols-2'
-      : 'flex min-h-0 max-h-[70dvh] min-w-0 flex-1 flex-wrap content-start items-stretch gap-1.5 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch]';
+      : 'flex min-h-0 max-h-[70dvh] min-w-0 flex-1 flex-col content-start gap-1.5 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch]';
 
   return (
     <section className="flex min-h-0 min-w-0 flex-col rounded-xl border border-[var(--border-color)]/70 bg-[var(--bg-primary)]/25 p-3 sm:p-4">
@@ -393,12 +437,14 @@ function TaxonomySection({
         ) : null}
 
         <div className={chipListClassName}>
-          {filtered.map((label) => (
+          {filtered.map((label) => {
+            const isPopularPinned = popularPinnedLower.has(lower(label));
+            return (
             <div
               key={label.toLowerCase()}
-              className={`group/chip inline-flex max-w-full min-w-0 items-stretch gap-0.5 rounded-lg border border-[var(--border-color)]/55 bg-[var(--bg-secondary)]/35 py-0.5 pl-0.5 pr-1 ${listLayout === 'grid' ? 'w-full' : ''}`}
+              className="group/chip inline-flex w-full max-w-full min-w-0 items-stretch gap-0.5 rounded-lg border border-[var(--border-color)]/55 bg-[var(--bg-secondary)]/35 py-0.5 pl-0.5 pr-1"
               onDragOver={
-                dragEnabled
+                taxonomyReorderEnabled
                   ? (e) => {
                       e.preventDefault();
                       e.dataTransfer.dropEffect = 'move';
@@ -406,7 +452,7 @@ function TaxonomySection({
                   : undefined
               }
               onDrop={
-                dragEnabled
+                taxonomyReorderEnabled
                   ? (e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -420,36 +466,52 @@ function TaxonomySection({
             >
               <div
                 role="button"
-                tabIndex={dragEnabled ? 0 : -1}
-                draggable={dragEnabled}
+                tabIndex={pinDragEnabled ? 0 : -1}
+                draggable={pinDragEnabled}
                 onDragStart={
-                  dragEnabled
+                  pinDragEnabled
                     ? (e) => {
-                        e.dataTransfer.setData(
-                          TAXONOMY_DRAG_MIME,
-                          JSON.stringify({ scope: 'taxonomy', kind, label })
-                        );
+                        writeTaxonomyDragPayload(e.dataTransfer, { scope: 'taxonomy', kind, label });
                         e.dataTransfer.effectAllowed = 'move';
                       }
                     : undefined
                 }
                 className={
-                  dragEnabled
+                  pinDragEnabled
                     ? 'inline-flex min-h-9 min-w-9 shrink-0 cursor-grab touch-manipulation items-center justify-center rounded-md text-[var(--text-muted)]/55 transition-colors hover:text-[var(--text-muted)] group-hover/chip:text-[var(--text-muted)] active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/40'
                     : 'inline-flex min-h-9 min-w-9 shrink-0 cursor-not-allowed items-center justify-center rounded-md text-[var(--text-muted)]/35'
                 }
                 aria-label={
-                  kind === 'category'
-                    ? `Drag ${label} to reorder categories or move to Skills`
-                    : `Drag ${label} to reorder skills or move to Categories`
+                  readOnlyTaxonomy
+                    ? `Use the pin button to add or remove “${label}” from Popular`
+                    : kind === 'category'
+                      ? `Drag ${label} to reorder or move to Skills; use the pin button for Popular`
+                      : `Drag ${label} to reorder or move to Categories; use the pin button for Popular`
                 }
                 onKeyDown={(e) => {
-                  if (!dragEnabled) return;
+                  if (!pinDragEnabled) return;
                   if (e.key === 'Enter' || e.key === ' ') e.preventDefault();
                 }}
               >
                 <GripVertical size={16} aria-hidden />
               </div>
+              <button
+                type="button"
+                disabled={!pinDragEnabled}
+                onClick={() => onTogglePopularPin(label)}
+                aria-pressed={isPopularPinned}
+                className={`inline-flex min-h-9 min-w-9 shrink-0 touch-manipulation items-center justify-center rounded-md transition-colors hover:bg-[#757676]/12 disabled:pointer-events-none disabled:opacity-35 ${
+                  isPopularPinned
+                    ? 'text-[#616161] app-dark:text-[var(--tone-200)]'
+                    : 'text-[var(--text-muted)]/55 hover:text-[var(--text-muted)]'
+                }`}
+                title={isPopularPinned ? 'Remove from Popular (this device)' : 'Pin to Popular (this device)'}
+                aria-label={
+                  isPopularPinned ? `Unpin ${label} from Popular topics` : `Pin ${label} to Popular topics`
+                }
+              >
+                {isPopularPinned ? <PinOff size={15} aria-hidden /> : <Pin size={15} aria-hidden />}
+              </button>
               <div className="min-w-0 self-center border-0 bg-transparent">
                 <Chip
                   label={label}
@@ -466,10 +528,30 @@ function TaxonomySection({
                 />
               </div>
             </div>
-          ))}
-          {dragEnabled && filtered.length > 0 ? (
+            );
+          })}
+          {taxonomyReorderEnabled && globalTrimmed && filtered.length === 0 && items.length > 0 ? (
             <div
-              className={`flex min-h-9 min-w-[min(100%,9rem)] items-center justify-center rounded-lg border border-dashed border-[var(--border-color)]/55 bg-[var(--bg-secondary)]/20 px-2 text-center text-xs text-[var(--text-muted)] ${listLayout === 'grid' ? 'col-span-1 w-full sm:col-span-2' : 'flex-1'}`}
+              className={`flex min-h-11 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-[var(--border-color)]/55 bg-[var(--bg-secondary)]/20 px-3 py-2 text-center text-[11px] leading-snug text-[var(--text-muted)] ${listLayout === 'grid' ? 'col-span-1 w-full sm:col-span-2' : 'w-full'}`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const p = readTaxonomyDragPayload(e);
+                if (!p || p.scope !== 'taxonomy') return;
+                onDragDrop(p, kind, null);
+              }}
+            >
+              No {kind === 'category' ? 'categories' : 'skills'} match the filter — drop here to move from the
+              other column or reorder at the end of this list.
+            </div>
+          ) : null}
+          {taxonomyReorderEnabled && filtered.length > 0 ? (
+            <div
+              className={`flex min-h-9 min-w-[min(100%,9rem)] items-center justify-center rounded-lg border border-dashed border-[var(--border-color)]/55 bg-[var(--bg-secondary)]/20 px-2 text-center text-xs text-[var(--text-muted)] ${listLayout === 'grid' ? 'col-span-1 w-full sm:col-span-2' : 'w-full'}`}
               onDragOver={(e) => {
                 e.preventDefault();
                 e.dataTransfer.dropEffect = 'move';
@@ -495,15 +577,11 @@ function PopularTopicsSection({
   items,
   busy,
   globalFilterText,
-  onCopyFromTaxonomy,
-  onReorderPopular,
   onRemoveFromList,
 }: {
   items: readonly string[];
   busy: boolean;
   globalFilterText: string;
-  onCopyFromTaxonomy: (label: string, beforeLabel: string | null) => void;
-  onReorderPopular: (label: string, beforeLabel: string | null) => void;
   onRemoveFromList: (label: string) => void;
 }) {
   const globalTrimmed = globalFilterText.trim();
@@ -513,22 +591,6 @@ function PopularTopicsSection({
     if (globalTrimmed) base = base.filter((x) => includesCI(x, globalTrimmed));
     return base;
   }, [items, globalTrimmed]);
-
-  const searchBlocksDrag = globalTrimmed.length > 0;
-  const dragEnabled = !busy && !searchBlocksDrag;
-
-  const popularDragOver = (e: React.DragEvent) => {
-    const p = readTaxonomyDragPayload(e);
-    if (p?.scope === 'taxonomy') {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'copy';
-      return;
-    }
-    if (p?.scope === 'popular') {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-    }
-  };
 
   return (
     <section className="flex min-h-0 min-w-0 flex-col rounded-xl border border-[var(--border-color)]/70 bg-[var(--bg-primary)]/25 p-3 sm:p-4">
@@ -540,81 +602,28 @@ function PopularTopicsSection({
       </div>
 
       <div className="mt-3 flex min-h-0 min-w-0 flex-1 flex-col gap-2">
-        {items.length === 0 && !globalTrimmed ? (
-          <div
-            className="flex min-h-[5.625rem] flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-[var(--border-color)]/55 bg-[var(--bg-secondary)]/20 px-4 py-4 text-center text-xs leading-snug text-[var(--text-muted)]"
-            onDragOver={dragEnabled ? popularDragOver : undefined}
-            onDrop={
-              dragEnabled
-                ? (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const p = readTaxonomyDragPayload(e);
-                    if (!p || p.scope !== 'taxonomy') return;
-                    onCopyFromTaxonomy(p.label, null);
-                  }
-                : undefined
-            }
-          >
-            <Plus size={18} strokeWidth={1.5} className="shrink-0 text-[var(--text-muted)]/40" aria-hidden />
-            <span>Drag a category or skill chip here to pin it</span>
+        {items.length === 0 ? (
+          <div className="flex min-h-[5.625rem] flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-[var(--border-color)]/55 bg-[var(--bg-secondary)]/20 px-4 py-4 text-center text-xs leading-snug text-[var(--text-muted)]">
+            <Pin size={18} strokeWidth={1.5} className="shrink-0 text-[var(--text-muted)]/50" aria-hidden />
+            <p className="max-w-[16rem] text-xs leading-relaxed text-[var(--text-muted)]">
+              Tap the pin on the chip. Tap again (unpin icon) to remove from Popular.
+            </p>
           </div>
         ) : null}
 
-        <div className="flex min-h-0 max-h-[70dvh] min-w-0 flex-1 flex-wrap content-start items-stretch gap-1.5 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch]">
+        {items.length > 0 && filtered.length === 0 && globalTrimmed ? (
+          <div className="flex min-h-11 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-[var(--border-color)]/55 bg-[var(--bg-secondary)]/20 px-3 py-2 text-center text-[11px] leading-snug text-[var(--text-muted)]">
+            No Popular topics match the filter — use the pin on a category or skill chip to add more.
+          </div>
+        ) : null}
+
+        <div className="flex min-h-0 max-h-[70dvh] min-w-0 flex-1 flex-col content-start gap-1.5 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch]">
           {filtered.map((label) => (
             <div
               key={label.toLowerCase()}
-              className="group/chip inline-flex max-w-full min-w-0 items-stretch gap-0.5 rounded-lg border border-[var(--border-color)]/55 bg-[var(--bg-secondary)]/35 py-0.5 pl-0.5 pr-1"
-              onDragOver={dragEnabled ? popularDragOver : undefined}
-              onDrop={
-                dragEnabled
-                  ? (e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      const p = readTaxonomyDragPayload(e);
-                      if (!p) return;
-                      if (p.scope === 'taxonomy') {
-                        onCopyFromTaxonomy(p.label, label);
-                        return;
-                      }
-                      if (p.scope === 'popular') {
-                        if (lower(p.label) === lower(label)) return;
-                        onReorderPopular(p.label, label);
-                      }
-                    }
-                  : undefined
-              }
+              className="group/chip inline-flex w-full max-w-full min-w-0 items-center gap-1 rounded-lg border border-[var(--border-color)]/55 bg-[var(--bg-secondary)]/35 py-0.5 pl-2 pr-1"
             >
-              <div
-                role="button"
-                tabIndex={dragEnabled ? 0 : -1}
-                draggable={dragEnabled}
-                onDragStart={
-                  dragEnabled
-                    ? (e) => {
-                        e.dataTransfer.setData(
-                          TAXONOMY_DRAG_MIME,
-                          JSON.stringify({ scope: 'popular', label })
-                        );
-                        e.dataTransfer.effectAllowed = 'move';
-                      }
-                    : undefined
-                }
-                className={
-                  dragEnabled
-                    ? 'inline-flex min-h-9 min-w-9 shrink-0 cursor-grab touch-manipulation items-center justify-center rounded-md text-[var(--text-muted)]/55 transition-colors hover:text-[var(--text-muted)] group-hover/chip:text-[var(--text-muted)] active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/40'
-                    : 'inline-flex min-h-9 min-w-9 shrink-0 cursor-not-allowed items-center justify-center rounded-md text-[var(--text-muted)]/35'
-                }
-                aria-label={`Drag ${label} to reorder Popular topics`}
-                onKeyDown={(e) => {
-                  if (!dragEnabled) return;
-                  if (e.key === 'Enter' || e.key === ' ') e.preventDefault();
-                }}
-              >
-                <GripVertical size={16} aria-hidden />
-              </div>
-              <div className="min-w-0 self-center border-0 bg-transparent px-0.5 py-0.5">
+              <div className="min-w-0 self-center border-0 bg-transparent py-0.5">
                 <span className="inline-flex min-h-8 min-w-0 max-w-full items-center text-left text-xs font-medium text-[var(--text-primary)]">
                   <span className="min-w-0 truncate">{label}</span>
                 </span>
@@ -632,27 +641,6 @@ function PopularTopicsSection({
               </button>
             </div>
           ))}
-          {dragEnabled && filtered.length > 0 ? (
-            <div
-              className="flex min-h-9 min-w-[min(100%,9rem)] flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-color)]/55 bg-[var(--bg-secondary)]/20 px-2 text-center text-xs text-[var(--text-muted)]"
-              onDragOver={popularDragOver}
-              onDrop={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const p = readTaxonomyDragPayload(e);
-                if (!p) return;
-                if (p.scope === 'taxonomy') {
-                  onCopyFromTaxonomy(p.label, null);
-                  return;
-                }
-                if (p.scope === 'popular') {
-                  onReorderPopular(p.label, null);
-                }
-              }}
-            >
-              End of list
-            </div>
-          ) : null}
         </div>
       </div>
     </section>
@@ -817,7 +805,7 @@ export function AdminCatalogTaxonomyPanel({
   );
 
   const popularTopics = useMemo(
-    () => filterPopularTopicsToUniverse(popularTopicsRaw, labelUniverseLower),
+    () => sortLabelsLocaleCi(filterPopularTopicsToUniverse(popularTopicsRaw, labelUniverseLower)),
     [popularTopicsRaw, labelUniverseLower]
   );
 
@@ -844,15 +832,6 @@ export function AdminCatalogTaxonomyPanel({
     [labelUniverseLower, showActionToast]
   );
 
-  const onPopularReorder = useCallback(
-    (label: string, beforeLabel: string | null) => {
-      const base = filterPopularTopicsToUniverse(readCatalogPopularTopics(), labelUniverseLower);
-      writeCatalogPopularTopics(popularTopicsReorder(base, label, beforeLabel));
-      setPopularRevision((r) => r + 1);
-    },
-    [labelUniverseLower]
-  );
-
   const onPopularRemoveFromList = useCallback(
     (label: string) => {
       const base = filterPopularTopicsToUniverse(readCatalogPopularTopics(), labelUniverseLower);
@@ -861,6 +840,18 @@ export function AdminCatalogTaxonomyPanel({
       showActionToast(`Removed “${label}” from Popular topics.`, 'neutral');
     },
     [labelUniverseLower, showActionToast]
+  );
+
+  const onTogglePopularPin = useCallback(
+    (label: string) => {
+      const base = filterPopularTopicsToUniverse(readCatalogPopularTopics(), labelUniverseLower);
+      if (popularTopicsHasLabel(base, label)) {
+        onPopularRemoveFromList(label);
+      } else {
+        onPopularCopyFromTaxonomy(label, null);
+      }
+    },
+    [labelUniverseLower, onPopularRemoveFromList, onPopularCopyFromTaxonomy]
   );
 
   const suggestProposal = useCallback(
@@ -1552,6 +1543,8 @@ export function AdminCatalogTaxonomyPanel({
               removeEverywhere('category', name);
             }}
             onDragDrop={handleTaxonomyDragDrop}
+            popularTopicsPinned={popularTopics}
+            onTogglePopularPin={onTogglePopularPin}
             onApproveProposal={(p) => void handleApproveProposal(p)}
             onRejectProposal={(p) => void handleRejectProposal(p)}
           />
@@ -1562,8 +1555,6 @@ export function AdminCatalogTaxonomyPanel({
             items={popularTopics}
             busy={busy}
             globalFilterText={debouncedGlobal}
-            onCopyFromTaxonomy={onPopularCopyFromTaxonomy}
-            onReorderPopular={onPopularReorder}
             onRemoveFromList={onPopularRemoveFromList}
           />
         </div>
@@ -1578,13 +1569,14 @@ export function AdminCatalogTaxonomyPanel({
             readOnlyTaxonomy={isCreatorCatalog}
             pendingProposals={pendingSkillProposals}
             showAdminProposalActions={!isCreatorCatalog}
-            listLayout="grid"
             headerCount={skillItems.length}
             onRenameEverywhere={(from, to) => renameEverywhere('skill', from, to)}
             onRemoveEverywhere={async (name) => {
               removeEverywhere('skill', name);
             }}
             onDragDrop={handleTaxonomyDragDrop}
+            popularTopicsPinned={popularTopics}
+            onTogglePopularPin={onTogglePopularPin}
             onApproveProposal={(p) => void handleApproveProposal(p)}
             onRejectProposal={(p) => void handleRejectProposal(p)}
           />

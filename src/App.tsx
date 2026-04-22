@@ -169,6 +169,7 @@ import {
   toggleFilterTag,
   type LibraryFilterState,
 } from './utils/courseTaxonomy';
+import { sortLabelsLocaleCi } from './utils/catalogTaxonomyAdminOrder';
 import { filterPopularTopicsToUniverse, readCatalogPopularTopics } from './utils/catalogPopularTopics';
 import { PhoneMockupAdRail } from './components/PhoneMockupAdRail';
 import type { PhoneMockupAdSlide } from './utils/heroPhoneAdsShared';
@@ -2088,7 +2089,7 @@ export default function App() {
       const t = x.trim();
       if (t) universe.add(t.toLowerCase());
     }
-    return filterPopularTopicsToUniverse(readCatalogPopularTopics(), universe);
+    return sortLabelsLocaleCi(filterPopularTopicsToUniverse(readCatalogPopularTopics(), universe));
   }, [
     libraryBrowseMainCategories,
     moreCategories,

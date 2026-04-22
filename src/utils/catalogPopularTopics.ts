@@ -1,6 +1,6 @@
 /** Curated “Popular topics” list for admin (Categories & Skills tab). Persisted in localStorage. */
 
-import { orderInsertBefore, orderWithoutLabel } from './catalogTaxonomyAdminOrder';
+import { orderInsertBefore, orderWithoutLabel, sortLabelsLocaleCi } from './catalogTaxonomyAdminOrder';
 
 const STORAGE_KEY = 'skilllearn.catalogPopularTopics.v1';
 
@@ -15,7 +15,8 @@ export function readCatalogPopularTopics(): string[] {
     if (!raw) return [];
     const p = JSON.parse(raw) as unknown;
     if (!Array.isArray(p)) return [];
-    return p.filter((x): x is string => typeof x === 'string' && x.trim().length > 0);
+    const out = p.filter((x): x is string => typeof x === 'string' && x.trim().length > 0);
+    return sortLabelsLocaleCi(out);
   } catch {
     return [];
   }
@@ -23,7 +24,7 @@ export function readCatalogPopularTopics(): string[] {
 
 export function writeCatalogPopularTopics(topics: readonly string[]): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([...topics]));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(sortLabelsLocaleCi(topics)));
   } catch {
     return;
   }
@@ -34,6 +35,9 @@ export function filterPopularTopicsToUniverse(
   topics: readonly string[],
   universeLower: ReadonlySet<string>
 ): string[] {
+  // While the universe is still empty (e.g. first paint before Firestore/presets hydrate), do not strip —
+  // otherwise every pin is removed and `writeCatalogPopularTopics([])` wipes localStorage on reload.
+  if (universeLower.size === 0) return [...topics];
   return topics.filter((t) => universeLower.has(lower(t)));
 }
 
