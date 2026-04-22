@@ -240,10 +240,16 @@ export function youtubeEmbedSrcForVideoId(id: string): string {
   const q = new URLSearchParams({
     controls: '0',
     disablekb: '1',
+    enablejsapi: '1',
     fs: '0',
+    iv_load_policy: '3',
     modestbranding: '1',
+    playsinline: '1',
     rel: '0',
   });
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    q.set('origin', window.location.origin);
+  }
   /** Omit `cc_lang_pref` when off — with some accounts it still nudges captions on even with cc_load_policy=0. */
   if (captionsOn) {
     const langPref =

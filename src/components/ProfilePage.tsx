@@ -826,10 +826,19 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
           aria-labelledby="profile-delete-title"
         >
           <div className="my-auto w-full max-w-md overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl">
-            <div className="border-b border-[var(--border-color)] p-4 sm:p-5">
-              <h3 id="profile-delete-title" className="text-lg font-bold text-[var(--text-primary)]">
+            <div className="flex items-center justify-between gap-3 border-b border-[var(--border-color)] p-4 sm:p-5">
+              <h3 id="profile-delete-title" className="min-w-0 text-lg font-bold text-[var(--text-primary)]">
                 Delete Your Account?
               </h3>
+              <button
+                type="button"
+                disabled={deleteBusy}
+                onClick={closeDeleteConfirm}
+                className="shrink-0 rounded-full p-2 text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)] disabled:opacity-60"
+                aria-label="Close"
+              >
+                <X size={20} aria-hidden />
+              </button>
             </div>
             <div className="space-y-4 p-4 sm:p-5">
               <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
@@ -838,15 +847,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                 admin first.
               </p>
               {deleteError && <p className="text-sm text-red-500">{deleteError}</p>}
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <button
-                  type="button"
-                  disabled={deleteBusy}
-                  onClick={closeDeleteConfirm}
-                  className="min-h-11 w-full touch-manipulation rounded-lg border border-[var(--border-color)] py-2.5 text-sm font-semibold text-[var(--text-primary)] transition-colors hover:bg-[var(--hover-bg)] disabled:opacity-60 sm:min-h-0 sm:flex-1"
-                >
-                  Cancel
-                </button>
+              <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
                 <button
                   type="button"
                   disabled={deleteBusy}
@@ -863,7 +864,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                       setShowDeleteConfirm(false);
                     })();
                   }}
-                  className="min-h-11 w-full touch-manipulation rounded-lg bg-red-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-red-500 disabled:opacity-60 sm:min-h-0 sm:flex-[1.2]"
+                  className="min-h-11 w-full touch-manipulation rounded-lg bg-red-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-red-500 disabled:opacity-60 sm:w-auto sm:min-w-[10rem]"
                 >
                   {deleteBusy ? 'Deleting…' : 'Yes, delete'}
                 </button>

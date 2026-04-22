@@ -372,7 +372,7 @@ export const AdminCatalogCategoriesPanel: React.FC<AdminCatalogCategoriesPanelPr
                   className="rounded-full p-2 hover:bg-[var(--hover-bg)]"
                   aria-label="Close"
                 >
-                  <X size={18} />
+                  <X size={18} aria-hidden />
                 </button>
               </div>
               <div className="space-y-3 p-4">
@@ -388,14 +388,7 @@ export const AdminCatalogCategoriesPanel: React.FC<AdminCatalogCategoriesPanelPr
                     autoFocus
                   />
                 </label>
-                <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
-                  <button
-                    type="button"
-                    onClick={closeRename}
-                    className="inline-flex min-h-11 items-center justify-center rounded-xl border border-[var(--border-color)] px-4 py-2.5 text-sm font-bold text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]"
-                  >
-                    Cancel
-                  </button>
+                <div className="flex justify-end pt-2">
                   <button
                     type="button"
                     onClick={() => void applyRename()}
@@ -436,7 +429,7 @@ export const AdminCatalogCategoriesPanel: React.FC<AdminCatalogCategoriesPanelPr
                   className="rounded-full p-2 hover:bg-[var(--hover-bg)]"
                   aria-label="Close"
                 >
-                  <X size={18} />
+                  <X size={18} aria-hidden />
                 </button>
               </div>
               <div className="space-y-3 p-4">
@@ -460,14 +453,7 @@ export const AdminCatalogCategoriesPanel: React.FC<AdminCatalogCategoriesPanelPr
                       ))}
                   </select>
                 </label>
-                <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
-                  <button
-                    type="button"
-                    onClick={closeReassign}
-                    className="inline-flex min-h-11 items-center justify-center rounded-xl border border-[var(--border-color)] px-4 py-2.5 text-sm font-bold text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]"
-                  >
-                    Cancel
-                  </button>
+                <div className="flex justify-end pt-2">
                   <button
                     type="button"
                     onClick={() => void applyReassign()}

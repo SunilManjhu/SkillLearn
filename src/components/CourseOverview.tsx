@@ -436,7 +436,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                     aria-label="Course completion"
                   >
                     <div
-                      className="h-full rounded-full bg-brand-500 transition-[width] duration-300 ease-out"
+                      className="h-full rounded-full bg-emerald-600 transition-[width] duration-300 ease-out"
                       style={{ width: `${overallProgressPercent}%` }}
                     />
                   </div>
@@ -731,27 +731,27 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                                   <div className="min-w-0 flex-1 flex flex-col gap-1.5">
                                     <div className="flex min-w-0 items-center gap-3">
                                       {lessonComplete ? (
-                                        <CheckCircle2 size={14} className="shrink-0 text-emerald-500" />
+                                        <CheckCircle2
+                                          size={14}
+                                          className="shrink-0 text-[var(--text-secondary)] transition-colors group-hover:text-brand-500"
+                                          aria-hidden
+                                        />
                                       ) : (
                                         <Play
                                           size={14}
                                           className="shrink-0 text-[var(--text-secondary)] transition-colors group-hover:text-brand-500"
                                         />
                                       )}
-                                      <span
-                                        className={`min-w-0 break-words text-sm font-medium transition-colors line-clamp-2 [&_p]:m-0 [&_p]:inline ${
-                                          lessonComplete
-                                            ? 'text-emerald-500/80 group-hover:text-emerald-500'
-                                            : 'text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]'
-                                        }`}
-                                      >
+                                      <span className="min-w-0 break-words text-sm font-medium text-[var(--text-secondary)] transition-colors line-clamp-2 group-hover:text-[var(--text-primary)] [&_p]:m-0 [&_p]:inline">
                                         <CatalogRichText value={lesson.title} />
                                       </span>
                                     </div>
                                     <div className="flex w-full items-center gap-2">
                                       <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--hover-bg)]">
                                         <div
-                                          className="h-full rounded-full bg-brand-500 transition-[width] duration-300"
+                                          className={`h-full rounded-full transition-[width] duration-300 ${
+                                            lessonComplete ? 'bg-emerald-600' : 'bg-brand-500'
+                                          }`}
                                           style={{ width: `${pct}%` }}
                                         />
                                       </div>
@@ -888,7 +888,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                   className="p-2 hover:bg-[var(--hover-bg)] rounded-full transition-colors shrink-0"
                   aria-label="Close"
                 >
-                  <X size={20} />
+                  <X size={20} aria-hidden />
                 </button>
               </div>
               <form

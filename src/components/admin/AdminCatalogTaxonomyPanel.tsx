@@ -1615,7 +1615,7 @@ export function AdminCatalogTaxonomyPanel({
                   className="shrink-0 rounded-full p-2 transition-colors hover:bg-[var(--hover-bg)]"
                   aria-label="Close"
                 >
-                  <X size={20} />
+                  <X size={20} aria-hidden />
                 </button>
               </div>
               <div className="space-y-4 p-6">
@@ -1677,16 +1677,8 @@ export function AdminCatalogTaxonomyPanel({
                       })}
                   </ul>
                 </div>
-                <p className="text-xs text-[var(--text-muted)]">Cancel to keep everything as-is.</p>
-                <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={closeConfirm}
-                    className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-5 py-3 text-sm font-bold text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)] disabled:opacity-40 sm:w-auto"
-                  >
-                    Cancel
-                  </button>
+                <p className="text-xs text-[var(--text-muted)]">Use the close control above to keep everything as-is.</p>
+                <div className="flex justify-end">
                   <button
                     type="button"
                     autoFocus={confirm.blockedCourses.length === 0}

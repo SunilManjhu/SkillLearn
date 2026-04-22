@@ -571,7 +571,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                     className="shrink-0 rounded-full p-2 transition-colors hover:bg-[var(--hover-bg)]"
                     aria-label="Close"
                   >
-                    <X size={20} />
+                    <X size={20} aria-hidden />
                   </button>
                 </div>
                 <div className="space-y-4 p-6">

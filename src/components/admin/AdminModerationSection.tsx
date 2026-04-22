@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { CheckCircle2, Flag, Lightbulb, Mail, RefreshCw, Trash2 } from 'lucide-react';
+import { CheckCircle2, Flag, Lightbulb, Mail, RefreshCw, Trash2, X } from 'lucide-react';
 import {
   listReportsForAdmin,
   listSuggestionsForAdmin,
@@ -410,27 +410,19 @@ export const AdminModerationSection: React.FC<AdminModerationSectionProps> = ({
                 onClick={closeConfirm}
                 disabled={confirmSubmitting}
                 className="rounded-full p-2 hover:bg-[var(--hover-bg)] disabled:opacity-60"
-                aria-label="Close confirmation"
+                aria-label="Close"
               >
-                ×
+                <X size={20} className="text-[var(--text-secondary)]" aria-hidden />
               </button>
             </div>
             <div className="p-5 space-y-4">
               <p className="text-sm text-[var(--text-secondary)]">{confirmBody}</p>
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <button
-                  type="button"
-                  onClick={closeConfirm}
-                  disabled={confirmSubmitting}
-                  className="min-h-11 flex-1 rounded-lg border border-[var(--border-color)] py-2.5 text-sm font-semibold text-[var(--text-primary)] hover:bg-[var(--hover-bg)] disabled:opacity-60"
-                >
-                  Cancel
-                </button>
+              <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
                 <button
                   type="button"
                   onClick={() => void submitConfirm()}
                   disabled={confirmSubmitting}
-                  className={`min-h-11 flex-[1.4] rounded-lg py-2.5 text-sm font-semibold text-[#e7e7e7] disabled:opacity-60 ${
+                  className={`min-h-11 w-full rounded-lg py-2.5 text-sm font-semibold text-[#e7e7e7] disabled:opacity-60 sm:w-auto sm:min-w-[12rem] ${
                     confirmState.type === 'resolve-report' ? 'bg-[#616161] hover:bg-[#757676]' : 'bg-[#616161] hover:bg-[#4c4d4d]'
                   }`}
                 >

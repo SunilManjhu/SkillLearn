@@ -28,7 +28,7 @@ export function useDialogKeyboard(options: {
   open: boolean;
   onClose: () => void;
   onPrimaryAction?: () => void | Promise<void>;
-  /** When false, Escape is ignored so the overlay must be dismissed via UI (e.g. “Replay from start”). Default true. */
+  /** When false, Escape is ignored so the overlay must be dismissed via UI. Default true. */
   closeOnEscape?: boolean;
 }): void {
   const { open, onClose, onPrimaryAction, closeOnEscape = true } = options;

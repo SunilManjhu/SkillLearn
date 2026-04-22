@@ -6278,10 +6278,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 </h2>
                 <button
                   type="button"
-                  className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-lg text-sm font-semibold text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
+                  aria-label="Close"
+                  className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
                   onClick={closeChangeLessonKindModal}
                 >
-                  Cancel
+                  <X size={22} aria-hidden />
                 </button>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
@@ -6473,10 +6474,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 </h2>
                 <button
                   type="button"
-                  className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-lg text-sm font-semibold text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
+                  aria-label="Close"
+                  className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
                   onClick={closeSplitDividerNewModuleModal}
                 >
-                  Cancel
+                  <X size={22} aria-hidden />
                 </button>
               </div>
               <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4">
@@ -6630,10 +6632,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 </h2>
                 <button
                   type="button"
-                  className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-lg text-sm font-semibold text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
+                  aria-label="Close"
+                  className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
                   onClick={closeChangeModuleKindModal}
                 >
-                  Cancel
+                  <X size={22} aria-hidden />
                 </button>
               </div>
               <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4">
@@ -6818,10 +6821,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 </h2>
                 <button
                   type="button"
-                  className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-lg text-sm font-semibold text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
+                  aria-label="Close"
+                  className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
                   onClick={closeAddLessonBranchModal}
                 >
-                  Cancel
+                  <X size={22} aria-hidden />
                 </button>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
@@ -6898,10 +6902,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               </h2>
               <button
                 type="button"
-                className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-lg text-sm font-semibold text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
+                aria-label="Close"
+                className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
                 onClick={closeCatalogPlaceModal}
               >
-                Cancel
+                <X size={22} aria-hidden />
               </button>
             </div>
 

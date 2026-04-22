@@ -614,13 +614,6 @@ export function AdminCourseAiAssistant({
               <div className="flex flex-col gap-3 border-t border-[var(--border-color)] p-4 sm:flex-row sm:justify-end sm:gap-3 sm:p-6">
                 <button
                   type="button"
-                  onClick={closeOutlineReplaceDialog}
-                  className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-5 py-3 text-sm font-bold text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)] sm:w-auto"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
                   autoFocus
                   onClick={confirmOutlineReplaceDialog}
                   className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[#616161] px-5 py-3 text-sm font-bold text-[#e7e7e7] transition-colors hover:bg-[#757676] sm:w-auto"
