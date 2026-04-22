@@ -119,6 +119,7 @@ import {
 import { stashAuthReturnState, consumeAuthReturnState, type AuthReturnPayload } from './utils/authReturnContext';
 import {
   APP_HISTORY_KEY,
+  type AdminContentCatalogSubTab,
   type AdminHistoryTab,
   type AppHistoryPayload,
   buildHistoryUrl,
@@ -314,6 +315,7 @@ function getInitialRouteState(courseRows: CatalogCourseRow[] = []): {
   selectedCourseAdminPreviewOwnerUid: string | null;
   initialLesson: Lesson | undefined;
   adminTab: AdminHistoryTab;
+  adminContentCatalogSubTab: AdminContentCatalogSubTab;
   deferredCourseRoute: DeferredCourseRoute | null;
   certificateData: CertificateData | null;
 } {
@@ -323,6 +325,7 @@ function getInitialRouteState(courseRows: CatalogCourseRow[] = []): {
     selectedCourseAdminPreviewOwnerUid: null as string | null,
     initialLesson: undefined as Lesson | undefined,
     adminTab: 'alerts' as AdminHistoryTab,
+    adminContentCatalogSubTab: 'catalog' as AdminContentCatalogSubTab,
     deferredCourseRoute: null as DeferredCourseRoute | null,
     certificateData: null as CertificateData | null,
   };
@@ -405,6 +408,7 @@ function getInitialRouteState(courseRows: CatalogCourseRow[] = []): {
         selectedCourseAdminPreviewOwnerUid: row?.adminPreviewOwnerUid ?? null,
         initialLesson: l,
         adminTab: 'alerts',
+        adminContentCatalogSubTab: 'catalog',
         deferredCourseRoute: null,
         certificateData: null,
       };
@@ -439,11 +443,16 @@ function getInitialRouteState(courseRows: CatalogCourseRow[] = []): {
 
   const adminTab: AdminHistoryTab =
     resolved.view === 'admin' ? (resolved.adminTab ?? 'alerts') : 'alerts';
+  const adminContentCatalogSubTab: AdminContentCatalogSubTab =
+    resolved.view === 'admin' && resolved.adminTab === 'catalog'
+      ? (resolved.adminContentCatalogSubTab ?? 'catalog')
+      : 'catalog';
 
   return {
     view: resolved.view as View,
     ...empty,
     adminTab,
+    adminContentCatalogSubTab,
   };
 }
 
@@ -539,6 +548,9 @@ export default function App() {
     initialRoute.view === 'player' && initialRoute.initialLesson?.id ? initialRoute.initialLesson.id : null
   );
   const [adminTab, setAdminTab] = useState<AdminHistoryTab>(() => initialRoute.adminTab);
+  const [adminContentCatalogSubTab, setAdminContentCatalogSubTab] = useState<AdminContentCatalogSubTab>(
+    () => initialRoute.adminContentCatalogSubTab
+  );
   /** One-shot sub-tab when opening Admin → Moderation from a navbar notification. */
   const [pendingModerationSubTab, setPendingModerationSubTab] = useState<
     'reports' | 'suggestions' | 'contact' | null
@@ -843,6 +855,11 @@ export default function App() {
     }
     if (currentView === 'admin') {
       p.adminTab = adminTab;
+      if (adminTab === 'catalog') {
+        p.adminContentCatalogSubTab = adminContentCatalogSubTab;
+      } else {
+        p.adminContentCatalogSubTab = null;
+      }
     }
     if (selectedLearningPathId) {
       p.learningPathId = selectedLearningPathId;
@@ -860,6 +877,7 @@ export default function App() {
     deferredCourseRoute,
     certificateData,
     adminTab,
+    adminContentCatalogSubTab,
     selectedLearningPathId,
     selectedLearningPathFromCreatorDraft,
     selectedLearningPathAdminPreviewOwnerUid,
@@ -958,6 +976,9 @@ export default function App() {
 
       if (view === 'admin') {
         setAdminTab(resolved.adminTab ?? 'alerts');
+        if (resolved.adminTab === 'catalog') {
+          setAdminContentCatalogSubTab(resolved.adminContentCatalogSubTab ?? 'catalog');
+        }
       }
 
       setSelectedLearningPathId(resolved.learningPathId ?? null);
@@ -1099,6 +1120,7 @@ export default function App() {
     deferredCourseRoute,
     certificateData,
     adminTab,
+    adminContentCatalogSubTab,
     selectedLearningPathId,
     selectedLearningPathFromCreatorDraft,
     selectedLearningPathAdminPreviewOwnerUid,
@@ -2412,6 +2434,7 @@ export default function App() {
     }
     if (view === 'admin') {
       setAdminTab('alerts');
+      setAdminContentCatalogSubTab('catalog');
     }
     setCurrentView(view);
     scrollDocumentToTop();
@@ -3815,6 +3838,8 @@ export default function App() {
             <AdminPage
               courses={catalogCourses}
               activeTab={adminTab}
+              adminContentCatalogSubTab={adminContentCatalogSubTab}
+              onAdminContentCatalogSubTabChange={setAdminContentCatalogSubTab}
               currentAdminUid={user?.uid}
               moderationInitialSubTab={pendingModerationSubTab}
               onModerationInitialSubTabConsumed={clearPendingModerationSubTab}

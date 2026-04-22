@@ -42,6 +42,39 @@ export type AdminHistoryTab =
   | 'roles'
   | 'creators';
 
+/** Horizontal sub-tabs inside Admin → Content (`AdminCourseCatalogSection`). */
+export type AdminContentCatalogSubTab =
+  | 'catalog'
+  | 'paths'
+  | 'taxonomy'
+  | 'categories'
+  | 'presets'
+  | 'skillPresets';
+
+const ADMIN_CONTENT_CATALOG_URL_SEGMENTS: Record<AdminContentCatalogSubTab, string> = {
+  catalog: '',
+  paths: 'paths',
+  taxonomy: 'taxonomy',
+  categories: 'categories',
+  presets: 'presets',
+  skillPresets: 'skill-presets',
+};
+
+export function adminContentCatalogSubTabToUrlSegment(tab: AdminContentCatalogSubTab): string {
+  return ADMIN_CONTENT_CATALOG_URL_SEGMENTS[tab] ?? '';
+}
+
+export function parseAdminContentCatalogUrlSegment(raw: string): AdminContentCatalogSubTab | null {
+  const s = raw.trim().toLowerCase();
+  if (!s) return null;
+  if (s === 'paths') return 'paths';
+  if (s === 'taxonomy' || s === 'categories-skills' || s === 'categories_skills') return 'taxonomy';
+  if (s === 'categories') return 'categories';
+  if (s === 'presets' || s === 'topic-presets' || s === 'topic_presets') return 'presets';
+  if (s === 'skill-presets' || s === 'skill_presets' || s === 'skillpresets') return 'skillPresets';
+  return null;
+}
+
 export interface AppHistoryPayload {
   v: 1;
   view: AppHistoryView;
@@ -49,6 +82,8 @@ export interface AppHistoryPayload {
   lessonId?: string | null;
   certificate?: CertificateHistorySnapshot | null;
   adminTab?: AdminHistoryTab | null;
+  /** Admin → Content horizontal sub-tab (hash `#/admin/content/...`). */
+  adminContentCatalogSubTab?: AdminContentCatalogSubTab | null;
   /** Firestore learning path id when catalog is scoped to a path (shareable / survives reload). */
   learningPathId?: string | null;
   /**
@@ -99,6 +134,7 @@ export function payloadToHash(payload: AppHistoryPayload): string {
     lessonId,
     certificate: _c,
     adminTab,
+    adminContentCatalogSubTab,
     learningPathId,
     adminPreviewCourseOwnerUid,
     courseFromCreatorDraft,
@@ -149,7 +185,13 @@ export function payloadToHash(payload: AppHistoryPayload): string {
     const tab = adminTab ?? 'alerts';
     if (tab === 'alerts') return '#/admin';
     if (tab === 'ai') return '#/admin/ai';
-    if (tab === 'catalog') return '#/admin/content';
+    if (tab === 'catalog') {
+      const sub = adminContentCatalogSubTab ?? 'catalog';
+      if (sub === 'catalog') return '#/admin/content';
+      const seg = adminContentCatalogSubTabToUrlSegment(sub);
+      if (!seg) return '#/admin/content';
+      return `#/admin/content/${encodeURIComponent(seg)}`;
+    }
     if (tab === 'marketing') return '#/admin/marketing';
     if (tab === 'moderation') return '#/admin/moderation';
     if (tab === 'creators') return '#/admin/creators';
@@ -263,15 +305,27 @@ export function parseHashToPayload(hash: string): AppHistoryPayload | null {
 
   if (head === 'admin') {
     let adminTab: AdminHistoryTab = 'alerts';
+    let adminContentCatalogSubTab: AdminContentCatalogSubTab = 'catalog';
     const sub = segments[1]?.toLowerCase();
-    if (sub === 'content' || sub === 'courses' || sub === 'catalog') adminTab = 'catalog';
-    else if (sub === 'moderation') adminTab = 'moderation';
+    if (sub === 'content' || sub === 'courses' || sub === 'catalog') {
+      adminTab = 'catalog';
+      const contentSegRaw = segments[2];
+      if (contentSegRaw) {
+        const decoded = decodeURIComponent(contentSegRaw).toLowerCase();
+        const mapped = parseAdminContentCatalogUrlSegment(decoded);
+        if (mapped) adminContentCatalogSubTab = mapped;
+      }
+    } else if (sub === 'moderation') adminTab = 'moderation';
     else if (sub === 'roles' || sub === 'users') adminTab = 'roles';
     else if (sub === 'alerts') adminTab = 'alerts';
     else if (sub === 'ai' || sub === 'models' || sub === 'gemini') adminTab = 'ai';
     else if (sub === 'marketing' || sub === 'ads' || sub === 'hero') adminTab = 'marketing';
     else if (sub === 'creators') adminTab = 'creators';
-    return { v: 1, view: 'admin', adminTab };
+    const out: AppHistoryPayload = { v: 1, view: 'admin', adminTab };
+    if (adminTab === 'catalog') {
+      out.adminContentCatalogSubTab = adminContentCatalogSubTab;
+    }
+    return out;
   }
 
   if (head === 'creator' && segments.length === 1) {
@@ -298,6 +352,9 @@ export function mergeHashAndHistoryStatePayload(
   if (!fromHash) return fromState;
   if (!fromState) return fromHash;
   const merged: AppHistoryPayload = { ...fromState, ...fromHash, v: 1 };
+  if (merged.adminTab !== 'catalog') {
+    merged.adminContentCatalogSubTab = null;
+  }
   if (merged.learningPathId == null && fromState.learningPathId != null) {
     merged.learningPathId = fromState.learningPathId;
   }
@@ -437,6 +494,9 @@ export function historyPayloadsEqual(a: AppHistoryPayload | null, b: AppHistoryP
   if (ac && bc && ac.certificateId !== bc.certificateId) return false;
   if (a.view === 'admin' && b.view === 'admin') {
     if ((a.adminTab ?? 'alerts') !== (b.adminTab ?? 'alerts')) return false;
+    if (a.adminTab === 'catalog' && b.adminTab === 'catalog') {
+      if ((a.adminContentCatalogSubTab ?? 'catalog') !== (b.adminContentCatalogSubTab ?? 'catalog')) return false;
+    }
   }
   if ((a.learningPathId ?? null) !== (b.learningPathId ?? null)) return false;
   if ((a.learningPathFromCreatorDraft === true) !== (b.learningPathFromCreatorDraft === true)) return false;

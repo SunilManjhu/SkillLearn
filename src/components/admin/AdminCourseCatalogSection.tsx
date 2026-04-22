@@ -72,6 +72,7 @@ import {
   createDefaultMcqQuestion,
   isCourseCatalogPublished,
 } from '../../data/courses';
+import type { AdminContentCatalogSubTab } from '../../utils/appHistory';
 import {
   STRUCTURED_COURSE_ID_RE,
   firstAvailableStructuredCourseIdFromDocIds,
@@ -1186,7 +1187,7 @@ function truncateForNarrowCourseMenu(text: string, maxChars: number): string {
 }
 
 /** Sub-tabs inside Course catalog: course entries, learning paths, category management. */
-type ContentCatalogSubTab = 'catalog' | 'paths' | 'taxonomy' | 'categories' | 'presets' | 'skillPresets';
+type ContentCatalogSubTab = AdminContentCatalogSubTab;
 
 /** Pending navigation while the course draft has unsaved edits. */
 type CourseLeaveDialog =
@@ -1194,6 +1195,12 @@ type CourseLeaveDialog =
   | { kind: 'duplicate' };
 
 interface AdminCourseCatalogSectionProps {
+  /**
+   * When both are set (admin portal), the active Content sub-tab is controlled by the shell URL
+   * (`#/admin/content/...`) so reload restores Paths, Categories & Skills, etc.
+   */
+  syncedContentCatalogSubTab?: AdminContentCatalogSubTab;
+  onSyncedContentCatalogSubTabChange?: (tab: AdminContentCatalogSubTab) => void;
   onCatalogChanged: () => void | Promise<void>;
   /** True while the course editor has unsaved edits (for admin portal navigation guard). */
   onDraftDirtyChange?: (dirty: boolean) => void;
@@ -1220,6 +1227,8 @@ interface RequiredFieldTarget {
 }
 
 export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps> = ({
+  syncedContentCatalogSubTab,
+  onSyncedContentCatalogSubTabChange,
   onCatalogChanged,
   onDraftDirtyChange,
   onPathsDirtyChange,
@@ -1351,7 +1360,23 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const [categoryOptionsVersion, setCategoryOptionsVersion] = useState(0);
   const [skillOptionsVersion, setSkillOptionsVersion] = useState(0);
 
-  const [contentCatalogSubTab, setContentCatalogSubTab] = useState<ContentCatalogSubTab>('catalog');
+  const [internalContentCatalogSubTab, setInternalContentCatalogSubTab] =
+    useState<ContentCatalogSubTab>('catalog');
+  const isContentCatalogSubTabSynced =
+    syncedContentCatalogSubTab !== undefined && onSyncedContentCatalogSubTabChange !== undefined;
+  const contentCatalogSubTab = isContentCatalogSubTabSynced
+    ? syncedContentCatalogSubTab
+    : internalContentCatalogSubTab;
+  const commitContentCatalogSubTab = useCallback(
+    (next: ContentCatalogSubTab) => {
+      if (isContentCatalogSubTabSynced && onSyncedContentCatalogSubTabChange) {
+        onSyncedContentCatalogSubTabChange(next);
+      } else {
+        setInternalContentCatalogSubTab(next);
+      }
+    },
+    [isContentCatalogSubTabSynced, onSyncedContentCatalogSubTabChange]
+  );
   const [subTabSwitchConfirmOpen, setSubTabSwitchConfirmOpen] = useState(false);
   const [pathSubTabSwitchConfirmOpen, setPathSubTabSwitchConfirmOpen] = useState(false);
   const [courseLeaveDialog, setCourseLeaveDialog] = useState<CourseLeaveDialog | null>(null);
@@ -1751,7 +1776,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         contentCatalogSubTab === 'presets' ||
         contentCatalogSubTab === 'skillPresets'
       ) {
-        setContentCatalogSubTab('catalog');
+        commitContentCatalogSubTab('catalog');
       }
     }
   }, [isCreatorCatalog, contentCatalogSubTab]);
@@ -3517,7 +3542,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             setPathSubTabSwitchConfirmOpen(true);
             return;
           }
-          setContentCatalogSubTab('catalog');
+          commitContentCatalogSubTab('catalog');
           return;
         }
         if (next === 'taxonomy' || next === 'categories' || next === 'presets' || next === 'skillPresets') {
@@ -3526,7 +3551,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             setPathSubTabSwitchConfirmOpen(true);
             return;
           }
-          setContentCatalogSubTab(next);
+          commitContentCatalogSubTab(next);
           return;
         }
         return;
@@ -3535,7 +3560,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       if (contentCatalogSubTab === 'catalog') {
         if (next === 'paths') {
           if (!isDirty) {
-            setContentCatalogSubTab('paths');
+            commitContentCatalogSubTab('paths');
             return;
           }
           courseDiscardTargetRef.current = 'paths';
@@ -3544,7 +3569,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         }
         if (next === 'taxonomy' || next === 'categories' || next === 'presets' || next === 'skillPresets') {
           if (!isDirty) {
-            setContentCatalogSubTab(next);
+            commitContentCatalogSubTab(next);
             return;
           }
           courseDiscardTargetRef.current = next;
@@ -3557,7 +3582,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       if (contentCatalogSubTab === 'taxonomy') {
         if (next === 'catalog') {
           if (!isDirty) {
-            setContentCatalogSubTab('catalog');
+            commitContentCatalogSubTab('catalog');
             return;
           }
           courseDiscardTargetRef.current = 'catalog';
@@ -3566,7 +3591,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         }
         if (next === 'paths') {
           if (!isDirty) {
-            setContentCatalogSubTab('paths');
+            commitContentCatalogSubTab('paths');
             return;
           }
           courseDiscardTargetRef.current = 'paths';
@@ -3574,15 +3599,15 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           return;
         }
         if (next === 'categories') {
-          setContentCatalogSubTab('categories');
+          commitContentCatalogSubTab('categories');
           return;
         }
         if (next === 'presets') {
-          setContentCatalogSubTab('presets');
+          commitContentCatalogSubTab('presets');
           return;
         }
         if (next === 'skillPresets') {
-          setContentCatalogSubTab('skillPresets');
+          commitContentCatalogSubTab('skillPresets');
           return;
         }
         return;
@@ -3591,7 +3616,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       if (contentCatalogSubTab === 'categories') {
         if (next === 'catalog') {
           if (!isDirty) {
-            setContentCatalogSubTab('catalog');
+            commitContentCatalogSubTab('catalog');
             return;
           }
           courseDiscardTargetRef.current = 'catalog';
@@ -3600,7 +3625,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         }
         if (next === 'paths') {
           if (!isDirty) {
-            setContentCatalogSubTab('paths');
+            commitContentCatalogSubTab('paths');
             return;
           }
           courseDiscardTargetRef.current = 'paths';
@@ -3608,15 +3633,15 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           return;
         }
         if (next === 'presets') {
-          setContentCatalogSubTab('presets');
+          commitContentCatalogSubTab('presets');
           return;
         }
         if (next === 'skillPresets') {
-          setContentCatalogSubTab('skillPresets');
+          commitContentCatalogSubTab('skillPresets');
           return;
         }
         if (next === 'taxonomy') {
-          setContentCatalogSubTab('taxonomy');
+          commitContentCatalogSubTab('taxonomy');
           return;
         }
         return;
@@ -3625,7 +3650,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       if (contentCatalogSubTab === 'presets') {
         if (next === 'catalog') {
           if (!isDirty) {
-            setContentCatalogSubTab('catalog');
+            commitContentCatalogSubTab('catalog');
             return;
           }
           courseDiscardTargetRef.current = 'catalog';
@@ -3634,7 +3659,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         }
         if (next === 'paths') {
           if (!isDirty) {
-            setContentCatalogSubTab('paths');
+            commitContentCatalogSubTab('paths');
             return;
           }
           courseDiscardTargetRef.current = 'paths';
@@ -3642,15 +3667,15 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           return;
         }
         if (next === 'categories') {
-          setContentCatalogSubTab('categories');
+          commitContentCatalogSubTab('categories');
           return;
         }
         if (next === 'taxonomy') {
-          setContentCatalogSubTab('taxonomy');
+          commitContentCatalogSubTab('taxonomy');
           return;
         }
         if (next === 'skillPresets') {
-          setContentCatalogSubTab('skillPresets');
+          commitContentCatalogSubTab('skillPresets');
           return;
         }
       }
@@ -3658,7 +3683,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       if (contentCatalogSubTab === 'skillPresets') {
         if (next === 'catalog') {
           if (!isDirty) {
-            setContentCatalogSubTab('catalog');
+            commitContentCatalogSubTab('catalog');
             return;
           }
           courseDiscardTargetRef.current = 'catalog';
@@ -3667,7 +3692,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         }
         if (next === 'paths') {
           if (!isDirty) {
-            setContentCatalogSubTab('paths');
+            commitContentCatalogSubTab('paths');
             return;
           }
           courseDiscardTargetRef.current = 'paths';
@@ -3675,15 +3700,15 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           return;
         }
         if (next === 'categories') {
-          setContentCatalogSubTab('categories');
+          commitContentCatalogSubTab('categories');
           return;
         }
         if (next === 'taxonomy') {
-          setContentCatalogSubTab('taxonomy');
+          commitContentCatalogSubTab('taxonomy');
           return;
         }
         if (next === 'presets') {
-          setContentCatalogSubTab('presets');
+          commitContentCatalogSubTab('presets');
           return;
         }
       }
@@ -3703,7 +3728,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         return;
       }
     }
-    setContentCatalogSubTab(courseDiscardTargetRef.current);
+    commitContentCatalogSubTab(courseDiscardTargetRef.current);
     setSubTabSwitchConfirmOpen(false);
   }, [draft, baselineJson, showActionToast]);
 
@@ -3714,7 +3739,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     pathBuilderDirtyRef.current = false;
     onPathsDirtyChange?.(false);
     setPathSubTabSwitchConfirmOpen(false);
-    setContentCatalogSubTab(pathDiscardTargetRef.current);
+    commitContentCatalogSubTab(pathDiscardTargetRef.current);
   }, [onPathsDirtyChange]);
 
   useDialogKeyboard({

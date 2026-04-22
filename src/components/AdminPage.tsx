@@ -5,7 +5,7 @@ import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { useDialogKeyboard } from '../hooks/useDialogKeyboard';
 import type { Course } from '../data/courses';
 import type { LearningPath } from '../data/learningPaths';
-import type { AdminHistoryTab } from '../utils/appHistory';
+import type { AdminContentCatalogSubTab, AdminHistoryTab } from '../utils/appHistory';
 import { createBroadcastAlert, type BroadcastAlertType } from '../utils/alertsFirestore';
 import { AdminCourseCatalogSection } from './admin/AdminCourseCatalogSection';
 import { AdminModerationSection } from './admin/AdminModerationSection';
@@ -20,6 +20,9 @@ import { useAdminActionToast } from './admin/useAdminActionToast';
 interface AdminPageProps {
   courses: Course[];
   activeTab: AdminHistoryTab;
+  /** Admin → Content sub-tab; mirrored in `#/admin/content/...` (admin portal only). */
+  adminContentCatalogSubTab: AdminContentCatalogSubTab;
+  onAdminContentCatalogSubTabChange: (tab: AdminContentCatalogSubTab) => void;
   currentAdminUid?: string;
   /** One-shot: open Moderation inbox on this sub-tab (e.g. from navbar notification). */
   moderationInitialSubTab?: 'reports' | 'suggestions' | 'contact' | null;
@@ -54,6 +57,8 @@ type PendingAdminNavigation =
 export const AdminPage: React.FC<AdminPageProps> = ({
   courses,
   activeTab: tab,
+  adminContentCatalogSubTab,
+  onAdminContentCatalogSubTabChange,
   currentAdminUid,
   moderationInitialSubTab,
   onModerationInitialSubTabConsumed,
@@ -520,6 +525,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({
         {tab === 'catalog' && (
           <AdminCourseCatalogSection
             includeCreatorDraftCourses
+            syncedContentCatalogSubTab={adminContentCatalogSubTab}
+            onSyncedContentCatalogSubTabChange={onAdminContentCatalogSubTabChange}
             onCatalogChanged={onCatalogChanged}
             onDraftDirtyChange={setCatalogDirty}
             onPathsDirtyChange={setPathDirty}
