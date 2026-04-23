@@ -1,7 +1,7 @@
 import { collectCourseIdsFromMindmapTree, type MindmapTreeNode } from '../data/pathMindmap';
 
 export type PathCourseRowSegment =
-  | { type: 'divider'; id: string; label: string }
+  | { type: 'divider'; id: string; label: string; nested: PathCourseRowSegment[]; dividerEyebrow?: string }
   | { type: 'label'; id: string; label: string }
   | { type: 'link'; id: string; label: string; href: string }
   | { type: 'courses'; courseIds: string[] };
@@ -40,10 +40,16 @@ function walkSectionToSegments(children: MindmapTreeNode[], pathSet: Set<string>
     const k = nodeRowKind(n);
     if (k === 'divider') {
       flush();
-      segments.push({ type: 'divider', id: n.id, label: n.label.trim() || 'Divider' });
-      if (n.children.length > 0) {
-        segments.push(...walkSectionToSegments(n.children, pathSet));
-      }
+      const nested =
+        n.children.length > 0 ? walkSectionToSegments(n.children, pathSet) : [];
+      const eb = n.dividerEyebrow?.trim();
+      segments.push({
+        type: 'divider',
+        id: n.id,
+        label: n.label.trim() || 'Divider',
+        nested,
+        ...(eb ? { dividerEyebrow: eb } : {}),
+      });
     } else if (k === 'label') {
       flush();
       segments.push({ type: 'label', id: n.id, label: n.label.trim() || 'Module' });
@@ -67,6 +73,8 @@ function removeCoursesFromRemaining(segments: PathCourseRowSegment[], remaining:
   for (const seg of segments) {
     if (seg.type === 'courses') {
       for (const id of seg.courseIds) remaining.delete(id);
+    } else if (seg.type === 'divider' && seg.nested.length > 0) {
+      removeCoursesFromRemaining(seg.nested, remaining);
     }
   }
 }

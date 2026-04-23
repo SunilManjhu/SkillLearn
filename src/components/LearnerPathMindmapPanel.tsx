@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, LayoutGrid, Loader2 } from 'lucide-react';
 import type { Course } from '../data/courses';
 import {
@@ -7,10 +7,14 @@ import {
   type MindmapTreeNode,
 } from '../data/pathMindmap';
 import { normalizeExternalHref } from '../utils/externalUrl';
-import { buildPathCourseRowLayoutBlocks } from '../utils/pathCourseOutlineGroups';
+import {
+  buildPathCourseRowLayoutBlocks,
+  type PathCourseRowSegment,
+} from '../utils/pathCourseOutlineGroups';
 import {
   readPathCourseRowExpandedBlockKey,
-  writePathCourseRowExpandedBlockKey,
+  readPathCourseRowUiPersisted,
+  writePathCourseRowUiPersisted,
 } from '../utils/pathOutlineUiSession';
 import {
   alignLocalLearnerStateIfFirestoreProgressMissing,
@@ -18,6 +22,8 @@ import {
 } from '../utils/courseProgress';
 import { LearnerPathCourseRowList } from './LearnerPathCourseRowList';
 import { PathMindmapOutline } from './PathMindmapOutline';
+import { PathOutlineTreeGroup, PathOutlineTreeItem } from './PathOutlineTreeGroup';
+import { PathSectionDividerCard } from './PathSectionDividerCard';
 
 export type LearnerPathMindmapPanelProps = {
   pathId: string;
@@ -43,6 +49,193 @@ export type LearnerPathMindmapPanelProps = {
   onPathLearnerFirestoreSynced?: () => void;
 };
 
+function pathCourseRowNestedSegmentKey(seg: PathCourseRowSegment, index: number): string {
+  if (seg.type === 'courses') return `courses-${seg.courseIds.join('-')}-${index}`;
+  return `${seg.type}-${seg.id}-${index}`;
+}
+
+type PathCourseRowDividerCollapseApi = {
+  isOpen: (dividerId: string) => boolean;
+  toggle: (dividerId: string) => void;
+};
+
+type SectionDividerOutlineBlockProps = {
+  pathId: string;
+  placement: 'section' | 'nested';
+  dividerId: string;
+  title: string;
+  /** Small caps line above title (from path admin). */
+  dividerEyebrow?: string;
+  nested: PathCourseRowSegment[];
+  treeGroupParentDepth: number;
+  childInnerTreeDepth: number;
+  dividerCollapse: PathCourseRowDividerCollapseApi;
+  catalogCourses: readonly Course[];
+  progressUserId: string | null;
+  outlineProgressVersion: number;
+  onOpenCourseFromRow: (course: Course) => void;
+};
+
+function SectionDividerOutlineBlock({
+  pathId,
+  placement,
+  dividerId,
+  title,
+  dividerEyebrow,
+  nested,
+  treeGroupParentDepth,
+  childInnerTreeDepth,
+  dividerCollapse,
+  catalogCourses,
+  progressUserId,
+  outlineProgressVersion,
+  onOpenCourseFromRow,
+}: SectionDividerOutlineBlockProps) {
+  const hasNested = nested.length > 0;
+  const expandable = hasNested;
+  const open = dividerCollapse.isOpen(dividerId);
+  const panelId = `path-courserow-divider-${pathId}-${dividerId}`;
+
+  const wrapClass =
+    placement === 'section'
+      ? 'min-w-0 border-t border-[var(--border-color)]/55 pt-3 mt-3 first:mt-0 first:border-t-0 first:pt-0'
+      : 'min-w-0 pt-2 first:pt-0';
+
+  const onHeaderKeyDown = expandable
+    ? (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          dividerCollapse.toggle(dividerId);
+        }
+      }
+    : undefined;
+
+  return (
+    <div className={wrapClass} role="presentation">
+      <div
+        className={
+          expandable
+            ? 'min-w-0 max-w-full cursor-pointer rounded-lg py-0.5 transition-colors hover:bg-[var(--hover-bg)]/40 sm:py-0.5'
+            : 'min-w-0 max-w-full py-0.5'
+        }
+        role={expandable ? 'button' : undefined}
+        tabIndex={expandable ? 0 : undefined}
+        aria-expanded={expandable ? open : undefined}
+        aria-controls={expandable ? panelId : undefined}
+        aria-label={
+          expandable ? `${open ? 'Collapse' : 'Expand'} links and topics under ${title}` : undefined
+        }
+        onClick={expandable ? () => dividerCollapse.toggle(dividerId) : undefined}
+        onKeyDown={onHeaderKeyDown}
+      >
+        <div className="min-w-0">
+          <PathSectionDividerCard
+            title={title}
+            eyebrow={dividerEyebrow?.trim() || 'Section divider'}
+          />
+        </div>
+      </div>
+      {hasNested ? (
+        <div id={panelId} hidden={expandable && !open}>
+          <PathOutlineTreeGroup parentDepth={treeGroupParentDepth}>
+            {nested.map((ch, idx) => (
+              <PathOutlineTreeItem key={pathCourseRowNestedSegmentKey(ch, idx)}>
+                <PathCourseRowNestedSegment
+                  seg={ch}
+                  innerTreeDepth={childInnerTreeDepth}
+                  catalogCourses={catalogCourses}
+                  progressUserId={progressUserId}
+                  outlineProgressVersion={outlineProgressVersion}
+                  onOpenCourseFromRow={onOpenCourseFromRow}
+                  pathId={pathId}
+                  dividerCollapse={dividerCollapse}
+                />
+              </PathOutlineTreeItem>
+            ))}
+          </PathOutlineTreeGroup>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+type PathCourseRowNestedSegmentProps = {
+  seg: PathCourseRowSegment;
+  /** `PathOutlineTreeGroup` `parentDepth` when this node is a divider with nested rows. */
+  innerTreeDepth: number;
+  catalogCourses: readonly Course[];
+  progressUserId: string | null;
+  outlineProgressVersion: number;
+  onOpenCourseFromRow: (course: Course) => void;
+  pathId: string;
+  dividerCollapse: PathCourseRowDividerCollapseApi;
+};
+
+function PathCourseRowNestedSegment({
+  seg,
+  innerTreeDepth,
+  catalogCourses,
+  progressUserId,
+  outlineProgressVersion,
+  onOpenCourseFromRow,
+  pathId,
+  dividerCollapse,
+}: PathCourseRowNestedSegmentProps) {
+  if (seg.type === 'divider') {
+    const title = seg.label.trim() || 'Untitled section';
+    return (
+      <SectionDividerOutlineBlock
+        pathId={pathId}
+        placement="nested"
+        dividerId={seg.id}
+        title={title}
+        dividerEyebrow={seg.dividerEyebrow}
+        nested={seg.nested}
+        treeGroupParentDepth={innerTreeDepth}
+        childInnerTreeDepth={innerTreeDepth + 1}
+        dividerCollapse={dividerCollapse}
+        catalogCourses={catalogCourses}
+        progressUserId={progressUserId}
+        outlineProgressVersion={outlineProgressVersion}
+        onOpenCourseFromRow={onOpenCourseFromRow}
+      />
+    );
+  }
+  if (seg.type === 'label') {
+    return (
+      <p className="text-sm font-semibold leading-snug text-[var(--text-primary)] [overflow-wrap:anywhere] sm:text-[15px]">
+        {seg.label}
+      </p>
+    );
+  }
+  if (seg.type === 'link') {
+    const safeHref = normalizeExternalHref(seg.href);
+    return safeHref ? (
+      <a
+        href={safeHref}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-block min-w-0 text-sm font-medium leading-snug text-[var(--text-primary)] underline decoration-[var(--border-light)] decoration-1 underline-offset-[3px] transition-colors hover:bg-[var(--hover-bg)]/60 hover:decoration-[var(--text-secondary)] [overflow-wrap:anywhere] sm:text-[15px]"
+      >
+        {seg.label}
+      </a>
+    ) : (
+      <p className="text-sm font-semibold text-[var(--text-primary)] [overflow-wrap:anywhere]">{seg.label}</p>
+    );
+  }
+  return (
+    <div className="min-w-0">
+      <LearnerPathCourseRowList
+        courseIds={seg.courseIds}
+        catalogCourses={catalogCourses}
+        progressUserId={progressUserId}
+        progressSnapshotVersion={outlineProgressVersion}
+        onOpenCourse={onOpenCourseFromRow}
+      />
+    </div>
+  );
+}
+
 export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = ({
   pathId,
   pathTitle,
@@ -62,6 +255,9 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
   const [storageProgressTick, setStorageProgressTick] = useState(0);
   /** Which top-level block is open; `null` = all collapsed (accordion). Restored from localStorage per path. */
   const [expandedPathBlockKey, setExpandedPathBlockKey] = useState<string | null>(null);
+  /** Section divider nested rows: explicit `false` = collapsed (default expanded). Persisted per path. */
+  const [dividerExpanded, setDividerExpanded] = useState<Record<string, boolean>>({});
+  const dividerHydrationKeyRef = useRef('');
 
   const filteredBranchesForViewer = useMemo(
     () =>
@@ -90,6 +286,38 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
   const useOutlineLayout =
     !loading && branches !== null && pathCourseIds.length === 0 && filteredBranchesForViewer.length > 0;
   const useCourseRowLayout = !loading && branches !== null && pathCourseIdsForLayout.length > 0;
+
+  useLayoutEffect(() => {
+    dividerHydrationKeyRef.current = '';
+  }, [pathId]);
+
+  useLayoutEffect(() => {
+    if (loading || branches === null || !useCourseRowLayout || !courseRowBlocks?.length) {
+      return;
+    }
+    const structureKey = `${pathId}|${courseRowBlocks
+      .map((b) =>
+        b.segments
+          .filter((s): s is Extract<PathCourseRowSegment, { type: 'divider' }> => s.type === 'divider')
+          .map((s) => s.id)
+          .join(',')
+      )
+      .join('/')}`;
+    if (dividerHydrationKeyRef.current === structureKey) return;
+    dividerHydrationKeyRef.current = structureKey;
+    const persisted = readPathCourseRowUiPersisted(pathId).dividerExpanded;
+    const valid = new Set<string>();
+    for (const b of courseRowBlocks) {
+      for (const s of b.segments) {
+        if (s.type === 'divider') valid.add(s.id);
+      }
+    }
+    const pruned: Record<string, boolean> = {};
+    for (const [id, v] of Object.entries(persisted)) {
+      if (valid.has(id)) pruned[id] = v;
+    }
+    setDividerExpanded(pruned);
+  }, [pathId, loading, branches, useCourseRowLayout, courseRowBlocks]);
 
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
@@ -187,7 +415,8 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
     const next = stored && valid.has(stored) ? stored : null;
     setExpandedPathBlockKey(next);
     if (next !== stored) {
-      writePathCourseRowExpandedBlockKey(pathId, next);
+      const ui = readPathCourseRowUiPersisted(pathId);
+      writePathCourseRowUiPersisted(pathId, { ...ui, expandedBlockKey: next });
     }
   }, [
     pathId,
@@ -206,10 +435,31 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
   const togglePathSectionBlock = useCallback((key: string) => {
     setExpandedPathBlockKey((current) => {
       const next = current === key ? null : key;
-      writePathCourseRowExpandedBlockKey(pathId, next);
+      const ui = readPathCourseRowUiPersisted(pathId);
+      writePathCourseRowUiPersisted(pathId, { ...ui, expandedBlockKey: next });
       return next;
     });
   }, [pathId]);
+
+  const dividerCollapseApi = useMemo<PathCourseRowDividerCollapseApi>(
+    () => ({
+      isOpen: (dividerId: string) => dividerExpanded[dividerId] !== false,
+      toggle: (dividerId: string) => {
+        setDividerExpanded((prev) => {
+          const wasOpen = prev[dividerId] !== false;
+          const next = { ...prev };
+          if (wasOpen) next[dividerId] = false;
+          else delete next[dividerId];
+          queueMicrotask(() => {
+            const ui = readPathCourseRowUiPersisted(pathId);
+            writePathCourseRowUiPersisted(pathId, { ...ui, dividerExpanded: next });
+          });
+          return next;
+        });
+      },
+    }),
+    [dividerExpanded, pathId]
+  );
 
   const handleOpenCourseFromRow = (course: Course) => {
     onOpenCourse(course.id);
@@ -315,15 +565,22 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
                 >
                   {block.segments.map((seg, sIdx) =>
                     seg.type === 'divider' ? (
-                      <div
+                      <SectionDividerOutlineBlock
                         key={seg.id}
-                        className="min-w-0 border-t border-[var(--border-color)]/60 pt-2.5 mt-2 first:mt-0 first:border-t-0 first:pt-0"
-                        role="presentation"
-                      >
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-secondary)] [overflow-wrap:anywhere]">
-                          {seg.label}
-                        </p>
-                      </div>
+                        pathId={pathId}
+                        placement="section"
+                        dividerId={seg.id}
+                        title={seg.label.trim() || 'Untitled section'}
+                        dividerEyebrow={seg.dividerEyebrow}
+                        nested={seg.nested}
+                        treeGroupParentDepth={1}
+                        childInnerTreeDepth={2}
+                        dividerCollapse={dividerCollapseApi}
+                        catalogCourses={catalogCourses}
+                        progressUserId={progressUserId}
+                        outlineProgressVersion={outlineProgressVersion}
+                        onOpenCourseFromRow={handleOpenCourseFromRow}
+                      />
                     ) : seg.type === 'label' ? (
                       <div
                         key={seg.id}

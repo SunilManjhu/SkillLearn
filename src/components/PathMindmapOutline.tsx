@@ -25,6 +25,8 @@ import {
   readPathMindmapOutlineExpand,
   writePathMindmapOutlineExpand,
 } from '../utils/pathOutlineUiSession';
+import { PathOutlineTreeGroup, PathOutlineTreeItem } from './PathOutlineTreeGroup';
+import { PathSectionDividerCard } from './PathSectionDividerCard';
 
 /** Matches Tailwind `md` (768px): flat path outline on small viewports. */
 function useOutlineCompactMobile(): boolean {
@@ -551,48 +553,6 @@ function OutlineBranchStatusLeadSlot({
   );
 }
 
-/** Vertical rail + rounded corner group; horizontal elbows on each `OutlineNestedBranchItem`. */
-function OutlineNestedBranch({
-  parentDepth,
-  children,
-}: {
-  parentDepth: number;
-  children: React.ReactNode;
-}) {
-  /** Each nested list steps in by `pl-2` on mobile to match course-row inset (`max-md:pl-2` on row content). */
-  const outerPad =
-    parentDepth === 1
-      ? 'pl-0 max-md:pl-2 md:pl-12'
-      : parentDepth === 2
-        ? 'pl-0 max-md:pl-2 md:pl-10'
-        : 'pl-0 max-md:pl-2 md:pl-8';
-  const marginTop = parentDepth === 1 ? 'mt-0.5 sm:mt-1' : 'mt-0.5 sm:mt-1';
-  return (
-    <div className={`min-w-0 ${marginTop} ${outerPad}`}>
-      <ul
-        role="list"
-        className="relative list-none space-y-2 py-0 pl-0 md:space-y-1 md:rounded-bl-lg md:rounded-tl-md md:border-l-2 md:border-[var(--border-color)]/70 md:bg-[var(--bg-primary)]/20 md:py-1 md:pl-4"
-      >
-        {children}
-      </ul>
-    </div>
-  );
-}
-
-function OutlineNestedBranchItem({
-  children,
-}: {
-  children: React.ReactNode;
-  /** List `key` is valid on this component; not passed through to the DOM. */
-  key?: React.Key;
-}) {
-  return (
-    <li className="relative min-w-0 before:pointer-events-none before:absolute before:left-0 before:top-[0.95rem] before:z-0 before:hidden before:h-px before:w-4 before:-translate-x-full before:bg-[var(--border-color)]/70 md:before:block sm:before:top-4 sm:before:w-5">
-      {children}
-    </li>
-  );
-}
-
 /** Chevron + spacer so nested rows with and without children stay aligned. */
 function OutlineBranchExpandControl({
   nodeId,
@@ -662,6 +622,7 @@ function OutlineNode({
   const isLabelRow = nk === 'label' || nk === 'module';
   const safeLinkHref =
     nk === 'link' && node.externalUrl ? normalizeExternalHref(node.externalUrl) : null;
+  const { canOpenLesson, courseId, lessonId } = resolveActions(node, catalogCourses);
 
   const sectionProgress = useMemo(() => {
     if (depth !== 0) return null;
@@ -913,26 +874,28 @@ function OutlineNode({
 
   if (depth === 1 && nk === 'divider') {
     const hasNested = node.children.length > 0;
+    const dividerTitle = node.label.trim() || 'Untitled section';
     if (!hasNested) {
       return (
         <div
-          className="min-w-0 border-t border-[var(--border-color)]/60 pt-2.5 mt-2 first:mt-0 first:border-t-0 first:pt-0"
+          className="min-w-0 border-t border-[var(--border-color)]/55 pt-3 mt-3 first:mt-0 first:border-t-0 first:pt-0"
           role="presentation"
         >
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-secondary)] [overflow-wrap:anywhere]">
-            {label}
-          </p>
+          <PathSectionDividerCard
+            title={dividerTitle}
+            eyebrow={node.dividerEyebrow?.trim() || 'Section divider'}
+          />
         </div>
       );
     }
     const nestedOpen = isBranchExpanded(node.id);
     const panelId = `path-branch-panel-${node.id}`;
     return (
-      <div className="min-w-0 border-t border-[var(--border-color)]/60 pt-2.5 mt-2 first:mt-0 first:border-t-0 first:pt-0">
+      <div className="min-w-0 border-t border-[var(--border-color)]/55 pt-3 mt-3 first:mt-0 first:border-t-0 first:pt-0">
         <div
-          className={`flex min-w-0 max-w-full items-start gap-1 py-0.5 pr-0 sm:items-center sm:gap-1.5 sm:py-0.5 sm:pl-0.5 sm:pr-1${
+          className={`flex min-w-0 max-w-full items-center gap-1 py-0.5 pr-0 sm:gap-1.5 sm:py-0.5 sm:pl-0.5 sm:pr-1${
             !outlineCompactMobile
-              ? ' min-h-10 cursor-pointer rounded-lg transition-colors hover:bg-[var(--hover-bg)]/50 sm:min-h-11'
+              ? ' min-h-12 cursor-pointer rounded-lg transition-colors hover:bg-[var(--hover-bg)]/40 sm:min-h-[3.25rem]'
               : ''
           }`}
           onClick={
@@ -951,16 +914,16 @@ function OutlineNode({
               externalLink={false}
             />
           ) : null}
-          <div className="flex min-w-0 max-w-full flex-1 flex-col gap-0.5 max-md:pl-2 md:min-w-0 md:flex-1">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-secondary)] [overflow-wrap:anywhere]">
-              {label}
-            </p>
-          </div>
+          <PathSectionDividerCard
+            title={dividerTitle}
+            eyebrow={node.dividerEyebrow?.trim() || 'Section divider'}
+            className="max-md:ml-0"
+          />
         </div>
         <div id={panelId} hidden={!nestedOpen}>
-          <OutlineNestedBranch parentDepth={1}>
+          <PathOutlineTreeGroup parentDepth={1}>
             {node.children.map((ch) => (
-              <OutlineNestedBranchItem key={ch.id}>
+              <PathOutlineTreeItem key={ch.id}>
                 <OutlineNode
                   node={ch}
                   depth={2}
@@ -976,9 +939,9 @@ function OutlineNode({
                   toggleBranch={toggleBranch}
                   outlineCompactMobile={outlineCompactMobile}
                 />
-              </OutlineNestedBranchItem>
+              </PathOutlineTreeItem>
             ))}
-          </OutlineNestedBranch>
+          </PathOutlineTreeGroup>
         </div>
       </div>
     );
@@ -1023,6 +986,17 @@ function OutlineNode({
                   >
                     {label}
                   </a>
+                ) : canOpenLesson && courseId && lessonId ? (
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 text-left text-base font-semibold leading-snug text-[var(--text-primary)] underline decoration-[var(--border-light)] decoration-1 underline-offset-[3px] transition-colors hover:bg-[var(--hover-bg)]/60 hover:decoration-[var(--text-secondary)] [overflow-wrap:anywhere]"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenLesson(courseId, lessonId);
+                    }}
+                  >
+                    {label}
+                  </button>
                 ) : (
                   <span className="min-w-0 flex-1 text-base font-semibold leading-snug text-[var(--text-primary)] [overflow-wrap:anywhere]">
                     {label}
@@ -1130,6 +1104,21 @@ function OutlineNode({
               >
                 {label}
               </a>
+            ) : canOpenLesson && courseId && lessonId ? (
+              <button
+                type="button"
+                className={
+                  depth >= 4
+                    ? 'min-w-0 flex-1 text-left text-xs font-semibold leading-snug text-[var(--text-primary)] underline decoration-[var(--border-light)] decoration-1 underline-offset-[3px] transition-colors hover:bg-[var(--hover-bg)]/60 hover:decoration-[var(--text-secondary)] [overflow-wrap:anywhere] sm:text-sm'
+                    : 'min-w-0 flex-1 text-left text-sm font-semibold leading-snug text-[var(--text-primary)] underline decoration-[var(--border-light)] decoration-1 underline-offset-[3px] transition-colors hover:bg-[var(--hover-bg)]/60 hover:decoration-[var(--text-secondary)] [overflow-wrap:anywhere] sm:text-[15px]'
+                }
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenLesson(courseId, lessonId);
+                }}
+              >
+                {label}
+              </button>
             ) : (
               <span className={`min-w-0 flex-1 ${nestedLabelClass}`}>{label}</span>
             )}
@@ -1166,9 +1155,9 @@ function OutlineNode({
       </div>
       {hasNested ? (
         <div id={`path-branch-panel-${node.id}`} hidden={!nestedOpen}>
-          <OutlineNestedBranch parentDepth={depth}>
+          <PathOutlineTreeGroup parentDepth={depth}>
             {node.children.map((ch) => (
-              <OutlineNestedBranchItem key={ch.id}>
+              <PathOutlineTreeItem key={ch.id}>
                 <OutlineNode
                   node={ch}
                   depth={depth + 1}
@@ -1183,9 +1172,9 @@ function OutlineNode({
                   toggleBranch={toggleBranch}
                   outlineCompactMobile={outlineCompactMobile}
                 />
-              </OutlineNestedBranchItem>
+              </PathOutlineTreeItem>
             ))}
-          </OutlineNestedBranch>
+          </PathOutlineTreeGroup>
         </div>
       ) : null}
     </div>

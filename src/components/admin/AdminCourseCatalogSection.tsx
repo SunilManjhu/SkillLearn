@@ -731,6 +731,51 @@ function lessonInsertSlotInSectionUnderDivider(mod: Module, insertAt: number): b
   return nearestSectionDividerIndexAbove(mod, insertAt) !== null;
 }
 
+function catalogInsertStripQuoteName(raw: string, maxLen = 44): string {
+  const t = raw.trim() || 'this section';
+  return t.length <= maxLen ? t : `${t.slice(0, maxLen - 1)}…`;
+}
+
+function catalogInsertAddBranchUnderLabel(displayName: string): string {
+  return `Add branch under “${catalogInsertStripQuoteName(displayName)}”`;
+}
+
+/**
+ * Gutter after lesson row `li`: insert index and labels (matches path admin — collapsed divider inserts after the whole subsection).
+ */
+function catalogInsertAfterLessonRowParams(
+  mod: Module,
+  mi: number,
+  li: number,
+  sectionsCollapsed: Record<string, boolean>
+): { insertAt: number; buttonLabel: string; ariaLabel: string; title?: string } {
+  const modName = catalogMiniRichPlainText(mod.title ?? '') || 'Module';
+  const row = mod.lessons[li];
+  if (row?.contentKind === 'divider' && sectionsCollapsed[`${mi}:${li}`]) {
+    const insertAt = indexOfNextDividerOrEnd(mod, li + 1);
+    const divName = catalogMiniRichPlainText(row.title ?? '') || 'Section divider';
+    return {
+      insertAt,
+      buttonLabel: catalogInsertAddBranchUnderLabel(modName),
+      ariaLabel: `Add branch in ${modName}, below collapsed section divider ${divName}`,
+      title: `Adds a row in “${catalogInsertStripQuoteName(modName, 56)}” just below the collapsed section divider “${catalogInsertStripQuoteName(divName, 40)}” — not inside that divider’s grouped rows. Expand the divider to add or reorder rows inside it.`,
+    };
+  }
+  const insertAt = li + 1;
+  const divIx = nearestSectionDividerIndexAbove(mod, insertAt);
+  const inSection =
+    divIx !== null && lessonInsertSlotInSectionUnderDivider(mod, insertAt);
+  const name =
+    inSection && divIx !== null
+      ? catalogMiniRichPlainText(mod.lessons[divIx]?.title ?? '') || 'Section divider'
+      : modName;
+  return {
+    insertAt,
+    buttonLabel: catalogInsertAddBranchUnderLabel(name),
+    ariaLabel: `Add branch under ${name}`,
+  };
+}
+
 /** Indents catalog rows / gaps that belong under a section divider (mobile-first). */
 const CATALOG_LESSON_SECTION_UNDER_DIVIDER_INDENT =
   'ml-0.5 min-w-0 border-l border-[var(--border-color)]/45 pl-1.5 sm:ml-1 sm:pl-2';
@@ -933,13 +978,20 @@ const CATALOG_LESSON_INSERT_INNER_PERSIST = 'flex w-full pl-3 max-md:!pl-0 justi
 function CatalogLessonInsertSlot({
   persistVisibleOnMd,
   ariaLabel,
+  buttonLabel,
+  title: titleOverride,
   onClick,
 }: {
   persistVisibleOnMd: boolean;
   ariaLabel: string;
+  /** Visible chip text, e.g. Add branch under “Module name”. */
+  buttonLabel: string;
+  /** Optional hover / persist title (e.g. after collapsed divider). */
+  title?: string;
   onClick: () => void;
 }) {
-  const title = 'Adds a row inside this module at this position among its items.';
+  const title =
+    titleOverride ?? 'Adds a row inside this module at this position among its items.';
   const delayHoverReveal = !persistVisibleOnMd;
   const {
     stripOuterCursorClass,
@@ -977,7 +1029,7 @@ function CatalogLessonInsertSlot({
           className={persistVisibleOnMd ? ADMIN_CATALOG_INSERT_CHIP_BTN_PERSIST : ADMIN_CATALOG_INSERT_CHIP_BTN_EXPAND_ROW}
         >
           <Plus size={14} className="shrink-0 opacity-90" aria-hidden />
-          <span>Add branch here</span>
+          <span className="min-w-0 text-center [overflow-wrap:anywhere]">{buttonLabel}</span>
         </button>
       </div>
     </div>
@@ -1004,16 +1056,19 @@ function CatalogLessonModuleBoundaryInsertRow({
   persistVisibleOnMd,
   onAddBranch,
   onAddModule,
+  branchButtonLabel,
   branchAriaLabel,
   moduleAriaLabel,
 }: {
   persistVisibleOnMd: boolean;
   onAddBranch: () => void;
   onAddModule: () => void;
+  branchButtonLabel: string;
   branchAriaLabel: string;
   moduleAriaLabel: string;
 }) {
-  const branchTitle = 'Adds a row inside this module at this position among its items.';
+  const branchTitle =
+    'Adds a row at the end of this module’s list (same as the last gutter above).';
   const moduleTitle = 'Adds a new module at this position in the course outline.';
   const gutterTitle = persistVisibleOnMd ? undefined : `${branchTitle} ${moduleTitle}`;
   const chipClass = persistVisibleOnMd
@@ -1060,7 +1115,7 @@ function CatalogLessonModuleBoundaryInsertRow({
           className={chipClass}
         >
           <Plus size={14} className="shrink-0 opacity-90" aria-hidden />
-          <span className="text-center">Add branch here</span>
+          <span className="min-w-0 text-center [overflow-wrap:anywhere]">{branchButtonLabel}</span>
         </button>
         <button
           type="button"
@@ -5236,7 +5291,10 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 <div className="space-y-0 border-l border-[var(--border-color)]/50 pl-2 sm:pl-3">
                   <CatalogLessonInsertSlot
                     persistVisibleOnMd={mod.lessons.length === 0}
-                    ariaLabel="Add branch here before the first row in this module"
+                    ariaLabel={`Add branch at the start of ${catalogMiniRichPlainText(mod.title ?? '') || 'Module'}`}
+                    buttonLabel={catalogInsertAddBranchUnderLabel(
+                      catalogMiniRichPlainText(mod.title ?? '') || 'Module'
+                    )}
                     onClick={() => setAddLessonBranchModal({ mi, insertAt: 0 })}
                   />
                   <div>
@@ -5245,6 +5303,15 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     if (lessonRowHiddenUnderCollapsedDivider(mod, mi, li, dividerSectionsCollapsed)) {
                       return <Fragment key={lessonRowKey} />;
                     }
+                    const insertAfterThisRow =
+                      li < mod.lessons.length - 1
+                        ? catalogInsertAfterLessonRowParams(
+                            mod,
+                            mi,
+                            li,
+                            dividerSectionsCollapsed
+                          )
+                        : null;
                     return (
                     <Fragment key={lessonRowKey}>
                     <div
@@ -5987,21 +6054,25 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         </>
                       )}
                     </div>
-                    {li < mod.lessons.length - 1 && (
+                    {insertAfterThisRow ? (
                       <div
                         className={
-                          lessonInsertSlotInSectionUnderDivider(mod, li + 1)
+                          lessonInsertSlotInSectionUnderDivider(mod, insertAfterThisRow.insertAt)
                             ? CATALOG_LESSON_SECTION_UNDER_DIVIDER_INDENT
                             : undefined
                         }
                       >
                         <CatalogLessonInsertSlot
                           persistVisibleOnMd={false}
-                          ariaLabel={`Add branch here after row ${li + 1} in this module`}
-                          onClick={() => setAddLessonBranchModal({ mi, insertAt: li + 1 })}
+                          ariaLabel={insertAfterThisRow.ariaLabel}
+                          buttonLabel={insertAfterThisRow.buttonLabel}
+                          title={insertAfterThisRow.title}
+                          onClick={() =>
+                            setAddLessonBranchModal({ mi, insertAt: insertAfterThisRow.insertAt })
+                          }
                         />
                       </div>
-                    )}
+                    ) : null}
                     </Fragment>
                   );
                   })}
@@ -6010,7 +6081,10 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       persistVisibleOnMd={false}
                       onAddBranch={() => setAddLessonBranchModal({ mi, insertAt: mod.lessons.length })}
                       onAddModule={() => addModuleAt(mi + 1)}
-                      branchAriaLabel={`Add branch here after row ${mod.lessons.length} in this module`}
+                      branchButtonLabel={catalogInsertAddBranchUnderLabel(
+                        catalogMiniRichPlainText(mod.title ?? '') || 'Module'
+                      )}
+                      branchAriaLabel={`Add branch at the end of ${catalogMiniRichPlainText(mod.title ?? '') || 'Module'}`}
                       moduleAriaLabel={`Add module here after module ${mi + 1}`}
                     />
                   )}

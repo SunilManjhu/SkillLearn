@@ -21,6 +21,8 @@ export type MindmapTreeNode = {
   /** `kind: 'link'` — opens in a new tab in the path outline (blog, article, etc.). */
   externalUrl?: string;
   /** `kind: 'divider'` — subheading under a section; may group outline rows in `children` (flat list under the group). */
+  /** Optional small caps line above the main divider title (learner path card). */
+  dividerEyebrow?: string;
   /**
    * Restrict visibility to these roles. Omit or both roles = everyone (signed-in admin or user, and guests count as user).
    * `[]` = hidden from everyone in the catalog outline (including admins). `['admin']` = administrators only.
@@ -230,7 +232,17 @@ export function normalizeMindmapNode(raw: unknown): MindmapTreeNode | null {
     if (n) parsedChildren.push(n);
   }
   if (o.kind === 'divider') {
-    return mergeVisibleToRoles({ id: o.id, label: o.label, children: parsedChildren, kind: 'divider' }, o);
+    const ebRaw = o.dividerEyebrow;
+    const dividerEyebrow =
+      typeof ebRaw === 'string' && ebRaw.trim().length > 0 ? ebRaw.trim() : undefined;
+    const baseDivider: MindmapTreeNode = {
+      id: o.id,
+      label: o.label,
+      children: parsedChildren,
+      kind: 'divider',
+      ...(dividerEyebrow ? { dividerEyebrow } : {}),
+    };
+    return mergeVisibleToRoles(baseDivider, o);
   }
   const base: MindmapTreeNode = { id: o.id, label: o.label, children: parsedChildren };
   let node: MindmapTreeNode;

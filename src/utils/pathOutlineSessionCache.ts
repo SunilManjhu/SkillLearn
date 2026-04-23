@@ -20,6 +20,7 @@ function validateMindmapTreeNode(x: unknown, depth: number): x is MindmapTreeNod
   if (o.lessonId !== undefined && typeof o.lessonId !== 'string') return false;
   if (o.moduleId !== undefined && typeof o.moduleId !== 'string') return false;
   if (o.externalUrl !== undefined && typeof o.externalUrl !== 'string') return false;
+  if (o.dividerEyebrow !== undefined && typeof o.dividerEyebrow !== 'string') return false;
   if (o.locked !== undefined && typeof o.locked !== 'boolean') return false;
   if (o.visibleToRoles !== undefined) {
     if (!Array.isArray(o.visibleToRoles)) return false;

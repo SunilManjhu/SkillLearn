@@ -41,26 +41,59 @@ function writeRawPersistent(storageKey: string, value: string): void {
   }
 }
 
-export function readPathCourseRowExpandedBlockKey(pathId: string): string | null {
+export type PathCourseRowUiPersisted = {
+  expandedBlockKey: string | null;
+  /** Explicit `false` = section divider’s nested links/rows are collapsed. */
+  dividerExpanded: Record<string, boolean>;
+};
+
+function parsePathCourseRowUi(raw: string | null): PathCourseRowUiPersisted {
+  if (!raw) return { expandedBlockKey: null, dividerExpanded: {} };
   try {
-    const raw = readRawPersistent(`${COURSE_ROW_KEY}${pathId}`);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as { expandedBlockKey?: unknown };
-    const k = parsed.expandedBlockKey;
-    if (k === null) return null;
-    if (typeof k === 'string' && k.length > 0) return k;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    let expandedBlockKey: string | null = null;
+    const ek = parsed.expandedBlockKey;
+    if (ek === null) expandedBlockKey = null;
+    else if (typeof ek === 'string' && ek.length > 0) expandedBlockKey = ek;
+
+    const dividerExpanded: Record<string, boolean> = {};
+    const de = parsed.dividerExpanded;
+    if (de && typeof de === 'object' && !Array.isArray(de)) {
+      for (const [k, v] of Object.entries(de as Record<string, unknown>)) {
+        if (typeof v === 'boolean') dividerExpanded[k] = v;
+      }
+    }
+    return { expandedBlockKey, dividerExpanded };
+  } catch {
+    return { expandedBlockKey: null, dividerExpanded: {} };
+  }
+}
+
+export function readPathCourseRowUiPersisted(pathId: string): PathCourseRowUiPersisted {
+  return parsePathCourseRowUi(readRawPersistent(`${COURSE_ROW_KEY}${pathId}`));
+}
+
+export function writePathCourseRowUiPersisted(pathId: string, state: PathCourseRowUiPersisted): void {
+  try {
+    writeRawPersistent(
+      `${COURSE_ROW_KEY}${pathId}`,
+      JSON.stringify({
+        expandedBlockKey: state.expandedBlockKey,
+        dividerExpanded: state.dividerExpanded,
+      })
+    );
   } catch {
     /* ignore */
   }
-  return null;
+}
+
+export function readPathCourseRowExpandedBlockKey(pathId: string): string | null {
+  return readPathCourseRowUiPersisted(pathId).expandedBlockKey;
 }
 
 export function writePathCourseRowExpandedBlockKey(pathId: string, expandedBlockKey: string | null): void {
-  try {
-    writeRawPersistent(`${COURSE_ROW_KEY}${pathId}`, JSON.stringify({ expandedBlockKey }));
-  } catch {
-    /* ignore */
-  }
+  const prev = readPathCourseRowUiPersisted(pathId);
+  writePathCourseRowUiPersisted(pathId, { ...prev, expandedBlockKey });
 }
 
 export type PathMindmapOutlineExpandSnapshot = {
