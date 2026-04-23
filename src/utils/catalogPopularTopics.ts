@@ -1,17 +1,21 @@
-/** Curated “Popular topics” list for admin (Categories & Skills tab). Persisted in localStorage. */
+/**
+ * Curated “Popular topics” helpers. Site-wide list lives in Firestore (`siteSettings/catalogPopularTopics`).
+ * Creator studio taxonomy still uses localStorage so non-admin creators can experiment without writing siteSettings.
+ */
 
 import { orderInsertBefore, orderWithoutLabel, sortLabelsLocaleCi } from './catalogTaxonomyAdminOrder';
 
-const STORAGE_KEY = 'skilllearn.catalogPopularTopics.v1';
+const LEGACY_LOCAL_STORAGE_KEY = 'skilllearn.catalogPopularTopics.v1';
 
 function lower(s: string): string {
   return s.trim().toLowerCase();
 }
 
-export function readCatalogPopularTopics(): string[] {
+/** Creator-studio taxonomy only: Popular pins stored on this device. */
+export function readCatalogPopularTopicsLocal(): string[] {
   if (typeof localStorage === 'undefined') return [];
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(LEGACY_LOCAL_STORAGE_KEY);
     if (!raw) return [];
     const p = JSON.parse(raw) as unknown;
     if (!Array.isArray(p)) return [];
@@ -22,9 +26,10 @@ export function readCatalogPopularTopics(): string[] {
   }
 }
 
-export function writeCatalogPopularTopics(topics: readonly string[]): void {
+/** Creator-studio taxonomy only. */
+export function writeCatalogPopularTopicsLocal(topics: readonly string[]): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sortLabelsLocaleCi(topics)));
+    localStorage.setItem(LEGACY_LOCAL_STORAGE_KEY, JSON.stringify(sortLabelsLocaleCi(topics)));
   } catch {
     return;
   }
@@ -36,7 +41,7 @@ export function filterPopularTopicsToUniverse(
   universeLower: ReadonlySet<string>
 ): string[] {
   // While the universe is still empty (e.g. first paint before Firestore/presets hydrate), do not strip —
-  // otherwise every pin is removed and `writeCatalogPopularTopics([])` wipes localStorage on reload.
+  // otherwise every pin is removed and a premature persist would wipe stored Popular topics on reload.
   if (universeLower.size === 0) return [...topics];
   return topics.filter((t) => universeLower.has(lower(t)));
 }

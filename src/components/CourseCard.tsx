@@ -58,7 +58,8 @@ export const CourseCard = forwardRef<HTMLDivElement, CourseCardProps>(
                 {course.skills.slice(0, 3).map((s) => (
                   <span
                     key={s}
-                    className="max-w-[min(100%,8rem)] truncate rounded bg-[var(--hover-bg)] px-1.5 py-0.5 text-[9px] font-medium text-[color:var(--skill-chip-fg)]"
+                    title={s}
+                    className="inline-block min-w-0 max-w-full break-words rounded bg-[var(--hover-bg)] px-1.5 py-0.5 text-left text-[9px] font-medium text-[color:var(--skill-chip-fg)]"
                   >
                     {s}
                   </span>

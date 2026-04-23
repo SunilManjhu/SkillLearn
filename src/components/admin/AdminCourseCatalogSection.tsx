@@ -1280,6 +1280,17 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   draftRef.current = draft;
   const [busy, setBusy] = useState(false);
   const [listLoading, setListLoading] = useState(false);
+  /**
+   * After the first `refreshList()` completes for this catalog scope, Popular-topic prune may persist to
+   * localStorage. Until then, skip pruning so labels that exist only on published courses (e.g. “CBSE”) are not
+   * stripped while `publishedList` is still empty on first paint / reload.
+   */
+  const [publishedCatalogSnapshotReady, setPublishedCatalogSnapshotReady] = useState(false);
+
+  useEffect(() => {
+    setPublishedCatalogSnapshotReady(false);
+  }, [catalogPersistence, includeCreatorDraftCourses]);
+
   /** True after first focus on Course select or explicit Reload list — then options include New Course + published. */
   const [catalogRequested, setCatalogRequested] = useState(false);
   const catalogRequestedRef = useRef(false);
@@ -1749,6 +1760,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       return list;
     } finally {
       setListLoading(false);
+      setPublishedCatalogSnapshotReady(true);
     }
   }, [catalogPersistence, includeCreatorDraftCourses]);
 
@@ -6047,6 +6059,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       {contentCatalogSubTab === 'taxonomy' && (
         <AdminCatalogTaxonomyPanel
           publishedList={publishedList}
+          publishedCatalogSnapshotReady={publishedCatalogSnapshotReady}
           categoryPresets={categoryPresetsState}
           skillPresets={skillPresetsState}
           onPresetsChanged={(next) => {

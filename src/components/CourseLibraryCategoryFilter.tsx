@@ -5,7 +5,7 @@ import type { LibraryFilterState } from '../utils/courseTaxonomy';
 import { COURSE_LEVELS, toggleFilterTag } from '../utils/courseTaxonomy';
 
 export type CourseLibraryCategoryFilterProps = {
-  /** Admin “Popular topics” order (localStorage); shown in the first topic row when non-empty. */
+  /** Admin “Popular topics” order (Firestore `siteSettings/catalogPopularTopics`); shown in the first topic row when non-empty. */
   curatedPopularTopics: readonly string[];
   /** All category labels selectable in the filter (presets + discovery); canonical casing for toggles. */
   categoryFilterPool: readonly string[];

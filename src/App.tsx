@@ -171,7 +171,8 @@ import {
   type LibraryFilterState,
 } from './utils/courseTaxonomy';
 import { sortLabelsLocaleCi } from './utils/catalogTaxonomyAdminOrder';
-import { filterPopularTopicsToUniverse, readCatalogPopularTopics } from './utils/catalogPopularTopics';
+import { filterPopularTopicsToUniverse } from './utils/catalogPopularTopics';
+import { subscribeCatalogPopularTopics } from './utils/catalogPopularTopicsFirestore';
 import { PhoneMockupAdRail } from './components/PhoneMockupAdRail';
 import type { PhoneMockupAdSlide } from './utils/heroPhoneAdsShared';
 import { readPublicHeroPhoneAdsCache } from './utils/heroPhoneAdsPublicCache';
@@ -648,8 +649,8 @@ export default function App() {
     skillTags: [],
     level: null,
   });
-  /** Bumps so the catalog filter re-reads admin “Popular topics” from localStorage (view changes / other tabs). */
-  const [libraryPopularStorageRevision, setLibraryPopularStorageRevision] = useState(0);
+  /** Site-wide Popular topic labels from Firestore (`siteSettings/catalogPopularTopics`). */
+  const [libraryPopularTopicsFromSite, setLibraryPopularTopicsFromSite] = useState<string[]>([]);
   /** Navbar Browse → Skills / topic: narrows catalog without showing in Course filters pill. Cleared when Course filters change or clearFilters. */
   const [navCatalogSkillTag, setNavCatalogSkillTag] = useState<string | null>(null);
   const [navCatalogCategoryTag, setNavCatalogCategoryTag] = useState<string | null>(null);
@@ -2111,13 +2112,13 @@ export default function App() {
       const t = x.trim();
       if (t) universe.add(t.toLowerCase());
     }
-    return sortLabelsLocaleCi(filterPopularTopicsToUniverse(readCatalogPopularTopics(), universe));
+    return sortLabelsLocaleCi(filterPopularTopicsToUniverse(libraryPopularTopicsFromSite, universe));
   }, [
     libraryBrowseMainCategories,
     moreCategories,
     libraryBrowseMainSkills,
     moreSkills,
-    libraryPopularStorageRevision,
+    libraryPopularTopicsFromSite,
   ]);
 
   useEffect(() => {
@@ -2140,15 +2141,9 @@ export default function App() {
   }, [categoryFilterPoolForLibrary, catalogBrowseSkills, libraryBrowseLevelsOrdered]);
 
   useEffect(() => {
-    if (currentView === 'catalog') setLibraryPopularStorageRevision((r) => r + 1);
-  }, [currentView]);
-
-  useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === 'skilllearn.catalogPopularTopics.v1') setLibraryPopularStorageRevision((rev) => rev + 1);
-    };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
+    return subscribeCatalogPopularTopics((labels) => {
+      setLibraryPopularTopicsFromSite(labels.length > 0 ? [...labels] : []);
+    });
   }, []);
 
   const filteredCatalogRows = useMemo(

@@ -34,9 +34,14 @@ import {
   popularTopicsInsertCopyBefore,
   popularTopicsRemoveLabel,
   popularTopicsRenameLabel,
-  readCatalogPopularTopics,
-  writeCatalogPopularTopics,
+  readCatalogPopularTopicsLocal,
+  writeCatalogPopularTopicsLocal,
 } from '../../utils/catalogPopularTopics';
+import {
+  loadCatalogPopularTopicsFromFirestore,
+  saveCatalogPopularTopicsFirestore,
+  subscribeCatalogPopularTopics,
+} from '../../utils/catalogPopularTopicsFirestore';
 import type { CatalogTaxonomyProposal } from '../../utils/catalogTaxonomyProposalsFirestore';
 import {
   approveTaxonomyProposalAndMerge,
@@ -307,6 +312,7 @@ function TaxonomySection({
   onRemoveEverywhere,
   onDragDrop,
   popularTopicsPinned,
+  popularTopicsSiteWide = false,
   onTogglePopularPin,
   onApproveProposal,
   onRejectProposal,
@@ -326,10 +332,12 @@ function TaxonomySection({
   onRenameEverywhere: (fromExact: string, toExact: string) => Promise<void>;
   onRemoveEverywhere: (name: string) => Promise<void>;
   onDragDrop: (payload: Extract<TaxonomyDragPayload, { scope: 'taxonomy' }>, targetKind: TaxonomyKind, beforeLabel: string | null) => void;
-  /** Current Popular list (this device) for pin / unpin UI. */
+  /** Current Popular list for pin / unpin UI (site-wide Firestore when `popularTopicsSiteWide`). */
   popularTopicsPinned: readonly string[];
+  /** When true, pins apply to all learners (Firestore); otherwise creator-only localStorage. */
+  popularTopicsSiteWide?: boolean;
   /** Pin when absent from Popular; unpin when already pinned. */
-  onTogglePopularPin: (label: string) => void;
+  onTogglePopularPin: (label: string) => void | Promise<void>;
   onApproveProposal: (p: CatalogTaxonomyProposal) => void;
   onRejectProposal: (p: CatalogTaxonomyProposal) => void;
 }) {
@@ -505,7 +513,15 @@ function TaxonomySection({
                     ? 'text-[#616161] app-dark:text-[var(--tone-200)]'
                     : 'text-[var(--text-muted)]/55 hover:text-[var(--text-muted)]'
                 }`}
-                title={isPopularPinned ? 'Remove from Popular (this device)' : 'Pin to Popular (this device)'}
+                title={
+                  isPopularPinned
+                    ? popularTopicsSiteWide
+                      ? 'Remove from Popular (site-wide)'
+                      : 'Remove from Popular (this device)'
+                    : popularTopicsSiteWide
+                      ? 'Pin to Popular (site-wide)'
+                      : 'Pin to Popular (this device)'
+                }
                 aria-label={
                   isPopularPinned ? `Unpin ${label} from Popular topics` : `Pin ${label} to Popular topics`
                 }
@@ -577,12 +593,15 @@ function PopularTopicsSection({
   items,
   busy,
   globalFilterText,
+  scopeSubtitle,
   onRemoveFromList,
 }: {
   items: readonly string[];
   busy: boolean;
   globalFilterText: string;
-  onRemoveFromList: (label: string) => void;
+  /** e.g. “Site-wide” (admin) vs “This device” (creator preview). */
+  scopeSubtitle: string;
+  onRemoveFromList: (label: string) => void | Promise<void>;
 }) {
   const globalTrimmed = globalFilterText.trim();
 
@@ -597,7 +616,7 @@ function PopularTopicsSection({
       <div className="flex min-w-0 shrink-0 items-center justify-between gap-2">
         <h3 className="text-[11px] font-medium uppercase tracking-[0.06em] text-[var(--text-muted)]">Popular</h3>
         <span className="shrink-0 rounded-full border border-[#8b8c8c]/75 bg-[#616161]/10 px-2 py-0.5 text-[10px] font-normal normal-case tracking-normal text-[#393a3a] app-dark:text-[#cfcfcf]">
-          This device
+          {scopeSubtitle}
         </span>
       </div>
 
@@ -649,6 +668,7 @@ function PopularTopicsSection({
 
 export function AdminCatalogTaxonomyPanel({
   publishedList,
+  publishedCatalogSnapshotReady,
   categoryPresets,
   skillPresets,
   onPresetsChanged,
@@ -659,6 +679,11 @@ export function AdminCatalogTaxonomyPanel({
   isCreatorCatalog = false,
 }: {
   publishedList: Course[];
+  /**
+   * False until the parent’s first `refreshList()` has finished for this catalog scope. Prevents persisting a pruned
+   * Popular list while `publishedList` is still empty (course-only labels would be wrongly removed).
+   */
+  publishedCatalogSnapshotReady: boolean;
   categoryPresets: CatalogCategoryPresetsState;
   skillPresets: CatalogSkillPresetsState;
   onPresetsChanged: (next: { categories: CatalogCategoryPresetsState; skills: CatalogSkillPresetsState }) => void;
@@ -687,8 +712,12 @@ export function AdminCatalogTaxonomyPanel({
   }));
   /** Bumps when admin display order (localStorage) changes so merged lists recompute. */
   const [orderRevision, setOrderRevision] = useState(0);
-  /** Bumps when Popular topics localStorage list changes. */
+  /** Creator: bumps when Popular topics (localStorage) change. */
   const [popularRevision, setPopularRevision] = useState(0);
+  /** Admin: live list from Firestore `siteSettings/catalogPopularTopics`. */
+  const [popularFirestoreLabels, setPopularFirestoreLabels] = useState<string[]>([]);
+  const popularTopicsRawRef = useRef<string[]>([]);
+  const legacyPopularTopicsMigratedRef = useRef(false);
   const [globalQuery, setGlobalQuery] = useState('');
   const [debouncedGlobal, setDebouncedGlobal] = useState('');
   const [authUid, setAuthUid] = useState<string | null>(() => auth.currentUser?.uid ?? null);
@@ -724,6 +753,44 @@ export function AdminCatalogTaxonomyPanel({
       showActionToast('Could not load pending taxonomy proposals (index or permissions).', 'danger')
     );
   }, [isCreatorCatalog, authUid, showActionToast]);
+
+  useEffect(() => {
+    if (isCreatorCatalog) {
+      setPopularFirestoreLabels([]);
+      return;
+    }
+    return subscribeCatalogPopularTopics((labels) => {
+      setPopularFirestoreLabels(labels.length > 0 ? [...labels] : []);
+    });
+  }, [isCreatorCatalog]);
+
+  /** One-time: if Firestore doc is empty but this browser had legacy local pins, upload so the site matches. */
+  useEffect(() => {
+    if (isCreatorCatalog || legacyPopularTopicsMigratedRef.current) return;
+    let cancelled = false;
+    void (async () => {
+      const remote = await loadCatalogPopularTopicsFromFirestore();
+      if (cancelled) return;
+      if (remote.length > 0) {
+        legacyPopularTopicsMigratedRef.current = true;
+        return;
+      }
+      const local = readCatalogPopularTopicsLocal();
+      if (local.length === 0) {
+        legacyPopularTopicsMigratedRef.current = true;
+        return;
+      }
+      const ok = await saveCatalogPopularTopicsFirestore(local);
+      if (cancelled) return;
+      if (ok) {
+        legacyPopularTopicsMigratedRef.current = true;
+        showActionToast('Imported Popular topics from this browser into the site (Firebase).', 'neutral');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isCreatorCatalog, showActionToast]);
 
   const pendingCategoryProposals = useMemo(
     () => taxonomyProposals.filter((p) => p.kind === 'category'),
@@ -799,59 +866,99 @@ export function AdminCatalogTaxonomyPanel({
     return s;
   }, [categoryItems, skillItems]);
 
-  const popularTopicsRaw = useMemo(
-    () => readCatalogPopularTopics(),
-    [popularRevision, orderRevision, categoryItems, skillItems]
-  );
+  const popularTopicsRaw = useMemo(() => {
+    if (isCreatorCatalog) return readCatalogPopularTopicsLocal();
+    return popularFirestoreLabels;
+  }, [isCreatorCatalog, popularFirestoreLabels, popularRevision]);
 
   const popularTopics = useMemo(
     () => sortLabelsLocaleCi(filterPopularTopicsToUniverse(popularTopicsRaw, labelUniverseLower)),
     [popularTopicsRaw, labelUniverseLower]
   );
 
+  popularTopicsRawRef.current = popularTopicsRaw;
+
   useLayoutEffect(() => {
+    if (!publishedCatalogSnapshotReady || isCreatorCatalog) return;
     const pruned = filterPopularTopicsToUniverse(popularTopicsRaw, labelUniverseLower);
     if (pruned.length !== popularTopicsRaw.length) {
-      writeCatalogPopularTopics(pruned);
-      setPopularRevision((r) => r + 1);
+      void saveCatalogPopularTopicsFirestore(pruned).then((ok) => {
+        if (!ok) {
+          showActionToast('Could not update Popular topics after pruning stale labels.', 'danger');
+        }
+      });
     }
-  }, [popularTopicsRaw, labelUniverseLower]);
+  }, [
+    popularTopicsRaw,
+    labelUniverseLower,
+    publishedCatalogSnapshotReady,
+    isCreatorCatalog,
+    showActionToast,
+  ]);
 
   const onPopularCopyFromTaxonomy = useCallback(
-    (label: string, beforeLabel: string | null) => {
-      const base = filterPopularTopicsToUniverse(readCatalogPopularTopics(), labelUniverseLower);
+    async (label: string, beforeLabel: string | null) => {
+      if (isCreatorCatalog) {
+        const base = filterPopularTopicsToUniverse(readCatalogPopularTopicsLocal(), labelUniverseLower);
+        const next = popularTopicsInsertCopyBefore(base, label, beforeLabel);
+        if (!next) {
+          showActionToast('Already in Popular topics.', 'neutral');
+          return;
+        }
+        writeCatalogPopularTopicsLocal(next);
+        setPopularRevision((r) => r + 1);
+        showActionToast(`Copied “${label.trim()}” to Popular topics (this device).`, 'neutral');
+        return;
+      }
+      const base = filterPopularTopicsToUniverse(popularTopicsRawRef.current, labelUniverseLower);
       const next = popularTopicsInsertCopyBefore(base, label, beforeLabel);
       if (!next) {
         showActionToast('Already in Popular topics.', 'neutral');
         return;
       }
-      writeCatalogPopularTopics(next);
-      setPopularRevision((r) => r + 1);
-      showActionToast(`Copied “${label.trim()}” to Popular topics.`, 'neutral');
+      const ok = await saveCatalogPopularTopicsFirestore(next);
+      if (!ok) showActionToast('Could not save Popular topics.', 'danger');
+      else showActionToast(`Copied “${label.trim()}” to Popular topics.`, 'neutral');
     },
-    [labelUniverseLower, showActionToast]
+    [isCreatorCatalog, labelUniverseLower, showActionToast]
   );
 
   const onPopularRemoveFromList = useCallback(
-    (label: string) => {
-      const base = filterPopularTopicsToUniverse(readCatalogPopularTopics(), labelUniverseLower);
-      writeCatalogPopularTopics(popularTopicsRemoveLabel(base, label));
-      setPopularRevision((r) => r + 1);
-      showActionToast(`Removed “${label}” from Popular topics.`, 'neutral');
+    async (label: string) => {
+      if (isCreatorCatalog) {
+        const base = filterPopularTopicsToUniverse(readCatalogPopularTopicsLocal(), labelUniverseLower);
+        writeCatalogPopularTopicsLocal(popularTopicsRemoveLabel(base, label));
+        setPopularRevision((r) => r + 1);
+        showActionToast(`Removed “${label}” from Popular topics (this device).`, 'neutral');
+        return;
+      }
+      const base = filterPopularTopicsToUniverse(popularTopicsRawRef.current, labelUniverseLower);
+      const ok = await saveCatalogPopularTopicsFirestore(popularTopicsRemoveLabel(base, label));
+      if (!ok) showActionToast('Could not save Popular topics.', 'danger');
+      else showActionToast(`Removed “${label}” from Popular topics.`, 'neutral');
     },
-    [labelUniverseLower, showActionToast]
+    [isCreatorCatalog, labelUniverseLower, showActionToast]
   );
 
   const onTogglePopularPin = useCallback(
-    (label: string) => {
-      const base = filterPopularTopicsToUniverse(readCatalogPopularTopics(), labelUniverseLower);
+    async (label: string) => {
+      if (isCreatorCatalog) {
+        const base = filterPopularTopicsToUniverse(readCatalogPopularTopicsLocal(), labelUniverseLower);
+        if (popularTopicsHasLabel(base, label)) {
+          await onPopularRemoveFromList(label);
+        } else {
+          await onPopularCopyFromTaxonomy(label, null);
+        }
+        return;
+      }
+      const base = filterPopularTopicsToUniverse(popularTopicsRawRef.current, labelUniverseLower);
       if (popularTopicsHasLabel(base, label)) {
-        onPopularRemoveFromList(label);
+        await onPopularRemoveFromList(label);
       } else {
-        onPopularCopyFromTaxonomy(label, null);
+        await onPopularCopyFromTaxonomy(label, null);
       }
     },
-    [labelUniverseLower, onPopularRemoveFromList, onPopularCopyFromTaxonomy]
+    [isCreatorCatalog, labelUniverseLower, onPopularRemoveFromList, onPopularCopyFromTaxonomy]
   );
 
   const suggestProposal = useCallback(
@@ -1310,8 +1417,11 @@ export function AdminCatalogTaxonomyPanel({
         if (so) writeCatalogTaxonomyAdminOrder('skill', orderWithoutLabel(so, label));
       }
 
-      writeCatalogPopularTopics(popularTopicsRemoveLabel(readCatalogPopularTopics(), label));
-      setPopularRevision((r) => r + 1);
+      const nextPopular = popularTopicsRemoveLabel(popularTopicsRawRef.current, label);
+      const popularOk = await saveCatalogPopularTopicsFirestore(nextPopular);
+      if (!popularOk) {
+        showActionToast('Could not update Popular topics.', 'danger');
+      }
       setOrderRevision((r) => r + 1);
       await onRefreshList();
       await onCatalogChanged();
@@ -1412,8 +1522,11 @@ export function AdminCatalogTaxonomyPanel({
         }
       }
 
-      writeCatalogPopularTopics(popularTopicsRenameLabel(readCatalogPopularTopics(), from, to));
-      setPopularRevision((r) => r + 1);
+      const nextPopular = popularTopicsRenameLabel(popularTopicsRawRef.current, from, to);
+      const popularOk = await saveCatalogPopularTopicsFirestore(nextPopular);
+      if (!popularOk) {
+        showActionToast('Could not update Popular topics.', 'danger');
+      }
       setOrderRevision((r) => r + 1);
       await onRefreshList();
       await onCatalogChanged();
@@ -1544,6 +1657,7 @@ export function AdminCatalogTaxonomyPanel({
             }}
             onDragDrop={handleTaxonomyDragDrop}
             popularTopicsPinned={popularTopics}
+            popularTopicsSiteWide={!isCreatorCatalog}
             onTogglePopularPin={onTogglePopularPin}
             onApproveProposal={(p) => void handleApproveProposal(p)}
             onRejectProposal={(p) => void handleRejectProposal(p)}
@@ -1555,6 +1669,7 @@ export function AdminCatalogTaxonomyPanel({
             items={popularTopics}
             busy={busy}
             globalFilterText={debouncedGlobal}
+            scopeSubtitle={isCreatorCatalog ? 'This device' : 'Site-wide'}
             onRemoveFromList={onPopularRemoveFromList}
           />
         </div>
@@ -1576,6 +1691,7 @@ export function AdminCatalogTaxonomyPanel({
             }}
             onDragDrop={handleTaxonomyDragDrop}
             popularTopicsPinned={popularTopics}
+            popularTopicsSiteWide={!isCreatorCatalog}
             onTogglePopularPin={onTogglePopularPin}
             onApproveProposal={(p) => void handleApproveProposal(p)}
             onRejectProposal={(p) => void handleRejectProposal(p)}
