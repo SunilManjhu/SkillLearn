@@ -72,17 +72,20 @@ export function reconcileLessonProgressMap(
 /**
  * Lesson reached the end: checkmarks, resume, course completion, and “Replay from start” all use this.
  *
- * 1) **Primary:** ≥99.5% of saved timeline.
+ * 1) **True end:** within ~250ms of reported duration (float / last-frame).
  * 2) **Embed gap:** YouTube/iframes often stop before `getDuration()`. If **≤3s** remain **and** ≥**80%**
  *    watched, count as complete.
+ *
+ * We intentionally do **not** treat “≥99.5% watched” alone as complete: on long videos that can be many
+ * seconds before the real end and desyncs the replay overlay from the scrub clock.
  */
 export function isLessonPlaybackComplete(p: LessonProgress | undefined): boolean {
   if (!p || !(p.duration > 0)) return false;
   const t = p.currentTime;
   const d = p.duration;
   const ratio = t / d;
-  if (ratio >= 0.995) return true;
   const remaining = d - t;
+  if (remaining <= 0.25 || t >= d - 0.25) return true;
   return remaining <= 3 && ratio >= 0.8;
 }
 

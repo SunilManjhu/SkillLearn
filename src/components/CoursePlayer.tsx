@@ -215,6 +215,13 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   const [ytSeekDragSeconds, setYtSeekDragSeconds] = useState(0);
   const ytSeekDraggingRef = useRef(false);
   ytSeekDraggingRef.current = ytSeekDragging;
+  /**
+   * YouTube `getCurrentTime()` can lag right after `seekTo`; the 500ms HUD poll was overwriting the
+   * optimistic clock with a stale value (e.g. still 38:34 after seeking to 38:39).
+   */
+  const suspendYtHudPlayerPollUntilRef = useRef(0);
+  /** YouTube `ENDED` / native `ended`: replay may show even if saved progress and HUD momentarily disagree. */
+  const [playerReportedLessonEnded, setPlayerReportedLessonEnded] = useState(false);
   /** True between pointer down/up on the seek bar so we only preview during drag; keyboard uses `onInput` commits. */
   const ytPointerSeekRef = useRef(false);
   const [ytVolume, setYtVolume] = useState(() => readPlayerVolumePreference());
@@ -433,10 +440,54 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     [course.id, progressUserId]
   );
 
+  /**
+   * YouTube often reports `getDuration()` slightly past the last seekable frame; `seekTo(d)` then
+   * settles to a lower `getCurrentTime()` (e.g. 5s gap on long VODs). Re-read the player after seeks
+   * so the HUD + saved progress match the real position.
+   */
+  const flushYoutubeSeekHudFromPlayer = useCallback(() => {
+    const p = ytPlayerRef.current as {
+      getCurrentTime?: () => number;
+      getDuration?: () => number;
+    } | null;
+    if (!p?.getCurrentTime || !p.getDuration) return;
+    try {
+      const d = p.getDuration();
+      if (!(Number.isFinite(d) && d > 0)) return;
+      const actual = p.getCurrentTime();
+      if (!Number.isFinite(actual)) return;
+      setYtHudTime({ current: actual, duration: d });
+      mergeProgress(lessonRef.current.id, actual, d, { allowDowngradeFromComplete: true });
+      if (isLessonPlaybackComplete({ currentTime: actual, duration: d })) {
+        replayUiSuppressedRef.current = false;
+        setReplayUiSuppressed(false);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [mergeProgress]);
+
+  const scheduleYoutubePostSeekReconcile = useCallback(() => {
+    const lessonId = lessonRef.current.id;
+    const run = () => {
+      if (lessonRef.current.id !== lessonId) return;
+      flushYoutubeSeekHudFromPlayer();
+    };
+    if (typeof requestAnimationFrame !== 'undefined') {
+      requestAnimationFrame(() => requestAnimationFrame(run));
+    } else {
+      run();
+    }
+    window.setTimeout(run, 90);
+    window.setTimeout(run, 260);
+    window.setTimeout(run, 520);
+  }, [flushYoutubeSeekHudFromPlayer]);
+
   /** Hide “Replay from start” immediately when the user touches the timeline (YouTube-style). */
   const dismissReplayOverlay = useCallback(() => {
     replayUiSuppressedRef.current = true;
     setReplayUiSuppressed(true);
+    setPlayerReportedLessonEnded(false);
   }, []);
 
   const handleNativeSeeking = useCallback(() => {
@@ -742,17 +793,20 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
       }
       const clamped = Math.max(0, Math.min(seconds, d));
       p.seekTo(clamped, true);
+      suspendYtHudPlayerPollUntilRef.current =
+        typeof performance !== 'undefined' ? performance.now() + 750 : Date.now() + 750;
       setYtHudTime({ current: clamped, duration: d });
       mergeProgress(lessonRef.current.id, clamped, d, { allowDowngradeFromComplete: true });
       if (isLessonPlaybackComplete({ currentTime: clamped, duration: d })) {
         replayUiSuppressedRef.current = false;
         setReplayUiSuppressed(false);
       }
+      scheduleYoutubePostSeekReconcile();
     } catch {
       /* ignore */
     }
     setYtSeekDragging(false);
-  }, [dismissReplayOverlay, mergeProgress]);
+  }, [dismissReplayOverlay, mergeProgress, scheduleYoutubePostSeekReconcile]);
 
   const refreshYtPlayerSettings = useCallback(() => {
     const p = ytPlayerRef.current as {
@@ -824,12 +878,15 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
           const t = p.getCurrentTime();
           const nextT = Math.max(0, Math.min(t + deltaSeconds, d));
           p.seekTo(nextT, true);
+          suspendYtHudPlayerPollUntilRef.current =
+            typeof performance !== 'undefined' ? performance.now() + 750 : Date.now() + 750;
           setYtHudTime({ current: nextT, duration: d });
           mergeProgress(lessonRef.current.id, nextT, d, { allowDowngradeFromComplete: true });
           if (isLessonPlaybackComplete({ currentTime: nextT, duration: d })) {
             replayUiSuppressedRef.current = false;
             setReplayUiSuppressed(false);
           }
+          scheduleYoutubePostSeekReconcile();
         } catch {
           /* ignore */
         }
@@ -845,7 +902,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
         setReplayUiSuppressed(false);
       }
     },
-    [dismissReplayOverlay, mergeProgress, youtubeEmbedUrl]
+    [dismissReplayOverlay, mergeProgress, scheduleYoutubePostSeekReconcile, youtubeEmbedUrl]
   );
 
   seekActiveVideoBySecondsRef.current = seekActiveVideoBySeconds;
@@ -946,6 +1003,35 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
       return false;
     };
 
+    /** Like `isTypingTarget` but excludes video seek sliders so ArrowLeft/Right still seek (e.g. with “Replay” overlay). */
+    const isTextEntryKeyboardTarget = (target: EventTarget | null): boolean => {
+      const el = target as HTMLElement | null;
+      if (!el) return false;
+      if (el.isContentEditable) return true;
+      if (el.closest('[contenteditable="true"]')) return true;
+      if (el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') return true;
+      if (el.tagName === 'INPUT') {
+        const t = (el as HTMLInputElement).type;
+        if (
+          t === 'range' ||
+          t === 'button' ||
+          t === 'submit' ||
+          t === 'reset' ||
+          t === 'checkbox' ||
+          t === 'radio' ||
+          t === 'file' ||
+          t === 'hidden' ||
+          t === 'color'
+        ) {
+          return false;
+        }
+        return true;
+      }
+      if (el.closest('textarea, select')) return true;
+      if (el.closest('[role="slider"]')) return true;
+      return false;
+    };
+
     const onWindowKeyDown = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
       if (e.key === ' ' || e.code === 'Space') {
@@ -1026,7 +1112,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
         keyboardToggleCaptionsRef.current();
         return;
       }
-      if (isTypingTarget(e.target)) return;
+      if (isTextEntryKeyboardTarget(e.target)) return;
       if (e.key === 'ArrowRight') {
         e.preventDefault();
         revealChromeAfterKeyboardSeekRef.current();
@@ -1155,11 +1241,39 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     });
   };
 
+  /** Prefer in-memory map so the replay CTA matches immediately after navigation (storage is still the fallback). */
+  const persistedProgressForCurrentLesson = useMemo(() => {
+    return (
+      progressByLesson[currentLesson.id] ?? loadLessonProgressMap(course.id, progressUserId)[currentLesson.id]
+    );
+  }, [course.id, currentLesson.id, progressByLesson, progressUserId]);
+
+  const persistedLessonComplete = isLessonPlaybackComplete(persistedProgressForCurrentLesson);
+  /** Avoid replay while the scrub clock still shows meaningful time left but storage says “done” (e.g. after ENDED merge). */
+  const hudReplayAligned =
+    youtubeEmbedUrl && ytHudTime.duration > 0
+      ? isLessonPlaybackComplete({ currentTime: ytHudTime.current, duration: ytHudTime.duration })
+      : !youtubeEmbedUrl
+        ? (() => {
+            const v = videoRef.current;
+            if (!v || !Number.isFinite(v.duration) || v.duration <= 0) return true;
+            return isLessonPlaybackComplete({ currentTime: v.currentTime, duration: v.duration });
+          })()
+        : true;
+
+  const showReplayCta =
+    !blocksVideoPlayback &&
+    !replayUiSuppressed &&
+    mediaPaused &&
+    (playerReportedLessonEnded || (persistedLessonComplete && hudReplayAligned));
+  showReplayCtaRef.current = showReplayCta;
+
   /** On touch/coarse devices, keep chrome visible whenever paused (no reliable hover). On hover+fine pointer, chrome follows hover while paused too. */
   const prefersHoverPointerChrome =
     typeof window !== 'undefined' &&
     window.matchMedia('(hover: hover) and (pointer: fine)').matches;
-  const showTopControls = chromeVisible || (mediaPaused && !prefersHoverPointerChrome);
+  const showTopControls =
+    chromeVisible || (mediaPaused && !prefersHoverPointerChrome) || showReplayCta;
 
   /** Chrome hidden: hide cursor on the player (child layers must match or they override the root). */
   const hideCursorOnVideoWhenNoChrome = !showTopControls && !blocksVideoPlayback;
@@ -1190,24 +1304,11 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     setChromeVisible(false);
   }, [blocksVideoPlayback, clearChromeHideTimer]);
 
-  /** Prefer in-memory map so the replay CTA matches immediately after navigation (storage is still the fallback). */
-  const persistedProgressForCurrentLesson = useMemo(() => {
-    return (
-      progressByLesson[currentLesson.id] ?? loadLessonProgressMap(course.id, progressUserId)[currentLesson.id]
-    );
-  }, [course.id, currentLesson.id, progressByLesson, progressUserId]);
-
-  const showReplayCta =
-    !blocksVideoPlayback &&
-    isLessonPlaybackComplete(persistedProgressForCurrentLesson) &&
-    !replayUiSuppressed &&
-    mediaPaused;
-  showReplayCtaRef.current = showReplayCta;
-
   /** Before paint: pause chrome + reset replay overlay for this lesson. */
   useLayoutEffect(() => {
     replayUiSuppressedRef.current = false;
     setReplayUiSuppressed(false);
+    setPlayerReportedLessonEnded(false);
     setMediaPaused(true);
     setLessonPlaybackEverStarted(false);
     videoAreaPointerInsideRef.current = false;
@@ -1217,6 +1318,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
       clearTimeout(ytOverlayClickTimerRef.current);
       ytOverlayClickTimerRef.current = null;
     }
+    suspendYtHudPlayerPollUntilRef.current = 0;
     setYtHudTime({ current: 0, duration: 0 });
     skipDismissReplayOnNextNativeSeekRef.current = false;
     setYtSeekDragging(false);
@@ -1480,6 +1582,12 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
       if (!p?.getCurrentTime || !p.getDuration) return;
       try {
         if (ytSeekDraggingRef.current) return;
+        if (
+          typeof performance !== 'undefined' &&
+          performance.now() < suspendYtHudPlayerPollUntilRef.current
+        ) {
+          return;
+        }
         const d = p.getDuration();
         const t = p.getCurrentTime();
         if (Number.isFinite(d) && d > 0) {
@@ -1766,6 +1874,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   const handleReplayFromStart = useCallback(() => {
     replayUiSuppressedRef.current = true;
     setReplayUiSuppressed(true);
+    setPlayerReportedLessonEnded(false);
     const lid = currentLesson.id;
     if (youtubeEmbedUrl) {
       const p = ytPlayerRef.current;
@@ -1964,6 +2073,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
             if (e.data === ps.PLAYING) {
               setLessonPlaybackEverStarted(true);
               setMediaPaused(false);
+              setPlayerReportedLessonEnded(false);
               if (!youtubeCaptionsEnabledRef.current) {
                 applyYoutubeCaptionsModule(e.target, false, youtubeCaptionLangRef.current);
               }
@@ -1992,10 +2102,17 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
               try {
                 const player = e.target;
                 const d = player.getDuration();
-                if (d > 0) mergeProgressRef.current(lessonRef.current.id, d, d);
+                if (d > 0) {
+                  mergeProgressRef.current(lessonRef.current.id, d, d);
+                  const tRaw = player.getCurrentTime?.() ?? d;
+                  const tDisplay = Math.min(d, Math.max(0, tRaw));
+                  suspendYtHudPlayerPollUntilRef.current = 0;
+                  setYtHudTime({ current: tDisplay, duration: d });
+                }
               } catch {
                 /* ignore */
               }
+              setPlayerReportedLessonEnded(true);
               const merged = getMergedProgressSnapshotRef.current();
               const hasNext = !!getNextIncompleteLessonAfter(
                 courseRef.current,
@@ -2933,6 +3050,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                 void videoRef.current?.pause();
                 return;
               }
+              setPlayerReportedLessonEnded(false);
               setLessonPlaybackEverStarted(true);
               setMediaPaused(false);
               scheduleVideoOutlineNotesAutoOpen();
@@ -2948,6 +3066,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
               if (v && Number.isFinite(v.duration) && v.duration > 0) {
                 mergeProgress(currentLesson.id, v.duration, v.duration);
               }
+              setPlayerReportedLessonEnded(true);
               setMediaPaused(true);
               const mergedNative = getMergedProgressSnapshot();
               const hasNextNative = !!getNextIncompleteLessonAfter(
