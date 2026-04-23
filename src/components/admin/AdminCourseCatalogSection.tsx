@@ -888,7 +888,7 @@ function splitDividerIntoNewModuleInsertOptions(course: Course, mi: number): { i
 }
 
 const ADMIN_CATALOG_KIND_BADGE_BASE =
-  'inline-flex min-h-11 min-w-[3.25rem] shrink-0 touch-manipulation items-center justify-center rounded-md px-3.5 text-[10px] font-bold uppercase leading-none transition-colors focus:outline-none sm:h-7 sm:min-h-0';
+  'inline-flex min-h-11 min-w-[3.5rem] shrink-0 touch-manipulation items-center justify-center gap-1 rounded-md px-2.5 text-[10px] font-bold uppercase leading-none transition-colors focus:outline-none sm:h-7 sm:min-h-0 sm:min-w-[4.25rem] sm:px-3';
 
 /** Neutral-only admin palette (no semantic color bands). */
 const ADMIN_CATALOG_KIND_BADGE_NEUTRAL = `${ADMIN_CATALOG_KIND_BADGE_BASE} hover:ring-2 hover:ring-[#a1a2a2]/40 focus:ring-2 focus:ring-[#a1a2a2]/40 bg-[#757676]/15 text-[#393a3a] app-dark:text-[#cfcfcf]`;
@@ -902,6 +902,23 @@ function catalogLessonBranchKindModalLabel(lesson: Lesson): string {
   if (lesson.contentKind === 'web') return 'External page';
   if (lesson.contentKind === 'quiz') return 'Quiz';
   return 'Video';
+}
+
+function CatalogModuleKindIcon() {
+  return <Layers size={14} className="shrink-0 opacity-90" aria-hidden />;
+}
+
+function CatalogDividerKindIcon() {
+  return <Minus size={14} className="shrink-0 opacity-90" aria-hidden />;
+}
+
+/** Matches path-outline semantics: video / external / quiz under a module row. */
+function CatalogLessonBranchKindIcon({ lesson }: { lesson: Lesson }) {
+  const cn = 'shrink-0 opacity-90';
+  const s = 14;
+  if (lesson.contentKind === 'web') return <Globe size={s} className={cn} aria-hidden />;
+  if (lesson.contentKind === 'quiz') return <ClipboardList size={s} className={cn} aria-hidden />;
+  return <Video size={s} className={cn} aria-hidden />;
 }
 
 /** Lesson list: `pl-3` aligns with module border-l. */
@@ -5014,6 +5031,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           aria-label={`${openModules[mi] ? 'Collapse' : 'Expand'} module ${mi + 1} (${mod.id.trim() || 'no id'}) lessons`}
                           onClick={toggleThisModuleRow}
                         >
+                          <CatalogModuleKindIcon />
                           Module
                           {openModules[mi] ? (
                             <ChevronDown size={14} className="shrink-0 opacity-90" aria-hidden />
@@ -5249,6 +5267,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                                 dividerSectionsCollapsed[`${mi}:${li}`] ? 'Show' : 'Hide'
                               } lessons under section divider ${li + 1}`}
                             >
+                              <CatalogDividerKindIcon />
                               Divider
                               {!dividerSectionsCollapsed[`${mi}:${li}`] ? (
                                 <ChevronDown size={14} className="shrink-0 opacity-90" aria-hidden />
@@ -5294,6 +5313,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                                 aria-expanded={!!openLessons[`${mi}:${li}`]}
                                 aria-label={`${openLessons[`${mi}:${li}`] ? 'Collapse' : 'Expand'} lesson ${li + 1} (${lesson.id.trim() || 'no id'}) details`}
                               >
+                                <CatalogLessonBranchKindIcon lesson={lesson} />
                                 Lesson
                                 {openLessons[`${mi}:${li}`] ? (
                                   <ChevronDown size={14} className="shrink-0 opacity-90" aria-hidden />

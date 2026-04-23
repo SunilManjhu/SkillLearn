@@ -18,6 +18,7 @@ import {
   ChevronRight,
   Copy,
   ArrowRightLeft,
+  FileText,
   Globe,
   GraduationCap,
   Hash,
@@ -25,6 +26,7 @@ import {
   Link2,
   Layers,
   Loader2,
+  Package,
   Plus,
   Route,
   Save,
@@ -2377,6 +2379,25 @@ function AddPathBranchModal({
   );
 }
 
+function PathBranchKindIcon({ kind, className }: { kind: PathBranchNode['kind']; className?: string }) {
+  const cn = `shrink-0 opacity-90 ${className ?? ''}`;
+  const s = 14;
+  switch (kind) {
+    case 'label':
+      return <Layers size={s} className={cn} aria-hidden />;
+    case 'divider':
+      return <Minus size={s} className={cn} aria-hidden />;
+    case 'module':
+      return <Package size={s} className={cn} aria-hidden />;
+    case 'course':
+      return <GraduationCap size={s} className={cn} aria-hidden />;
+    case 'link':
+      return <Link2 size={s} className={cn} aria-hidden />;
+    case 'lesson':
+      return <FileText size={s} className={cn} aria-hidden />;
+  }
+}
+
 function pathBranchKindBadgeShortLabel(kind: PathBranchNode['kind']): string {
   switch (kind) {
     case 'label':
@@ -2868,7 +2889,7 @@ function PathBranchRow({
   /** Matches catalog module/lesson/divider: kind + chevron on disclosure; sliders open change-type (see `AdminCourseCatalogSection`). */
   const pathKindBadgeText = pathBranchKindBadgeShortLabel(b.kind);
   /** Match `ADMIN_CATALOG_KIND_BADGE_BASE`: tall tap target & sm+ fixed height like module pills. */
-  const kindPillSpanClass = `inline-flex min-h-11 min-w-[3.25rem] shrink-0 items-center justify-center rounded-md px-3.5 text-[10px] font-bold uppercase leading-none sm:h-7 sm:min-h-0 ${kindBadgeClass}`;
+  const kindPillSpanClass = `inline-flex min-h-11 min-w-[3.5rem] shrink-0 items-center justify-center gap-1 rounded-md px-2.5 text-[10px] font-bold uppercase leading-none sm:h-7 sm:min-h-0 sm:min-w-[4.25rem] sm:px-3 ${kindBadgeClass}`;
 
   const isTopLevelOutlineModuleRow = depth === 0 && b.kind === 'label';
   const hasAnotherOutlineModuleForMerge =
@@ -2913,7 +2934,7 @@ function PathBranchRow({
               e.stopPropagation();
               onToggleCollapse(b.id);
             }}
-            className={`inline-flex min-h-11 min-w-[3.25rem] shrink-0 items-center justify-center gap-1 rounded-md px-3.5 text-[10px] font-bold uppercase leading-none transition-colors hover:bg-[var(--hover-bg)]/80 focus:outline-none focus:ring-2 focus:ring-[#a1a2a2]/45 sm:h-7 sm:min-h-0 ${kindBadgeClass}`}
+            className={`inline-flex min-h-11 min-w-[3.5rem] shrink-0 items-center justify-center gap-1 rounded-md px-2.5 text-[10px] font-bold uppercase leading-none transition-colors hover:bg-[var(--hover-bg)]/80 focus:outline-none focus:ring-2 focus:ring-[#a1a2a2]/45 sm:h-7 sm:min-h-0 sm:min-w-[4.75rem] sm:px-3 ${kindBadgeClass}`}
             aria-expanded={!isCollapsed}
             title={isCollapsed ? 'Show nested branches' : 'Hide nested branches'}
             aria-label={
@@ -2922,6 +2943,7 @@ function PathBranchRow({
                 : `Collapse nested branches (${pathKindBadgeText})`
             }
           >
+            <PathBranchKindIcon kind={b.kind} />
             {pathKindBadgeText}
             {!isCollapsed ? (
               <ChevronDown size={14} className="shrink-0 opacity-90" aria-hidden />
@@ -2938,6 +2960,7 @@ function PathBranchRow({
             title="Module title (edit in the field)"
             aria-label={`Branch type: ${pathKindBadgeText}`}
           >
+            <PathBranchKindIcon kind={b.kind} />
             {pathKindBadgeText}
           </span>
           {changeTypeSlidersButton}
@@ -2945,6 +2968,7 @@ function PathBranchRow({
       ) : (
         <>
           <span className={kindPillSpanClass} aria-label={`Branch type: ${pathKindBadgeText}`}>
+            <PathBranchKindIcon kind={b.kind} />
             {pathKindBadgeText}
           </span>
           {changeTypeSlidersButton}
