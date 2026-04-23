@@ -456,6 +456,20 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
       if (!(Number.isFinite(d) && d > 0)) return;
       const actual = p.getCurrentTime();
       if (!Number.isFinite(actual)) return;
+      // #region agent log
+      fetch('http://127.0.0.1:7400/ingest/5454287d-2e40-49c9-8b24-1c8d7ddb4bb1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'dd493a' },
+        body: JSON.stringify({
+          sessionId: 'dd493a',
+          hypothesisId: 'H-B',
+          location: 'CoursePlayer.tsx:flushYoutubeSeekHudFromPlayer',
+          message: 'reconcile HUD from player',
+          data: { actual, d, lessonId: lessonRef.current.id },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       setYtHudTime({ current: actual, duration: d });
       mergeProgress(lessonRef.current.id, actual, d, { allowDowngradeFromComplete: true });
       if (isLessonPlaybackComplete({ currentTime: actual, duration: d })) {
@@ -780,6 +794,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     const p = ytPlayerRef.current as {
       seekTo?: (t: number, allowSeekAhead: boolean) => void;
       getDuration?: () => number;
+      getCurrentTime?: () => number;
     } | null;
     if (!p?.seekTo || !p.getDuration) {
       setYtSeekDragging(false);
@@ -791,8 +806,55 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
         setYtSeekDragging(false);
         return;
       }
+      let tBefore: number | null = null;
+      let tImmediate: number | null = null;
+      try {
+        tBefore = p.getCurrentTime?.() ?? null;
+      } catch {
+        tBefore = null;
+      }
       const clamped = Math.max(0, Math.min(seconds, d));
+      // #region agent log
+      fetch('http://127.0.0.1:7400/ingest/5454287d-2e40-49c9-8b24-1c8d7ddb4bb1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'dd493a' },
+        body: JSON.stringify({
+          sessionId: 'dd493a',
+          hypothesisId: 'H-A',
+          location: 'CoursePlayer.tsx:commitYtSeek:pre',
+          message: 'commitYtSeek input',
+          data: {
+            secondsIn: seconds,
+            d,
+            clamped,
+            tBefore,
+            dragging: ytSeekDraggingRef.current,
+            pointerSeek: ytPointerSeekRef.current,
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       p.seekTo(clamped, true);
+      try {
+        tImmediate = p.getCurrentTime?.() ?? null;
+      } catch {
+        tImmediate = null;
+      }
+      // #region agent log
+      fetch('http://127.0.0.1:7400/ingest/5454287d-2e40-49c9-8b24-1c8d7ddb4bb1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'dd493a' },
+        body: JSON.stringify({
+          sessionId: 'dd493a',
+          hypothesisId: 'H-B',
+          location: 'CoursePlayer.tsx:commitYtSeek:postSeekTo',
+          message: 'after seekTo same tick',
+          data: { clamped, tImmediate, d },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       suspendYtHudPlayerPollUntilRef.current =
         typeof performance !== 'undefined' ? performance.now() + 750 : Date.now() + 750;
       setYtHudTime({ current: clamped, duration: d });
@@ -805,6 +867,20 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     } catch {
       /* ignore */
     }
+    // #region agent log
+    fetch('http://127.0.0.1:7400/ingest/5454287d-2e40-49c9-8b24-1c8d7ddb4bb1', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'dd493a' },
+      body: JSON.stringify({
+        sessionId: 'dd493a',
+        hypothesisId: 'H-D',
+        location: 'CoursePlayer.tsx:commitYtSeek:clearDrag',
+        message: 'setYtSeekDragging(false)',
+        data: {},
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
     setYtSeekDragging(false);
   }, [dismissReplayOverlay, mergeProgress, scheduleYoutubePostSeekReconcile]);
 
@@ -1267,6 +1343,43 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
     mediaPaused &&
     (playerReportedLessonEnded || (persistedLessonComplete && hudReplayAligned));
   showReplayCtaRef.current = showReplayCta;
+
+  const prevShowReplayCtaDebugRef = useRef(false);
+  useEffect(() => {
+    if (showReplayCta && !prevShowReplayCtaDebugRef.current) {
+      // #region agent log
+      fetch('http://127.0.0.1:7400/ingest/5454287d-2e40-49c9-8b24-1c8d7ddb4bb1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'dd493a' },
+        body: JSON.stringify({
+          sessionId: 'dd493a',
+          hypothesisId: 'H-E',
+          location: 'CoursePlayer.tsx:showReplayCta:on',
+          message: 'replay overlay became visible',
+          data: {
+            persistedLessonComplete,
+            hudReplayAligned,
+            playerReportedLessonEnded,
+            ytHudCurrent: ytHudTime.current,
+            ytHudDuration: ytHudTime.duration,
+            persistedT: persistedProgressForCurrentLesson?.currentTime,
+            persistedD: persistedProgressForCurrentLesson?.duration,
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
+    }
+    prevShowReplayCtaDebugRef.current = showReplayCta;
+  }, [
+    showReplayCta,
+    persistedLessonComplete,
+    hudReplayAligned,
+    playerReportedLessonEnded,
+    ytHudTime.current,
+    ytHudTime.duration,
+    persistedProgressForCurrentLesson,
+  ]);
 
   /** On touch/coarse devices, keep chrome visible whenever paused (no reliable hover). On hover+fine pointer, chrome follows hover while paused too. */
   const prefersHoverPointerChrome =
@@ -2108,6 +2221,20 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                   const tDisplay = Math.min(d, Math.max(0, tRaw));
                   suspendYtHudPlayerPollUntilRef.current = 0;
                   setYtHudTime({ current: tDisplay, duration: d });
+                  // #region agent log
+                  fetch('http://127.0.0.1:7400/ingest/5454287d-2e40-49c9-8b24-1c8d7ddb4bb1', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'dd493a' },
+                    body: JSON.stringify({
+                      sessionId: 'dd493a',
+                      hypothesisId: 'H-C',
+                      location: 'CoursePlayer.tsx:onStateChange:ENDED',
+                      message: 'YT ENDED',
+                      data: { d, tRaw, tDisplay, ratio: d > 0 ? tDisplay / d : null },
+                      timestamp: Date.now(),
+                    }),
+                  }).catch(() => {});
+                  // #endregion
                 }
               } catch {
                 /* ignore */
