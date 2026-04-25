@@ -4,6 +4,21 @@ import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { Menu, User, Bell, ChevronDown, X, LogOut, Moon, Sun, BellRing, LogIn, Shield, PenLine } from 'lucide-react';
 import { User as FirebaseUser } from '../firebase';
 import type { AuthProfileSnapshot } from '../utils/authProfileCache';
+import { payloadToHash } from '../utils/appHistory';
+
+/** Let Ctrl/Cmd/middle-click etc. use the browser; plain primary click uses SPA `onNavigate`. */
+function skipModifiedNavClick(e: React.MouseEvent): boolean {
+  return e.metaKey || e.ctrlKey || e.shiftKey || e.altKey;
+}
+
+const NAV_HOME_HREF = payloadToHash({ v: 1, view: 'home' });
+const NAV_CATALOG_HREF = payloadToHash({ v: 1, view: 'catalog' });
+const NAV_CONTACT_HREF = payloadToHash({ v: 1, view: 'contact' });
+
+function catalogLearningPathHref(pathId: string): string {
+  return payloadToHash({ v: 1, view: 'catalog', learningPathId: pathId });
+}
+
 export interface NavbarNotification {
   id: string;
   message: string;
@@ -395,15 +410,19 @@ export const Navbar: React.FC<NavbarProps> = ({
     <>
     <nav className="fixed top-0 left-0 right-0 z-50 flex min-h-16 items-center justify-between gap-2 overflow-visible border-b border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 transition-colors duration-300 app-dark:[--nav-fg:#f2f2f2] app-dark:[--nav-soft:#e4e4e4] sm:gap-3 sm:px-4 md:px-6">
       <div className="flex min-w-0 flex-1 items-center gap-2 md:gap-6 lg:gap-8">
-        <button
-          type="button"
+        <a
+          href={NAV_HOME_HREF}
           ref={(el) => {
             navItemsRef.current[0] = el;
           }}
           onKeyDown={(e) => handleTopLevelKeyDown(e, 0)}
           tabIndex={focusedNavIndex === 0 ? 0 : -1}
-          className={`flex items-center gap-2 transition-opacity focus:outline-none focus:ring-2 focus:ring-brand-500 rounded-sm ${activeView === 'home' ? 'opacity-100' : 'opacity-70 hover:opacity-100'}`}
-          onClick={() => onNavigate('home')}
+          className={`flex items-center gap-2 rounded-sm no-underline transition-opacity focus:outline-none focus:ring-2 focus:ring-brand-500 ${activeView === 'home' ? 'opacity-100' : 'opacity-70 hover:opacity-100'}`}
+          onClick={(e) => {
+            if (skipModifiedNavClick(e)) return;
+            e.preventDefault();
+            onNavigate('home');
+          }}
           aria-label="i Golden, home"
         >
           <div
@@ -428,7 +447,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               Learn Today. Lead Tomorrow.
             </span>
           </span>
-        </button>
+        </a>
         
         <div
           className={`hidden items-center gap-6 text-sm font-medium text-[var(--text-secondary)] app-dark:text-[color:var(--nav-fg)] ${
@@ -437,14 +456,13 @@ export const Navbar: React.FC<NavbarProps> = ({
           ref={dropdownRef}
         >
           <a
-            href="#/catalog"
+            href={NAV_CATALOG_HREF}
             ref={(el) => {
               navItemsRef.current[1] = el;
             }}
             onKeyDown={(e) => handleTopLevelKeyDown(e, 1)}
             onClick={(e) => {
-              /* Real URL: native context menu (copy link, open in new tab) and modified clicks stay on the browser. */
-              if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+              if (skipModifiedNavClick(e)) return;
               e.preventDefault();
               setOpenDropdown(null);
               setFocusedItemIndex(-1);
@@ -491,12 +509,16 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </p>
                 ) : (
                   learningPaths.map((path, index) => (
-                    <button
+                    <a
                       key={`${path.id}:${path.fromCreatorDraft ? 'd' : 'p'}:${path.adminPreviewOwnerUid ?? ''}`}
-                      type="button"
-                      onClick={() => handleItemSelect(`__path_${index}`)}
+                      href={catalogLearningPathHref(path.id)}
+                      onClick={(e) => {
+                        if (skipModifiedNavClick(e)) return;
+                        e.preventDefault();
+                        handleItemSelect(`__path_${index}`);
+                      }}
                       onMouseEnter={() => setFocusedItemIndex(index)}
-                      className={`w-full text-left px-4 py-2 transition-colors focus:outline-none ${focusedItemIndex === index ? 'bg-[var(--hover-bg)] text-brand-500' : 'hover:bg-[var(--hover-bg)] hover:text-brand-500'}`}
+                      className={`block w-full cursor-pointer px-4 py-2 text-left no-underline transition-colors focus:outline-none ${focusedItemIndex === index ? 'bg-[var(--hover-bg)] text-brand-500' : 'hover:bg-[var(--hover-bg)] hover:text-brand-500'}`}
                     >
                       {path.title || path.id}
                       {path.adminPreviewOwnerUid ? (
@@ -509,7 +531,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                           · Draft
                         </span>
                       ) : null}
-                    </button>
+                    </a>
                   ))
                 )}
               </div>
@@ -555,21 +577,24 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </div>
 
-          <button
+          <a
+            href={NAV_CONTACT_HREF}
             ref={(el) => {
               navItemsRef.current[4] = el;
             }}
-            onClick={() => {
+            onClick={(e) => {
+              if (skipModifiedNavClick(e)) return;
+              e.preventDefault();
               setOpenDropdown(null);
               setFocusedItemIndex(-1);
               onNavigate('contact');
             }}
             onKeyDown={(e) => handleTopLevelKeyDown(e, 4)}
             tabIndex={focusedNavIndex === 4 ? 0 : -1}
-            className={`hover:text-[var(--text-primary)] transition-colors h-16 focus:outline-none focus:text-[var(--text-primary)] app-dark:hover:text-white app-dark:focus:text-white ${activeView === 'contact' ? 'text-brand-500 border-b-2 border-brand-500' : 'text-[var(--text-secondary)] app-dark:text-[color:var(--nav-fg)]'}`}
+            className={`inline-flex h-16 cursor-pointer items-center no-underline transition-colors hover:text-[var(--text-primary)] focus:text-[var(--text-primary)] focus:outline-none app-dark:hover:text-white app-dark:focus:text-white ${activeView === 'contact' ? 'border-b-2 border-brand-500 text-brand-500' : 'text-[var(--text-secondary)] app-dark:text-[color:var(--nav-fg)]'}`}
           >
             Contact Us
-          </button>
+          </a>
         </div>
 
         {catalogNavFilter ? (
@@ -728,38 +753,43 @@ export const Navbar: React.FC<NavbarProps> = ({
                     </button>
                   </div>
                   <div className="py-2">
-                    <button 
+                    <button
+                      type="button"
+                      role="menuitem"
                       onClick={() => {
                         setOpenDropdown(null);
                         onNavigate('profile');
                       }}
-                      className="w-full flex items-center gap-3 px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--hover-bg)] transition-colors text-left"
+                      className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
                     >
-                      <User size={16} />
+                      <User size={16} aria-hidden />
                       Profile Details
                     </button>
                     {isCreator && (
                       <button
                         type="button"
+                        role="menuitem"
                         onClick={() => {
                           setOpenDropdown(null);
                           onNavigate('creator');
                         }}
-                        className="w-full flex items-center gap-3 px-4 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] transition-colors text-left"
+                        className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
                       >
                         <PenLine size={16} aria-hidden />
                         Creator studio
                       </button>
                     )}
                     {isAdmin && (
-                      <button 
+                      <button
+                        type="button"
+                        role="menuitem"
                         onClick={() => {
                           setOpenDropdown(null);
                           onNavigate('admin');
                         }}
-                        className="w-full flex items-center gap-3 px-4 py-2 text-sm text-brand-500 hover:bg-brand-500/10 transition-colors text-left"
+                        className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-brand-500 transition-colors hover:bg-brand-500/10"
                       >
-                        <Shield size={16} />
+                        <Shield size={16} aria-hidden />
                         Admin
                       </button>
                     )}
@@ -932,12 +962,12 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
             <div className="flex flex-col py-2 text-sm font-medium text-[var(--text-secondary)] app-dark:text-[color:var(--nav-fg)]">
               <a
-                href="#/catalog"
+                href={NAV_CATALOG_HREF}
                 className={`block px-4 py-3 text-left no-underline transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] ${
                   activeView === 'catalog' && !learningPathNavActive ? 'text-brand-500' : ''
                 }`}
                 onClick={(e) => {
-                  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                  if (skipModifiedNavClick(e)) return;
                   e.preventDefault();
                   /* Default shouldClear=true matches desktop Browse Catalog: clears learning path + library filters. */
                   onNavigate('catalog');
@@ -965,12 +995,14 @@ export const Navbar: React.FC<NavbarProps> = ({
                         No Learning Paths yet
                       </p>
                     ) : (
-                      learningPaths.map((path, index) => (
-                        <button
+                      learningPaths.map((path) => (
+                        <a
                           key={`${path.id}:${path.fromCreatorDraft ? 'd' : 'p'}:${path.adminPreviewOwnerUid ?? ''}`}
-                          type="button"
-                          className="w-full px-6 py-2.5 text-left text-sm hover:bg-[var(--hover-bg)] hover:text-brand-500"
-                          onClick={() => {
+                          href={catalogLearningPathHref(path.id)}
+                          className="block w-full cursor-pointer px-6 py-2.5 text-left text-sm no-underline hover:bg-[var(--hover-bg)] hover:text-brand-500"
+                          onClick={(e) => {
+                            if (skipModifiedNavClick(e)) return;
+                            e.preventDefault();
                             onPathSelect(
                               path.id,
                               path.fromCreatorDraft === true,
@@ -989,7 +1021,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                             (path.fromCreatorDraft !== false && privatePathIds.has(path.id)) ? (
                             <span className="ml-1 text-[10px] font-semibold uppercase text-brand-500">· Draft</span>
                           ) : null}
-                        </button>
+                        </a>
                       ))
                     )}
                   </div>
@@ -1026,17 +1058,19 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </div>
                 )}
               </div>
-              <button
-                type="button"
-                className={`border-t border-[var(--border-color)] px-4 py-3 text-left text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] app-dark:text-[color:var(--nav-fg)] app-dark:hover:text-white ${activeView === 'contact' ? 'text-brand-500 app-dark:text-brand-500' : ''}`}
-                onClick={() => {
+              <a
+                href={NAV_CONTACT_HREF}
+                className={`block border-t border-[var(--border-color)] px-4 py-3 text-left text-[var(--text-secondary)] no-underline transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] app-dark:text-[color:var(--nav-fg)] app-dark:hover:text-white ${activeView === 'contact' ? 'text-brand-500 app-dark:text-brand-500' : ''}`}
+                onClick={(e) => {
+                  if (skipModifiedNavClick(e)) return;
+                  e.preventDefault();
                   onNavigate('contact');
                   setMobileMenuOpen(false);
                   setMobileNavExpand(null);
                 }}
               >
                 Contact Us
-              </button>
+              </a>
             </div>
           </div>
         </>
