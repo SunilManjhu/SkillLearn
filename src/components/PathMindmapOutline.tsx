@@ -844,7 +844,7 @@ function OutlineNode({
                 role="list"
                 aria-labelledby={`path-section-title-${node.id}`}
                 hidden={!showSectionBody}
-                className="mt-2 min-w-0 max-w-full list-none space-y-2 border-0 bg-transparent p-0 ring-0 md:ml-8 md:mt-1.5 md:space-y-1 md:rounded-xl md:border md:border-[var(--border-light)]/70 md:bg-[var(--bg-primary)]/45 md:py-1 md:pl-7 md:pr-5 md:ring-1 md:ring-[var(--border-color)]/20"
+                className="mt-2 min-w-0 max-w-full list-none space-y-2 border-0 bg-transparent p-0 pl-3 ring-0 sm:pl-4 md:ml-8 md:mt-1.5 md:space-y-1 md:rounded-xl md:border md:border-[var(--border-light)]/70 md:bg-[var(--bg-primary)]/45 md:py-1 md:pl-7 md:pr-5 md:ring-1 md:ring-[var(--border-color)]/20"
               >
                 {node.children.map((ch) => (
                   <li key={ch.id} className="min-w-0">

@@ -857,6 +857,10 @@ type PlaceBranchCommitPayload =
   | { mode: 'copy'; branch: PathBranchNode }
   | { mode: 'move'; sourceId: string };
 
+type PlaceBranchRememberedInsert =
+  | { kind: 'end' }
+  | { kind: 'index'; value: number };
+
 function PlaceDuplicateBranchModal({
   open,
   onClose,
@@ -864,8 +868,12 @@ function PlaceDuplicateBranchModal({
   roots,
   publishedList,
   defaultTopParentId,
+  initialMode,
+  initialParentId,
+  initialInsert,
   fixedMode,
   forceNonRootPlacement,
+  onRemember,
   onCommit,
 }: {
   open: boolean;
@@ -876,10 +884,22 @@ function PlaceDuplicateBranchModal({
   publishedList: Course[];
   /** When duplicating a nested row, prefer its current top-level section as the first dropdown. */
   defaultTopParentId: string | null;
+  /** Optional: restore the last-used mode (copy/move) when opening (ignored when fixedMode is set). */
+  initialMode?: 'move' | 'copy';
+  /** Optional: restore the last-used destination parent for the active mode. */
+  initialParentId?: string | null;
+  /** Optional: restore the last-used insert position for the active mode. */
+  initialInsert?: PlaceBranchRememberedInsert | null;
   /** Optional: lock the dialog in one mode (used by change-type placement). */
   fixedMode?: 'move' | 'copy';
   /** Optional: disallow placing at root (used when top-level types are invalid). */
   forceNonRootPlacement?: boolean;
+  /** Optional: persist last-used mode/selection for the next open. */
+  onRemember?: (prefs: {
+    mode: 'copy' | 'move';
+    parentId: string | null;
+    insert: PlaceBranchRememberedInsert;
+  }) => void;
   onCommit: (parentId: string | null, insertIndex: number, payload: PlaceBranchCommitPayload) => void;
 }) {
   const topLevelOnly = duplicateSubtreeRequiresTopLevelOnly(sourceSnapshot);
@@ -936,11 +956,36 @@ function PlaceDuplicateBranchModal({
   /** Only when the dialog opens or the duplicate source changes — not on every outline edit (avoids resetting Top parent and showing stale sibling labels). */
   useEffect(() => {
     if (!open) return;
+    if (!fixedMode) {
+      setPlaceMode(initialMode ?? 'copy');
+    } else {
+      setPlaceMode(fixedMode);
+    }
     if (topLevelOnly) {
       setParentId(null);
       return;
     }
     const r = rootsRef.current;
+    const isValidParent = (candidate: string | null) => {
+      if (candidate == null) return true;
+      const n = findBranchNode(r, candidate);
+      if (!n) return false;
+      if (!parentAllowsChildRows(r, candidate)) return false;
+      if (!(findDepthOfBranchId(r, candidate) === 0 || n.kind === 'divider')) return false;
+      if (sourceSnapshot.kind === 'module' && n.kind === 'divider') return false;
+      if (duplicateSubtreeRequiresTopLevelOnly(sourceSnapshot) && n.kind === 'divider') return false;
+      if ((fixedMode ?? (initialMode ?? 'copy')) === 'move') {
+        if (candidate === sourceSnapshot.id) return false;
+        if (collectDescendantBranchIds(r, sourceSnapshot.id).has(candidate)) return false;
+      }
+      return true;
+    };
+
+    if (initialParentId !== undefined && isValidParent(initialParentId ?? null)) {
+      setParentId(initialParentId ?? null);
+      return;
+    }
+
     const defNode = defaultTopParentId != null ? findBranchNode(r, defaultTopParentId) : null;
     const validDefault =
       defaultTopParentId != null &&
@@ -948,7 +993,16 @@ function PlaceDuplicateBranchModal({
       parentAllowsChildRows(r, defaultTopParentId) &&
       (findDepthOfBranchId(r, defaultTopParentId) === 0 || defNode.kind === 'divider');
     setParentId(validDefault ? defaultTopParentId : null);
-  }, [open, sourceSnapshot.id, topLevelOnly, defaultTopParentId]);
+  }, [
+    open,
+    sourceSnapshot.id,
+    topLevelOnly,
+    defaultTopParentId,
+    fixedMode,
+    initialMode,
+    initialParentId,
+    forceNonRootPlacement,
+  ]);
 
   /** If the selected parent disappears or becomes invalid (tree reload, Copy ↔ Move, divider rules), clear it. */
   useEffect(() => {
@@ -974,22 +1028,34 @@ function PlaceDuplicateBranchModal({
 
   useEffect(() => {
     if (!open) return;
-    setInsertIndex(siblings.length);
-  }, [open, effectiveParentId, siblings.length]);
+    const wanted =
+      initialInsert?.kind === 'end'
+        ? siblings.length
+        : initialInsert?.kind === 'index'
+          ? initialInsert.value
+          : siblings.length;
+    setInsertIndex(Math.max(0, Math.min(wanted, siblings.length)));
+  }, [open, effectiveParentId, siblings.length, initialInsert]);
 
   useEffect(() => {
     if (!open) return;
-    if (fixedMode) {
-      setPlaceMode(fixedMode);
-    } else {
-      setPlaceMode('copy');
-    }
+    const clampedIdx = Math.max(0, Math.min(insertIndex, siblings.length));
+    onRemember?.({
+      mode: placeMode,
+      parentId: effectiveParentId,
+      insert:
+        clampedIdx >= siblings.length ? { kind: 'end' } : { kind: 'index', value: clampedIdx },
+    });
+  }, [open, onRemember, placeMode, effectiveParentId, insertIndex, siblings.length]);
+
+  useEffect(() => {
+    if (!open) return;
     if (duplicateRootHasEditableTitle(sourceSnapshot)) {
       setCopyNameInput(duplicateRootEditableTitleBase(sourceSnapshot, publishedList) + ' (copy)');
       const id = window.requestAnimationFrame(() => {
         window.requestAnimationFrame(() => {
           const el = copyNameInputRef.current;
-          el?.focus();
+          el?.focus({ preventScroll: true });
           el?.select();
         });
       });
@@ -3129,6 +3195,8 @@ function PathBranchRow({
     const target = e.target as HTMLElement | null;
     /** Avoid racing expand (focus) + toggle (click) on the section disclosure control — same gesture would expand then collapse. */
     if (target?.closest?.('[data-path-branch-disclosure]')) return;
+    /** Avoid auto-expand/scroll when focusing row action controls (copy/move, reorder, delete, change-type, etc.). */
+    if (target?.closest?.('[data-path-branch-row-action]')) return;
     const header = e.currentTarget;
     const related = e.relatedTarget as Node | null;
     if (related && header.contains(related)) return;
@@ -3147,6 +3215,7 @@ function PathBranchRow({
   const changeTypeSlidersButton = (
     <button
       type="button"
+      data-path-branch-row-action
       onClick={(e) => {
         e.stopPropagation();
         onRequestChangeType(b.id);
@@ -3346,6 +3415,7 @@ function PathBranchRow({
     <>
       <button
         type="button"
+        data-path-branch-row-action
         data-branch-reorder="up"
         disabled={siblingIndex === 0}
         onClick={(e) => {
@@ -3368,6 +3438,7 @@ function PathBranchRow({
       </button>
       <button
         type="button"
+        data-path-branch-row-action
         data-branch-reorder="down"
         disabled={siblingIndex >= siblingsLen - 1}
         onClick={(e) => {
@@ -3390,6 +3461,7 @@ function PathBranchRow({
       </button>
       <button
         type="button"
+        data-path-branch-row-action
         onClick={(e) => {
           e.stopPropagation();
           onCopyBranch(b.id);
@@ -3402,6 +3474,7 @@ function PathBranchRow({
       </button>
       <button
         type="button"
+        data-path-branch-row-action
         onClick={() => onRemove(b.id)}
         className={`${PATH_BRANCH_ROW_ICON_BTN_CLASS} text-[#a1a2a2] hover:bg-[#757676]/12`}
         aria-label="Remove branch and nested items"
@@ -3790,6 +3863,20 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     label: string;
     nestedCount: number;
   } | null>(null);
+
+  const duplicatePlaceRememberRef = useRef<{
+    mode: 'copy' | 'move';
+    perMode: {
+      copy: { parentId: string | null; insert: PlaceBranchRememberedInsert };
+      move: { parentId: string | null; insert: PlaceBranchRememberedInsert };
+    };
+  }>({
+    mode: 'copy',
+    perMode: {
+      copy: { parentId: null, insert: { kind: 'end' } },
+      move: { parentId: null, insert: { kind: 'end' } },
+    },
+  });
 
   const closeDividerRemoveDialog = useCallback(() => setDividerRemovePending(null), []);
 
@@ -5487,6 +5574,11 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
               fixedMode="move"
               forceNonRootPlacement
               onClose={() => setBranchModal({ kind: 'closed' })}
+              onRemember={(prefs) => {
+                const next = duplicatePlaceRememberRef.current;
+                next.mode = prefs.mode;
+                next.perMode[prefs.mode] = { parentId: prefs.parentId, insert: prefs.insert };
+              }}
               onCommit={(parentId, insertIndex) => {
                 if (parentId == null) return;
                 const roots = pathBranchTreeRef.current;
@@ -5546,7 +5638,17 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
               roots={pathBranchTree}
               publishedList={publishedList}
               defaultTopParentId={branchModal.sourceParentId}
+              initialMode={duplicatePlaceRememberRef.current.mode}
+              initialParentId={
+                duplicatePlaceRememberRef.current.perMode[duplicatePlaceRememberRef.current.mode].parentId
+              }
+              initialInsert={duplicatePlaceRememberRef.current.perMode[duplicatePlaceRememberRef.current.mode].insert}
               onClose={() => setBranchModal({ kind: 'closed' })}
+              onRemember={(prefs) => {
+                const next = duplicatePlaceRememberRef.current;
+                next.mode = prefs.mode;
+                next.perMode[prefs.mode] = { parentId: prefs.parentId, insert: prefs.insert };
+              }}
               onCommit={(parentId, insertIndex, payload) => {
                 const roots = pathBranchTreeRef.current;
                 if (payload.mode === 'copy') {

@@ -559,7 +559,7 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
                   role="region"
                   aria-labelledby={`${panelId}-trigger`}
                   hidden={!expanded}
-                  className="flex min-w-0 flex-col gap-3"
+                  className="flex min-w-0 flex-col gap-3 pl-10 sm:pl-11"
                 >
                   {block.segments.map((seg, sIdx) =>
                     seg.type === 'divider' ? (
