@@ -54,6 +54,12 @@ type PendingAdminNavigation =
   | { kind: 'tab'; tab: AdminHistoryTab }
   | { kind: 'dismiss' };
 
+type AdminTopTabDef = {
+  id: AdminHistoryTab;
+  label: string;
+  icon: React.ReactNode;
+};
+
 export const AdminPage: React.FC<AdminPageProps> = ({
   courses,
   activeTab: tab,
@@ -192,6 +198,19 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   const titleMissing = !title.trim();
   const messageMissing = !message.trim();
 
+  const topTabs = useMemo<AdminTopTabDef[]>(
+    () => [
+      { id: 'alerts', label: 'Alerts', icon: <Send size={16} aria-hidden /> },
+      { id: 'ai', label: 'Smart Hub', icon: <Sparkles size={16} aria-hidden /> },
+      { id: 'catalog', label: 'Content', icon: <BookOpen size={16} aria-hidden /> },
+      { id: 'marketing', label: 'Marketing', icon: <Megaphone size={16} aria-hidden /> },
+      { id: 'moderation', label: 'Moderation', icon: <Flag size={16} aria-hidden /> },
+      { id: 'roles', label: 'Roles', icon: <Users size={16} aria-hidden /> },
+      { id: 'creators', label: 'Creators', icon: <Library size={16} aria-hidden /> },
+    ],
+    []
+  );
+
   const handleSend = async () => {
     if (courseMissing) {
       setShowValidationHints(true);
@@ -261,7 +280,10 @@ export const AdminPage: React.FC<AdminPageProps> = ({
             </div>
             <div className="min-w-0">
               <h1 className="text-lg font-bold tracking-tight sm:text-xl">Admin portal</h1>
-              <p className="mt-0.5 line-clamp-2 text-xs text-[var(--text-secondary)] sm:text-sm sm:line-clamp-none">
+              <p className="mt-0.5 text-xs text-[var(--text-secondary)] sm:hidden">
+                Manage alerts, content, moderation, roles.
+              </p>
+              <p className="mt-0.5 hidden text-xs text-[var(--text-secondary)] sm:block sm:text-sm">
                 Alerts, Smart Hub, catalog, marketing, moderation, roles, creator inventory. Not visible to learners.
               </p>
             </div>
@@ -277,14 +299,34 @@ export const AdminPage: React.FC<AdminPageProps> = ({
           </button>
         </div>
 
-        <div className="-mx-1 flex gap-2 overflow-x-auto overflow-y-hidden overscroll-x-contain px-1 py-0.5 [scrollbar-width:none] sm:flex-wrap sm:overflow-visible [&::-webkit-scrollbar]:hidden">
-          {tabBtn('alerts', 'Alerts', <Send size={16} />)}
-          {tabBtn('ai', 'Smart Hub', <Sparkles size={16} />)}
-          {tabBtn('catalog', 'Content', <BookOpen size={16} />)}
-          {tabBtn('marketing', 'Marketing', <Megaphone size={16} />)}
-          {tabBtn('moderation', 'Moderation', <Flag size={16} />)}
-          {tabBtn('roles', 'Roles', <Users size={16} />)}
-          {tabBtn('creators', 'Creators', <Library size={16} />)}
+        {/* Mobile: compact section picker. Desktop: pill strip. */}
+        <div className="sm:hidden">
+          <label
+            htmlFor="admin-top-tab-select"
+            className="mb-1 block text-xs font-semibold text-[var(--text-secondary)]"
+          >
+            Section
+          </label>
+          <select
+            id="admin-top-tab-select"
+            value={tab}
+            onChange={(e) => {
+              const next = e.target.value as AdminHistoryTab;
+              if (next === tab) return;
+              requestAdminNavigation({ kind: 'tab', tab: next });
+            }}
+            className="box-border min-h-11 w-full touch-manipulation rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-base font-semibold text-[var(--text-primary)]"
+          >
+            {topTabs.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="-mx-1 hidden gap-2 overflow-x-auto overflow-y-hidden overscroll-x-contain px-1 py-0.5 [scrollbar-width:none] sm:flex sm:flex-wrap sm:overflow-visible [&::-webkit-scrollbar]:hidden">
+          {topTabs.map((t) => tabBtn(t.id, t.label, t.icon))}
         </div>
 
         {tab === 'alerts' && (

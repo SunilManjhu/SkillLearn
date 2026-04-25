@@ -81,7 +81,7 @@ function cloneBlocks(blocks: HeroAdBlockStored[]): HeroAdBlockStored[] {
   });
 }
 
-/** Single-slide UX: Ads (global) off → Show (per slide) off and locked; Ads on → Show on and locked. */
+/** Single-slide UX: Advertisements (global) off → Show (per slide) off and locked; on → Show on and locked. */
 function normalizeHeroSlidesForAdsState(
   slides: HeroPhoneAdSlideStored[],
   adsEnabled: boolean
@@ -440,7 +440,7 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
       return false;
     }
     if (enabled && !draftSlides.some((s) => s.enabled !== false)) {
-      showActionToast('Enable at least one slide, or turn Ads (global) off.', 'danger');
+      showActionToast('Enable at least one slide, or turn Advertisements (global) off.', 'danger');
       return false;
     }
     for (const s of draftSlides) {
@@ -581,35 +581,38 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
               <h2 className="flex min-w-0 items-center gap-1.5 text-[0.95rem] font-bold leading-tight text-[var(--text-primary)] sm:gap-2 sm:text-base sm:leading-normal md:text-lg">
                 <Megaphone size={17} className="shrink-0 text-admin-icon sm:size-[18px] md:size-5" aria-hidden />
-                <span className="min-w-0">Home Hero — Phone Ads</span>
+                <span className="min-w-0">Home — Phone Advertisements</span>
               </h2>
               <AdminLabelInfoTip
                 controlOnly
                 tipId="hero-ads-tip-section"
-                tipRegionAriaLabel="Home Hero Phone Ads Overview"
-                tipSubject="Home Hero Phone Ads"
+                tipRegionAriaLabel="Home Phone Advertisements overview"
+                tipSubject="Home Phone Advertisements"
               >
               <li>
                 Custom cards show on the <strong className="font-semibold text-[var(--text-secondary)]">home hero</strong>{' '}
-                mockup when <strong className="font-semibold text-[var(--text-secondary)]">Ads (global)</strong> is on and
+                mockup when <strong className="font-semibold text-[var(--text-secondary)]">Advertisements (global)</strong> is on and
                 you save.
               </li>
               <li>
-                Turn <strong className="font-semibold text-[var(--text-secondary)]">Ads (global)</strong>{' '}
+                Turn <strong className="font-semibold text-[var(--text-secondary)]">Advertisements (global)</strong>{' '}
                 <strong className="font-semibold text-[var(--text-secondary)]">off</strong> to show default sample
                 content—your draft below is kept.
               </li>
               </AdminLabelInfoTip>
             </div>
-            <p className="max-w-xl text-[0.7rem] leading-snug text-[var(--text-muted)] sm:text-xs">
-              Set carousel timing, turn custom ads on or off, then build slides. The preview updates as you edit.
+            <p className="max-w-xl text-[0.7rem] leading-snug text-[var(--text-muted)] sm:hidden">
+              Set timing and toggle advertisements.
+            </p>
+            <p className="hidden max-w-xl text-[0.7rem] leading-snug text-[var(--text-muted)] sm:block sm:text-xs">
+              Set carousel timing, toggle custom advertisements on/off, then build slides. The preview updates as you edit.
             </p>
           </div>
 
-          {/* AutoView + Ads (global): full-width on small screens; compact inline toolbar on lg+ */}
+          {/* AutoView + Advertisements (global): full-width on small screens; compact inline toolbar on lg+ */}
           <div className="min-w-0 w-full shrink-0 lg:w-auto">
-            <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-2.5 py-2.5 sm:px-4 sm:py-3 lg:rounded-lg lg:px-3 lg:py-1.5">
-              <div className="flex min-h-0 flex-col gap-3 sm:min-h-11 sm:flex-row sm:flex-nowrap sm:items-center sm:gap-3 sm:overflow-x-auto sm:overscroll-x-contain sm:[-webkit-overflow-scrolling:touch] lg:min-h-9 lg:gap-2 lg:overflow-visible">
+            <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-2 sm:px-4 sm:py-3 lg:rounded-lg lg:px-3 lg:py-1.5">
+              <div className="flex min-h-0 flex-col gap-1.5 sm:min-h-11 sm:flex-row sm:flex-nowrap sm:items-center sm:gap-3 sm:overflow-x-auto sm:overscroll-x-contain sm:[-webkit-overflow-scrolling:touch] lg:min-h-9 lg:gap-2 lg:overflow-visible">
                 <div className="flex min-w-0 w-full items-center justify-between gap-2 sm:w-auto sm:flex-1 sm:justify-start sm:gap-2 lg:flex-none">
                   <Timer
                     size={16}
@@ -696,13 +699,13 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                   aria-hidden
                 />
 
-                <div className="flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg border border-[var(--border-color)]/60 bg-[var(--bg-secondary)]/50 px-2.5 py-2 sm:w-auto sm:shrink-0 sm:gap-2 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0 lg:gap-1.5">
+                <div className="flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 sm:w-auto sm:shrink-0 sm:gap-2 sm:px-0 sm:py-0 lg:gap-1.5">
                   <input
                     id="hero-ads-enabled"
                     type="checkbox"
                     checked={enabled}
                     onChange={(e) => setEnabled(e.target.checked)}
-                    aria-label="Ads (global): use custom hero content on the home page"
+                    aria-label="Advertisements (global): use custom hero content on the home page"
                     className="size-4 shrink-0 rounded border-[var(--border-color)] checkbox-accent-theme"
                   />
                   <div className="flex min-w-0 items-center gap-1 lg:gap-0.5">
@@ -710,13 +713,13 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                       htmlFor="hero-ads-enabled"
                       className="cursor-pointer text-xs font-bold leading-tight text-[var(--text-primary)] sm:text-sm sm:leading-snug lg:text-xs"
                     >
-                      Ads (global)
+                      Advertisements (global)
                     </label>
                     <AdminLabelInfoTip
                       controlOnly
                       tipId="hero-ads-tip-custom-enabled"
-                      tipRegionAriaLabel="Ads (global) tips"
-                      tipSubject="Ads (global)"
+                      tipRegionAriaLabel="Advertisements (global) tips"
+                      tipSubject="Advertisements (global)"
                     >
                       <li>
                         When <strong className="font-semibold text-[var(--text-secondary)]">on</strong>, saved slides
@@ -729,8 +732,8 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                       <li>
                         With only <strong className="font-semibold text-[var(--text-secondary)]">one slide</strong>,{' '}
                         <strong className="font-semibold text-[var(--text-secondary)]">Show (per slide)</strong> is off and
-                        locked while <strong className="font-semibold text-[var(--text-secondary)]">Ads (global)</strong> is
-                        off; turning <strong className="font-semibold text-[var(--text-secondary)]">Ads (global)</strong> on
+                        locked while <strong className="font-semibold text-[var(--text-secondary)]">Advertisements (global)</strong> is
+                        off; turning <strong className="font-semibold text-[var(--text-secondary)]">Advertisements (global)</strong> on
                         turns it on and keeps it locked so the hero always has one card.
                       </li>
                     </AdminLabelInfoTip>
@@ -782,10 +785,10 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                   </li>
                   <li>
                     <strong className="font-semibold text-[var(--text-secondary)]">Show (per slide)</strong> picks which
-                    slides go live when <strong className="font-semibold text-[var(--text-secondary)]">Ads (global)</strong> is
+                    slides go live when <strong className="font-semibold text-[var(--text-secondary)]">Advertisements (global)</strong> is
                     on. With <strong className="font-semibold text-[var(--text-secondary)]">two or more slides</strong>, you can
                     mix on/off; with <strong className="font-semibold text-[var(--text-secondary)]">one slide</strong>, Show
-                    follows Ads (global)—see that tip.
+                    follows Advertisements (global)—see that tip.
                   </li>
                 </AdminLabelInfoTip>
               </div>
@@ -796,7 +799,8 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                   disabled={draftSlides.length === 0 || expandedSlideId === null}
                   className="inline-flex min-h-11 items-center justify-center rounded-lg border border-[var(--border-color)] px-2 py-2 text-[0.65rem] font-bold leading-tight text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:pointer-events-none disabled:opacity-40 sm:min-h-11 sm:flex-initial sm:px-3 sm:text-xs"
                 >
-                  Collapse All
+                  <span className="sm:hidden">Collapse</span>
+                  <span className="hidden sm:inline">Collapse All</span>
                 </button>
                 <button
                   type="button"
@@ -814,7 +818,8 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                   className="col-span-2 inline-flex min-h-11 items-center justify-center gap-1 rounded-lg bg-[#616161]/15 px-2.5 py-2 text-xs font-bold text-[#393a3a] hover:bg-[#616161]/25 disabled:pointer-events-none disabled:opacity-40 app-dark:text-[#cfcfcf] sm:col-span-1 sm:flex-initial sm:gap-1.5 sm:px-3 sm:text-sm"
                 >
                   <Plus size={16} className="shrink-0 sm:size-[18px]" aria-hidden />
-                  Add Slide
+                  <span className="sm:hidden">Add</span>
+                  <span className="hidden sm:inline">Add Slide</span>
                 </button>
               </div>
             </div>
@@ -835,8 +840,8 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                   singleSlide && (!enabled || cannotTurnOffLastShown);
                 const perSlideShowTitle = perSlideShowLocked
                   ? !enabled
-                    ? 'Turn on Ads (global) to change Show (per slide) for this slide.'
-                    : 'With Ads (global) on, this slide must stay visible.'
+                    ? 'Turn on Advertisements (global) to change Show (per slide) for this slide.'
+                    : 'With Advertisements (global) on, this slide must stay visible.'
                   : 'Show (per slide) on the home hero.';
                 return (
                 <div
@@ -1322,7 +1327,7 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
               })}
             </div>
 
-            <div className="sticky bottom-0 z-[5] -mx-4 mt-2 flex flex-col gap-2 border-t border-[var(--border-color)] bg-[var(--bg-secondary)]/95 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-4px_24px_-8px_rgba(39,40,40,0.14)] backdrop-blur-sm sm:static sm:z-0 sm:-mx-6 sm:mx-0 sm:mt-0 sm:flex-row sm:flex-wrap sm:border-0 sm:bg-transparent sm:px-0 sm:py-0 sm:pt-2 sm:shadow-none sm:backdrop-blur-none app-dark:shadow-[0_-4px_24px_-8px_rgba(39,40,40,0.45)]">
+            <div className="sticky bottom-0 z-[5] mt-2 flex flex-col gap-2 border-t border-[var(--border-color)] bg-[var(--bg-secondary)]/95 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-4px_24px_-8px_rgba(39,40,40,0.14)] backdrop-blur-sm sm:static sm:z-0 sm:mt-0 sm:flex-row sm:flex-wrap sm:border-0 sm:bg-transparent sm:py-0 sm:pt-2 sm:shadow-none sm:backdrop-blur-none app-dark:shadow-[0_-4px_24px_-8px_rgba(39,40,40,0.45)]">
               <button
                 type="button"
                 disabled={saving || !dirty}
@@ -1347,7 +1352,7 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
               <p className="mb-1.5 text-center text-[0.65rem] font-semibold uppercase tracking-wide text-[var(--text-muted)] sm:mb-2 sm:text-xs sm:normal-case sm:tracking-normal sm:text-[var(--text-secondary)] lg:text-center">
                 Live Preview
               </p>
-              <div className="mx-auto w-full max-w-[min(100%,240px)] min-w-0 sm:max-w-[260px] lg:max-w-none">
+              <div className="mx-auto w-full max-w-[min(100%,280px)] min-w-0 sm:max-w-[300px] lg:max-w-none">
                 <PhoneMockupAdRail
                   imageSrc={phoneMockupSrc}
                   imageAlt="Preview: home hero phone"
