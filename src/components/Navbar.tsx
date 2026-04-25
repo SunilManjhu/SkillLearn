@@ -191,7 +191,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const notificationRef = useRef<HTMLDivElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const mobileMenuToggleRef = useRef<HTMLButtonElement>(null);
-  const navItemsRef = useRef<(HTMLButtonElement | null)[]>([]);
+  const navItemsRef = useRef<(HTMLButtonElement | HTMLAnchorElement | null)[]>([]);
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
@@ -436,27 +436,30 @@ export const Navbar: React.FC<NavbarProps> = ({
           }`}
           ref={dropdownRef}
         >
-          <button
-            type="button"
+          <a
+            href="#/catalog"
             ref={(el) => {
               navItemsRef.current[1] = el;
             }}
             onKeyDown={(e) => handleTopLevelKeyDown(e, 1)}
-            onClick={() => {
+            onClick={(e) => {
+              /* Real URL: native context menu (copy link, open in new tab) and modified clicks stay on the browser. */
+              if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+              e.preventDefault();
               setOpenDropdown(null);
               setFocusedItemIndex(-1);
               onNavigate('catalog');
             }}
             tabIndex={focusedNavIndex === 1 ? 0 : -1}
             aria-current={activeView === 'catalog' && !learningPathNavActive ? 'page' : undefined}
-            className={`h-16 transition-colors hover:text-[var(--text-primary)] focus:text-[var(--text-primary)] focus:outline-none app-dark:hover:text-white app-dark:focus:text-white ${
+            className={`inline-flex h-16 cursor-pointer items-center no-underline transition-colors hover:text-[var(--text-primary)] focus:text-[var(--text-primary)] focus:outline-none app-dark:hover:text-white app-dark:focus:text-white ${
               activeView === 'catalog' && !learningPathNavActive
                 ? 'border-b-2 border-brand-500 text-brand-500'
                 : 'text-[var(--text-secondary)] app-dark:text-[color:var(--nav-fg)]'
             }`}
           >
             Browse Catalog
-          </button>
+          </a>
 
           {/* Learning Paths dropdown */}
           <div className="relative">
@@ -928,19 +931,21 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </div>
             <div className="flex flex-col py-2 text-sm font-medium text-[var(--text-secondary)] app-dark:text-[color:var(--nav-fg)]">
-              <button
-                type="button"
-                className={`px-4 py-3 text-left transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] ${
+              <a
+                href="#/catalog"
+                className={`block px-4 py-3 text-left no-underline transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] ${
                   activeView === 'catalog' && !learningPathNavActive ? 'text-brand-500' : ''
                 }`}
-                onClick={() => {
+                onClick={(e) => {
+                  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                  e.preventDefault();
                   /* Default shouldClear=true matches desktop Browse Catalog: clears learning path + library filters. */
                   onNavigate('catalog');
                   setMobileMenuOpen(false);
                 }}
               >
                 Browse Catalog
-              </button>
+              </a>
               <div className="border-t border-[var(--border-color)]">
                 <button
                   type="button"

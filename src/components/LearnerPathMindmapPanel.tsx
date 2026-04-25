@@ -98,8 +98,8 @@ function SectionDividerOutlineBlock({
 
   const wrapClass =
     placement === 'section'
-      ? 'min-w-0 border-t border-[var(--border-color)]/55 pt-3 mt-3 first:mt-0 first:border-t-0 first:pt-0'
-      : 'min-w-0 pt-2 first:pt-0';
+      ? 'min-w-0 border-t border-[var(--border-color)]/55 first:border-t-0'
+      : 'min-w-0';
 
   const onHeaderKeyDown = expandable
     ? (e: React.KeyboardEvent) => {
@@ -111,7 +111,7 @@ function SectionDividerOutlineBlock({
     : undefined;
 
   return (
-    <div className={wrapClass} role="presentation">
+    <div className={`${wrapClass} flex min-w-0 flex-col gap-3`} role="presentation">
       <div
         className={
           expandable
@@ -514,7 +514,7 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
           </div>
         </div>
       ) : useCourseRowLayout && courseRowBlocks ? (
-        <div className="min-w-0 space-y-0">
+        <div className="flex min-w-0 flex-col gap-3">
           {courseRowBlocks.map((block, bIdx) => {
             const blockKey = pathSectionBlockKey(bIdx, block.sectionLabel);
             const panelId = `path-course-panel-${pathId}-${bIdx}`;
@@ -533,35 +533,33 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
                       ? block.segments[0].id
                       : bIdx
                 }`}
-                className={bIdx > 0 ? 'mt-6 min-w-0' : 'min-w-0'}
+                className="flex min-w-0 flex-col gap-3"
               >
-                <div className="mb-2 min-w-0">
-                  <button
-                    type="button"
-                    id={`${panelId}-trigger`}
-                    aria-expanded={expanded}
-                    aria-controls={panelId}
-                    onClick={() => togglePathSectionBlock(blockKey)}
-                    className="flex w-full min-w-0 items-start gap-2 rounded-lg py-1 pl-0.5 pr-1 text-left transition-colors hover:bg-[var(--hover-bg)]/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/45 sm:items-center sm:gap-2.5 sm:pl-1"
-                  >
-                    <span className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center self-start text-[var(--text-secondary)] sm:min-h-11 sm:min-w-11">
-                      <ChevronDown
-                        size={20}
-                        className={`shrink-0 transition-transform duration-200 ${expanded ? 'rotate-0' : '-rotate-90'}`}
-                        aria-hidden
-                      />
-                    </span>
-                    <h3 className="min-w-0 flex-1 pt-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-primary)] sm:pt-2">
-                      {heading}
-                    </h3>
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  id={`${panelId}-trigger`}
+                  aria-expanded={expanded}
+                  aria-controls={panelId}
+                  onClick={() => togglePathSectionBlock(blockKey)}
+                  className="flex w-full min-w-0 items-center gap-2 rounded-lg py-1 pl-0.5 pr-1 text-left transition-colors hover:bg-[var(--hover-bg)]/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/45 sm:gap-2.5 sm:pl-1"
+                >
+                  <span className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center text-[var(--text-secondary)] sm:min-h-11 sm:min-w-11">
+                    <ChevronDown
+                      size={20}
+                      className={`shrink-0 transition-transform duration-200 ${expanded ? 'rotate-0' : '-rotate-90'}`}
+                      aria-hidden
+                    />
+                  </span>
+                  <h3 className="min-w-0 flex-1 text-xs font-semibold uppercase leading-snug tracking-[0.1em] text-[var(--text-primary)]">
+                    {heading}
+                  </h3>
+                </button>
                 <div
                   id={panelId}
                   role="region"
                   aria-labelledby={`${panelId}-trigger`}
                   hidden={!expanded}
-                  className="min-w-0 space-y-0"
+                  className="flex min-w-0 flex-col gap-3"
                 >
                   {block.segments.map((seg, sIdx) =>
                     seg.type === 'divider' ? (
@@ -584,7 +582,7 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
                     ) : seg.type === 'label' ? (
                       <div
                         key={seg.id}
-                        className="min-w-0 pt-3 first:pt-0"
+                        className="min-w-0"
                         role="presentation"
                       >
                         <p className="text-sm font-semibold leading-snug text-[var(--text-primary)] [overflow-wrap:anywhere]">
@@ -592,7 +590,7 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
                         </p>
                       </div>
                     ) : seg.type === 'link' ? (
-                      <div key={seg.id} className="min-w-0 pt-3 first:pt-0" role="presentation">
+                      <div key={seg.id} className="min-w-0" role="presentation">
                         {(() => {
                           const safeHref = normalizeExternalHref(seg.href);
                           return safeHref ? (
