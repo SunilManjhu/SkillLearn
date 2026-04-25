@@ -864,6 +864,8 @@ function PlaceDuplicateBranchModal({
   roots,
   publishedList,
   defaultTopParentId,
+  fixedMode,
+  forceNonRootPlacement,
   onCommit,
 }: {
   open: boolean;
@@ -874,10 +876,14 @@ function PlaceDuplicateBranchModal({
   publishedList: Course[];
   /** When duplicating a nested row, prefer its current top-level section as the first dropdown. */
   defaultTopParentId: string | null;
+  /** Optional: lock the dialog in one mode (used by change-type placement). */
+  fixedMode?: 'move' | 'copy';
+  /** Optional: disallow placing at root (used when top-level types are invalid). */
+  forceNonRootPlacement?: boolean;
   onCommit: (parentId: string | null, insertIndex: number, payload: PlaceBranchCommitPayload) => void;
 }) {
   const topLevelOnly = duplicateSubtreeRequiresTopLevelOnly(sourceSnapshot);
-  const [placeMode, setPlaceMode] = useState<'copy' | 'move'>('copy');
+  const [placeMode, setPlaceMode] = useState<'copy' | 'move'>(fixedMode ?? 'copy');
   const [parentId, setParentId] = useState<string | null>(null);
   const [insertIndex, setInsertIndex] = useState(0);
   const [copyNameInput, setCopyNameInput] = useState('');
@@ -888,7 +894,7 @@ function PlaceDuplicateBranchModal({
 
   const parentOptions = useMemo(() => {
     const opts: { id: string | null; label: string }[] = [];
-    if (sourceSnapshot.kind === 'label' || sourceSnapshot.kind === 'module') {
+    if (!forceNonRootPlacement && (sourceSnapshot.kind === 'label' || sourceSnapshot.kind === 'module')) {
       opts.push({ id: null, label: 'Top of outline' });
     }
     if (topLevelOnly) return opts;
@@ -973,7 +979,11 @@ function PlaceDuplicateBranchModal({
 
   useEffect(() => {
     if (!open) return;
-    setPlaceMode('copy');
+    if (fixedMode) {
+      setPlaceMode(fixedMode);
+    } else {
+      setPlaceMode('copy');
+    }
     if (duplicateRootHasEditableTitle(sourceSnapshot)) {
       setCopyNameInput(duplicateRootEditableTitleBase(sourceSnapshot, publishedList) + ' (copy)');
       const id = window.requestAnimationFrame(() => {
@@ -1006,7 +1016,8 @@ function PlaceDuplicateBranchModal({
     return 'Enter link title…';
   }, [sourceSnapshot.kind]);
 
-  const showCopyNameField = placeMode === 'copy' && duplicateRootHasEditableTitle(sourceSnapshot);
+  const showCopyNameField =
+    !fixedMode && placeMode === 'copy' && duplicateRootHasEditableTitle(sourceSnapshot);
 
   useDialogKeyboard({ open, onClose });
 
@@ -1090,32 +1101,34 @@ function PlaceDuplicateBranchModal({
             </div>
           ) : null}
 
-          <div className="mb-3 flex gap-1 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/40 p-1">
-            <button
-              type="button"
-              onClick={() => setPlaceMode('copy')}
-              className={`flex min-h-11 flex-1 touch-manipulation items-center justify-center gap-1.5 rounded-lg px-2 text-xs font-bold sm:text-sm ${
-                placeMode === 'copy'
-                  ? 'bg-[#616161] text-[#e7e7e7] shadow-sm'
-                  : 'text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]'
-              }`}
-            >
-              <Copy size={16} className="shrink-0 opacity-90" aria-hidden />
-              Copy
-            </button>
-            <button
-              type="button"
-              onClick={() => setPlaceMode('move')}
-              className={`flex min-h-11 flex-1 touch-manipulation items-center justify-center gap-1.5 rounded-lg px-2 text-xs font-bold sm:text-sm ${
-                placeMode === 'move'
-                  ? 'bg-[#616161] text-[#e7e7e7] shadow-sm'
-                  : 'text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]'
-              }`}
-            >
-              <ArrowRightLeft size={16} className="shrink-0 opacity-90" aria-hidden />
-              Move
-            </button>
-          </div>
+          {!fixedMode ? (
+            <div className="mb-3 flex gap-1 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/40 p-1">
+              <button
+                type="button"
+                onClick={() => setPlaceMode('copy')}
+                className={`flex min-h-11 flex-1 touch-manipulation items-center justify-center gap-1.5 rounded-lg px-2 text-xs font-bold sm:text-sm ${
+                  placeMode === 'copy'
+                    ? 'bg-[#616161] text-[#e7e7e7] shadow-sm'
+                    : 'text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]'
+                }`}
+              >
+                <Copy size={16} className="shrink-0 opacity-90" aria-hidden />
+                Copy
+              </button>
+              <button
+                type="button"
+                onClick={() => setPlaceMode('move')}
+                className={`flex min-h-11 flex-1 touch-manipulation items-center justify-center gap-1.5 rounded-lg px-2 text-xs font-bold sm:text-sm ${
+                  placeMode === 'move'
+                    ? 'bg-[#616161] text-[#e7e7e7] shadow-sm'
+                    : 'text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]'
+                }`}
+              >
+                <ArrowRightLeft size={16} className="shrink-0 opacity-90" aria-hidden />
+                Move
+              </button>
+            </div>
+          ) : null}
 
           <p className="mb-3 text-xs leading-relaxed text-[var(--text-muted)]">
             {placeMode === 'copy' ? (
@@ -1235,6 +1248,115 @@ function PlaceDuplicateBranchModal({
           >
             {placeMode === 'copy' ? 'Place copy' : 'Move here'}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PlaceConvertedTopLevelModal({
+  open,
+  onClose,
+  converted,
+  roots,
+  publishedList,
+  onCommit,
+}: {
+  open: boolean;
+  onClose: () => void;
+  converted: PathBranchNode;
+  roots: PathBranchNode[];
+  publishedList: Course[];
+  onCommit: (insertIndex: number) => void;
+}) {
+  const [insertIndex, setInsertIndex] = useState(0);
+
+  useEffect(() => {
+    if (!open) return;
+    setInsertIndex(roots.length);
+  }, [open, roots.length]);
+
+  useDialogKeyboard({ open, onClose });
+
+  if (!open) return null;
+
+  const rows = roots;
+  const summary = branchNodeDisplayLabel(converted, publishedList);
+
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-end justify-center bg-[#272828]/70 p-0 sm:items-center sm:p-4"
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="place-converted-top-level-title"
+        className="flex max-h-[min(90dvh,520px)] w-full max-w-lg flex-col rounded-t-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl sm:rounded-2xl"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-color)] px-4 py-3">
+          <h2
+            id="place-converted-top-level-title"
+            className="min-w-0 flex-1 text-center text-base font-bold text-[var(--text-primary)] sm:text-lg"
+          >
+            Place module
+          </h2>
+          <button
+            type="button"
+            aria-label="Close"
+            className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
+            onClick={onClose}
+          >
+            <X size={22} aria-hidden />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
+          <p className="mb-3 text-xs leading-relaxed text-[var(--text-muted)]">
+            You changed <strong className="text-[var(--text-secondary)]">{summary}</strong> into a module. Modules can only
+            live at the <strong>top level</strong> of the outline—choose where to place it.
+          </p>
+
+          <label className="block text-xs font-semibold text-[var(--text-secondary)]" htmlFor="place-converted-top-level">
+            After
+          </label>
+          <select
+            id="place-converted-top-level"
+            className={`mt-1.5 ${PATH_BRANCH_COMPACT_SELECT_CLASS}`}
+            value={String(insertIndex)}
+            onChange={(e) => {
+              const n = parseInt(e.target.value, 10);
+              setInsertIndex(Number.isFinite(n) ? n : rows.length);
+            }}
+          >
+            <option value="0">Top of outline</option>
+            {rows.map((r, idx) => (
+              <option key={r.id} value={String(idx + 1)}>
+                {branchNodeDisplayLabel(r, publishedList)}
+              </option>
+            ))}
+          </select>
+
+          <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-5 py-3 text-sm font-bold text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)] sm:w-auto"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => onCommit(Math.max(0, Math.min(insertIndex, rows.length)))}
+              className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[#616161] px-5 py-3 text-sm font-bold text-[#e7e7e7] transition-colors hover:bg-[#757676] sm:w-auto"
+            >
+              Place module
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1710,6 +1832,7 @@ function AddPathBranchModal({
   const [linkHrefInput, setLinkHrefInput] = useState('');
   const [lessonCourse, setLessonCourse] = useState<Course | null>(null);
   const [moduleCoursePick, setModuleCoursePick] = useState<Course | null>(null);
+  const selectAllOnFocus = mode === 'changeType';
 
   useEffect(() => {
     if (!open) return;
@@ -1739,17 +1862,24 @@ function AddPathBranchModal({
         if (replaceSource.kind === 'link') {
           setLinkLabelInput(replaceSource.label);
           setLinkHrefInput(replaceSource.href);
+        } else {
+          // When converting e.g. Module → Web link, carry over the visible name into the link title.
+          setLinkLabelInput(branchNodeDisplayLabel(replaceSource, [...labelCatalog]).trim());
         }
       } else {
         setStep('kind');
         if (replaceSource.kind === 'label' || replaceSource.kind === 'divider') {
           setLabelInput(replaceSource.label);
         } else {
-          setLabelInput('');
+          // When converting e.g. Web link → Module, carry over the visible name into the module title.
+          setLabelInput(branchNodeDisplayLabel(replaceSource, [...labelCatalog]).trim());
         }
         if (replaceSource.kind === 'link') {
           setLinkLabelInput(replaceSource.label);
           setLinkHrefInput(replaceSource.href);
+        } else {
+          // When converting e.g. Module → Web link, carry over the visible name into the link title.
+          setLinkLabelInput(branchNodeDisplayLabel(replaceSource, [...labelCatalog]).trim());
         }
       }
     } else {
@@ -2180,6 +2310,9 @@ function AddPathBranchModal({
                 id="path-branch-label-input"
                 value={labelInput}
                 onChange={(e) => setLabelInput(e.target.value)}
+                onFocus={(e) => {
+                  if (selectAllOnFocus) e.currentTarget.select();
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && labelInput.trim()) {
                     e.preventDefault();
@@ -2227,6 +2360,9 @@ function AddPathBranchModal({
                 id="path-branch-divider-input"
                 value={labelInput}
                 onChange={(e) => setLabelInput(e.target.value)}
+                onFocus={(e) => {
+                  if (selectAllOnFocus) e.currentTarget.select();
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && labelInput.trim()) {
                     e.preventDefault();
@@ -2261,6 +2397,9 @@ function AddPathBranchModal({
                 id="path-branch-link-label"
                 value={linkLabelInput}
                 onChange={(e) => setLinkLabelInput(e.target.value)}
+                onFocus={(e) => {
+                  if (selectAllOnFocus) e.currentTarget.select();
+                }}
                 placeholder="e.g. Read this blog post"
                 className={`${PATH_BRANCH_SINGLE_LINE_INPUT_CLASS} font-normal`}
                 autoFocus
@@ -2687,16 +2826,28 @@ function PathNestedOutlineBoundaryInsertRow({
   sectionDisplayName,
   onAddBranch,
   onAddModule,
+  lastDividerDisplayName,
+  onAddBranchUnderLastDivider,
 }: {
   /** Outline module or section divider title — shown in “Add branch under …”. */
   sectionDisplayName: string;
   onAddBranch: () => void;
   /** When set, adds a new top-level outline module after the owning section (same list depth as gutters under a top-level MODULE row). */
   onAddModule?: () => void;
+  /** When the last row in this list is a divider, offer a quick “add under divider” action. */
+  lastDividerDisplayName?: string;
+  onAddBranchUnderLastDivider?: () => void;
 }) {
   const q = pathInsertStripQuoteName(sectionDisplayName, 56);
   const addBranchLabel = pathInsertAddBranchUnderLabel(sectionDisplayName);
   const addBranchTitle = `Adds a row at the end of the list inside “${q}” (same as the last gutter above).`;
+  const lastDividerName = (lastDividerDisplayName ?? '').trim();
+  const addUnderDividerLabel =
+    lastDividerName.length > 0 ? pathInsertAddBranchUnderLabel(lastDividerName) : 'Add under divider';
+  const addUnderDividerTitle =
+    lastDividerName.length > 0
+      ? `Adds a row inside the last section divider “${pathInsertStripQuoteName(lastDividerName, 56)}”.`
+      : 'Adds a row inside the last section divider.';
   const addModuleHereTitle =
     'Adds a new top-level outline module after this section — choose the name in the dialog (same as picking Module in Add a branch).';
   const {
@@ -2738,6 +2889,18 @@ function PathNestedOutlineBoundaryInsertRow({
               <Plus size={14} className="shrink-0 opacity-90" aria-hidden />
               <span className="min-w-0 text-center [overflow-wrap:anywhere]">{addBranchLabel}</span>
             </button>
+            {onAddBranchUnderLastDivider ? (
+              <button
+                type="button"
+                title={addUnderDividerTitle}
+                aria-label={addUnderDividerLabel}
+                onClick={onAddBranchUnderLastDivider}
+                className={PATH_INSERT_STRIP_CHIP_BTN_EXPAND_ROW_PAIR}
+              >
+                <Plus size={14} className="shrink-0 opacity-90" aria-hidden />
+                <span className="min-w-0 text-center [overflow-wrap:anywhere]">{addUnderDividerLabel}</span>
+              </button>
+            ) : null}
             <button
               type="button"
               title={addModuleHereTitle}
@@ -3119,6 +3282,8 @@ function PathBranchRow({
       );
     }
     if (b.kind === 'link') {
+      const normalizedHref = normalizeExternalHref(b.href);
+      const hrefForOpen = normalizedHref ?? b.href.trim();
       return (
         <>
           <div className="max-md:flex max-md:min-w-0 max-md:flex-col max-md:items-stretch max-md:gap-1.5 md:contents">
@@ -3134,17 +3299,34 @@ function PathBranchRow({
                 className={`${PATH_BRANCH_SINGLE_LINE_INPUT_CLASS} font-normal`}
                 placeholder="Shown in the path outline"
               />
-              <input
-                type="url"
-                inputMode="url"
-                value={b.href}
-                onChange={(e) => onLinkBranchChange(b.id, { href: e.target.value })}
-                onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => e.stopPropagation()}
-                aria-label="Web link URL"
-                className={`${PATH_BRANCH_SINGLE_LINE_INPUT_CLASS} font-mono font-normal`}
-                placeholder="https://…"
-              />
+              <div className="flex min-w-0 flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2">
+                <input
+                  type="url"
+                  inputMode="url"
+                  value={b.href}
+                  onChange={(e) => onLinkBranchChange(b.id, { href: e.target.value })}
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  aria-label="Web link URL"
+                  className={`${PATH_BRANCH_SINGLE_LINE_INPUT_CLASS} min-w-0 font-mono font-normal sm:flex-1`}
+                  placeholder="https://…"
+                />
+                <button
+                  type="button"
+                  disabled={!hrefForOpen || normalizeExternalHref(hrefForOpen) == null}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const url = normalizeExternalHref(hrefForOpen);
+                    if (!url) return;
+                    window.open(url, '_blank', 'noopener,noreferrer');
+                  }}
+                  className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center rounded-lg border border-brand-500/40 bg-[var(--bg-primary)] px-3 text-sm font-bold text-brand-500 transition-colors hover:bg-brand-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)] disabled:pointer-events-none disabled:opacity-40 sm:min-h-7 sm:w-auto sm:px-3 sm:text-xs"
+                  aria-label="Open link in a new tab"
+                  title="Open in new tab"
+                >
+                  Open
+                </button>
+              </div>
             </div>
           </div>
         </>
@@ -3460,6 +3642,14 @@ function PathBranchTreeList({
         );
       })}
       {parentId !== null && depth > 0 && nodes.length > 0 ? (
+        (() => {
+          const last = nodes[nodes.length - 1] ?? null;
+          const lastIsDivider = last?.kind === 'divider';
+          const lastDividerDisplayName =
+            lastIsDivider ? branchNodeDisplayLabel(last, publishedList) : undefined;
+          const onAddBranchUnderLastDivider =
+            lastIsDivider ? () => onInsertBranchAt(last!.id, last!.children.length) : undefined;
+          return (
         <PathNestedOutlineBoundaryInsertRow
           sectionDisplayName={
             (insertListOwnerDisplayName ?? '').trim() || 'this outline section'
@@ -3473,7 +3663,11 @@ function PathBranchTreeList({
                   })
               : undefined
           }
+          lastDividerDisplayName={lastDividerDisplayName}
+          onAddBranchUnderLastDivider={onAddBranchUnderLastDivider}
         />
+          );
+        })()
       ) : null}
     </ul>
   );
@@ -3552,6 +3746,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
   const [pathBranchReorderLayoutTick, setPathBranchReorderLayoutTick] = useState(0);
   const [pathBranchTreeBaselineJson, setPathBranchTreeBaselineJson] = useState('[]');
   const [pathMindmapLoading, setPathMindmapLoading] = useState(false);
+  const suppressBranchModalCloseOnceRef = useRef(false);
   /** Add-branch flow or change row type on an existing node. */
   type BranchModalState =
     | { kind: 'closed' }
@@ -3563,6 +3758,17 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
         lessonAddContext?: { courseId: string; moduleId: string };
       }
     | { kind: 'changeType'; nodeId: string }
+    | {
+        kind: 'changeTypePlaceTopLevel';
+        sourceId: string;
+        converted: PathBranchNode;
+      }
+    | {
+        kind: 'changeTypePlaceNonRoot';
+        sourceId: string;
+        converted: PathBranchNode;
+        defaultTopParentId: string | null;
+      }
     | { kind: 'changeOutlineModuleMerge'; nodeId: string }
     | { kind: 'duplicatePlace'; sourceSnapshot: PathBranchNode; sourceParentId: string | null };
   const [branchModal, setBranchModal] = useState<BranchModalState>({ kind: 'closed' });
@@ -5136,14 +5342,8 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                       }
                       onRequestChangeType={(id) => {
                         const roots = pathBranchTreeRef.current;
-                        const node = findBranchNode(roots, id);
-                        /** Same entry point as course catalog Change module type: merge dialog first for every top-level outline module (`label`). */
-                        if (node?.kind === 'label' && isRootBranchId(roots, id)) {
-                          setExpandedBranchIds(collectBranchIdsWithChildren(roots));
-                          setBranchModal({ kind: 'changeOutlineModuleMerge', nodeId: id });
-                        } else {
-                          setBranchModal({ kind: 'changeType', nodeId: id });
-                        }
+                        // Always ask for the target type first (then run specialized flows as needed).
+                        setBranchModal({ kind: 'changeType', nodeId: id });
                       }}
                       onVisibleToRolesChange={(id, roles) =>
                         setPathBranchTree((roots) =>
@@ -5175,7 +5375,13 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
               branchModal.kind === 'add' ||
               (branchModal.kind === 'changeType' && changeTypeSource != null)
             }
-            onClose={() => setBranchModal({ kind: 'closed' })}
+            onClose={() => {
+              if (suppressBranchModalCloseOnceRef.current) {
+                suppressBranchModalCloseOnceRef.current = false;
+                return;
+              }
+              setBranchModal({ kind: 'closed' });
+            }}
             catalogCourses={catalogCoursesForPathPicker}
             catalogCoursesForLabels={publishedList}
             contextHint={branchModalContextHint}
@@ -5189,6 +5395,32 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
             onCommit={(branch) => {
               if (branchModal.kind === 'changeType') {
                 const roots = pathBranchTreeRef.current;
+                const currentParentId = findParentIdOfBranch(roots, branchModal.nodeId);
+                const typeChangeMustMoveToTopLevel =
+                  currentParentId !== null && (branch.kind === 'label' || branch.kind === 'module');
+                if (typeChangeMustMoveToTopLevel) {
+                  // Prompt for placement instead of silently appending at end.
+                  suppressBranchModalCloseOnceRef.current = true;
+                  setBranchModal({
+                    kind: 'changeTypePlaceTopLevel',
+                    sourceId: branchModal.nodeId,
+                    converted: branch,
+                  });
+                  return;
+                }
+                const typeChangeMustMoveUnderAParent =
+                  currentParentId === null && branch.kind !== 'label' && branch.kind !== 'module';
+                if (typeChangeMustMoveUnderAParent) {
+                  const top = roots.find((r) => r.kind === 'label')?.id ?? null;
+                  suppressBranchModalCloseOnceRef.current = true;
+                  setBranchModal({
+                    kind: 'changeTypePlaceNonRoot',
+                    sourceId: branchModal.nodeId,
+                    converted: branch,
+                    defaultTopParentId: top,
+                  });
+                  return;
+                }
                 const next = mapBranchNodeById(roots, branchModal.nodeId, () => branch);
                 const pid = findParentIdOfBranch(next, branchModal.nodeId);
                 const msg = pathSiblingTitleConflictAfterEdit(next, pid, publishedList);
@@ -5221,6 +5453,56 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
               }
             }}
           />
+
+          {branchModal.kind === 'changeTypePlaceTopLevel' ? (
+            <PlaceConvertedTopLevelModal
+              open
+              roots={pathBranchTree}
+              publishedList={publishedList}
+              converted={branchModal.converted}
+              onClose={() => setBranchModal({ kind: 'closed' })}
+              onCommit={(insertIndex) => {
+                const roots = pathBranchTreeRef.current;
+                const { next: without } = extractNodeById(roots, branchModal.sourceId);
+                const next = insertChildAtParent(without, null, insertIndex, branchModal.converted);
+                const msg = pathSiblingTitleConflictAfterEdit(next, null, publishedList);
+                if (msg) {
+                  showActionToast(msg, 'danger');
+                  return;
+                }
+                setPathBranchTree(next);
+                setBranchModal({ kind: 'closed' });
+              }}
+            />
+          ) : null}
+
+          {branchModal.kind === 'changeTypePlaceNonRoot' ? (
+            <PlaceDuplicateBranchModal
+              open
+              sourceSnapshot={branchModal.converted}
+              // Hide the soon-to-be-removed top-level row while picking a destination.
+              roots={removeNodeById(pathBranchTree, branchModal.sourceId)}
+              publishedList={publishedList}
+              defaultTopParentId={branchModal.defaultTopParentId}
+              fixedMode="move"
+              forceNonRootPlacement
+              onClose={() => setBranchModal({ kind: 'closed' })}
+              onCommit={(parentId, insertIndex) => {
+                if (parentId == null) return;
+                const roots = pathBranchTreeRef.current;
+                const { next: without } = extractNodeById(roots, branchModal.sourceId);
+                const next = insertChildAtParent(without, parentId, insertIndex, branchModal.converted);
+                const msg = pathSiblingTitleConflictAfterEdit(next, parentId, publishedList);
+                if (msg) {
+                  showActionToast(msg, 'danger');
+                  return;
+                }
+                setPathBranchTree(next);
+                setExpandedBranchIds((prev) => accordionExpandBranchRow(prev, next, parentId));
+                setBranchModal({ kind: 'closed' });
+              }}
+            />
+          ) : null}
 
           {branchModal.kind === 'changeOutlineModuleMerge' ? (
             <ChangePathOutlineModuleMergeModal
