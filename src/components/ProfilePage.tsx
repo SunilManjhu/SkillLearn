@@ -16,6 +16,7 @@ import { X, CheckCircle2, Trash2, Info } from 'lucide-react';
 import { AdminLabelInfoTip } from './admin/adminLabelInfoTip';
 import { useAdminActionToast } from './admin/useAdminActionToast';
 import { useCourseStockThumbnail } from '../hooks/useCourseStockThumbnail';
+import { useSignInModal } from './SignInModalProvider';
 
 const bioStorageKey = (uid: string) => `skilllearn-profile-bio:${uid}`;
 
@@ -52,7 +53,6 @@ interface ProfilePageProps {
   courses: Course[];
   user: User | null;
   isAuthReady: boolean;
-  onLogin: () => void;
   onShowCertificate: (courseId: string, userName: string, date: string, certId: string) => void;
   /** Increment (e.g. from navbar certificate notification) to open Completed Courses modal. */
   openCompletedCoursesSignal?: number;
@@ -75,7 +75,6 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   courses,
   user,
   isAuthReady,
-  onLogin,
   onShowCertificate,
   openCompletedCoursesSignal = 0,
   onDismiss,
@@ -86,6 +85,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   accountDeletionBlockedMessage = null,
   accountDeletionBlockLoading = false,
 }) => {
+  const { openSignInModal } = useSignInModal();
   const [bio, setBio] = useState('');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showCompletedModal, setShowCompletedModal] = useState(false);
@@ -178,7 +178,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   useDialogKeyboard({
     open: !showCompletedModal && !showCoursesOverviewModal && !showDeleteConfirm,
     onClose: dismissWithSaveIfNeeded,
-    onPrimaryAction: user ? () => void handleSave() : onLogin,
+    onPrimaryAction: user ? () => void handleSave() : () => openSignInModal(),
   });
 
   useBodyScrollLock(showCompletedModal || showCoursesOverviewModal || showDeleteConfirm);
@@ -257,7 +257,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             </p>
             <button
               type="button"
-              onClick={onLogin}
+              onClick={() => openSignInModal()}
               className="min-h-11 touch-manipulation rounded-lg bg-orange-500 px-6 py-2.5 font-semibold text-white transition-colors hover:bg-orange-600"
             >
               Sign in

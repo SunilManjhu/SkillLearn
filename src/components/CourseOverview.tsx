@@ -1,7 +1,5 @@
 import React, { useState, useLayoutEffect, useEffect, useCallback } from 'react';
-import { useDialogKeyboard } from '../hooks/useDialogKeyboard';
-import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
-import { ChevronDown, ChevronRight, Play, Star, Clock, BarChart, Layout, User, RotateCcw, CheckCircle2, Award, LogIn, X, AlertTriangle } from 'lucide-react';
+import { ChevronDown, ChevronRight, Play, Star, Clock, BarChart, Layout, User, RotateCcw, CheckCircle2, Award } from 'lucide-react';
 import { Course, Lesson } from '../data/courses';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import {
@@ -42,8 +40,8 @@ import {
 import { buildCertificateId } from '../utils/certificateFirestore';
 import type { User as FirebaseUser } from '../firebase';
 import type { AuthProfileSnapshot } from '../utils/authProfileCache';
-import { formatAuthError } from '../utils/authErrors';
 import { isPlayableCatalogLesson } from '../utils/lessonContent';
+import { useSignInModal } from './SignInModalProvider';
 
 type OverviewUser = FirebaseUser | AuthProfileSnapshot;
 
@@ -52,7 +50,6 @@ interface CourseOverviewProps {
   onStartCourse: (lesson?: Lesson) => void;
   /** Firebase user or cached profile while session restores (matches navbar). */
   user: OverviewUser | null;
-  onLogin: () => Promise<void>;
   onShowCertificate: (courseId: string, userName: string, date: string, certId: string) => void;
   /** Bumps when cloud data is merged into localStorage (so progress/completion UI refreshes). */
   remoteDataVersion?: number;
@@ -65,12 +62,12 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
   course,
   onStartCourse,
   user,
-  onLogin,
   onShowCertificate,
   remoteDataVersion = 0,
   contentDeepLink = null,
   onContentDeepLinkConsumed,
 }) => {
+  const { openSignInModal } = useSignInModal();
   const progressUserId = user?.uid ?? null;
   const curriculumKey = courseLessonIdsKey(course);
   const { lessonDurationLabel } = useYoutubeResolvedSeconds(course);
@@ -84,51 +81,6 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
   const [ratingStars, setRatingStars] = useState(0);
   const [hoverStars, setHoverStars] = useState(0);
   const [ratingComment, setRatingComment] = useState('');
-
-  const [loginModalOpen, setLoginModalOpen] = useState(false);
-  const [loginSubmitting, setLoginSubmitting] = useState(false);
-  const [loginError, setLoginError] = useState<string | null>(null);
-
-  const closeLoginModal = useCallback(() => {
-    setLoginModalOpen(false);
-    setLoginError(null);
-  }, []);
-
-  const loginPrimaryAction = useCallback(async () => {
-    if (loginSubmitting) return;
-    setLoginError(null);
-    setLoginSubmitting(true);
-    try {
-      await onLogin();
-      closeLoginModal();
-    } catch (e) {
-      setLoginError(formatAuthError(e));
-    } finally {
-      setLoginSubmitting(false);
-    }
-  }, [loginSubmitting, onLogin, closeLoginModal]);
-
-  useDialogKeyboard({
-    open: loginModalOpen,
-    onClose: closeLoginModal,
-    onPrimaryAction: loginPrimaryAction,
-  });
-
-  useBodyScrollLock(loginModalOpen);
-
-  const openPlayLoginModal = () => {
-    setLoginError(null);
-    setLoginModalOpen(true);
-  };
-
-  /* If they sign in from elsewhere (e.g. navbar) while the modal is open, close it — stay on overview. */
-  useEffect(() => {
-    if (user && loginModalOpen) {
-      setLoginModalOpen(false);
-      setLoginError(null);
-      setLoginSubmitting(false);
-    }
-  }, [user, loginModalOpen]);
 
   const RATING_LABELS: Record<number, string> = {
     1: 'Poor',
@@ -212,7 +164,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
       }
       return;
     }
-    openPlayLoginModal();
+    openSignInModal();
   };
 
   const requestLessonPlay = (lesson: Lesson) => {
@@ -221,7 +173,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
       onStartCourse(lesson);
       return;
     }
-    openPlayLoginModal();
+    openSignInModal();
   };
 
   const handleRatingSubmit = () => {
@@ -862,66 +814,6 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
           </div>
         </div>
       </div>
-
-      <AnimatePresence>
-        {loginModalOpen && (
-          <div
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="course-overview-login-title"
-          >
-            <motion.div
-              initial={{ scale: reduceMotion ? 1 : 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: reduceMotion ? 1 : 0.9, opacity: 0 }}
-              transition={modalTransition}
-              className="w-full max-w-lg overflow-hidden rounded-3xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl"
-            >
-              <div className="p-6 border-b border-[var(--border-color)] flex items-center justify-between gap-4">
-                <h2 id="course-overview-login-title" className="text-xl font-bold text-[var(--text-primary)]">
-                  Sign in to learn
-                </h2>
-                <button
-                  type="button"
-                  onClick={closeLoginModal}
-                  className="p-2 hover:bg-[var(--hover-bg)] rounded-full transition-colors shrink-0"
-                  aria-label="Close"
-                >
-                  <X size={20} aria-hidden />
-                </button>
-              </div>
-              <form
-                className="p-6 space-y-4"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (!loginSubmitting) void loginPrimaryAction();
-                }}
-              >
-                <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
-                  Watching lessons and saving your progress requires a Google account. If a pop-up is blocked, you will be redirected to Google to sign in. After signing in you&apos;ll stay on this page — use{' '}
-                  {canResume ? 'Resume lesson' : 'Start Course'} when you&apos;re ready.
-                </p>
-                {loginError && (
-                  <div className="flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-500">
-                    <AlertTriangle size={18} className="shrink-0 mt-0.5" />
-                    <span>{loginError}</span>
-                  </div>
-                )}
-                <button
-                  type="submit"
-                  disabled={loginSubmitting}
-                  autoFocus
-                  className="w-full flex items-center justify-center gap-2 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white py-3 rounded-xl text-sm font-bold transition-colors"
-                >
-                  <LogIn size={18} />
-                  {loginSubmitting ? 'Signing in…' : 'Continue with Google'}
-                </button>
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
     </div>
   );
 };

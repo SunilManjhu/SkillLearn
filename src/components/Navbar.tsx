@@ -5,6 +5,7 @@ import { Menu, User, Bell, ChevronDown, X, LogOut, Moon, Sun, BellRing, LogIn, S
 import { User as FirebaseUser } from '../firebase';
 import type { AuthProfileSnapshot } from '../utils/authProfileCache';
 import { payloadToHash } from '../utils/appHistory';
+import { useSignInModal } from './SignInModalProvider';
 
 /** Let Ctrl/Cmd/middle-click etc. use the browser; plain primary click uses SPA `onNavigate`. */
 function skipModifiedNavClick(e: React.MouseEvent): boolean {
@@ -167,8 +168,8 @@ interface NavbarProps {
   immersiveHidden?: boolean;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ 
-  onNavigate, 
+export const Navbar: React.FC<NavbarProps> = ({
+  onNavigate,
   activeView,
   catalogNavFilter,
   onCategorySelect,
@@ -196,6 +197,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   isCreator = false,
   immersiveHidden = false,
 }) => {
+  const { openSignInModal } = useSignInModal();
   const [openDropdown, setOpenDropdown] = useState<'paths' | 'skills' | 'profile' | 'notifications' | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileNavExpand, setMobileNavExpand] = useState<'paths' | 'skills' | null>(null);
@@ -820,7 +822,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               type="button"
               onClick={() => {
                 setMobileMenuOpen(false);
-                onNavigate('signin');
+                openSignInModal();
               }}
               className="flex items-center gap-2 rounded-md bg-brand-500 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-brand-600"
             >
@@ -952,7 +954,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   className="flex w-full min-h-11 items-center justify-center gap-2 rounded-lg bg-brand-500 px-3 py-2.5 text-left text-sm font-bold text-white hover:bg-brand-600 touch-manipulation"
                   onClick={() => {
                     setMobileMenuOpen(false);
-                    onNavigate('signin');
+                    openSignInModal();
                   }}
                 >
                   <LogIn size={18} className="shrink-0" aria-hidden />

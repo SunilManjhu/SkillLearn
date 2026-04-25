@@ -16,7 +16,7 @@ export interface AuthGatePageProps {
 }
 
 /** Google “G” mark (multicolor) for the OAuth button — brand colors per Google guidelines. */
-function GoogleMark({ className }: { className?: string }) {
+export function GoogleMark({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" aria-hidden width={20} height={20}>
       <path

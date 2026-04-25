@@ -13,6 +13,7 @@ import { useBodyScrollLock } from './hooks/useBodyScrollLock';
 import { usePathMindmapOutlineChildren } from './hooks/usePathMindmapOutlineChildren';
 import { useDialogKeyboard } from './hooks/useDialogKeyboard';
 import { AuthGatePage } from './components/AuthGatePage';
+import { SignInModalProvider } from './components/SignInModalProvider';
 import { ContactForm } from './components/ContactForm';
 import { DemoLearningAgent } from './components/DemoLearningAgent';
 import { useLearningAssistantFabVisible } from './hooks/useLearningAssistantFabVisible';
@@ -3556,12 +3557,7 @@ export default function App() {
           </div>
         </div>
         <div className="bg-[var(--bg-secondary)] p-8 rounded-2xl border border-[var(--border-color)]">
-          <ContactForm
-            user={user}
-            isAuthReady={isAuthReady}
-            navUser={navUser}
-            onLogin={() => void handleLogin().catch(() => {})}
-          />
+          <ContactForm user={user} isAuthReady={isAuthReady} navUser={navUser} />
         </div>
       </div>
     </div>
@@ -3671,10 +3667,18 @@ export default function App() {
     (mainView === 'catalog' || mainView === 'overview' || mainView === 'player');
 
   return (
-    <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] selection:bg-orange-500/30 transition-colors duration-300">
+    <SignInModalProvider
+      isAuthReady={isAuthReady}
+      user={navUser}
+      onLogin={handleLogin}
+      onNavigate={(v, c) => handleNavigate(v as View, c)}
+      currentView={currentView}
+      reduceMotion={reduceMotion}
+    >
+      <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] selection:bg-orange-500/30 transition-colors duration-300">
       {currentView !== 'certificate' && (
-        <Navbar 
-          onNavigate={handleNavigate} 
+        <Navbar
+          onNavigate={handleNavigate}
           activeView={
             mainView === 'overview' || mainView === 'player' || mainView === 'admin'
               ? 'catalog'
@@ -3777,7 +3781,6 @@ export default function App() {
                   course={selectedCourseResolved}
                   onStartCourse={handleStartCourseFromOverview}
                   user={navUser}
-                  onLogin={handleLogin}
                   onShowCertificate={handleShowCertificate}
                   remoteDataVersion={remoteProfileDataVersion}
                   contentDeepLink={overviewContentDeepLink}
@@ -3896,7 +3899,6 @@ export default function App() {
               courses={catalogCourses}
               user={user}
               isAuthReady={isAuthReady}
-              onLogin={() => void handleLogin().catch(() => {})}
               onShowCertificate={handleShowCertificate}
               openCompletedCoursesSignal={completedCoursesModalSignal}
               onDismiss={handleProfileDismiss}
@@ -4093,6 +4095,7 @@ export default function App() {
         </footer>
       )}
     </div>
+    </SignInModalProvider>
   );
 }
 

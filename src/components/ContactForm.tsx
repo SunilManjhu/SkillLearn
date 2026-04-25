@@ -1,25 +1,25 @@
 import React, { useState } from 'react';
-import { Loader2, LogIn } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType, type User } from '../firebase';
 import type { AuthProfileSnapshot } from '../utils/authProfileCache';
+import { useSignInModal } from './SignInModalProvider';
 
 export interface ContactFormProps {
   user: User | null;
   isAuthReady: boolean;
   /** Cached session for first paint (same as navbar) — when set before Firebase is ready, skip the spinner and show the form. */
   navUser: User | AuthProfileSnapshot | null;
-  onLogin: () => Promise<void>;
 }
 
-export const ContactForm: React.FC<ContactFormProps> = ({ user, isAuthReady, navUser, onLogin }) => {
+export const ContactForm: React.FC<ContactFormProps> = ({ user, isAuthReady, navUser }) => {
+  const { openSignInModal } = useSignInModal();
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<'subject' | 'message', string>>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
-  const [loginSubmitting, setLoginSubmitting] = useState(false);
 
   const validate = (): boolean => {
     const next: typeof fieldErrors = {};
@@ -84,19 +84,10 @@ export const ContactForm: React.FC<ContactFormProps> = ({ user, isAuthReady, nav
         </p>
         <button
           type="button"
-          disabled={loginSubmitting}
-          onClick={async () => {
-            setLoginSubmitting(true);
-            try {
-              await onLogin();
-            } finally {
-              setLoginSubmitting(false);
-            }
-          }}
-          className="w-full max-w-sm mx-auto flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white py-3.5 rounded-xl text-sm font-bold transition-colors"
+          onClick={() => openSignInModal()}
+          className="mx-auto flex min-h-11 w-full max-w-sm touch-manipulation items-center justify-center rounded-xl bg-orange-500 px-4 py-3.5 text-sm font-bold text-white transition-colors hover:bg-orange-600"
         >
-          <LogIn size={18} />
-          {loginSubmitting ? 'Signing in…' : 'Continue with Google'}
+          Continue with Google
         </button>
       </div>
     );
