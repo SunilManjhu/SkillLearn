@@ -17,8 +17,6 @@ export type AppHistoryView =
   | 'contact'
   | 'status'
   | 'enterprise'
-  | 'signup'
-  | 'signin'
   | 'profile'
   | 'certificate'
   | 'admin'
@@ -115,8 +113,6 @@ const SIMPLE_VIEWS: AppHistoryView[] = [
   'contact',
   'status',
   'enterprise',
-  'signup',
-  'signin',
   'profile',
   'admin',
   'creator',
@@ -332,6 +328,11 @@ export function parseHashToPayload(hash: string): AppHistoryPayload | null {
     return { v: 1, view: 'creator' };
   }
 
+  /** `#/signup` and `#/signin` are not app routes (auth is in-app only); normalize like unknown hashes. */
+  if (segments.length === 1 && (head === 'signup' || head === 'signin')) {
+    return { v: 1, view: 'home' };
+  }
+
   if (segments.length === 1 && isSimpleView(head)) {
     return { v: 1, view: head };
   }
@@ -438,6 +439,9 @@ export function readPayloadFromHistoryState(state: unknown): AppHistoryPayload |
   /** Legacy history entries used `settings`; map to profile. */
   if ((p.view as string) === 'settings') {
     return { ...p, v: 1, view: 'profile' };
+  }
+  if ((p.view as string) === 'signup' || (p.view as string) === 'signin') {
+    return { ...p, v: 1, view: 'home' };
   }
   /** Admin tab was renamed `users` → `roles` (URL `#/admin/roles`). */
   if (p.view === 'admin' && (p.adminTab as string | undefined) === 'users') {

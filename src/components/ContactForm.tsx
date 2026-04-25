@@ -78,16 +78,13 @@ export const ContactForm: React.FC<ContactFormProps> = ({ user, isAuthReady, nav
 
   if (isAuthReady && !user) {
     return (
-      <div className="space-y-6 text-center">
-        <p className="text-[var(--text-secondary)] leading-relaxed">
-          Sign in with Google to send us a message. We&apos;ll use your account name and email so we can reply.
-        </p>
+      <div className="flex justify-center px-2">
         <button
           type="button"
           onClick={() => openSignInModal()}
-          className="mx-auto flex min-h-11 w-full max-w-sm touch-manipulation items-center justify-center rounded-xl bg-orange-500 px-4 py-3.5 text-sm font-bold text-white transition-colors hover:bg-orange-600"
+          className="flex min-h-11 w-full max-w-sm touch-manipulation items-center justify-center rounded-xl bg-brand-500 px-4 py-3.5 text-sm font-bold text-white transition-colors hover:bg-brand-600"
         >
-          Continue with Google
+          Sign in to send a message
         </button>
       </div>
     );

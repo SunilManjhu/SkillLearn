@@ -13,12 +13,12 @@ import type { AuthProfileSnapshot } from '../utils/authProfileCache';
 import { formatAuthError } from '../utils/authErrors';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { useDialogKeyboard } from '../hooks/useDialogKeyboard';
-import { GoogleMark, type AuthGateNavView } from './AuthGatePage';
+import { AUTH_GOOGLE_GATE_DESCRIPTION, GoogleMark, type AuthGateNavView } from './AuthGatePage';
 
 type SignInModalUser = FirebaseUser | AuthProfileSnapshot | null;
 
 export type SignInModalContextValue = {
-  /** Opens the shared Auth Gate–styled sign-in dialog (no-op on dedicated `#/signin` / `#/signup` routes). */
+  /** Opens the shared Auth Gate–styled sign-in dialog. */
   openSignInModal: () => void;
   closeSignInModal: () => void;
 };
@@ -39,8 +39,6 @@ export interface SignInModalProviderProps {
   user: SignInModalUser;
   onLogin: () => Promise<void>;
   onNavigate: (view: AuthGateNavView, shouldClear?: boolean) => void;
-  /** When already on these routes, `openSignInModal` does nothing. */
-  currentView: string;
   reduceMotion: boolean | null;
 }
 
@@ -50,7 +48,6 @@ export const SignInModalProvider: React.FC<SignInModalProviderProps> = ({
   user,
   onLogin,
   onNavigate,
-  currentView,
   reduceMotion,
 }) => {
   const [open, setOpen] = useState(false);
@@ -64,10 +61,9 @@ export const SignInModalProvider: React.FC<SignInModalProviderProps> = ({
   }, []);
 
   const openSignInModal = useCallback(() => {
-    if (currentView === 'signin' || currentView === 'signup') return;
     setError(null);
     setOpen(true);
-  }, [currentView]);
+  }, []);
 
   const primaryAction = useCallback(async () => {
     if (submitting) return;
@@ -145,8 +141,7 @@ export const SignInModalProvider: React.FC<SignInModalProviderProps> = ({
                       Sign in
                     </h1>
                     <p className="mt-2 text-sm leading-relaxed text-[var(--text-muted)] sm:text-base">
-                      Welcome back. Sign in with the same Google account you used before to restore your progress and
-                      profile.
+                      {AUTH_GOOGLE_GATE_DESCRIPTION}
                     </p>
                   </div>
                   <div className="mt-8 space-y-4">
@@ -188,19 +183,6 @@ export const SignInModalProvider: React.FC<SignInModalProviderProps> = ({
                       </button>
                       .
                     </p>
-                    <div className="border-t border-[var(--border-color)] pt-6 text-center text-sm text-[var(--text-secondary)]">
-                      New to <span className="font-semibold text-brand-500">i-Golden</span>?{' '}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          closeSignInModal();
-                          onNavigate('signup', false);
-                        }}
-                        className="font-semibold text-[var(--text-primary)] hover:opacity-90"
-                      >
-                        Create an account
-                      </button>
-                    </div>
                   </div>
                 </>
               )}

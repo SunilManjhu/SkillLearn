@@ -45,6 +45,71 @@ import { useSignInModal } from './SignInModalProvider';
 
 type OverviewUser = FirebaseUser | AuthProfileSnapshot;
 
+/** In-progress lesson: orange ring + green arc (matches bar + completion cues). */
+function OverviewLessonInProgressRing({ pct }: { pct: number }) {
+  const size = 14;
+  const stroke = 2;
+  const r = (size - stroke) / 2;
+  const cx = size / 2;
+  const cy = size / 2;
+  const c = 2 * Math.PI * r;
+  const clamped = Math.min(100, Math.max(0, pct));
+  const dash = (clamped / 100) * c;
+
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      className="shrink-0"
+      aria-hidden
+    >
+      <circle
+        cx={cx}
+        cy={cy}
+        r={r}
+        fill="none"
+        strokeWidth={stroke}
+        className="stroke-brand-500/55"
+        transform={`rotate(-90 ${cx} ${cy})`}
+      />
+      <circle
+        cx={cx}
+        cy={cy}
+        r={r}
+        fill="none"
+        strokeWidth={stroke}
+        strokeLinecap="round"
+        strokeDasharray={`${dash} ${c}`}
+        className="stroke-emerald-600 app-dark:stroke-emerald-400"
+        transform={`rotate(-90 ${cx} ${cy})`}
+      />
+    </svg>
+  );
+}
+
+function OverviewLessonStatusGlyph({ lessonComplete, pct }: { lessonComplete: boolean; pct: number }) {
+  if (lessonComplete) {
+    return (
+      <CheckCircle2
+        size={14}
+        className="shrink-0 text-emerald-600 transition-colors group-hover:text-emerald-500 app-dark:text-emerald-400 app-dark:group-hover:text-emerald-300"
+        aria-hidden
+      />
+    );
+  }
+  if (pct > 0) {
+    return <OverviewLessonInProgressRing pct={pct} />;
+  }
+  return (
+    <Play
+      size={14}
+      className="shrink-0 text-[var(--text-secondary)] transition-colors group-hover:text-brand-500"
+      aria-hidden
+    />
+  );
+}
+
 interface CourseOverviewProps {
   course: Course;
   onStartCourse: (lesson?: Lesson) => void;
@@ -388,7 +453,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                     aria-label="Course completion"
                   >
                     <div
-                      className="h-full rounded-full bg-emerald-600 transition-[width] duration-300 ease-out"
+                      className="h-full rounded-full bg-brand-500 transition-[width] duration-300 ease-out"
                       style={{ width: `${overallProgressPercent}%` }}
                     />
                   </div>
@@ -682,18 +747,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                                 <div className="flex min-w-0 w-full items-start justify-between gap-3">
                                   <div className="min-w-0 flex-1 flex flex-col gap-1.5">
                                     <div className="flex min-w-0 items-center gap-3">
-                                      {lessonComplete ? (
-                                        <CheckCircle2
-                                          size={14}
-                                          className="shrink-0 text-[var(--text-secondary)] transition-colors group-hover:text-brand-500"
-                                          aria-hidden
-                                        />
-                                      ) : (
-                                        <Play
-                                          size={14}
-                                          className="shrink-0 text-[var(--text-secondary)] transition-colors group-hover:text-brand-500"
-                                        />
-                                      )}
+                                      <OverviewLessonStatusGlyph lessonComplete={lessonComplete} pct={pct} />
                                       <span className="min-w-0 break-words text-sm font-medium text-[var(--text-secondary)] transition-colors line-clamp-2 group-hover:text-[var(--text-primary)] [&_p]:m-0 [&_p]:inline">
                                         <CatalogRichText value={lesson.title} />
                                       </span>
@@ -701,9 +755,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
                                     <div className="flex w-full items-center gap-2">
                                       <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--hover-bg)]">
                                         <div
-                                          className={`h-full rounded-full transition-[width] duration-300 ${
-                                            lessonComplete ? 'bg-emerald-600' : 'bg-brand-500'
-                                          }`}
+                                          className="h-full rounded-full bg-brand-500 transition-[width] duration-300"
                                           style={{ width: `${pct}%` }}
                                         />
                                       </div>

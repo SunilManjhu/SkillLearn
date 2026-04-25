@@ -112,7 +112,7 @@ function NavProfileAvatar({ user }: { user: NavbarAccountUser }) {
 
 interface NavbarProps {
   onNavigate: (
-    view: 'home' | 'catalog' | 'contact' | 'profile' | 'admin' | 'creator' | 'signin',
+    view: 'home' | 'catalog' | 'contact' | 'profile' | 'admin' | 'creator',
     clear?: boolean
   ) => void;
   activeView: string;

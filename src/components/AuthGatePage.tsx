@@ -1,19 +1,12 @@
-import React, { useCallback, useState } from 'react';
-import { User as FirebaseUser } from '../firebase';
-import type { AuthProfileSnapshot } from '../utils/authProfileCache';
-import { formatAuthError } from '../utils/authErrors';
+/**
+ * Shared auth UI bits for `SignInModalProvider` (no dedicated `#/signin` / `#/signup` routes).
+ */
 
-export type AuthGateMode = 'sign-in' | 'sign-up';
+export type AuthGateNavView = 'privacy' | 'catalog' | 'home';
 
-export type AuthGateNavView = 'signin' | 'signup' | 'privacy' | 'catalog' | 'home';
-
-export interface AuthGatePageProps {
-  mode: AuthGateMode;
-  isAuthReady: boolean;
-  user: FirebaseUser | AuthProfileSnapshot | null;
-  onContinueWithGoogle: () => Promise<void>;
-  onNavigate: (view: AuthGateNavView, clear?: boolean) => void;
-}
+/** Shared body copy for the in-app sign-in modal. */
+export const AUTH_GOOGLE_GATE_DESCRIPTION =
+  'Use your Google account to save progress, earn certificates, and sync across devices. New and returning users both sign in with Google — we create your workspace the first time you connect.';
 
 /** Google “G” mark (multicolor) for the OAuth button — brand colors per Google guidelines. */
 export function GoogleMark({ className }: { className?: string }) {
@@ -38,139 +31,3 @@ export function GoogleMark({ className }: { className?: string }) {
     </svg>
   );
 }
-
-export const AuthGatePage: React.FC<AuthGatePageProps> = ({
-  mode,
-  isAuthReady,
-  user,
-  onContinueWithGoogle,
-  onNavigate,
-}) => {
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const onSubmit = useCallback(async () => {
-    if (submitting) return;
-    setError(null);
-    setSubmitting(true);
-    try {
-      await onContinueWithGoogle();
-    } catch (e) {
-      setError(formatAuthError(e));
-    } finally {
-      setSubmitting(false);
-    }
-  }, [submitting, onContinueWithGoogle]);
-
-  if (!isAuthReady) {
-    return (
-      <div className="flex min-h-[calc(100dvh-5rem)] items-center justify-center px-4 pt-24 pb-16">
-        <p className="text-sm text-[var(--text-muted)]">Checking account…</p>
-      </div>
-    );
-  }
-
-  if (user) {
-    return (
-      <div className="flex min-h-[calc(100dvh-5rem)] items-center justify-center px-4 pt-24 pb-16">
-        <div className="w-full max-w-md rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-8 text-center shadow-xl">
-          <p className="text-lg font-semibold text-[var(--text-primary)]">You&apos;re signed in</p>
-          <p className="mt-2 text-sm text-[var(--text-muted)]">
-            {user.email ? (
-              <>
-                Signed in as <span className="font-medium text-[var(--text-secondary)]">{user.email}</span>
-              </>
-            ) : (
-              'Your Google account is connected.'
-            )}
-          </p>
-          <button
-            type="button"
-            onClick={() => onNavigate('catalog', false)}
-            className="mt-6 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-orange-500 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-orange-600"
-          >
-            Go to catalog
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  const isSignUp = mode === 'sign-up';
-
-  return (
-    <div className="flex min-h-[calc(100dvh-5rem)] items-center justify-center px-4 pt-24 pb-16">
-      <div className="w-full max-w-md rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-6 shadow-xl sm:p-8">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold tracking-tight text-[var(--text-primary)] sm:text-3xl">
-            {isSignUp ? 'Create your account' : 'Sign in'}
-          </h1>
-          <p className="mt-2 text-sm leading-relaxed text-[var(--text-muted)] sm:text-base">
-            {isSignUp
-              ? 'Use your Google account to save progress, earn certificates, and sync across devices. New and returning users both sign in with Google — we create your workspace the first time you connect.'
-              : 'Welcome back. Sign in with the same Google account you used before to restore your progress and profile.'}
-          </p>
-        </div>
-
-        <div className="mt-8 space-y-4">
-          {error ? (
-            <div
-              role="alert"
-              className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300"
-            >
-              {error}
-            </div>
-          ) : null}
-
-          <button
-            type="button"
-            disabled={submitting}
-            onClick={() => void onSubmit()}
-            className="flex min-h-12 w-full touch-manipulation items-center justify-center gap-3 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3 text-sm font-semibold text-[var(--text-primary)] shadow-sm transition-colors hover:bg-[var(--hover-bg)] disabled:opacity-50"
-          >
-            <GoogleMark className="shrink-0" />
-            {submitting ? 'Connecting…' : 'Continue with Google'}
-          </button>
-
-          <p className="text-center text-xs leading-relaxed text-[var(--text-muted)]">
-            By continuing, you agree to our{' '}
-            <button
-              type="button"
-              onClick={() => onNavigate('privacy', false)}
-              className="font-medium text-[var(--text-primary)] underline decoration-[var(--text-muted)] underline-offset-2 hover:opacity-90"
-            >
-              Privacy Policy
-            </button>
-            .
-          </p>
-
-          <div className="border-t border-[var(--border-color)] pt-6 text-center text-sm text-[var(--text-secondary)]">
-            {isSignUp ? (
-              <>
-                Already have an account?{' '}
-                <button
-                  type="button"
-                  onClick={() => onNavigate('signin', false)}
-                  className="font-semibold text-[var(--text-primary)] hover:opacity-90"
-                >
-                  Sign in
-                </button>
-              </>
-            ) : (
-              <>
-                New to <span className="font-semibold text-brand-500">i-Golden</span>?{' '}
-                <button
-                  type="button"
-                  onClick={() => onNavigate('signup', false)}
-                  className="font-semibold text-[var(--text-primary)] hover:opacity-90"
-                >
-                  Create an account
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};

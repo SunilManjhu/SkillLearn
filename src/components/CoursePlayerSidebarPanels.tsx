@@ -41,6 +41,11 @@ export type CoursePlayerSidebarPanelsProps = {
   onVideoOutlineOpenChange?: (open: boolean) => void;
   /** Mobile: notify when Write notes disclosure opens/closes (CoursePlayer hides lesson meta). */
   onWriteNotesOpenChange?: (open: boolean) => void;
+  /**
+   * Mobile portrait (video lessons): let the course column scroll the outline instead of a nested
+   * overflow region — avoids iOS Safari getting stuck when an outer column also scrolls.
+   */
+  portraitPlaylistParentScroll?: boolean;
 };
 
 /**
@@ -68,6 +73,7 @@ export function CoursePlayerSidebarPanels({
   onVideoSeekSeconds,
   onVideoOutlineOpenChange,
   onWriteNotesOpenChange,
+  portraitPlaylistParentScroll = false,
 }: CoursePlayerSidebarPanelsProps) {
   const [isLgViewport, setIsLgViewport] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches
@@ -177,9 +183,11 @@ export function CoursePlayerSidebarPanels({
       <div className="relative flex min-h-0 flex-1 flex-col max-lg:min-h-0 max-lg:portrait:flex-none max-lg:portrait:w-full max-lg:portrait:overflow-visible">
         {/* Desktop: playlist stays mounted under the overlay. Mobile: hide when Notes is open so notes use real flex height (absolute overlay had 0-height parent). */}
         <div
-          className={`min-h-0 flex-1 overflow-y-auto overscroll-y-contain max-lg:min-h-[max(10rem,min(26dvh,14rem))] ${
-            notesExpanded ? 'max-lg:hidden' : ''
-          }`}
+          className={`min-h-0 flex-1 lg:overflow-y-auto lg:overscroll-y-contain ${
+            portraitPlaylistParentScroll
+              ? 'max-lg:portrait:flex-none max-lg:portrait:min-h-0 max-lg:portrait:overflow-visible max-lg:landscape:min-h-[max(10rem,min(26dvh,14rem))] max-lg:landscape:overflow-y-auto max-lg:landscape:overscroll-y-contain'
+              : 'max-lg:min-h-[max(10rem,min(26dvh,14rem))] max-lg:overflow-y-auto max-lg:overscroll-y-contain'
+          } ${notesExpanded ? 'max-lg:hidden' : ''}`}
         >
           <div className="divide-y divide-[var(--border-color)]">
             {course.modules.map((module, idx) => (
@@ -239,7 +247,7 @@ export function CoursePlayerSidebarPanels({
                             className={`flex w-full min-h-11 flex-col gap-1.5 p-4 pl-12 text-left text-sm transition-colors hover:bg-[var(--hover-bg)] touch-manipulation ${
                               active
                                 ? done
-                                  ? 'bg-emerald-500/10 text-emerald-600 app-dark:text-emerald-400'
+                                  ? 'bg-brand-500/10 text-[var(--text-primary)]'
                                   : 'bg-[#393a3a] text-[#a1a2a2] app-light:bg-[#b8b8b8] app-light:text-[var(--text-secondary)]'
                                 : 'text-[var(--text-secondary)]'
                             }`}
@@ -272,9 +280,7 @@ export function CoursePlayerSidebarPanels({
                             <div className="flex w-full items-center gap-2 pl-7">
                               <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--hover-bg)]">
                                 <div
-                                  className={`h-full rounded-full transition-[width] duration-300 ${
-                                    done ? 'bg-emerald-500' : 'bg-brand-500'
-                                  }`}
+                                  className="h-full rounded-full bg-brand-500 transition-[width] duration-300"
                                   style={{ width: `${pct}%` }}
                                 />
                               </div>

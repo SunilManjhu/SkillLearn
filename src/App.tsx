@@ -12,8 +12,8 @@ import { filterPathCourseIdsBySavedMindmap, type MindmapTreeNode } from './data/
 import { useBodyScrollLock } from './hooks/useBodyScrollLock';
 import { usePathMindmapOutlineChildren } from './hooks/usePathMindmapOutlineChildren';
 import { useDialogKeyboard } from './hooks/useDialogKeyboard';
-import { AuthGatePage } from './components/AuthGatePage';
 import { SignInModalProvider } from './components/SignInModalProvider';
+import { GuestHomeSignInCta } from './components/GuestHomeSignInCta';
 import { ContactForm } from './components/ContactForm';
 import { DemoLearningAgent } from './components/DemoLearningAgent';
 import { useLearningAssistantFabVisible } from './hooks/useLearningAssistantFabVisible';
@@ -195,8 +195,6 @@ type View =
   | 'contact'
   | 'status'
   | 'enterprise'
-  | 'signup'
-  | 'signin'
   | 'profile'
   | 'certificate'
   | 'admin'
@@ -1873,8 +1871,6 @@ export default function App() {
       'contact',
       'status',
       'enterprise',
-      'signup',
-      'signin',
       'admin',
     ];
     const simpleTarget = (payload.view === 'settings' ? 'profile' : payload.view) as View;
@@ -2399,9 +2395,7 @@ export default function App() {
       currentView === 'player' ||
       currentView === 'certificate' ||
       currentView === 'admin' ||
-      currentView === 'creator' ||
-      currentView === 'signin' ||
-      currentView === 'signup'
+      currentView === 'creator'
     ) {
       scrollDocumentToTop();
     }
@@ -2435,15 +2429,6 @@ export default function App() {
     setCurrentView(view);
     scrollDocumentToTop();
   };
-
-  /** After Google auth, leave dedicated sign-in / sign-up URLs for the catalog (industry-standard post-login landing). */
-  useLayoutEffect(() => {
-    if (!isAuthReady || !user) return;
-    if (currentView !== 'signin' && currentView !== 'signup') return;
-    historyActionRef.current = 'replace';
-    setCurrentView('catalog');
-    scrollDocumentToTop();
-  }, [isAuthReady, user, currentView]);
 
   const applyAdminCreatorPreview = useCallback(
     (ownerUid: string, course: Course) => {
@@ -3151,19 +3136,7 @@ export default function App() {
               transition={{ delay: 0.3 }}
               className="flex flex-wrap items-stretch gap-4"
             >
-              {isAuthReady && !user && (
-                <button
-                  type="button"
-                  onClick={() => handleNavigate('signup')}
-                  className="flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-md bg-brand-500 px-6 py-4 text-white transition-colors hover:bg-brand-600 sm:flex-initial sm:px-8"
-                >
-                  <span className="flex items-center gap-2 font-bold">
-                    Get started free
-                    <ChevronRight size={20} />
-                  </span>
-                  <span className="text-sm font-medium text-white/90">Create account with Google</span>
-                </button>
-              )}
+              {isAuthReady && !user && <GuestHomeSignInCta />}
               <button
                 type="button"
                 onClick={() => handleNavigate('contact')}
@@ -3672,7 +3645,6 @@ export default function App() {
       user={navUser}
       onLogin={handleLogin}
       onNavigate={(v, c) => handleNavigate(v as View, c)}
-      currentView={currentView}
       reduceMotion={reduceMotion}
     >
       <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] selection:bg-orange-500/30 transition-colors duration-300">
@@ -3873,24 +3845,6 @@ export default function App() {
                 onCatalogChanged={refreshCatalogCourses}
               />
             )}
-          {mainView === 'signin' && (
-            <AuthGatePage
-              mode="sign-in"
-              isAuthReady={isAuthReady}
-              user={navUser}
-              onContinueWithGoogle={handleLogin}
-              onNavigate={(v, c) => handleNavigate(v as View, c)}
-            />
-          )}
-          {mainView === 'signup' && (
-            <AuthGatePage
-              mode="sign-up"
-              isAuthReady={isAuthReady}
-              user={navUser}
-              onContinueWithGoogle={handleLogin}
-              onNavigate={(v, c) => handleNavigate(v as View, c)}
-            />
-          )}
         </div>
 
         {currentView === 'profile' && (

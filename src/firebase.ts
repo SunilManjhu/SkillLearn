@@ -83,7 +83,21 @@ export function isFirestorePermissionDenied(error: unknown): boolean {
   );
 }
 
+/**
+ * Firestore uses fetch; in-flight requests are often aborted when listeners tear down,
+ * React Strict Mode double-invokes effects, or navigations cancel work. Not actionable.
+ */
+export function isFirestoreAbortedRequest(error: unknown): boolean {
+  if (error == null) return false;
+  if (typeof error === 'object' && 'name' in error && (error as { name: string }).name === 'AbortError') {
+    return true;
+  }
+  const msg = error instanceof Error ? error.message : String(error);
+  return /aborted|AbortError/i.test(msg);
+}
+
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  if (isFirestoreAbortedRequest(error)) return;
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
