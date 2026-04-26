@@ -2408,28 +2408,30 @@ function AddPathBranchModal({
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
           {step === 'kind' && (
             <div className="flex flex-col gap-3">
-              <p className="text-xs leading-relaxed text-[var(--text-muted)]">
-                {mode === 'changeType' && replaceSource?.kind === 'label' ? (
-                  <>
-                    Pick a new branch type for this outline module. Visibility settings stay the same. Nested rows stay when
-                    the new type allows it. <strong className="text-[var(--text-secondary)]">Section divider</strong> drops
-                    nested rows — same rules as the course catalog when you change module type.
-                  </>
-                ) : mode === 'changeType' ? (
-                  <>
-                    Pick a new type. Visibility settings stay the same. Nested rows stay under this branch when the new type
-                    allows it. <strong className="text-[var(--text-secondary)]">Section divider</strong> drops nested rows.
-                  </>
-                ) : (
-                  <>
-                    Choose what to add. For a new <strong className="text-[var(--text-secondary)]">outline module</strong>{' '}
-                    (section title only), use <strong className="text-[var(--text-secondary)]">Add module here</strong> on a
-                    top-level gutter. Here you can add a catalog unit, whole course, single lesson, web link, or section
-                    divider — same choices as <strong className="text-[var(--text-secondary)]">Change module type</strong>{' '}
-                    except converting to that outline module type.
-                  </>
-                )}
-              </p>
+              {mode === 'changeType' || (mode === 'add' && showModuleInKindPicker) ? (
+                <p className="text-xs leading-relaxed text-[var(--text-muted)]">
+                  {mode === 'changeType' && replaceSource?.kind === 'label' ? (
+                    <>
+                      Pick a new branch type for this outline module. Visibility settings stay the same. Nested rows stay when
+                      the new type allows it. <strong className="text-[var(--text-secondary)]">Section divider</strong> drops
+                      nested rows — same rules as the course catalog when you change module type.
+                    </>
+                  ) : mode === 'changeType' ? (
+                    <>
+                      Pick a new type. Visibility settings stay the same. Nested rows stay under this branch when the new type
+                      allows it. <strong className="text-[var(--text-secondary)]">Section divider</strong> drops nested rows.
+                    </>
+                  ) : (
+                    <>
+                      Choose what to add. For a new <strong className="text-[var(--text-secondary)]">outline module</strong>{' '}
+                      (section title only), use <strong className="text-[var(--text-secondary)]">Add module here</strong> on a
+                      top-level gutter. Here you can add a catalog unit, whole course, single lesson, web link, or section
+                      divider — same choices as <strong className="text-[var(--text-secondary)]">Change module type</strong>{' '}
+                      except converting to that outline module type.
+                    </>
+                  )}
+                </p>
+              ) : null}
               {mode === 'changeType' ? (
                 <button
                   type="button"
@@ -2941,10 +2943,6 @@ function PathBranchInsertSlot({
 }) {
   const atTopLevel = parentId == null;
   const nestedLabelFallback = 'Add branch here';
-  const addModuleHereTitle =
-    'Adds a new top-level outline module at this position — choose the name in the dialog (same as picking Module in Add a branch).';
-  const branchUnderAboveTitle =
-    'Adds a sub-branch inside the top-level row above this gutter (at the end of that row’s nested list).';
   const prev = previousRow ?? null;
   const prevDepth = previousRowDepth ?? 0;
   const prevCollapsedWithChildren =
@@ -2954,12 +2952,6 @@ function PathBranchInsertSlot({
     prev != null &&
     topLevelRowAllowsChildBranches(prev) &&
     !prevCollapsedWithChildren;
-  const insertingSiblingBelowCollapsedDivider =
-    !atTopLevel &&
-    prev?.kind === 'divider' &&
-    pathBranchNodeIsCollapsed(prev, prevDepth, expandedBranchIds) &&
-    parentId != null &&
-    parentId !== prev.id;
   const nestedListOwnerName = (insertListOwnerDisplayName ?? '').trim();
   const nestedAddBranchLabel =
     nestedListOwnerName.length > 0
@@ -2969,14 +2961,6 @@ function PathBranchInsertSlot({
     branchUnderAbove && prev
       ? pathInsertAddBranchUnderLabel(branchNodeDisplayLabel(prev, publishedList))
       : nestedLabelFallback;
-  const nestedBranchTooltipDefault =
-    nestedListOwnerName.length > 0
-      ? `Adds a row inside “${pathInsertStripQuoteName(nestedListOwnerName, 56)}” at this position among its items.`
-      : 'Adds a row inside this section at this position among its items.';
-  const nestedBranchTooltip =
-    insertingSiblingBelowCollapsedDivider && nestedListOwnerName.length > 0
-      ? `Adds a row in “${pathInsertStripQuoteName(nestedListOwnerName, 56)}” just below the collapsed section divider above — not inside that divider’s grouped rows. Expand the divider to add or reorder items inside it.`
-      : nestedBranchTooltipDefault;
   const {
     stripOuterCursorClass,
     waitCursorOverlayOpen,
@@ -2988,11 +2972,6 @@ function PathBranchInsertSlot({
     onFocusCapture,
     onBlurCapture,
   } = useInsertStripRevealCursor(true);
-  const gutterTitle = atTopLevel
-    ? branchUnderAbove
-      ? `${addModuleHereTitle} ${branchUnderAboveTitle}`
-      : addModuleHereTitle
-    : nestedBranchTooltip;
   return (
     <>
       <InsertStripWaitCursorPortal
@@ -3002,7 +2981,6 @@ function PathBranchInsertSlot({
       />
       <li
         className={`group/pathStrip relative z-0 mb-0 min-h-0 min-w-0 list-none ${ADMIN_INSERT_STRIP_OUTER_EXPAND_HOVER} ${stripOuterCursorClass}`.trim()}
-        title={gutterTitle}
         onPointerEnter={onPointerEnter}
         onPointerMove={onPointerMove}
         onPointerLeave={onPointerLeave}
@@ -3014,7 +2992,6 @@ function PathBranchInsertSlot({
             <div className={PATH_TOP_LEVEL_INSERT_PAIR_INNER}>
               <button
                 type="button"
-                title={addModuleHereTitle}
                 aria-label="Add module here"
                 onClick={() => onInsertBranchAt(parentId, insertIndex, { preset: 'label' })}
                 className={PATH_INSERT_STRIP_CHIP_BTN_EXPAND_ROW_PAIR}
@@ -3024,7 +3001,6 @@ function PathBranchInsertSlot({
               </button>
               <button
                 type="button"
-                title={branchUnderAboveTitle}
                 aria-label={topLevelAddBranchIntoLabel}
                 onClick={() =>
                   onInsertBranchAt(prev!.id, prev!.children.length)
@@ -3039,7 +3015,6 @@ function PathBranchInsertSlot({
             <div className="flex w-full max-md:!pl-0 items-center justify-center md:min-h-0 md:py-0.5">
               <button
                 type="button"
-                title={addModuleHereTitle}
                 aria-label="Add module here"
                 onClick={() => onInsertBranchAt(parentId, insertIndex, { preset: 'label' })}
                 className={PATH_INSERT_STRIP_CHIP_BTN_EXPAND_ROW}
@@ -3053,7 +3028,6 @@ function PathBranchInsertSlot({
           <div className={PATH_NESTED_BRANCH_INSERT_INNER}>
             <button
               type="button"
-              title={nestedBranchTooltip}
               aria-label={nestedAddBranchLabel}
               onClick={() => onInsertBranchAt(parentId, insertIndex)}
               className={PATH_INSERT_STRIP_CHIP_BTN_EXPAND_ROW}
@@ -3068,35 +3042,25 @@ function PathBranchInsertSlot({
   );
 }
 
-/** After the last nested row under a section: append a branch; optionally add a top-level outline module (only when list is direct children of the path root). */
+/** After the last nested row under a section: append a branch; optional quick “add under last divider”. */
 function PathNestedOutlineBoundaryInsertRow({
   sectionDisplayName,
   onAddBranch,
-  onAddModule,
   lastDividerDisplayName,
   onAddBranchUnderLastDivider,
 }: {
   /** Outline module or section divider title — shown in “Add branch under …”. */
   sectionDisplayName: string;
   onAddBranch: () => void;
-  /** When set, adds a new top-level outline module after the owning section (same list depth as gutters under a top-level MODULE row). */
-  onAddModule?: () => void;
   /** When the last row in this list is a divider, offer a quick “add under divider” action. */
   lastDividerDisplayName?: string;
   onAddBranchUnderLastDivider?: () => void;
 }) {
-  const q = pathInsertStripQuoteName(sectionDisplayName, 56);
   const addBranchLabel = pathInsertAddBranchUnderLabel(sectionDisplayName);
-  const addBranchTitle = `Adds a row at the end of the list inside “${q}” (same as the last gutter above).`;
   const lastDividerName = (lastDividerDisplayName ?? '').trim();
   const addUnderDividerLabel =
     lastDividerName.length > 0 ? pathInsertAddBranchUnderLabel(lastDividerName) : 'Add under divider';
-  const addUnderDividerTitle =
-    lastDividerName.length > 0
-      ? `Adds a row inside the last section divider “${pathInsertStripQuoteName(lastDividerName, 56)}”.`
-      : 'Adds a row inside the last section divider.';
-  const addModuleHereTitle =
-    'Adds a new top-level outline module after this section — choose the name in the dialog (same as picking Module in Add a branch).';
+  const useMultiChipRow = !!onAddBranchUnderLastDivider;
   const {
     stripOuterCursorClass,
     waitCursorOverlayOpen,
@@ -3117,18 +3081,16 @@ function PathNestedOutlineBoundaryInsertRow({
       />
       <li
         className={`group/pathStrip relative z-0 mb-0 min-h-0 min-w-0 list-none ${ADMIN_INSERT_STRIP_OUTER_EXPAND_HOVER} ${stripOuterCursorClass}`.trim()}
-        title={onAddModule ? `${addBranchTitle} ${addModuleHereTitle}` : addBranchTitle}
         onPointerEnter={onPointerEnter}
         onPointerMove={onPointerMove}
         onPointerLeave={onPointerLeave}
         onFocusCapture={onFocusCapture}
         onBlurCapture={onBlurCapture}
       >
-        {onAddModule ? (
+        {useMultiChipRow ? (
           <div className={PATH_TOP_LEVEL_INSERT_PAIR_INNER}>
             <button
               type="button"
-              title={addBranchTitle}
               aria-label={addBranchLabel}
               onClick={onAddBranch}
               className={PATH_INSERT_STRIP_CHIP_BTN_EXPAND_ROW_PAIR}
@@ -3136,34 +3098,20 @@ function PathNestedOutlineBoundaryInsertRow({
               <Plus size={14} className="shrink-0 opacity-90" aria-hidden />
               <span className="min-w-0 text-center [overflow-wrap:anywhere]">{addBranchLabel}</span>
             </button>
-            {onAddBranchUnderLastDivider ? (
-              <button
-                type="button"
-                title={addUnderDividerTitle}
-                aria-label={addUnderDividerLabel}
-                onClick={onAddBranchUnderLastDivider}
-                className={PATH_INSERT_STRIP_CHIP_BTN_EXPAND_ROW_PAIR}
-              >
-                <Plus size={14} className="shrink-0 opacity-90" aria-hidden />
-                <span className="min-w-0 text-center [overflow-wrap:anywhere]">{addUnderDividerLabel}</span>
-              </button>
-            ) : null}
             <button
               type="button"
-              title={addModuleHereTitle}
-              aria-label="Add module here"
-              onClick={onAddModule}
+              aria-label={addUnderDividerLabel}
+              onClick={onAddBranchUnderLastDivider}
               className={PATH_INSERT_STRIP_CHIP_BTN_EXPAND_ROW_PAIR}
             >
               <Plus size={14} className="shrink-0 opacity-90" aria-hidden />
-              <span className="text-center">Add module here</span>
+              <span className="min-w-0 text-center [overflow-wrap:anywhere]">{addUnderDividerLabel}</span>
             </button>
           </div>
         ) : (
           <div className={PATH_NESTED_BRANCH_INSERT_INNER}>
             <button
               type="button"
-              title={addBranchTitle}
               aria-label={addBranchLabel}
               onClick={onAddBranch}
               className={PATH_INSERT_STRIP_CHIP_BTN_EXPAND_ROW}
@@ -3725,8 +3673,6 @@ function PathBranchRow({
         <div className="col-span-full min-w-0 w-full md:row-start-2">
           <PathBranchTreeList
             parentId={b.id}
-            grandParentId={outlineListParentId}
-            parentBranchSiblingIndex={siblingIndex}
             insertListOwnerDisplayName={branchNodeDisplayLabel(b, publishedList)}
             nodes={b.children}
             depth={depth + 1}
@@ -3752,8 +3698,6 @@ function PathBranchRow({
 
 function PathBranchTreeList({
   parentId,
-  grandParentId,
-  parentBranchSiblingIndex,
   insertListOwnerDisplayName,
   nodes,
   depth,
@@ -3772,10 +3716,6 @@ function PathBranchTreeList({
   onVisibleToRolesChange,
 }: {
   parentId: string | null;
-  /** Parent of the branch row that owns this list (`null` when `parentId` is null). */
-  grandParentId: string | null;
-  /** Index of that owning row among its siblings (for “add module after this section”). */
-  parentBranchSiblingIndex: number;
   /** Title of the row that owns this list (outline module or divider) for “Add branch under …”. Omit at root. */
   insertListOwnerDisplayName?: string;
   nodes: PathBranchNode[];
@@ -3909,14 +3849,6 @@ function PathBranchTreeList({
             (insertListOwnerDisplayName ?? '').trim() || 'this outline section'
           }
           onAddBranch={() => onInsertBranchAt(parentId, nodes.length)}
-          onAddModule={
-            grandParentId === null
-              ? () =>
-                  onInsertBranchAt(grandParentId, parentBranchSiblingIndex + 1, {
-                    preset: 'label',
-                  })
-              : undefined
-          }
           lastDividerDisplayName={lastDividerDisplayName}
           onAddBranchUnderLastDivider={onAddBranchUnderLastDivider}
         />
@@ -4577,13 +4509,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
       if (branchModal.parentId == null) {
         return `Top level: Add module here opens the name step first; or pick catalog unit, whole course, link, or (where allowed) divider below.${pos}`;
       }
-      const p = findBranchNode(pathBranchTree, branchModal.parentId);
-      if (p?.kind === 'module') {
-        return `Under module: ${branchNodeDisplayLabel(p, publishedList)} — pick a lesson from this module only.${pos}`;
-      }
-      return p
-        ? `Inside module: ${branchNodeDisplayLabel(p, publishedList)}.${pos}`
-        : `Inside module.${pos}`;
+      return undefined;
     }
     return undefined;
   }, [branchModal, pathBranchTree, publishedList]);
@@ -5522,8 +5448,6 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                   <div ref={pathBranchMindMapRootRef} className="min-w-0">
                     <PathBranchTreeList
                       parentId={null}
-                      grandParentId={null}
-                      parentBranchSiblingIndex={0}
                       nodes={pathBranchTree}
                       depth={0}
                       publishedList={publishedList}
