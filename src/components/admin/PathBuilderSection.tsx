@@ -3225,6 +3225,8 @@ function PathBranchRow({
     const target = e.target as HTMLElement | null;
     /** Avoid racing expand (focus) + toggle (click) on the section disclosure control — same gesture would expand then collapse. */
     if (target?.closest?.('[data-path-branch-disclosure]')) return;
+    /** Avoid auto-expand when focusing Show / audience visibility (checkbox must not toggle disclosure). */
+    if (target?.closest?.('[data-path-branch-outline-visibility]')) return;
     /** Avoid auto-expand/scroll when focusing row action controls (copy/move, reorder, delete, change-type, etc.). */
     if (target?.closest?.('[data-path-branch-row-action]')) return;
     const header = e.currentTarget;

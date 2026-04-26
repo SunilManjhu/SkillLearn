@@ -8,7 +8,11 @@ import { LearnerPathMindmapPanel } from './components/LearnerPathMindmapPanel';
 import { CourseLibraryCategoryFilter } from './components/CourseLibraryCategoryFilter';
 import { ProfilePage } from './components/ProfilePage';
 import { Certificate } from './components/Certificate';
-import { filterPathCourseIdsBySavedMindmap, type MindmapTreeNode } from './data/pathMindmap';
+import {
+  filterPathCourseIdsBySavedMindmap,
+  pathOutlineHasVisibleLearnerRowForViewer,
+  type MindmapTreeNode,
+} from './data/pathMindmap';
 import { useBodyScrollLock } from './hooks/useBodyScrollLock';
 import { usePathMindmapOutlineChildren } from './hooks/usePathMindmapOutlineChildren';
 import { useDialogKeyboard } from './hooks/useDialogKeyboard';
@@ -767,12 +771,15 @@ export default function App() {
    * Prevents treating a brief `isAdminUser === false` as “kick off #/admin”.
    */
   const [adminAccessResolved, setAdminAccessResolved] = useState(false);
+  const shellViewerIsAdmin = adminAccessResolved && isAdminUser;
   /**
    * Learning Paths dropdown: omit creator-studio draft rows for **admin-only** accounts (admins who are not
    * creators), matching the rule that private creator catalog entries are not surfaced in public browse chrome.
    * Creators (including admin+creator) still see their drafts; admin inventory “Creator preview” paths stay.
    * Platform `learningPaths` rows respect `catalogPublished` for **everyone** (including admins), same as
    * unpublished courses in Course Library — use Admin → Paths to edit drafts not shown here.
+   * Also omit paths whose prefetched outline has no row visible to this viewer (every “Show” off, all admin-only
+   * for learners, or only unpublished courses), matching course catalog rules.
    */
   const navbarCatalogPathRows = useMemo(() => {
     const adminOnlyNoCreatorStudio =
@@ -783,14 +790,56 @@ export default function App() {
         (r) => Boolean(r.adminPreviewOwnerUid?.trim()) || !r.fromCreatorDraft
       );
     }
-    return rows.filter(
+    rows = rows.filter(
       (r) =>
         r.fromCreatorDraft ||
         isLearningPathCatalogPublished(learningPathStripDraftFlag(r))
     );
-  }, [combinedCatalogPathRows, adminAccessResolved, isAdminUser, isCreatorUser]);
+    const catalogCourseIdsForPathOutline = shellViewerIsAdmin ? null : browseVisibleCourseIdSet;
+    return rows.filter((r) => {
+      const branches = r.fromCreatorDraft
+        ? pathOutlinePrefetchCreator[r.id]
+        : pathOutlinePrefetchPublished[r.id];
+      return pathOutlineHasVisibleLearnerRowForViewer(branches, shellViewerIsAdmin, catalogCourseIdsForPathOutline);
+    });
+  }, [
+    combinedCatalogPathRows,
+    adminAccessResolved,
+    isAdminUser,
+    isCreatorUser,
+    shellViewerIsAdmin,
+    browseVisibleCourseIdSet,
+    pathOutlinePrefetchPublished,
+    pathOutlinePrefetchCreator,
+  ]);
 
-  const shellViewerIsAdmin = adminAccessResolved && isAdminUser;
+  useEffect(() => {
+    if (selectedLearningPathId == null) return;
+    const row = pickLearningPathRowForSelection(
+      combinedCatalogPathRows,
+      selectedLearningPathId,
+      selectedLearningPathFromCreatorDraft,
+      selectedLearningPathAdminPreviewOwnerUid
+    );
+    if (!row) return;
+    const branches = row.fromCreatorDraft
+      ? pathOutlinePrefetchCreator[row.id]
+      : pathOutlinePrefetchPublished[row.id];
+    const catIds = shellViewerIsAdmin ? null : browseVisibleCourseIdSet;
+    if (pathOutlineHasVisibleLearnerRowForViewer(branches, shellViewerIsAdmin, catIds)) return;
+    setSelectedLearningPathId(null);
+    setSelectedLearningPathFromCreatorDraft(false);
+    setSelectedLearningPathAdminPreviewOwnerUid(null);
+  }, [
+    selectedLearningPathId,
+    selectedLearningPathFromCreatorDraft,
+    selectedLearningPathAdminPreviewOwnerUid,
+    combinedCatalogPathRows,
+    pathOutlinePrefetchPublished,
+    pathOutlinePrefetchCreator,
+    shellViewerIsAdmin,
+    browseVisibleCourseIdSet,
+  ]);
   const selectedCourseForLearnerShell = useMemo(() => {
     if (!selectedCourseResolved) return null;
     return filterCourseHierarchyForViewer(selectedCourseResolved, shellViewerIsAdmin);

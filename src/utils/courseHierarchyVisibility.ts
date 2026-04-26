@@ -1,9 +1,22 @@
 import type { Course, Lesson, Module } from '../data/courses';
 import { outlineVisibleToRolesVisibleToViewer } from '../data/pathMindmap';
 
-/** Course document row: show in library / allow opening overview when visible to this viewer. */
+/**
+ * Course document row: show in library / allow opening overview when visible to this viewer.
+ * When the syllabus has exactly one module, that module’s visibility gates the whole course: if the viewer
+ * cannot see that module, the course is treated as absent from the catalog (no empty shells).
+ */
 export function catalogCourseEntryVisibleToViewer(course: Course, viewerIsAdmin: boolean): boolean {
-  return outlineVisibleToRolesVisibleToViewer(course.visibleToRoles, viewerIsAdmin);
+  if (!outlineVisibleToRolesVisibleToViewer(course.visibleToRoles, viewerIsAdmin)) {
+    return false;
+  }
+  if (course.modules.length === 1) {
+    const only = course.modules[0]!;
+    if (!outlineVisibleToRolesVisibleToViewer(only.visibleToRoles, viewerIsAdmin)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function lessonVisibleWithAncestors(

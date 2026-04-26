@@ -107,7 +107,10 @@ export function CourseHierarchyVisibilityCells({
 
   if ((nested && nestedGridSecondRow) || topLevelGridSecondRow) {
     return (
-      <div className="max-md:col-span-full max-md:col-start-1 max-md:row-auto max-md:flex max-md:min-w-0 max-md:flex-row max-md:flex-nowrap max-md:items-center max-md:gap-x-2 max-md:overflow-x-auto md:contents">
+      <div
+        data-path-branch-outline-visibility
+        className="max-md:col-span-full max-md:col-start-1 max-md:row-auto max-md:flex max-md:min-w-0 max-md:flex-row max-md:flex-nowrap max-md:items-center max-md:gap-x-2 max-md:overflow-x-auto md:contents"
+      >
         <div className="col-start-3 row-start-1 flex min-w-0 shrink-0 items-center justify-center justify-self-center max-md:justify-start md:justify-self-center">
           {showCell}
         </div>
@@ -148,6 +151,7 @@ export function CourseHierarchyVisibilityCells({
     const rowEnd = catalogRowAlign === 'end';
     return (
       <div
+        data-path-branch-outline-visibility
         className={`inline-flex max-w-full min-w-0 flex-nowrap items-center gap-2 ${
           rowEnd ? 'ml-auto justify-end' : ''
         }`}
@@ -161,9 +165,9 @@ export function CourseHierarchyVisibilityCells({
   }
 
   return (
-    <>
+    <div data-path-branch-outline-visibility className="contents">
       <div className="flex min-w-0 justify-center md:px-0">{showCell}</div>
       <div className="min-w-0 md:min-w-0">{roleCell}</div>
-    </>
+    </div>
   );
 }

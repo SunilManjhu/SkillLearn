@@ -207,6 +207,28 @@ export function filterOutlineBranchesForViewer(
     }));
 }
 
+/**
+ * Navbar / path pickers: include a learning path only if at least one outline row would appear to this viewer
+ * after {@link filterOutlineBranchesForViewer} (visibility + draft course filtering). If every top-level branch
+ * is hidden (Show off) or admin-only for a learner, or all inner rows are filtered out, returns `false` — same
+ * idea as hiding a course when its only module is not shown.
+ *
+ * When `branches` is `undefined` (outline not prefetched yet), returns `true` so the path is not dropped
+ * before data arrives.
+ */
+export function pathOutlineHasVisibleLearnerRowForViewer(
+  branches: MindmapTreeNode[] | undefined,
+  viewerIsAdmin: boolean,
+  catalogVisibleCourseIds?: ReadonlySet<string> | null
+): boolean {
+  if (branches === undefined) return true;
+  const filtered = filterOutlineBranchesForViewer(branches, viewerIsAdmin, catalogVisibleCourseIds ?? null);
+  for (const sec of filtered) {
+    if (sec.children.length > 0) return true;
+  }
+  return false;
+}
+
 /** Persist: omit when default (both roles); keep `[]` for hidden-from-all. */
 export function compactVisibleToRolesForPersist(
   roles: PathOutlineAudienceRole[] | undefined
