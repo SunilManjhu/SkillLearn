@@ -4,8 +4,8 @@ export const PATH_MINDMAP_CENTER_LABEL = 'Learning Path' as const;
 
 export type MindmapNodeKind = 'label' | 'course' | 'lesson' | 'link' | 'divider' | 'module';
 
-/** Who may see an outline row in the learner UI. Omit on a node = visible to both (default). */
-export type PathOutlineAudienceRole = 'user' | 'admin';
+/** Who may see an outline row in the learner UI. Omit on a node = visible to all roles (default). */
+export type PathOutlineAudienceRole = 'learner' | 'admin' | 'creator';
 
 export type MindmapTreeNode = {
   id: string;
@@ -24,8 +24,9 @@ export type MindmapTreeNode = {
   /** Optional small caps line above the main divider title (learner path card). */
   dividerEyebrow?: string;
   /**
-   * Restrict visibility to these roles. Omit or both roles = everyone (signed-in admin or user, and guests count as user).
-   * `[]` = hidden from everyone in the catalog outline (including admins). `['admin']` = administrators only.
+   * Restrict visibility to these roles. Omit field = everyone. If **`learner`** is present, everyone may see. If
+   * **`learner`** is absent, only listed roles apply; **`creator` always implies `admin`** (see
+   * {@link normalizeRestrictedAudienceRoles}). `[]` = hidden from everyone including admins.
    */
   visibleToRoles?: PathOutlineAudienceRole[];
 };
@@ -39,14 +40,28 @@ function newNodeId(): string {
   return `m_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
+/**
+ * Restricted sets (no `learner`): **`creator` implies `admin`** — normalize to both roles for storage and UI.
+ */
+export function normalizeRestrictedAudienceRoles(roles: PathOutlineAudienceRole[]): PathOutlineAudienceRole[] {
+  const only = [...new Set(roles.filter((x): x is PathOutlineAudienceRole => x === 'admin' || x === 'creator'))];
+  if (only.includes('creator') && !only.includes('admin')) {
+    only.push('admin');
+  }
+  return only.sort();
+}
+
 /** Parse Firestore `visibleToRoles` on course/module/lesson/path nodes (same shape everywhere). */
 export function parseVisibleToRolesField(o: Record<string, unknown>): PathOutlineAudienceRole[] | undefined {
   if (!Array.isArray(o.visibleToRoles)) return undefined;
   if (o.visibleToRoles.length === 0) return [];
-  const r = o.visibleToRoles.filter((x) => x === 'user' || x === 'admin') as PathOutlineAudienceRole[];
+  const r = o.visibleToRoles.filter(
+    (x): x is PathOutlineAudienceRole => x === 'learner' || x === 'admin' || x === 'creator'
+  );
   if (r.length === 0) return [];
-  if (r.includes('user') && r.includes('admin')) return undefined;
-  return [...new Set(r)];
+  const uniq = [...new Set(r)];
+  if (uniq.includes('learner')) return undefined;
+  return normalizeRestrictedAudienceRoles(uniq);
 }
 
 function mergeVisibleToRoles(
@@ -59,33 +74,42 @@ function mergeVisibleToRoles(
 }
 
 /**
- * Same semantics as path outline rows: omit or both roles → everyone; `[]` → hidden for all;
- * `['admin']` → administrators only (Firestore `users/{uid}.role === 'admin'`).
+ * Path / course visibility: omit → everyone. `[]` → hidden for all. If **`learner`** is in the array, everyone may
+ * see. Otherwise only listed roles apply: **`admin`** only (admins), **`creator`** (creators; admins already
+ * handled above).
  */
 export function outlineVisibleToRolesVisibleToViewer(
   visibleToRoles: PathOutlineAudienceRole[] | undefined,
-  viewerIsAdmin: boolean
+  viewerIsAdmin: boolean,
+  viewerIsCreator: boolean = false
 ): boolean {
   const r = visibleToRoles;
   if (r !== undefined && r.length === 0) return false;
   if (!r || r.length === 0) return true;
   if (viewerIsAdmin) {
-    return r.includes('admin') || r.includes('user');
+    return r.length > 0;
   }
-  return r.includes('user');
+  if (r.includes('learner')) return true;
+  if (viewerIsCreator) {
+    return r.includes('creator');
+  }
+  return false;
 }
 
-/** Learner outline: guests and signed-in non-admins are treated as `user`. */
+/** Learner outline: guests and signed-in accounts without the creator role are treated as `learner`-audience only. */
 export function mindmapNodeVisibleToViewer(
   node: MindmapTreeNode,
-  viewerIsAdmin: boolean
+  viewerIsAdmin: boolean,
+  viewerIsCreator: boolean = false
 ): boolean {
-  return outlineVisibleToRolesVisibleToViewer(node.visibleToRoles, viewerIsAdmin);
+  return outlineVisibleToRolesVisibleToViewer(node.visibleToRoles, viewerIsAdmin, viewerIsCreator);
 }
 
 /**
- * Hide course-linked rows when the course is not in the learner-visible catalog (e.g. platform `catalogPublished === false`).
- * Pass `null` to skip this filter (e.g. admins previewing a path). Path `catalogPublished` is handled separately in the app shell.
+ * Hide course-linked rows when the course id is not in the caller’s allowed set (e.g. unpublished platform
+ * catalog **or** course-level / single-module visibility for the current viewer). Pass `null` to skip this filter
+ * (e.g. admins previewing a path). The app passes ids that pass the same rules as the course library shell, not
+ * merely “published” ids.
  */
 export function mindmapNodeCatalogVisible(
   node: MindmapTreeNode,
@@ -172,14 +196,15 @@ export function flattenSectionChildrenForOutline(children: MindmapTreeNode[]): M
 function filterOutlineSectionRowForViewer(
   row: MindmapTreeNode,
   viewerIsAdmin: boolean,
+  viewerIsCreator: boolean,
   cat: ReadonlySet<string> | null
 ): MindmapTreeNode | null {
-  if (!mindmapNodeVisibleToViewer(row, viewerIsAdmin) || !mindmapNodeCatalogVisible(row, cat)) {
+  if (!mindmapNodeVisibleToViewer(row, viewerIsAdmin, viewerIsCreator) || !mindmapNodeCatalogVisible(row, cat)) {
     return null;
   }
   if (row.kind === 'divider' && row.children.length > 0) {
     const kids = row.children
-      .map((c) => filterOutlineSectionRowForViewer(c, viewerIsAdmin, cat))
+      .map((c) => filterOutlineSectionRowForViewer(c, viewerIsAdmin, viewerIsCreator, cat))
       .filter((x): x is MindmapTreeNode => x != null);
     if (kids.length === 0) return null;
     return { ...row, children: kids };
@@ -191,18 +216,19 @@ function filterOutlineSectionRowForViewer(
 export function filterOutlineBranchesForViewer(
   branches: MindmapTreeNode[],
   viewerIsAdmin: boolean,
-  catalogVisibleCourseIds?: ReadonlySet<string> | null
+  catalogVisibleCourseIds?: ReadonlySet<string> | null,
+  viewerIsCreator: boolean = false
 ): MindmapTreeNode[] {
   const cat = catalogVisibleCourseIds ?? null;
   return branches
     .filter(
       (sec) =>
-        mindmapNodeVisibleToViewer(sec, viewerIsAdmin) && mindmapNodeCatalogVisible(sec, cat)
+        mindmapNodeVisibleToViewer(sec, viewerIsAdmin, viewerIsCreator) && mindmapNodeCatalogVisible(sec, cat)
     )
     .map((sec) => ({
       ...sec,
       children: flattenSectionChildrenForOutline(sec.children)
-        .map((row) => filterOutlineSectionRowForViewer(row, viewerIsAdmin, cat))
+        .map((row) => filterOutlineSectionRowForViewer(row, viewerIsAdmin, viewerIsCreator, cat))
         .filter((x): x is MindmapTreeNode => x != null),
     }));
 }
@@ -219,24 +245,31 @@ export function filterOutlineBranchesForViewer(
 export function pathOutlineHasVisibleLearnerRowForViewer(
   branches: MindmapTreeNode[] | undefined,
   viewerIsAdmin: boolean,
-  catalogVisibleCourseIds?: ReadonlySet<string> | null
+  catalogVisibleCourseIds?: ReadonlySet<string> | null,
+  viewerIsCreator: boolean = false
 ): boolean {
   if (branches === undefined) return true;
-  const filtered = filterOutlineBranchesForViewer(branches, viewerIsAdmin, catalogVisibleCourseIds ?? null);
+  const filtered = filterOutlineBranchesForViewer(
+    branches,
+    viewerIsAdmin,
+    catalogVisibleCourseIds ?? null,
+    viewerIsCreator
+  );
   for (const sec of filtered) {
     if (sec.children.length > 0) return true;
   }
   return false;
 }
 
-/** Persist: omit when default (both roles); keep `[]` for hidden-from-all. */
+/** Persist: omit when everyone (`learner` grants all); keep `[]` for hidden-from-all. */
 export function compactVisibleToRolesForPersist(
   roles: PathOutlineAudienceRole[] | undefined
 ): PathOutlineAudienceRole[] | undefined {
   if (roles === undefined) return undefined;
   if (roles.length === 0) return [];
-  if (roles.includes('user') && roles.includes('admin')) return undefined;
-  return [...new Set(roles)].sort();
+  const uniq = [...new Set(roles)] as PathOutlineAudienceRole[];
+  if (uniq.includes('learner')) return undefined;
+  return normalizeRestrictedAudienceRoles(uniq);
 }
 
 /** Stable ids for mind map nodes (Firestore / admin). */

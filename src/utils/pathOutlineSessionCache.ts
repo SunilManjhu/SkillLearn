@@ -25,7 +25,7 @@ function validateMindmapTreeNode(x: unknown, depth: number): x is MindmapTreeNod
   if (o.visibleToRoles !== undefined) {
     if (!Array.isArray(o.visibleToRoles)) return false;
     for (const r of o.visibleToRoles) {
-      if (r !== 'user' && r !== 'admin') return false;
+      if (r !== 'learner' && r !== 'admin' && r !== 'creator') return false;
     }
   }
   for (const c of o.children) {

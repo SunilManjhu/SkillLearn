@@ -14,7 +14,7 @@ function newId(): string {
 }
 
 type ChatTurn =
-  | { id: string; role: 'user'; content: string }
+  | { id: string; role: 'learner'; content: string }
   | { id: string; role: 'assistant'; reply: string; course?: Course; modelUsed?: string }
   | { id: string; role: 'error'; content: string };
 
@@ -24,7 +24,7 @@ function formatHistoryForPrompt(msgs: ChatTurn[]): string {
   return msgs
     .slice(-MAX_HISTORY_TURNS)
     .map((m) => {
-      if (m.role === 'user') return `User: ${m.content}`;
+      if (m.role === 'learner') return `Learner: ${m.content}`;
       if (m.role === 'error') return null;
       if (m.role === 'assistant') {
         const note = m.course ? ` [offered course: ${m.course.title}]` : '';
@@ -95,7 +95,7 @@ export function DemoLearningAgent({ onOpenCourse, courses = [] }: DemoLearningAg
     const trimmed = goal.trim();
     if (!trimmed || !apiKey) return;
 
-    const userTurn: ChatTurn = { id: newId(), role: 'user', content: trimmed };
+    const userTurn: ChatTurn = { id: newId(), role: 'learner', content: trimmed };
     const historyIncludingUser = [...messages, userTurn];
     const historyText = formatHistoryForPrompt(historyIncludingUser);
 
@@ -273,7 +273,7 @@ export function DemoLearningAgent({ onOpenCourse, courses = [] }: DemoLearningAg
             >
               <ul className="flex flex-col gap-3">
                 {messages.map((m) => {
-                  if (m.role === 'user') {
+                  if (m.role === 'learner') {
                     return (
                       <li key={m.id} className="flex justify-end">
                         <div className="max-w-[85%] rounded-2xl rounded-br-md bg-orange-500/20 px-3 py-2 text-sm text-[var(--text-primary)]">

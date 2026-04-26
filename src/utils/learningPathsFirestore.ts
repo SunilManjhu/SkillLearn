@@ -6,6 +6,8 @@ import {
   getDocs,
   setDoc,
   serverTimestamp,
+  type DocumentData,
+  type QuerySnapshot,
 } from 'firebase/firestore';
 import type { MindmapTreeNode } from '../data/pathMindmap';
 import type { LearningPath } from '../data/learningPaths';
@@ -80,21 +82,28 @@ export type LearningPathsFirestoreLoadResult = {
   outlineChildrenByPathId: Record<string, MindmapTreeNode[]>;
 };
 
+/** Parse a `learningPaths` query snapshot (same rules as {@link loadLearningPathsFromFirestore}). */
+export function learningPathsLoadResultFromSnapshot(
+  snap: QuerySnapshot<DocumentData>
+): LearningPathsFirestoreLoadResult {
+  const out: LearningPath[] = [];
+  const outlineChildrenByPathId: Record<string, MindmapTreeNode[]> = {};
+  for (const d of snap.docs) {
+    const raw = d.data() as Record<string, unknown>;
+    const p = docToLearningPath(d.id, raw);
+    if (p) {
+      out.push(p);
+      outlineChildrenByPathId[d.id] = outlineChildrenFromPathFirestoreData(raw);
+    }
+  }
+  out.sort((a, b) => a.title.localeCompare(b.title));
+  return { paths: out, outlineChildrenByPathId };
+}
+
 export async function loadLearningPathsFromFirestore(): Promise<LearningPathsFirestoreLoadResult> {
   try {
     const snap = await getDocs(collection(db, 'learningPaths'));
-    const out: LearningPath[] = [];
-    const outlineChildrenByPathId: Record<string, MindmapTreeNode[]> = {};
-    for (const d of snap.docs) {
-      const raw = d.data() as Record<string, unknown>;
-      const p = docToLearningPath(d.id, raw);
-      if (p) {
-        out.push(p);
-        outlineChildrenByPathId[d.id] = outlineChildrenFromPathFirestoreData(raw);
-      }
-    }
-    out.sort((a, b) => a.title.localeCompare(b.title));
-    return { paths: out, outlineChildrenByPathId };
+    return learningPathsLoadResultFromSnapshot(snap);
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'learningPaths');
     return { paths: [], outlineChildrenByPathId: {} };

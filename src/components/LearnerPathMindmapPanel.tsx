@@ -36,6 +36,8 @@ export type LearnerPathMindmapPanelProps = {
   progressSnapshotVersion: number;
   /** Firestore `users/{uid}.role === 'admin'` — controls outline rows restricted to admins only. */
   viewerIsAdmin?: boolean;
+  /** Firestore role `creator` without admin — outline rows with `creator` or `learner` audience. */
+  viewerIsCreator?: boolean;
   /** Course ids visible in browse catalog; course-linked outline rows for other ids are hidden regardless of path “Show”. */
   catalogVisibleCourseIds?: ReadonlySet<string> | null;
   /** When true, omit the in-panel title block (parent renders path chrome per docs/learning-path-course-list.md §7). */
@@ -245,6 +247,7 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
   progressUserId,
   progressSnapshotVersion,
   viewerIsAdmin = false,
+  viewerIsCreator = false,
   catalogVisibleCourseIds = null,
   suppressPathHeader = false,
   pathCourseIds = [],
@@ -263,8 +266,8 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
     () =>
       branches === null
         ? []
-        : filterOutlineBranchesForViewer(branches, viewerIsAdmin, catalogVisibleCourseIds),
-    [branches, viewerIsAdmin, catalogVisibleCourseIds]
+        : filterOutlineBranchesForViewer(branches, viewerIsAdmin, catalogVisibleCourseIds, viewerIsCreator),
+    [branches, viewerIsAdmin, viewerIsCreator, catalogVisibleCourseIds]
   );
 
   const pathCourseIdsForLayout = useMemo(
@@ -638,6 +641,7 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
           progressUserId={progressUserId}
           progressSnapshotVersion={outlineProgressVersion}
           viewerIsAdmin={viewerIsAdmin}
+          viewerIsCreator={viewerIsCreator}
           catalogVisibleCourseIds={catalogVisibleCourseIds}
         />
       ) : (

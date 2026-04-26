@@ -126,7 +126,7 @@ Grouped by folder. **Large screens** get an extra line for sub-responsibilities 
 
 ## `src/components/admin/AdminUserRolesSection.tsx`
 
-- **Role:** **Promote/demote** users between `user` and `admin` roles.
+- **Role:** **Promote/demote** users between `learner` and `admin` roles (and `creator` where supported).
 - **Primary exports:** `AdminUserRolesSection`.
 - **Used by:** `AdminPage` roles tab.
 

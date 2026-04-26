@@ -86,8 +86,8 @@ export interface Lesson {
   /** Required when `contentKind === 'quiz'`. */
   quiz?: QuizDefinition;
   /**
-   * Same shape as path outline `visibleToRoles`: omit or both roles → visible to learners and admins;
-   * `[]` → hidden for everyone in the course player/overview; `['admin']` → admins only.
+   * Same shape as path outline `visibleToRoles`: omit → everyone; if **`learner`** is present → everyone; otherwise
+   * only listed roles (`admin` / `creator`) may see; `[]` → hidden for everyone.
    */
   visibleToRoles?: PathOutlineAudienceRole[];
 }
@@ -118,8 +118,8 @@ export interface Course {
   skills: string[];
   modules: Module[];
   /**
-   * Same shape as path outline `visibleToRoles`: omit or both roles → visible to learners and admins;
-   * `[]` → hidden for everyone in catalog browse and the course shell; `['admin']` → admins only.
+   * Same shape as path outline `visibleToRoles`: omit → everyone; if **`learner`** is present → everyone; otherwise
+   * only listed roles may see; `[]` → hidden for everyone in catalog browse and the course shell.
    */
   visibleToRoles?: PathOutlineAudienceRole[];
   /**

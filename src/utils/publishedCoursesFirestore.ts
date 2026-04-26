@@ -5,6 +5,8 @@ import {
   getDocs,
   setDoc,
   serverTimestamp,
+  type DocumentData,
+  type QuerySnapshot,
 } from 'firebase/firestore';
 import type { Course, Lesson, Module, QuizDefinition, QuizQuestion } from '../data/courses';
 import { MAX_QUIZ_CHOICES, MAX_QUIZ_QUESTIONS } from '../data/courses';
@@ -229,17 +231,28 @@ export async function listPublishedCourseDocumentIds(): Promise<string[]> {
   }
 }
 
+/** Parse a `publishedCourses` query snapshot (same rules as {@link loadPublishedCoursesFromFirestore}). */
+export function publishedCoursesFromSnapshot(snap: QuerySnapshot<DocumentData>): Course[] {
+  const out: Course[] = [];
+  for (const d of snap.docs) {
+    const c = docToCourse(d.id, d.data() as Record<string, unknown>);
+    if (c) out.push(c);
+  }
+  out.sort((a, b) => a.title.localeCompare(b.title));
+  return out;
+}
+
+/** Updates in-memory + session cache used by `peekResolvedCatalogCourses` / cold hydration. */
+export function cacheResolvedCatalogSnapshot(courses: Course[]): void {
+  lastResolvedCatalog = courses;
+  writeCatalogToSession(courses);
+}
+
 /** Loads all documents from `publishedCourses`. Returns [] on error or empty collection. */
 export async function loadPublishedCoursesFromFirestore(): Promise<Course[]> {
   try {
     const snap = await getDocs(collection(db, 'publishedCourses'));
-    const out: Course[] = [];
-    for (const d of snap.docs) {
-      const c = docToCourse(d.id, d.data() as Record<string, unknown>);
-      if (c) out.push(c);
-    }
-    out.sort((a, b) => a.title.localeCompare(b.title));
-    return out;
+    return publishedCoursesFromSnapshot(snap);
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'publishedCourses');
     return [];
@@ -248,10 +261,8 @@ export async function loadPublishedCoursesFromFirestore(): Promise<Course[]> {
 
 export async function resolveCatalogCourses(): Promise<Course[]> {
   const remote = await loadPublishedCoursesFromFirestore();
-  const result = remote;
-  lastResolvedCatalog = result;
-  writeCatalogToSession(result);
-  return result;
+  cacheResolvedCatalogSnapshot(remote);
+  return remote;
 }
 
 /** Firestore rejects `undefined` anywhere in the payload (e.g. `{ ...lesson, webUrl: undefined }` from admin patches). */

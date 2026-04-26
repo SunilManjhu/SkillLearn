@@ -1193,8 +1193,10 @@ export type PathMindmapOutlineProps = {
   progressUserId: string | null;
   /** Bumps when returning to the path view (or storage sync) so progress re-reads from localStorage. */
   progressSnapshotVersion: number;
-  /** When true, rows restricted to `admin` in the outline document are shown; non-admins only see `user` rows. */
+  /** When true, outline rows use admin visibility (any row that is not fully hidden). */
   viewerIsAdmin?: boolean;
+  /** Firestore `users/{uid}.role === 'creator'` without admin — sees `learner` and `creator` audience rows. */
+  viewerIsCreator?: boolean;
   /** Course ids allowed in the outline (e.g. learner browse list). Omit to show all linked courses. */
   catalogVisibleCourseIds?: ReadonlySet<string> | null;
 };
@@ -1209,6 +1211,7 @@ export const PathMindmapOutline: React.FC<PathMindmapOutlineProps> = ({
   progressUserId,
   progressSnapshotVersion,
   viewerIsAdmin = false,
+  viewerIsCreator = false,
   catalogVisibleCourseIds = null,
 }) => {
   const [sectionExpanded, setSectionExpanded] = useState<Record<string, boolean>>({});
@@ -1240,8 +1243,9 @@ export const PathMindmapOutline: React.FC<PathMindmapOutlineProps> = ({
   }, [pathId, sectionExpanded, branchExpanded]);
 
   const branchesForViewer = useMemo(
-    () => filterOutlineBranchesForViewer(branches, viewerIsAdmin, catalogVisibleCourseIds),
-    [branches, viewerIsAdmin, catalogVisibleCourseIds]
+    () =>
+      filterOutlineBranchesForViewer(branches, viewerIsAdmin, catalogVisibleCourseIds, viewerIsCreator),
+    [branches, viewerIsAdmin, viewerIsCreator, catalogVisibleCourseIds]
   );
 
   const nestedBranchSiblingMap = useMemo(

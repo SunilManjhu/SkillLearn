@@ -4715,7 +4715,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   nested
                   audienceListboxId="admin-catalog-vis-course"
                   showColumnTip={COURSE_HIERARCHY_VISIBILITY_SHOW_TIP}
-                  audienceTitle="Everyone: learners, guests, and admins. Administrators only: hidden from the library and learner course shell for everyone except admins."
+                  audienceTitle="Learner = everyone. Without Learner, toggle admin and/or creator for who can see this course."
                   showAriaLabel="Show course in library and learner course shell"
                   audienceAriaLabel="Who can see this course in the library and learner course shell"
                 />
@@ -5277,7 +5277,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       nested
                       audienceListboxId={`admin-catalog-vis-mod-${mi}`}
                       showColumnTip={COURSE_HIERARCHY_VISIBILITY_SHOW_TIP}
-                      audienceTitle="Everyone: learners, guests, and admins. Administrators only: this module and its lessons are hidden in the overview and player for everyone else."
+                      audienceTitle="Learner = everyone. Without Learner, toggle admin and/or creator for this module."
                       showAriaLabel="Show module in learner course shell"
                       audienceAriaLabel="Who can see this module in the overview and player"
                     />
@@ -5557,7 +5557,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             nested
                             audienceListboxId={`admin-catalog-vis-${mi}-${li}`}
                             showColumnTip={COURSE_HIERARCHY_VISIBILITY_SHOW_TIP}
-                            audienceTitle="Everyone: learners, guests, and admins. Administrators only: this row is hidden in the overview and player for everyone else."
+                            audienceTitle="Learner = everyone. Without Learner, toggle admin and/or creator for this lesson."
                             showAriaLabel="Show lesson or divider in learner course shell"
                             audienceAriaLabel="Who can see this row in the overview and player"
                           />

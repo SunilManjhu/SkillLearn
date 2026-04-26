@@ -574,7 +574,7 @@ export function compactOutlineForChat(course: Course): string {
 
 export async function refineOutlineWithChat(params: {
   apiKey: string;
-  history: { role: 'user' | 'model'; text: string }[];
+  history: { role: 'learner' | 'model'; text: string }[];
   outlineJson: string;
   maxModules: number;
   maxLessonsPerModule: number;
@@ -585,7 +585,7 @@ export async function refineOutlineWithChat(params: {
 > {
   const hist = params.history
     .slice(-MAX_OUTLINE_CHAT_TURNS)
-    .map((h) => `${h.role === 'user' ? 'User' : 'Model'}: ${h.text}`)
+    .map((h) => `${h.role === 'learner' ? 'Learner' : 'Model'}: ${h.text}`)
     .join('\n\n');
 
   const refUrls = normalizeReferenceUrls(params.web?.referenceUrls);

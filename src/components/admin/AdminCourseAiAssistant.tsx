@@ -50,7 +50,7 @@ export type AdminCourseAiAssistantProps = {
   fallbackSkills: string[];
 };
 
-type ChatTurn = { role: 'user' | 'model'; text: string; sourcesUsed?: string[]; modelId?: string };
+type ChatTurn = { role: 'learner' | 'model'; text: string; sourcesUsed?: string[]; modelId?: string };
 
 export function AdminCourseAiAssistant({
   draft,
@@ -188,7 +188,7 @@ export function AdminCourseAiAssistant({
 
     setChatInput('');
     setPendingChatSkeleton(null);
-    const historyAfterUser = [...chatTurnsRef.current, { role: 'user' as const, text }];
+    const historyAfterUser = [...chatTurnsRef.current, { role: 'learner' as const, text }];
     setChatTurns(historyAfterUser);
     setChatBusy(true);
     try {
@@ -460,13 +460,13 @@ export function AdminCourseAiAssistant({
                   <div
                     key={i}
                     className={`rounded-lg px-2 py-1.5 text-xs leading-relaxed ${
-                      turn.role === 'user'
+                      turn.role === 'learner'
                         ? 'ml-4 bg-[#616161]/15 text-[var(--text-primary)]'
                         : 'mr-4 bg-[var(--bg-secondary)] text-[var(--text-primary)]'
                     }`}
                   >
                     <span className="mb-0.5 block text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">
-                      {turn.role === 'user' ? (
+                      {turn.role === 'learner' ? (
                         'You'
                       ) : (
                         <>

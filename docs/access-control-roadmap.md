@@ -1,6 +1,6 @@
 # Access control: roles, creator isolation, and task roadmap
 
-Notes for **contributors** and **QA**: how **admin**, **creator** (any number, e.g. creator1 / creator2), and **user** interact with data, plus **ordered tasks** with dependencies and test criteria. Pick tasks in order; finish and test each slice before moving on.
+Notes for **contributors** and **QA**: how **admin**, **creator** (any number, e.g. creator1 / creator2), and **learner** interact with data, plus **ordered tasks** with dependencies and test criteria. Pick tasks in order; finish and test each slice before moving on.
 
 **Code touchpoints:** `firestore.rules` (`creatorCourses`, `creatorLearningPaths`, `users`), `src/utils/userProfileFirestore.ts` (`UserRole`), `src/utils/creatorCoursesFirestore.ts` (owner-scoped queries), `src/utils/creatorCatalogSession.ts` + catalog `useEffect` in `App.tsx` (session hydration — see §8).
 
@@ -10,7 +10,7 @@ Notes for **contributors** and **QA**: how **admin**, **creator** (any number, e
 
 | Concept | Meaning |
 |--------|--------|
-| **Role** | Who the signed-in account is: `user` \| `creator` \| `admin` on `users/{uid}` (`UserRole` in code). |
+| **Role** | Who the signed-in account is: `learner` \| `creator` \| `admin` on `users/{uid}` (`UserRole` in code). |
 | **Ownership** | Creator-owned docs live in `creatorCourses` and `creatorLearningPaths` with **`ownerUid`** = Firebase `uid` of that creator. **Creator1 vs creator2** is two different `ownerUid` values, not two role names. |
 | **Isolation** | A creator must only **query** and **see** docs where `ownerUid == their uid`. Rules must allow **read/write only for owner or admin** on those collections. |
 | **Scope (optional)** | Extra fields like `visibility` (`all` / signed-in / etc.) apply to **published / catalog** content; they do not replace `ownerUid` for private creator drafts. |
@@ -21,7 +21,7 @@ Notes for **contributors** and **QA**: how **admin**, **creator** (any number, e
 
 ## 2. How it works end-to-end (this repo)
 
-1. **`users/{uid}`** holds `role: 'user' | 'creator' | 'admin'`.
+1. **`users/{uid}`** holds `role: 'learner' | 'creator' | 'admin'`.
 2. **Firestore rules** (`firestore.rules`): `creatorCourses` / `creatorLearningPaths` — **read** if `resource.data.ownerUid == request.auth.uid` **or** `isAdmin()` (inventory/audit). **Writes** if `ownerUid` on the document matches `request.auth.uid` and **`hasCreatorRole() || isAdmin()`**, with `ownerUid` unchanged on update. Learners never need these collections; the public catalog uses **`publishedCourses`** (and related published data).
 3. **Client** loads creator inventory with **`loadCreatorCoursesForOwner(ownerUid)`** (`where('ownerUid', '==', ownerUid)`). Admin inventory uses **`listCreatorCoursesForAdminByOwner`** / **`listCreatorLearningPathsForAdminByOwner`** (same query; allowed because reads are admin-wide).
 4. **Client write guard:** `saveCreatorCourse` and `saveCreatorLearningPath` refuse when `ownerUid !== auth.currentUser.uid` so the app never attempts cross-owner writes from the studio.
@@ -38,8 +38,8 @@ Work **top to bottom**. Do not start a task until its **Depends on** items are d
 
 | ID | Task | Priority | Depends on | Done when / test |
 |----|------|----------|------------|-------------------|
-| **A1** | **`users/{uid}.role` is correct** for test accounts: one `admin`, two `creator`, one `user`. | P0 | — | In Firestore Console (or admin UI), each test user’s doc shows expected `role`. |
-| **A2** | **App reads role after sign-in** (`fetchUserRole` / `subscribeUserRole`) and derives `isAdmin`, `isCreator`, default `user`. | P0 | A1 | Sign in as each role; UI or logs show correct role (no stale `user` for creators/admins). |
+| **A1** | **`users/{uid}.role` is correct** for test accounts: one `admin`, two `creator`, one `learner`. | P0 | — | In Firestore Console (or admin UI), each test user’s doc shows expected `role`. |
+| **A2** | **App reads role after sign-in** (`fetchUserRole` / `subscribeUserRole`) and derives `isAdmin`, `isCreator`, default `learner`. | P0 | A1 | Sign in as each role; UI or logs show correct role (creators/admins are not treated as `learner`). |
 
 ### Phase B — Server-side enforcement (Firestore)
 
@@ -60,15 +60,15 @@ Work **top to bottom**. Do not start a task until its **Depends on** items are d
 
 | ID | Task | Priority | Depends on | Done when / test |
 |----|------|----------|------------|-------------------|
-| **D1** | **Creator routes** (`#/creator`, etc.): only `role === 'creator'` or `admin` if you allow admins in studio—document the choice. | P0 | A2 | `user` navigates to creator URL → redirect or deny; `creator` OK. |
-| **D2** | **Admin routes**: only `isAdmin`. | P0 | A2 | `creator` and `user` cannot open admin panels. |
+| **D1** | **Creator routes** (`#/creator`, etc.): only `role === 'creator'` or `admin` if you allow admins in studio—document the choice. | P0 | A2 | `learner` navigates to creator URL → redirect or deny; `creator` OK. |
+| **D2** | **Admin routes**: only `isAdmin`. | P0 | A2 | `creator` and `learner` cannot open admin panels. |
 | **D3** | **Nav links**: show Creator entry only for creators (and admins if desired); Admin only for admins. | P1 | D1, D2 | Each role sees only appropriate nav. |
 
-### Phase E — Learner (`user`) vs catalog
+### Phase E — Learner vs catalog
 
 | ID | Task | Priority | Depends on | Done when / test |
 |----|------|----------|------------|-------------------|
-| **E1** | **Learner app** reads only **published / catalog** collections and visibility rules—not raw `creatorCourses` unless you explicitly publish into a public shape. | P0 | (catalog design) | Signed in as `user`: can complete learner flows; no Firestore permission errors on creator collections. |
+| **E1** | **Learner app** reads only **published / catalog** collections and visibility rules—not raw `creatorCourses` unless you explicitly publish into a public shape. | P0 | (catalog design) | Signed in as `learner`: can complete learner flows; no Firestore permission errors on creator collections. |
 | **E2** | If **publishing** copies or references creator drafts → define one flow (admin publish, or creator “publish” to a public collection) and test **user** sees content, **other creator** does not see draft. | P1 | E1, C2 | End-to-end: creator1 publishes → user sees; creator2 does not see creator1’s draft in studio. |
 
 ### Phase F — Regression & hardening

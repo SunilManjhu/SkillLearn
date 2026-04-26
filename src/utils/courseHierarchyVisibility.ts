@@ -6,13 +6,17 @@ import { outlineVisibleToRolesVisibleToViewer } from '../data/pathMindmap';
  * When the syllabus has exactly one module, that module’s visibility gates the whole course: if the viewer
  * cannot see that module, the course is treated as absent from the catalog (no empty shells).
  */
-export function catalogCourseEntryVisibleToViewer(course: Course, viewerIsAdmin: boolean): boolean {
-  if (!outlineVisibleToRolesVisibleToViewer(course.visibleToRoles, viewerIsAdmin)) {
+export function catalogCourseEntryVisibleToViewer(
+  course: Course,
+  viewerIsAdmin: boolean,
+  viewerIsCreator: boolean = false
+): boolean {
+  if (!outlineVisibleToRolesVisibleToViewer(course.visibleToRoles, viewerIsAdmin, viewerIsCreator)) {
     return false;
   }
   if (course.modules.length === 1) {
     const only = course.modules[0]!;
-    if (!outlineVisibleToRolesVisibleToViewer(only.visibleToRoles, viewerIsAdmin)) {
+    if (!outlineVisibleToRolesVisibleToViewer(only.visibleToRoles, viewerIsAdmin, viewerIsCreator)) {
       return false;
     }
   }
@@ -23,12 +27,13 @@ function lessonVisibleWithAncestors(
   course: Course,
   module: Module,
   lesson: Lesson,
-  viewerIsAdmin: boolean
+  viewerIsAdmin: boolean,
+  viewerIsCreator: boolean
 ): boolean {
   return (
-    outlineVisibleToRolesVisibleToViewer(course.visibleToRoles, viewerIsAdmin) &&
-    outlineVisibleToRolesVisibleToViewer(module.visibleToRoles, viewerIsAdmin) &&
-    outlineVisibleToRolesVisibleToViewer(lesson.visibleToRoles, viewerIsAdmin)
+    outlineVisibleToRolesVisibleToViewer(course.visibleToRoles, viewerIsAdmin, viewerIsCreator) &&
+    outlineVisibleToRolesVisibleToViewer(module.visibleToRoles, viewerIsAdmin, viewerIsCreator) &&
+    outlineVisibleToRolesVisibleToViewer(lesson.visibleToRoles, viewerIsAdmin, viewerIsCreator)
   );
 }
 
@@ -36,16 +41,22 @@ function lessonVisibleWithAncestors(
  * Returns a shallow-cloned course tree containing only modules and lessons the viewer may see
  * (AND of course, module, and lesson `visibleToRoles`, same rules as path outlines).
  */
-export function filterCourseHierarchyForViewer(course: Course, viewerIsAdmin: boolean): Course {
-  if (!outlineVisibleToRolesVisibleToViewer(course.visibleToRoles, viewerIsAdmin)) {
+export function filterCourseHierarchyForViewer(
+  course: Course,
+  viewerIsAdmin: boolean,
+  viewerIsCreator: boolean = false
+): Course {
+  if (!outlineVisibleToRolesVisibleToViewer(course.visibleToRoles, viewerIsAdmin, viewerIsCreator)) {
     return { ...course, modules: [] };
   }
   const modules: Module[] = [];
   for (const mod of course.modules) {
-    if (!outlineVisibleToRolesVisibleToViewer(mod.visibleToRoles, viewerIsAdmin)) {
+    if (!outlineVisibleToRolesVisibleToViewer(mod.visibleToRoles, viewerIsAdmin, viewerIsCreator)) {
       continue;
     }
-    const lessons = mod.lessons.filter((les) => lessonVisibleWithAncestors(course, mod, les, viewerIsAdmin));
+    const lessons = mod.lessons.filter((les) =>
+      lessonVisibleWithAncestors(course, mod, les, viewerIsAdmin, viewerIsCreator)
+    );
     if (lessons.length === 0) {
       continue;
     }

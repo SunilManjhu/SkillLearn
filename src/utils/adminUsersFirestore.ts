@@ -21,7 +21,7 @@ export interface AdminUserRow {
 
 function toAdminUserRow(id: string, data: Record<string, unknown>): AdminUserRow {
   const r = data.role;
-  const role: UserRole = r === 'admin' ? 'admin' : r === 'creator' ? 'creator' : 'user';
+  const role: UserRole = r === 'admin' ? 'admin' : r === 'creator' ? 'creator' : 'learner';
   const displayName =
     typeof data.displayName === 'string' && data.displayName.trim().length > 0
       ? data.displayName.trim()

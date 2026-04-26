@@ -13,7 +13,7 @@ import {
 import type { User } from 'firebase/auth';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 
-export type UserRole = 'user' | 'admin' | 'creator';
+export type UserRole = 'learner' | 'admin' | 'creator';
 
 /**
  * Creates or updates `users/{uid}` without overwriting an existing admin role on merge.
@@ -26,7 +26,7 @@ export async function ensureUserProfile(user: User): Promise<void> {
     const email = user.email ?? '';
     if (!snap.exists()) {
       await setDoc(ref, {
-        role: 'user' as UserRole,
+        role: 'learner' as UserRole,
         displayName,
         email,
       });
@@ -69,11 +69,12 @@ export async function deleteUserProfileDocument(
 
 /** Derive role from a `users/{uid}` document snapshot (same rules as `fetchUserRole`). */
 export function parseUserRoleFromUserDoc(snap: DocumentSnapshot): UserRole {
-  if (!snap.exists()) return 'user';
+  if (!snap.exists()) return 'learner';
   const r = snap.data().role;
   if (r === 'admin') return 'admin';
   if (r === 'creator') return 'creator';
-  return 'user';
+  if (r === 'learner') return 'learner';
+  return 'learner';
 }
 
 export async function fetchUserRole(uid: string): Promise<UserRole> {
@@ -82,7 +83,7 @@ export async function fetchUserRole(uid: string): Promise<UserRole> {
     return parseUserRoleFromUserDoc(snap);
   } catch (error) {
     handleFirestoreError(error, OperationType.GET, `users/${uid}`);
-    return 'user';
+    return 'learner';
   }
 }
 
@@ -107,7 +108,7 @@ export function subscribeUserRole(
   );
 }
 
-/** Count of `users` docs with `role == 'admin'`. Returns `-1` if the query fails. */
+/** Count of `users` docs with `role === 'admin'`. Returns `-1` if the query fails. */
 export async function countFirestoreAdminUsers(): Promise<number> {
   try {
     const snap = await getDocs(query(collection(db, 'users'), where('role', '==', 'admin')));

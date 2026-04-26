@@ -182,7 +182,7 @@ Checklist:
 
 See [`access-control-roadmap.md`](./access-control-roadmap.md). Quick checks:
 
-- **User** (`role: user`): `#/creator` and `#/admin` redirect to catalog (URL updated); no Creator / Admin nav entries; catalog/player use published data only (no `creatorCourses` reads).
+- **Learner** (`role: learner`): `#/creator` and `#/admin` redirect to catalog (URL updated); no Creator / Admin nav entries; catalog/player use published data only (no `creatorCourses` reads).
 - **Creator A**: Creator studio lists only courses/paths with `ownerUid == A`; save/delete works; cannot read another creator’s draft by ID (permission error).
 - **Creator B**: Same as A; confirms A’s content never appears in B’s studio list.
 - **Admin**: Admin portal available; **Creators** tab can list another UID’s private inventory (read-only UI); Creator studio edits only **own** `ownerUid` drafts (same as creators).

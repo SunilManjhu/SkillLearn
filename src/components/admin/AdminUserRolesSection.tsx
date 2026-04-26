@@ -7,7 +7,7 @@ import { AdminLabelInfoTip } from './adminLabelInfoTip';
 import { AdminListboxSelect } from './AdminListboxSelect';
 
 const USER_ROLE_LISTBOX_OPTIONS = [
-  { value: 'user' as const, label: 'user' },
+  { value: 'learner' as const, label: 'Learner' },
   { value: 'creator' as const, label: 'creator' },
   { value: 'admin' as const, label: 'admin' },
 ];
@@ -24,7 +24,7 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
   const [subscriptionKey, setSubscriptionKey] = useState(0);
   const { showActionToast, actionToast } = useAdminActionToast();
   const [search, setSearch] = useState('');
-  const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'creator' | 'user'>('all');
+  const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'creator' | 'learner'>('all');
   const [savingUserId, setSavingUserId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -48,7 +48,7 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
     let list = rows;
     if (roleFilter === 'admin') list = list.filter((r) => r.role === 'admin');
     else if (roleFilter === 'creator') list = list.filter((r) => r.role === 'creator');
-    else if (roleFilter === 'user') list = list.filter((r) => r.role === 'user');
+    else if (roleFilter === 'learner') list = list.filter((r) => r.role === 'learner');
     const q = search.trim().toLowerCase();
     if (!q) return list;
     return list.filter((r) =>
@@ -78,7 +78,7 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
   }, [rows]);
 
   const soleAdminSelfDemoteMsg =
-    "You're the only admin. Promote another account to admin first, then you can set your role to user.";
+    "You're the only admin. Promote another account to admin first, then you can set your role to Learner.";
 
   const handleRoleChange = async (userId: string, nextRole: UserRole) => {
     const current = rows.find((r) => r.id === userId);
@@ -125,7 +125,7 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
               <li>
                 <code className="font-mono text-[0.7rem] text-[#616161] app-dark:text-[var(--tone-200)] sm:text-xs">users</code> docs: role{' '}
                 <code className="text-[#616161] app-dark:text-[var(--tone-200)]">admin</code>, <code className="text-[#616161] app-dark:text-[var(--tone-200)]">creator</code>, or{' '}
-                <code className="text-[#616161] app-dark:text-[var(--tone-200)]">user</code>.
+                <code className="text-[#616161] app-dark:text-[var(--tone-200)]">learner</code>.
               </li>
               <li>Live updates.</li>
               <li>Keep at least one admin.</li>
@@ -194,7 +194,7 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
               { id: 'all' as const, label: 'All accounts' },
               { id: 'admin' as const, label: 'Admins' },
               { id: 'creator' as const, label: 'Creators' },
-              { id: 'user' as const, label: 'Learners' },
+              { id: 'learner' as const, label: 'Learners' },
             ] as const
           ).map(({ id, label }) => (
             <button

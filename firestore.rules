@@ -365,8 +365,8 @@ service cloud.firestore {
       allow create: if
         hasOnlyAllowedFields(['role', 'displayName', 'email']) &&
         (
-          (isOwner(userId) && request.resource.data.role == 'user') ||
-          (isAdmin() && request.resource.data.role in ['user', 'admin', 'creator'])
+          (isOwner(userId) && request.resource.data.role == 'learner') ||
+          (isAdmin() && request.resource.data.role in ['learner', 'admin', 'creator'])
         );
       allow update: if isAuthenticated() &&
         (

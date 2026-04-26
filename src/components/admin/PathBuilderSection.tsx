@@ -47,7 +47,6 @@ import { formatCourseTaxonomyForSearch } from '../../utils/courseTaxonomy';
 import {
   compactVisibleToRolesForPersist,
   mindmapDocumentWithCenterChildren,
-  mindmapNodeVisibleToViewer,
   newMindmapNodeId,
   outlineVisibleToRolesVisibleToViewer,
   type MindmapTreeNode,
@@ -197,7 +196,7 @@ function pathBranchVisibilityFromMindmap(
   const v = n.visibleToRoles;
   if (v === undefined) return {};
   if (v.length === 0) return { visibleToRoles: [] };
-  if (v.includes('user') && v.includes('admin')) return {};
+  if (v.includes('learner') && v.includes('admin')) return {};
   return { visibleToRoles: [...new Set(v)] };
 }
 
@@ -363,7 +362,7 @@ function mergeCourseIdsFromBranches(draft: LearningPath, roots: PathBranchNode[]
 /** Same visibility as learner outline: Show off or Admin-only → not “shown” to learners for publish rules. */
 function pathBranchVisibleToLearner(n: PathBranchNode): boolean {
   const p = compactVisibleToRolesForPersist(n.visibleToRoles);
-  return outlineVisibleToRolesVisibleToViewer(p, false);
+  return outlineVisibleToRolesVisibleToViewer(p, false, false);
 }
 
 /**
@@ -3540,7 +3539,7 @@ function PathBranchRow({
             topLevelGridSecondRow
             audienceListboxId={`path-outline-vis-${b.id}`}
             showColumnTip={PATH_OUTLINE_ROW_VISIBILITY_SHOW_TIP}
-            audienceTitle="Everyone: learners, guests, and admins. Administrators only: row stays in the admin editor but is hidden from the catalog outline for everyone else."
+            audienceTitle="Learner = everyone. Without Learner, toggle admin and/or creator (admin only, creator for admins+creators, or both)."
             showAriaLabel="Show in catalog path outline"
             audienceAriaLabel="Who can see this in the catalog outline"
           />
@@ -3569,7 +3568,7 @@ function PathBranchRow({
             nestedGridSecondRow
             audienceListboxId={`path-outline-vis-${b.id}`}
             showColumnTip={PATH_OUTLINE_ROW_VISIBILITY_SHOW_TIP}
-            audienceTitle="Everyone: learners, guests, and admins. Administrators only: row stays in the admin editor but is hidden from the catalog outline for everyone else."
+            audienceTitle="Learner = everyone. Without Learner, toggle admin and/or creator (admin only, creator for admins+creators, or both)."
             showAriaLabel="Show in catalog path outline"
             audienceAriaLabel="Who can see this in the catalog outline"
           />
@@ -5452,12 +5451,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                         setPathBranchTree((roots) =>
                           mapBranchNodeById(roots, id, (n) => ({
                             ...n,
-                            visibleToRoles:
-                              roles.length === 0
-                                ? []
-                                : roles.includes('user') && roles.includes('admin')
-                                  ? undefined
-                                  : roles,
+                            visibleToRoles: compactVisibleToRolesForPersist(roles),
                           }))
                         )
                       }

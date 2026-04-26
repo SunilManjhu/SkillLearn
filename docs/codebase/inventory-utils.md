@@ -280,7 +280,7 @@ Alphabetical. Each module is **pure logic, Firestore I/O, or cross-cutting helpe
 
 ## `src/utils/userProfileFirestore.ts`
 
-- **Role:** Ensure **`users/{uid}`** profile exists; **subscribe** role (`user` | `admin`); count admins; delete profile doc.
+- **Role:** Ensure **`users/{uid}`** profile exists; **subscribe** role (`learner` | `admin` | `creator`); count admins; delete profile doc.
 - **Primary exports:** `UserRole`, `ensureUserProfile`, `subscribeUserRole`, `fetchUserRole`, `countFirestoreAdminUsers`, `deleteUserProfileDocument`, `parseUserRoleFromUserDoc`.
 - **Used by:** `App.tsx`, account deletion, admin roles.
 

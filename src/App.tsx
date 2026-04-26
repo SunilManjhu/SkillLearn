@@ -33,8 +33,16 @@ import {
   subscribeUserRole,
   deleteUserProfileDocument,
 } from './utils/userProfileFirestore';
-import { peekResolvedCatalogCourses, resolveCatalogCourses } from './utils/publishedCoursesFirestore';
-import { loadLearningPathsFromFirestore } from './utils/learningPathsFirestore';
+import {
+  cacheResolvedCatalogSnapshot,
+  peekResolvedCatalogCourses,
+  publishedCoursesFromSnapshot,
+  resolveCatalogCourses,
+} from './utils/publishedCoursesFirestore';
+import {
+  learningPathsLoadResultFromSnapshot,
+  loadLearningPathsFromFirestore,
+} from './utils/learningPathsFirestore';
 import { listCreatorCoursesForAdminByOwner, loadCreatorCoursesForOwner } from './utils/creatorCoursesFirestore';
 import { loadCreatorLearningPathsForOwner } from './utils/creatorLearningPathsFirestore';
 import {
@@ -92,6 +100,8 @@ import {
   isFirestorePermissionDenied,
   User,
   deleteCurrentUserAccount,
+  handleFirestoreError,
+  OperationType,
 } from './firebase';
 import { collection, limit, onSnapshot, query, where } from 'firebase/firestore';
 import { scrollDocumentToTop } from './utils/scrollDocumentToTop';
@@ -772,6 +782,23 @@ export default function App() {
    */
   const [adminAccessResolved, setAdminAccessResolved] = useState(false);
   const shellViewerIsAdmin = adminAccessResolved && isAdminUser;
+  /** Creator-only outline/catalog rules; admins (`shellViewerIsAdmin`) bypass creator checks. */
+  const shellViewerIsCreator = adminAccessResolved && isCreatorUser && !isAdminUser;
+  /**
+   * For path outline filtering: subset of browse-surface course ids this viewer may see (course-level and
+   * single-module `visibleToRoles`). `browseVisibleCourseIdSet` is publish/draft only; using it alone for path
+   * rows kept a path visible when its only linked course was administrators-only.
+   */
+  const pathOutlineCatalogCourseIdSet = useMemo(() => {
+    if (shellViewerIsAdmin) return null;
+    const ids = new Set<string>();
+    for (const row of browseVisibleCatalogRows) {
+      if (catalogCourseEntryVisibleToViewer(row.course, shellViewerIsAdmin, shellViewerIsCreator)) {
+        ids.add(row.course.id);
+      }
+    }
+    return ids;
+  }, [browseVisibleCatalogRows, shellViewerIsAdmin, shellViewerIsCreator]);
   /**
    * Learning Paths dropdown: omit creator-studio draft rows for **admin-only** accounts (admins who are not
    * creators), matching the rule that private creator catalog entries are not surfaced in public browse chrome.
@@ -795,12 +822,17 @@ export default function App() {
         r.fromCreatorDraft ||
         isLearningPathCatalogPublished(learningPathStripDraftFlag(r))
     );
-    const catalogCourseIdsForPathOutline = shellViewerIsAdmin ? null : browseVisibleCourseIdSet;
+    const catalogCourseIdsForPathOutline = shellViewerIsAdmin ? null : pathOutlineCatalogCourseIdSet;
     return rows.filter((r) => {
       const branches = r.fromCreatorDraft
         ? pathOutlinePrefetchCreator[r.id]
         : pathOutlinePrefetchPublished[r.id];
-      return pathOutlineHasVisibleLearnerRowForViewer(branches, shellViewerIsAdmin, catalogCourseIdsForPathOutline);
+      return pathOutlineHasVisibleLearnerRowForViewer(
+        branches,
+        shellViewerIsAdmin,
+        catalogCourseIdsForPathOutline,
+        shellViewerIsCreator
+      );
     });
   }, [
     combinedCatalogPathRows,
@@ -808,7 +840,8 @@ export default function App() {
     isAdminUser,
     isCreatorUser,
     shellViewerIsAdmin,
-    browseVisibleCourseIdSet,
+    shellViewerIsCreator,
+    pathOutlineCatalogCourseIdSet,
     pathOutlinePrefetchPublished,
     pathOutlinePrefetchCreator,
   ]);
@@ -825,8 +858,8 @@ export default function App() {
     const branches = row.fromCreatorDraft
       ? pathOutlinePrefetchCreator[row.id]
       : pathOutlinePrefetchPublished[row.id];
-    const catIds = shellViewerIsAdmin ? null : browseVisibleCourseIdSet;
-    if (pathOutlineHasVisibleLearnerRowForViewer(branches, shellViewerIsAdmin, catIds)) return;
+    const catIds = shellViewerIsAdmin ? null : pathOutlineCatalogCourseIdSet;
+    if (pathOutlineHasVisibleLearnerRowForViewer(branches, shellViewerIsAdmin, catIds, shellViewerIsCreator)) return;
     setSelectedLearningPathId(null);
     setSelectedLearningPathFromCreatorDraft(false);
     setSelectedLearningPathAdminPreviewOwnerUid(null);
@@ -838,18 +871,23 @@ export default function App() {
     pathOutlinePrefetchPublished,
     pathOutlinePrefetchCreator,
     shellViewerIsAdmin,
-    browseVisibleCourseIdSet,
+    shellViewerIsCreator,
+    pathOutlineCatalogCourseIdSet,
   ]);
   const selectedCourseForLearnerShell = useMemo(() => {
     if (!selectedCourseResolved) return null;
-    return filterCourseHierarchyForViewer(selectedCourseResolved, shellViewerIsAdmin);
-  }, [selectedCourseResolved, shellViewerIsAdmin]);
+    return filterCourseHierarchyForViewer(selectedCourseResolved, shellViewerIsAdmin, shellViewerIsCreator);
+  }, [selectedCourseResolved, shellViewerIsAdmin, shellViewerIsCreator]);
 
   const selectedCourseBlockedForViewer = useMemo(
     () =>
       Boolean(selectedCourseResolved) &&
-      !catalogCourseEntryVisibleToViewer(selectedCourseResolved!, shellViewerIsAdmin),
-    [selectedCourseResolved, shellViewerIsAdmin]
+      !catalogCourseEntryVisibleToViewer(
+        selectedCourseResolved!,
+        shellViewerIsAdmin,
+        shellViewerIsCreator
+      ),
+    [selectedCourseResolved, shellViewerIsAdmin, shellViewerIsCreator]
   );
 
   const selectedCourseShellEmptyForViewer = useMemo(() => {
@@ -1410,6 +1448,52 @@ export default function App() {
     setLiveCatalogHydrated(true);
     setLearningPathsFetched(true);
   }, [fetchCatalogSnapshot, user?.uid]);
+
+  /**
+   * Keep published catalog + path outlines in sync when another session (or Admin) updates Firestore,
+   * so visibility and path mindmap changes apply without a manual refresh.
+   */
+  useEffect(() => {
+    if (!isAuthReady) return;
+    const uid = user?.uid ?? null;
+    const unsubPublishedCourses = onSnapshot(
+      collection(db, 'publishedCourses'),
+      (snap) => {
+        const published = publishedCoursesFromSnapshot(snap);
+        cacheResolvedCatalogSnapshot(published);
+        setCatalogCourseRows((prev) => {
+          const draftRows = prev.filter((r) => r.fromCreatorDraft);
+          const pubRows = published.map((course) => ({ course, fromCreatorDraft: false as const }));
+          return [...pubRows, ...draftRows];
+        });
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'publishedCourses');
+      }
+    );
+    const unsubLearningPaths = onSnapshot(
+      collection(db, 'learningPaths'),
+      (snap) => {
+        const { paths, outlineChildrenByPathId } = learningPathsLoadResultFromSnapshot(snap);
+        setPathOutlinePrefetchPublished(outlineChildrenByPathId);
+        writePublishedPathOutlines(uid, outlineChildrenByPathId);
+        setCatalogPathRows((prev) => {
+          const draftRows = prev.filter((r) => r.fromCreatorDraft);
+          const pubRows = paths.map((p) => ({ ...p, fromCreatorDraft: false as const }));
+          const merged = [...pubRows, ...draftRows];
+          writeMergedCatalogLearningPaths(uid, merged);
+          return merged;
+        });
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'learningPaths');
+      }
+    );
+    return () => {
+      unsubPublishedCourses();
+      unsubLearningPaths();
+    };
+  }, [isAuthReady, user?.uid]);
 
   /**
    * Re-bind overview/player to the live catalog when it loads (or refreshes).
@@ -2220,7 +2304,7 @@ export default function App() {
     () =>
       browseVisibleCatalogRows.filter((row) => {
         const course = row.course;
-        if (!catalogCourseEntryVisibleToViewer(course, shellViewerIsAdmin)) {
+        if (!catalogCourseEntryVisibleToViewer(course, shellViewerIsAdmin, shellViewerIsCreator)) {
           return false;
         }
         const rawPathCourseIds =
@@ -2251,6 +2335,7 @@ export default function App() {
     [
       browseVisibleCatalogRows,
       shellViewerIsAdmin,
+      shellViewerIsCreator,
       selectedLearningPathId,
       activeLearningPath,
       pathMindmapOutlineChildren,
@@ -3403,11 +3488,12 @@ export default function App() {
             <LearnerPathMindmapPanel
               pathId={selectedLearningPathId}
               pathTitle={pathHeroTitle ?? (pathTitleLoading ? 'Learning path' : selectedLearningPathId)}
-              catalogCourses={isAdminUser ? catalogCourses : browseVisibleCatalogCourses}
-              catalogVisibleCourseIds={isAdminUser ? null : browseVisibleCourseIdSet}
+              catalogCourses={shellViewerIsAdmin ? catalogCourses : browseVisibleCatalogCourses}
+              catalogVisibleCourseIds={shellViewerIsAdmin ? null : pathOutlineCatalogCourseIdSet}
               progressUserId={user?.uid ?? null}
               progressSnapshotVersion={pathProgressSnapshot + remoteProfileDataVersion}
-              viewerIsAdmin={isAdminUser}
+              viewerIsAdmin={shellViewerIsAdmin}
+              viewerIsCreator={shellViewerIsCreator}
               suppressPathHeader
               mindmapOutlineChildren={pathMindmapOutlineChildren}
               mindmapOutlineLoading={pathMindmapOutlineLoading}

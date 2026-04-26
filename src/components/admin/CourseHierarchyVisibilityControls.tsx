@@ -1,31 +1,14 @@
 import React from 'react';
 import type { PathOutlineAudienceRole } from '../../data/pathMindmap';
-import { AdminListboxSelect } from './AdminListboxSelect';
-import { COURSE_HIERARCHY_AUDIENCE_LISTBOX_OPTIONS } from './adminListboxSharedOptions';
-
-/** Derived UI state for `visibleToRoles` (path outline + course hierarchy). */
-export function outlineRowVisibilityDerivedState(visibleToRoles: PathOutlineAudienceRole[] | undefined): {
-  showInOutline: boolean;
-  audienceSelectValue: 'admin' | 'everyone';
-} {
-  const hiddenFromAll = Array.isArray(visibleToRoles) && visibleToRoles.length === 0;
-  const showInOutline = !hiddenFromAll;
-  const adminOnly =
-    showInOutline &&
-    Array.isArray(visibleToRoles) &&
-    visibleToRoles.length === 1 &&
-    visibleToRoles[0] === 'admin';
-  const audienceSelectValue = adminOnly ? 'admin' : 'everyone';
-  return { showInOutline, audienceSelectValue };
-}
+import { AdminAudienceRolesDropdown } from './AdminAudienceRolesDropdown';
 
 /** Path builder: catalog path outline column. */
 export const PATH_OUTLINE_ROW_VISIBILITY_SHOW_TIP =
-  'When off, the row is hidden from the path outline for everyone (including admins). When on, use the audience menu for User vs Admin-only. For course or lesson rows, learners only see them if that course is also published in the Catalog tab—draft courses stay hidden from learners even when Show is on. Admins viewing a path in the app see all rows that are shown to User or Admin.';
+  'When off, the row is hidden from the path outline for everyone (including admins). When on, open Audience and select roles: Learner means everyone; without Learner, choose admin and/or creator. For course or lesson rows, learners only see them if that course is also published in the Catalog tab.';
 
 /** Course catalog: course / module / lesson hierarchy in the learner app. */
 export const COURSE_HIERARCHY_VISIBILITY_SHOW_TIP =
-  'When off, this unit is hidden from the course overview and player for everyone (including admins). When on, use the audience menu for User vs Admin-only. Administrators signed in with the admin role still see units set to Administrators only. Draft platform courses stay out of the library regardless of these settings.';
+  'When off, this unit is hidden from the course overview and player for everyone (including admins). When on, open Audience and select roles: Learner means everyone; without Learner, choose admin and/or creator. Draft platform courses stay out of the library regardless of these settings.';
 
 export function CourseHierarchyVisibilityCells({
   visibleToRoles,
@@ -53,10 +36,15 @@ export function CourseHierarchyVisibilityCells({
   audienceTitle: string;
   showAriaLabel: string;
   audienceAriaLabel: string;
-  /** Stable `id` for the audience listbox trigger (unique per course/module/lesson/path row). */
+  /** Stable `id` for the audience dropdown trigger (unique per course/module/lesson/path row). */
   audienceListboxId: string;
 }) {
-  const { showInOutline, audienceSelectValue } = outlineRowVisibilityDerivedState(visibleToRoles);
+  const hiddenFromAll = Array.isArray(visibleToRoles) && visibleToRoles.length === 0;
+  const showInOutline = !hiddenFromAll;
+
+  const audienceTriggerTone = showInOutline
+    ? 'border-[var(--border-color)] !bg-[var(--bg-primary)]'
+    : '!cursor-not-allowed !border-[var(--border-color)]/50 !bg-[var(--bg-secondary)] !text-[var(--text-muted)] !opacity-60';
 
   const showCell = (
     <label
@@ -68,7 +56,7 @@ export function CourseHierarchyVisibilityCells({
         checked={showInOutline}
         onChange={(e) => {
           if (e.target.checked) {
-            onChange(['user', 'admin']);
+            onChange(['learner']);
           } else {
             onChange([]);
           }
@@ -80,28 +68,16 @@ export function CourseHierarchyVisibilityCells({
     </label>
   );
 
-  const audienceTriggerTone = showInOutline
-    ? 'border-[var(--border-color)] !bg-[var(--bg-primary)]'
-    : '!cursor-not-allowed !border-[var(--border-color)]/50 !bg-[var(--bg-secondary)] !text-[var(--text-muted)] !opacity-60';
-
   const roleCell = (
-    <AdminListboxSelect
+    <AdminAudienceRolesDropdown
       id={audienceListboxId}
-      value={audienceSelectValue}
-      disabled={!showInOutline}
-      onChange={(v) => {
-        if (v === 'admin') onChange(['admin']);
-        else onChange(['user', 'admin']);
-      }}
-      options={COURSE_HIERARCHY_AUDIENCE_LISTBOX_OPTIONS}
-      placeholder="Audience"
+      visibleToRoles={visibleToRoles}
+      onChange={onChange}
+      showInOutline={showInOutline}
+      triggerTitle={showInOutline ? audienceTitle : undefined}
       aria-label={audienceAriaLabel}
-      triggerTitle={
-        showInOutline
-          ? audienceTitle
-          : 'Hidden for the selected scope. Turn on Show to choose who can see this unit.'
-      }
-      triggerClassName={`min-h-11 sm:h-7 sm:min-h-0 !rounded-md px-2 py-0 text-xs leading-none sm:text-sm ${audienceTriggerTone}`}
+      density="compact"
+      triggerClassName={`sm:h-7 sm:min-h-0 !rounded-md px-2 py-0 text-xs leading-none sm:text-sm ${audienceTriggerTone}`}
     />
   );
 
@@ -109,24 +85,19 @@ export function CourseHierarchyVisibilityCells({
     return (
       <div
         data-path-branch-outline-visibility
-        className="max-md:col-span-full max-md:col-start-1 max-md:row-auto max-md:flex max-md:min-w-0 max-md:flex-row max-md:flex-nowrap max-md:items-center max-md:gap-x-2 max-md:overflow-x-auto md:contents"
+        className="max-md:col-span-full max-md:col-start-1 max-md:row-auto max-md:flex max-md:min-w-0 max-md:flex-col max-md:gap-2 max-md:overflow-x-auto md:contents"
       >
         <div className="col-start-3 row-start-1 flex min-w-0 shrink-0 items-center justify-center justify-self-center max-md:justify-start md:justify-self-center">
           {showCell}
         </div>
-        <div className="col-start-4 row-start-1 flex w-full min-w-[10rem] max-w-[16rem] items-center justify-self-stretch max-md:max-w-none max-md:shrink sm:min-w-[12rem]">
+        <div className="col-start-4 row-start-1 flex w-full min-w-0 max-w-[22rem] items-start justify-self-stretch max-md:max-w-none md:min-w-[12rem]">
           {roleCell}
         </div>
       </div>
     );
   }
 
-  /**
-   * Catalog course/module/lesson: same single row as path nested outline on narrow viewports
-   * (Show checkbox + audience select), without grid column placement.
-   */
   if (nested) {
-    /** One line: checkbox + audience (label “Show” is screen-reader only here to save width). */
     const showCellInline = (
       <label
         className="flex size-11 shrink-0 cursor-pointer items-center justify-center touch-manipulation sm:size-7"
@@ -137,7 +108,7 @@ export function CourseHierarchyVisibilityCells({
           checked={showInOutline}
           onChange={(e) => {
             if (e.target.checked) {
-              onChange(['user', 'admin']);
+              onChange(['learner']);
             } else {
               onChange([]);
             }
@@ -152,14 +123,12 @@ export function CourseHierarchyVisibilityCells({
     return (
       <div
         data-path-branch-outline-visibility
-        className={`inline-flex max-w-full min-w-0 flex-nowrap items-center gap-2 ${
-          rowEnd ? 'ml-auto justify-end' : ''
+        className={`flex max-w-full min-w-0 flex-col gap-2 sm:flex-row sm:flex-nowrap sm:items-start sm:gap-2 ${
+          rowEnd ? 'ml-auto items-end sm:ml-auto sm:justify-end' : ''
         }`}
       >
         {showCellInline}
-        <div className="min-w-0 w-[min(100vw-4.5rem,16rem)] shrink-0 sm:w-[14rem]">
-          {roleCell}
-        </div>
+        <div className="min-w-0 w-full max-w-[min(100vw-2rem,22rem)] shrink-0 sm:w-auto">{roleCell}</div>
       </div>
     );
   }
