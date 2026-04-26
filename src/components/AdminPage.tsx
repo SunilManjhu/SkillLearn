@@ -352,7 +352,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
           {topTabs.map((t) => tabBtn(t.id, t.label, t.icon))}
         </div>
 
-        {tab === 'alerts' && (
+        <div hidden={tab !== 'alerts'} inert={tab !== 'alerts'} className="min-w-0">
         <div
           className="min-w-0 space-y-6 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:p-6"
           role="region"
@@ -550,9 +550,9 @@ export const AdminPage: React.FC<AdminPageProps> = ({
             </>
           )}
         </div>
-        )}
+        </div>
 
-        {tab === 'ai' && (
+        <div hidden={tab !== 'ai'} inert={tab !== 'ai'} className="min-w-0">
           <div className="min-w-0 space-y-6 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 sm:p-6">
             <AdminAiSiteControlsSection
               alertsMuted={alertsMuted}
@@ -561,9 +561,9 @@ export const AdminPage: React.FC<AdminPageProps> = ({
               <AdminGeminiModelsSection onDirtyChange={setAiModelsDirty} />
             </AdminAiSiteControlsSection>
           </div>
-        )}
+        </div>
 
-        {tab === 'catalog' && (
+        <div hidden={tab !== 'catalog'} inert={tab !== 'catalog'} className="min-w-0">
           <AdminCourseCatalogSection
             includeCreatorDraftCourses
             syncedContentCatalogSubTab={adminContentCatalogSubTab}
@@ -572,25 +572,27 @@ export const AdminPage: React.FC<AdminPageProps> = ({
             onDraftDirtyChange={setCatalogDirty}
             onPathsDirtyChange={setPathDirty}
           />
-        )}
+        </div>
 
-        {tab === 'marketing' && (
+        <div hidden={tab !== 'marketing'} inert={tab !== 'marketing'} className="min-w-0">
           <AdminHeroPhoneAdsSection phoneMockupSrc={heroPhoneMockupSrc} onDirtyChange={setPhoneAdsDirty} />
-        )}
+        </div>
 
-        {tab === 'moderation' && (
+        <div hidden={tab !== 'moderation'} inert={tab !== 'moderation'} className="min-w-0">
           <AdminModerationSection
             initialSubTab={moderationInitialSubTab ?? undefined}
             onInitialSubTabConsumed={onModerationInitialSubTabConsumed}
           />
-        )}
-        {tab === 'roles' && <AdminUserRolesSection currentAdminUid={currentAdminUid} />}
-        {tab === 'creators' && (
+        </div>
+        <div hidden={tab !== 'roles'} inert={tab !== 'roles'} className="min-w-0">
+          <AdminUserRolesSection currentAdminUid={currentAdminUid} />
+        </div>
+        <div hidden={tab !== 'creators'} inert={tab !== 'creators'} className="min-w-0">
           <AdminCreatorInventorySection
             onPreviewCreatorCourse={onAdminPreviewCreatorCourse}
             onPreviewCreatorPath={onAdminPreviewCreatorPath}
           />
-        )}
+        </div>
 
         <AnimatePresence>
           {navigationGuardOpen && (
