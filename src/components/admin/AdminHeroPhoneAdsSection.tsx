@@ -33,10 +33,17 @@ import { useDialogKeyboard } from '../../hooks/useDialogKeyboard';
 import { loadHeroPhoneAdsForAdmin, saveHeroPhoneAdsAsAdmin } from '../../utils/heroPhoneAdsFirestore';
 import { useAdminActionToast } from './useAdminActionToast';
 import { AdminLabelInfoTip } from './adminLabelInfoTip';
+import { AdminListboxSelect } from './AdminListboxSelect';
 
 const MAX_BLOCKS_PER_SLIDE = 10;
 /** Firestore allows up to 8; keep list scrollable so many rows stay manageable if the cap rises. */
 const MAX_SLIDES = 8;
+
+const HERO_TEXT_BLOCK_STYLE_OPTIONS = [
+  { value: 'headline', label: 'Headline (large)' },
+  { value: 'body', label: 'Body' },
+  { value: 'caption', label: 'Caption (small)' },
+] as const;
 
 type HeroAdsAdminCache = {
   enabled: boolean;
@@ -967,19 +974,16 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                           Gradient
                         </label>
                       </div>
-                      <select
+                      <AdminListboxSelect
+                        id={`hero-ad-gradient-${s.id}`}
                         value={s.gradientPreset}
-                        onChange={(e) =>
-                          updateSlide(slideIndex, { gradientPreset: e.target.value as HeroPhoneAdGradientPreset })
+                        onChange={(next) =>
+                          updateSlide(slideIndex, { gradientPreset: next as HeroPhoneAdGradientPreset })
                         }
-                        className="w-full min-w-0 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-[var(--text-primary)]"
-                      >
-                        {HERO_PHONE_AD_GRADIENT_PRESET_OPTIONS.map((o) => (
-                          <option key={o.value} value={o.value}>
-                            {o.label}
-                          </option>
-                        ))}
-                      </select>
+                        options={HERO_PHONE_AD_GRADIENT_PRESET_OPTIONS}
+                        placeholder="Gradient"
+                        triggerClassName="!bg-[var(--bg-secondary)] text-sm"
+                      />
                     </div>
                     <div className="min-w-0 space-y-1">
                       <AdminLabelInfoTip
@@ -1133,21 +1137,20 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                                   Style
                                 </label>
                               </div>
-                              <select
+                              <AdminListboxSelect
+                                id={`hero-ad-text-style-${s.id}-${blockIndex}`}
                                 value={b.style ?? 'body'}
-                                onChange={(e) =>
+                                onChange={(next) =>
                                   replaceBlock(slideIndex, blockIndex, {
                                     kind: 'text',
-                                    style: e.target.value as 'headline' | 'body' | 'caption',
+                                    style: next as 'headline' | 'body' | 'caption',
                                     content: b.content,
                                   })
                                 }
-                                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm"
-                              >
-                                <option value="headline">Headline (large)</option>
-                                <option value="body">Body</option>
-                                <option value="caption">Caption (small)</option>
-                              </select>
+                                options={HERO_TEXT_BLOCK_STYLE_OPTIONS}
+                                placeholder="Style"
+                                triggerClassName="text-sm"
+                              />
                             </div>
                             <div className="space-y-1">
                               <div className="flex min-h-6 min-w-0 items-center">
@@ -1222,28 +1225,24 @@ export const AdminHeroPhoneAdsSection: React.FC<AdminHeroPhoneAdsSectionProps> =
                                   How image fits
                                 </label>
                               </div>
-                              <select
+                              <AdminListboxSelect
+                                id={`hero-ad-img-fit-${s.id}-${blockIndex}`}
                                 value={b.fit}
-                                onChange={(e) => {
-                                  const fit = e.target.value;
-                                  if (!isHeroAdImageFit(fit)) return;
+                                onChange={(next) => {
+                                  if (!isHeroAdImageFit(next)) return;
                                   replaceBlock(slideIndex, blockIndex, {
                                     kind: 'image',
                                     url: b.url,
-                                    fit,
+                                    fit: next,
                                     maxHeightPct: b.maxHeightPct,
                                     overlayHeadline: b.overlayHeadline,
                                     overlayBody: b.overlayBody,
                                   });
                                 }}
-                                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm"
-                              >
-                                {HERO_AD_IMAGE_FIT_OPTIONS.map((o) => (
-                                  <option key={o.value} value={o.value}>
-                                    {o.label}
-                                  </option>
-                                ))}
-                              </select>
+                                options={HERO_AD_IMAGE_FIT_OPTIONS}
+                                placeholder="Fit"
+                                triggerClassName="text-sm"
+                              />
                             </div>
                             <div className="space-y-1">
                               <div className="flex min-h-6 min-w-0 items-center">

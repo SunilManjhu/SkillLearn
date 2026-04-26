@@ -104,6 +104,11 @@ import {
   loadLessonProgressMap,
   markCourseCompletedTimestampInFirestore,
 } from './utils/courseProgress';
+import { firstPlayableLesson } from './utils/courseLessons';
+import {
+  catalogCourseEntryVisibleToViewer,
+  filterCourseHierarchyForViewer,
+} from './utils/courseHierarchyVisibility';
 import { hydrateAllCourseRatingsFromFirestore } from './utils/courseRating';
 import { formatAuthError } from './utils/authErrors';
 import {
@@ -784,6 +789,25 @@ export default function App() {
         isLearningPathCatalogPublished(learningPathStripDraftFlag(r))
     );
   }, [combinedCatalogPathRows, adminAccessResolved, isAdminUser, isCreatorUser]);
+
+  const shellViewerIsAdmin = adminAccessResolved && isAdminUser;
+  const selectedCourseForLearnerShell = useMemo(() => {
+    if (!selectedCourseResolved) return null;
+    return filterCourseHierarchyForViewer(selectedCourseResolved, shellViewerIsAdmin);
+  }, [selectedCourseResolved, shellViewerIsAdmin]);
+
+  const selectedCourseBlockedForViewer = useMemo(
+    () =>
+      Boolean(selectedCourseResolved) &&
+      !catalogCourseEntryVisibleToViewer(selectedCourseResolved!, shellViewerIsAdmin),
+    [selectedCourseResolved, shellViewerIsAdmin]
+  );
+
+  const selectedCourseShellEmptyForViewer = useMemo(() => {
+    if (!selectedCourseForLearnerShell || shellViewerIsAdmin) return false;
+    return firstPlayableLesson(selectedCourseForLearnerShell) == null;
+  }, [selectedCourseForLearnerShell, shellViewerIsAdmin]);
+
   /** `users` docs with role admin; loaded when signed-in user is admin (for delete-account copy). */
   const [firestoreAdminCount, setFirestoreAdminCount] = useState<number | null>(null);
   /** After opening a broadcast alert: scroll overview curriculum to module/lesson. */
@@ -2147,6 +2171,9 @@ export default function App() {
     () =>
       browseVisibleCatalogRows.filter((row) => {
         const course = row.course;
+        if (!catalogCourseEntryVisibleToViewer(course, shellViewerIsAdmin)) {
+          return false;
+        }
         const rawPathCourseIds =
           selectedLearningPathId != null ? activeLearningPath?.courseIds : null;
         const pathCourseIds =
@@ -2174,6 +2201,7 @@ export default function App() {
       }),
     [
       browseVisibleCatalogRows,
+      shellViewerIsAdmin,
       selectedLearningPathId,
       activeLearningPath,
       pathMindmapOutlineChildren,
@@ -3743,14 +3771,26 @@ export default function App() {
             (selectedCourseResolved ? (
               !liveCatalogHydrated ? (
                 <CourseCatalogLoadingSkeleton variant="overview" />
-              ) : (
+              ) : selectedCourseBlockedForViewer ? (
+                <div className="mx-auto max-w-md px-4 py-20 text-center">
+                  <p className="text-sm leading-relaxed text-[var(--text-muted)]">
+                    This course is not available for your account.
+                  </p>
+                </div>
+              ) : selectedCourseShellEmptyForViewer ? (
+                <div className="mx-auto max-w-md px-4 py-20 text-center">
+                  <p className="text-sm leading-relaxed text-[var(--text-muted)]">
+                    There are no lessons available to your account in this course.
+                  </p>
+                </div>
+              ) : selectedCourseForLearnerShell ? (
                 <CourseOverview
                   key={courseOverviewPlayerInstanceKey({
                     courseId: selectedCourseResolved.id,
                     fromCreatorDraft: selectedCourseIsCreatorDraft,
                     adminPreviewOwnerUid: selectedCourseAdminPreviewOwnerUid,
                   })}
-                  course={selectedCourseResolved}
+                  course={selectedCourseForLearnerShell}
                   onStartCourse={handleStartCourseFromOverview}
                   user={navUser}
                   onShowCertificate={handleShowCertificate}
@@ -3758,7 +3798,7 @@ export default function App() {
                   contentDeepLink={overviewContentDeepLink}
                   onContentDeepLinkConsumed={() => setOverviewContentDeepLink(null)}
                 />
-              )
+              ) : null
             ) : deferredCourseRoute?.view === 'overview' ? (
               <CourseCatalogLoadingSkeleton variant="overview" />
             ) : null)}
@@ -3771,22 +3811,36 @@ export default function App() {
                   Loading…
                 </div>
               ) : user ? (
-                <CoursePlayer
-                  key={courseOverviewPlayerInstanceKey({
-                    courseId: selectedCourseResolved.id,
-                    fromCreatorDraft: selectedCourseIsCreatorDraft,
-                    adminPreviewOwnerUid: selectedCourseAdminPreviewOwnerUid,
-                  })}
-                  course={selectedCourseResolved}
-                  initialLesson={initialLesson}
-                  onActiveLessonIdChange={handlePlayerActiveLessonIdChange}
-                  onCourseFinished={handleCoursePlayerFinished}
-                  user={user}
-                  onLogin={handleLogin}
-                  pauseForAppNavOverlay={profileOverlayOpen && mainView === 'player'}
-                  immersiveLayout={playerImmersiveNav}
-                  onImmersivePlaybackChange={setPlayerImmersiveNav}
-                />
+                selectedCourseBlockedForViewer ? (
+                  <div className="mx-auto max-w-md px-4 py-20 text-center">
+                    <p className="text-sm leading-relaxed text-[var(--text-muted)]">
+                      This course is not available for your account.
+                    </p>
+                  </div>
+                ) : selectedCourseShellEmptyForViewer ? (
+                  <div className="mx-auto max-w-md px-4 py-20 text-center">
+                    <p className="text-sm leading-relaxed text-[var(--text-muted)]">
+                      There are no lessons available to your account in this course.
+                    </p>
+                  </div>
+                ) : selectedCourseForLearnerShell ? (
+                  <CoursePlayer
+                    key={courseOverviewPlayerInstanceKey({
+                      courseId: selectedCourseResolved.id,
+                      fromCreatorDraft: selectedCourseIsCreatorDraft,
+                      adminPreviewOwnerUid: selectedCourseAdminPreviewOwnerUid,
+                    })}
+                    course={selectedCourseForLearnerShell}
+                    initialLesson={initialLesson}
+                    onActiveLessonIdChange={handlePlayerActiveLessonIdChange}
+                    onCourseFinished={handleCoursePlayerFinished}
+                    user={user}
+                    onLogin={handleLogin}
+                    pauseForAppNavOverlay={profileOverlayOpen && mainView === 'player'}
+                    immersiveLayout={playerImmersiveNav}
+                    onImmersivePlaybackChange={setPlayerImmersiveNav}
+                  />
+                ) : null
               ) : (
                 <PlayerSignInGate
                   courseTitle={selectedCourseResolved.title}

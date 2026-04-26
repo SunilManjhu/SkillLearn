@@ -13,6 +13,7 @@ import {
 import { dedupeLabelsPreserveOrder } from '../../utils/courseTaxonomy';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { useDialogKeyboard } from '../../hooks/useDialogKeyboard';
+import { AdminListboxSelect } from './AdminListboxSelect';
 import type { AdminActionToastVariant } from './useAdminActionToast';
 
 function replaceLabelInCategories(categories: string[], fromLower: string, newExact: string): string[] {
@@ -439,19 +440,16 @@ export const AdminCatalogCategoriesPanel: React.FC<AdminCatalogCategoriesPanelPr
                 </p>
                 <label className="block space-y-1">
                   <span className="text-xs font-semibold text-[var(--text-secondary)]">Target category</span>
-                  <select
+                  <AdminListboxSelect
+                    id="admin-cat-reassign-target"
                     value={reassignTarget}
-                    onChange={(e) => setReassignTarget(e.target.value)}
-                    className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
-                  >
-                    {reassignOptions
+                    onChange={setReassignTarget}
+                    options={reassignOptions
                       .filter((o) => o.toLowerCase() !== reassignModal.keyLower)
-                      .map((o) => (
-                        <option key={o} value={o}>
-                          {o}
-                        </option>
-                      ))}
-                  </select>
+                      .map((o) => ({ value: o, label: o }))}
+                    placeholder="Choose category"
+                    triggerClassName="text-sm"
+                  />
                 </label>
                 <div className="flex justify-end pt-2">
                   <button

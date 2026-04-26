@@ -4,6 +4,13 @@ import { subscribeUsersForAdmin, updateUserRoleAsAdmin, type AdminUserRow } from
 import { countFirestoreAdminUsers, type UserRole } from '../../utils/userProfileFirestore';
 import { useAdminActionToast } from './useAdminActionToast';
 import { AdminLabelInfoTip } from './adminLabelInfoTip';
+import { AdminListboxSelect } from './AdminListboxSelect';
+
+const USER_ROLE_LISTBOX_OPTIONS = [
+  { value: 'user' as const, label: 'user' },
+  { value: 'creator' as const, label: 'creator' },
+  { value: 'admin' as const, label: 'admin' },
+];
 
 interface AdminUserRolesSectionProps {
   currentAdminUid?: string;
@@ -255,16 +262,16 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
                 </div>
                 <div className="space-y-1">
                   <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Role</span>
-                  <select
+                  <AdminListboxSelect
+                    id={`admin-role-mobile-${row.id}`}
                     value={row.role}
                     disabled={saving}
-                    onChange={(e) => void handleRoleChange(row.id, e.target.value as UserRole)}
-                    className="min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm disabled:opacity-60"
-                  >
-                    <option value="user">user</option>
-                    <option value="creator">creator</option>
-                    <option value="admin">admin</option>
-                  </select>
+                    onChange={(next) => void handleRoleChange(row.id, next as UserRole)}
+                    options={USER_ROLE_LISTBOX_OPTIONS}
+                    placeholder="Role"
+                    density="compact"
+                    triggerClassName="min-h-10 py-2 text-sm"
+                  />
                 </div>
               </div>
             );
@@ -318,16 +325,16 @@ export const AdminUserRolesSection: React.FC<AdminUserRolesSectionProps> = ({ cu
                       </button>
                     </td>
                     <td className="px-3 py-2">
-                      <select
+                      <AdminListboxSelect
+                        id={`admin-role-table-${row.id}`}
                         value={row.role}
                         disabled={saving}
-                        onChange={(e) => void handleRoleChange(row.id, e.target.value as UserRole)}
-                        className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-1.5 text-sm disabled:opacity-60"
-                      >
-                        <option value="user">user</option>
-                        <option value="creator">creator</option>
-                        <option value="admin">admin</option>
-                      </select>
+                        onChange={(next) => void handleRoleChange(row.id, next as UserRole)}
+                        options={USER_ROLE_LISTBOX_OPTIONS}
+                        placeholder="Role"
+                        density="compact"
+                        triggerClassName="!min-h-9 max-w-[9rem] !py-1.5 text-sm"
+                      />
                     </td>
                   </tr>
                 );

@@ -49,6 +49,7 @@ import {
   mindmapDocumentWithCenterChildren,
   mindmapNodeVisibleToViewer,
   newMindmapNodeId,
+  outlineVisibleToRolesVisibleToViewer,
   type MindmapTreeNode,
   type PathOutlineAudienceRole,
 } from '../../data/pathMindmap';
@@ -88,6 +89,12 @@ import {
 } from '../../utils/catalogDisplayNameConflicts';
 import { clearPathOutlineUiSessionForPathId } from '../../utils/pathOutlineUiSession';
 import {
+  ADMIN_EMBEDDED_SCROLL_LIST_DIVIDED,
+  CUSTOM_LISTBOX_LOADING,
+  PATH_MODAL_LIST_ROW_COURSE,
+  PATH_MODAL_LIST_ROW_TWO_LINE,
+} from '../../ui/customMenuClasses';
+import {
   applyReorderViewportScrollAndFocus,
   escapeSelectorAttrValue,
   queryElementInScopeOrDocument,
@@ -99,6 +106,11 @@ import {
   PATH_INSERT_STRIP_CHIP_BTN_EXPAND_ROW,
   PATH_INSERT_STRIP_CHIP_BTN_EXPAND_ROW_PAIR,
 } from './adminInsertStripClasses';
+import {
+  CourseHierarchyVisibilityCells,
+  PATH_OUTLINE_ROW_VISIBILITY_SHOW_TIP,
+} from './CourseHierarchyVisibilityControls';
+import { AdminListboxSelect } from './AdminListboxSelect';
 import { catalogMiniRichPlainText } from '../../utils/catalogMiniRichHtml';
 
 function deepClone<T>(x: T): T {
@@ -351,13 +363,7 @@ function mergeCourseIdsFromBranches(draft: LearningPath, roots: PathBranchNode[]
 /** Same visibility as learner outline: Show off or Admin-only → not “shown” to learners for publish rules. */
 function pathBranchVisibleToLearner(n: PathBranchNode): boolean {
   const p = compactVisibleToRolesForPersist(n.visibleToRoles);
-  const node: MindmapTreeNode = {
-    id: n.id,
-    label: '',
-    children: [],
-    ...(p !== undefined ? { visibleToRoles: p } : {}),
-  };
-  return mindmapNodeVisibleToViewer(node, false);
+  return outlineVisibleToRolesVisibleToViewer(p, false);
 }
 
 /**
@@ -1123,6 +1129,15 @@ function PlaceDuplicateBranchModal({
     [siblings, publishedList]
   );
 
+  const placeDupOrderOptions = useMemo(
+    () =>
+      Array.from({ length: siblings.length + 1 }, (_, i) => ({
+        value: String(i),
+        label: insertSlotLabel(siblings, i, publishedList),
+      })),
+    [siblings, publishedList, positionSelectKey]
+  );
+
   const copyNamePlaceholder = useMemo(() => {
     if (sourceSnapshot.kind === 'label') return 'Enter module name…';
     if (sourceSnapshot.kind === 'divider') return 'Enter divider text…';
@@ -1355,9 +1370,11 @@ function PlaceDuplicateBranchModal({
                 <div className="text-left">Type</div>
                 <div className="w-4 shrink-0" aria-hidden />
               </div>
-              <ul className="min-h-0 min-w-0 flex-1 divide-y divide-[var(--border-color)] overflow-y-auto overflow-x-hidden overscroll-contain rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)]/25">
+              <ul className={ADMIN_EMBEDDED_SCROLL_LIST_DIVIDED}>
                 {siblings.length === 0 ? (
-                  <li className="px-3 py-3 text-sm text-[var(--text-secondary)]">Empty here — the branch will be the first in this list.</li>
+                  <li className={`block ${CUSTOM_LISTBOX_LOADING} text-[var(--text-secondary)]`}>
+                    Empty here — the branch will be the first in this list.
+                  </li>
                 ) : null}
                 {siblings.map((s) => {
                   const canDrill = !placementTopOutlineOnly && validDestinationFolderIds.has(s.id);
@@ -1378,7 +1395,7 @@ function PlaceDuplicateBranchModal({
                         onClick={() => {
                           if (canDrill) setParentId(s.id);
                         }}
-                        className={`grid w-full min-h-12 w-full min-w-0 grid-cols-[minmax(0,1fr)_4.5rem_auto] items-center gap-1.5 px-2 py-2 text-left text-sm ${
+                        className={`grid w-full min-w-0 grid-cols-[minmax(0,1fr)_4.5rem_auto] items-center gap-1.5 px-2 py-1.5 text-left text-sm leading-none ${
                           canDrill ? 'hover:bg-[var(--hover-bg)]' : 'cursor-default opacity-80'
                         }`}
                         title={canDrill ? 'View contents' : undefined}
@@ -1414,20 +1431,16 @@ function PlaceDuplicateBranchModal({
                 <p id="place-dup-subtree-hint" className="mt-1 text-[11px] leading-snug text-[var(--text-muted)]">
                   {subtreeHint}
                 </p>
-                <select
+                <AdminListboxSelect
                   key={positionSelectKey}
                   id="place-dup-index"
                   aria-describedby="place-dup-subtree-hint"
-                  className={`mt-1.5 w-full min-w-0 ${PATH_BRANCH_COMPACT_SELECT_CLASS}`}
-                  value={insertIdx}
-                  onChange={(e) => setInsertIndex(Number(e.target.value))}
-                >
-                  {Array.from({ length: siblings.length + 1 }, (_, i) => (
-                    <option key={i} value={i}>
-                      {insertSlotLabel(siblings, i, publishedList)}
-                    </option>
-                  ))}
-                </select>
+                  value={String(insertIdx)}
+                  onChange={(next) => setInsertIndex(Number(next))}
+                  options={placeDupOrderOptions}
+                  placeholder="Order in list"
+                  triggerClassName={`mt-1.5 w-full min-w-0 ${PATH_BRANCH_COMPACT_SELECT_CLASS}`}
+                />
               </div>
             </>
           )}
@@ -1525,6 +1538,17 @@ function PlaceConvertedTopLevelModal({
 
   useDialogKeyboard({ open, onClose });
 
+  const placeConvertedTopLevelOptions = useMemo(
+    () => [
+      { value: '0', label: 'Top of outline' },
+      ...roots.map((r, idx) => ({
+        value: String(idx + 1),
+        label: branchNodeDisplayLabel(r, publishedList),
+      })),
+    ],
+    [roots, publishedList]
+  );
+
   if (!open) return null;
 
   const rows = roots;
@@ -1571,22 +1595,17 @@ function PlaceConvertedTopLevelModal({
           <label className="block text-xs font-semibold text-[var(--text-secondary)]" htmlFor="place-converted-top-level">
             After
           </label>
-          <select
+          <AdminListboxSelect
             id="place-converted-top-level"
-            className={`mt-1.5 ${PATH_BRANCH_COMPACT_SELECT_CLASS}`}
             value={String(insertIndex)}
-            onChange={(e) => {
-              const n = parseInt(e.target.value, 10);
+            onChange={(next) => {
+              const n = parseInt(next, 10);
               setInsertIndex(Number.isFinite(n) ? n : rows.length);
             }}
-          >
-            <option value="0">Top of outline</option>
-            {rows.map((r, idx) => (
-              <option key={r.id} value={String(idx + 1)}>
-                {branchNodeDisplayLabel(r, publishedList)}
-              </option>
-            ))}
-          </select>
+            options={placeConvertedTopLevelOptions}
+            placeholder="Placement"
+            triggerClassName={`mt-1.5 ${PATH_BRANCH_COMPACT_SELECT_CLASS}`}
+          />
 
           <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <button
@@ -1888,6 +1907,15 @@ function ChangePathOutlineModuleMergeModal({
     setInsertAt((prev) => (positionOptions.some((o) => o.insertAt === prev) ? prev : positionOptions[0]!.insertAt));
   }, [open, targetNode, positionOptions, targetId]);
 
+  const mergeTargetListboxOptions = useMemo(
+    () => targets.map((t) => ({ value: t.id, label: branchNodeDisplayLabel(t, publishedList) })),
+    [targets, publishedList]
+  );
+  const mergeInsertListboxOptions = useMemo(
+    () => positionOptions.map((o) => ({ value: String(o.insertAt), label: o.label })),
+    [positionOptions]
+  );
+
   useDialogKeyboard({ open, onClose });
 
   if (!open) return null;
@@ -1967,33 +1995,27 @@ function ChangePathOutlineModuleMergeModal({
           <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
             Merge into module
           </span>
-          <select
-            className={PATH_OUTLINE_MERGE_SELECT_CLASS}
+          <AdminListboxSelect
+            id="path-outline-merge-target"
             value={targetId}
-            onChange={(e) => setTargetId(e.target.value)}
-          >
-            {targets.map((t) => (
-              <option key={t.id} value={t.id}>
-                {branchNodeDisplayLabel(t, publishedList)}
-              </option>
-            ))}
-          </select>
+            onChange={setTargetId}
+            options={mergeTargetListboxOptions}
+            placeholder="Target module"
+            triggerClassName={PATH_OUTLINE_MERGE_SELECT_CLASS}
+          />
         </label>
         <label className="block min-w-0">
           <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
             Place divider and lessons after
           </span>
-          <select
-            className={PATH_OUTLINE_MERGE_SELECT_CLASS}
+          <AdminListboxSelect
+            id="path-outline-merge-insert"
             value={String(insertAt)}
-            onChange={(e) => setInsertAt(Number(e.target.value))}
-          >
-            {positionOptions.map((o) => (
-              <option key={`${o.insertAt}-${o.label}`} value={String(o.insertAt)}>
-                {o.label}
-              </option>
-            ))}
-          </select>
+            onChange={(next) => setInsertAt(Number(next))}
+            options={mergeInsertListboxOptions}
+            placeholder="Position"
+            triggerClassName={PATH_OUTLINE_MERGE_SELECT_CLASS}
+          />
         </label>
       </div>
       <button
@@ -2702,12 +2724,12 @@ function AddPathBranchModal({
                     : 'No courses match your search. Try another term.'}
                 </p>
               ) : (
-                <ul className="space-y-1">
+                <ul className="space-y-0">
                   {filteredCourses.map((c) => (
                     <li key={c.id}>
                       <button
                         type="button"
-                        className="flex w-full min-h-11 items-center gap-2 rounded-lg border border-transparent px-2 py-2 text-left text-sm hover:bg-[var(--hover-bg)]"
+                        className={PATH_MODAL_LIST_ROW_COURSE}
                         onClick={() => {
                           if (step === 'course') commitCourse(c);
                           else if (step === 'moduleCourse') {
@@ -2748,12 +2770,12 @@ function AddPathBranchModal({
                     : 'No modules match your search.'}
                 </p>
               ) : (
-                <ul className="max-h-[min(50dvh,320px)] space-y-1 overflow-y-auto overscroll-contain pr-1">
+                <ul className="max-h-[min(50dvh,320px)] space-y-0 overflow-y-auto overscroll-contain pr-1">
                   {filteredModules.map((m) => (
                     <li key={m.id}>
                       <button
                         type="button"
-                        className="flex w-full min-h-11 flex-col items-start rounded-lg border border-transparent px-2 py-2 text-left text-sm hover:bg-[var(--hover-bg)]"
+                        className={PATH_MODAL_LIST_ROW_TWO_LINE}
                         onClick={() => commitModule(moduleCoursePick, m)}
                       >
                         <span className="font-medium">{m.title?.trim() || m.id}</span>
@@ -2785,12 +2807,12 @@ function AddPathBranchModal({
                     : 'No lessons match your search. Try another term.'}
                 </p>
               ) : (
-                <ul className="max-h-[min(50dvh,320px)] space-y-1 overflow-y-auto overscroll-contain pr-1">
+                <ul className="max-h-[min(50dvh,320px)] space-y-0 overflow-y-auto overscroll-contain pr-1">
                   {filteredLessons.map((r) => (
                     <li key={r.lesson.id}>
                       <button
                         type="button"
-                        className="flex w-full min-h-11 flex-col items-start rounded-lg border border-transparent px-2 py-2 text-left text-sm hover:bg-[var(--hover-bg)]"
+                        className={PATH_MODAL_LIST_ROW_TWO_LINE}
                         onClick={() => commitLesson(lessonCourse, r.lesson)}
                       >
                         <span className="font-medium">{r.lesson.title || r.lesson.id}</span>
@@ -2847,22 +2869,6 @@ function pathBranchKindBadgeShortLabel(kind: PathBranchNode['kind']): string {
       return _x;
     }
   }
-}
-
-/** Derived state for path branch outline visibility (Firestore `visibleToRoles`). */
-function pathBranchOutlineVisibility(visibleToRoles: PathOutlineAudienceRole[] | undefined): {
-  showInOutline: boolean;
-  audienceSelectValue: 'admin' | 'everyone';
-} {
-  const hiddenFromAll = Array.isArray(visibleToRoles) && visibleToRoles.length === 0;
-  const showInOutline = !hiddenFromAll;
-  const adminOnly =
-    showInOutline &&
-    Array.isArray(visibleToRoles) &&
-    visibleToRoles.length === 1 &&
-    visibleToRoles[0] === 'admin';
-  const audienceSelectValue = adminOnly ? 'admin' : 'everyone';
-  return { showInOutline, audienceSelectValue };
 }
 
 /** Top-level path inserts: two chips on one gutter (mirrors catalog lesson/module boundary layout). */
@@ -3148,111 +3154,6 @@ const PATH_BRANCH_COMPACT_SELECT_CLASS =
 /** Path outline row icon buttons (reorder, copy, delete) — same sm+ envelope as single-line fields (`sm:h-7`). */
 const PATH_BRANCH_ROW_ICON_BTN_CLASS =
   'inline-flex min-h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg text-xs font-semibold disabled:opacity-30 sm:h-7 sm:w-7 sm:min-h-0 sm:min-w-0';
-
-/** Hover / long-press tip for the catalog outline visibility checkbox column. */
-const PATH_BRANCH_SHOW_COLUMN_TIP =
-  'When off, the row is hidden from the path outline for everyone (including admins). When on, use the audience menu for User vs Admin-only. For course or lesson rows, learners only see them if that course is also published in the Catalog tab—draft courses stay hidden from learners even when Show is on. Admins viewing a path in the app see all rows that are shown to User or Admin.';
-
-function PathBranchVisibilityCells({
-  nodeId,
-  visibleToRoles,
-  onChange,
-  nested,
-  nestedGridSecondRow,
-  topLevelGridSecondRow,
-}: {
-  nodeId: string;
-  visibleToRoles: PathOutlineAudienceRole[] | undefined;
-  onChange: (id: string, next: PathOutlineAudienceRole[]) => void;
-  nested: boolean;
-  /** When nested, place checkbox/select on grid row 2 with the title input (not vertically centered on the whole cell). */
-  nestedGridSecondRow?: boolean;
-  /** Same as nested, for top-level `li` outline grid (row 2 with inputs). */
-  topLevelGridSecondRow?: boolean;
-}) {
-  const { showInOutline, audienceSelectValue } = pathBranchOutlineVisibility(visibleToRoles);
-
-  const showCell = (
-    <label
-      className="flex min-h-11 cursor-pointer items-center gap-2 touch-manipulation text-xs text-[var(--text-secondary)] sm:h-7 sm:min-h-0 md:justify-center md:gap-0"
-      title={PATH_BRANCH_SHOW_COLUMN_TIP}
-    >
-      <input
-        type="checkbox"
-        checked={showInOutline}
-        onChange={(e) => {
-          if (e.target.checked) {
-            onChange(nodeId, ['user', 'admin']);
-          } else {
-            onChange(nodeId, []);
-          }
-        }}
-        className="h-4 w-4 shrink-0 rounded border-[var(--border-color)] checkbox-accent-theme"
-        aria-label="Show in catalog path outline"
-      />
-      <span className="min-w-0 select-none font-semibold leading-snug md:sr-only">Show</span>
-    </label>
-  );
-
-  const roleCell = (
-    <select
-      value={audienceSelectValue}
-      disabled={!showInOutline}
-      onChange={(e) => {
-        const v = e.target.value;
-        if (v === 'admin') onChange(nodeId, ['admin']);
-        else onChange(nodeId, ['user', 'admin']);
-      }}
-      title={
-        showInOutline
-          ? 'Everyone: learners, guests, and admins. Administrators only: row stays in the admin editor but is hidden from the catalog outline for everyone else.'
-          : 'Hidden from the catalog outline. Turn on Show to choose who can see this row there.'
-      }
-      className={`box-border min-h-11 w-full min-w-0 rounded-md border px-2 py-0 text-xs leading-none sm:h-7 sm:min-h-0 sm:px-2 sm:text-sm ${
-        showInOutline
-          ? 'border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-primary)]'
-          : 'cursor-not-allowed border-[var(--border-color)]/50 bg-[var(--bg-secondary)] text-[var(--text-muted)] opacity-60'
-      }`}
-      aria-label="Who can see this in the catalog outline"
-    >
-      <option value="everyone">User (admins included)</option>
-      <option value="admin">Administrators only</option>
-    </select>
-  );
-
-  if ((nested && nestedGridSecondRow) || topLevelGridSecondRow) {
-    return (
-      <div className="max-md:col-span-full max-md:col-start-1 max-md:row-auto max-md:flex max-md:min-w-0 max-md:flex-row max-md:flex-wrap max-md:items-center max-md:gap-x-3 max-md:gap-y-2 md:contents">
-        <div className="col-start-3 row-start-1 flex min-w-0 items-center justify-center justify-self-center max-md:justify-start md:justify-self-center">
-          {showCell}
-        </div>
-        <div className="col-start-4 row-start-1 flex min-w-0 w-full items-center justify-self-stretch max-md:min-w-0 max-md:max-w-none max-md:flex-1 sm:min-w-[12rem] md:max-w-[16rem]">
-          {roleCell}
-        </div>
-      </div>
-    );
-  }
-
-  if (nested) {
-    return (
-      <div
-        className="flex shrink-0 flex-col gap-2 self-end sm:flex-row sm:flex-wrap sm:items-end sm:gap-3"
-        role="group"
-        aria-label="Catalog outline visibility"
-      >
-        {showCell}
-        <div className="min-w-0 sm:min-w-[12rem] sm:max-w-[16rem]">{roleCell}</div>
-      </div>
-    );
-  }
-
-  return (
-    <>
-      <div className="flex min-w-0 justify-center md:px-0">{showCell}</div>
-      <div className="min-w-0 md:min-w-0">{roleCell}</div>
-    </>
-  );
-}
 
 function PathBranchRow({
   b,
@@ -3630,12 +3531,16 @@ function PathBranchRow({
       {depth === 0 ? (
         <div className="contents">
           {renderOutlineRowMainCells()}
-          <PathBranchVisibilityCells
-            nodeId={b.id}
+          <CourseHierarchyVisibilityCells
             visibleToRoles={b.visibleToRoles}
-            onChange={onVisibleToRolesChange}
+            onChange={(next) => onVisibleToRolesChange(b.id, next)}
             nested={false}
             topLevelGridSecondRow
+            audienceListboxId={`path-outline-vis-${b.id}`}
+            showColumnTip={PATH_OUTLINE_ROW_VISIBILITY_SHOW_TIP}
+            audienceTitle="Everyone: learners, guests, and admins. Administrators only: row stays in the admin editor but is hidden from the catalog outline for everyone else."
+            showAriaLabel="Show in catalog path outline"
+            audienceAriaLabel="Who can see this in the catalog outline"
           />
           <div className="max-md:flex max-md:w-full max-md:justify-end md:contents">
             <div className="flex items-center justify-end gap-1 max-md:col-span-full max-md:col-start-1 max-md:row-auto md:col-start-5 md:row-start-1 md:justify-end">
@@ -3655,12 +3560,16 @@ function PathBranchRow({
           aria-label="Catalog outline visibility"
         >
           {renderOutlineRowMainCells()}
-          <PathBranchVisibilityCells
-            nodeId={b.id}
+          <CourseHierarchyVisibilityCells
             visibleToRoles={b.visibleToRoles}
-            onChange={onVisibleToRolesChange}
+            onChange={(next) => onVisibleToRolesChange(b.id, next)}
             nested
             nestedGridSecondRow
+            audienceListboxId={`path-outline-vis-${b.id}`}
+            showColumnTip={PATH_OUTLINE_ROW_VISIBILITY_SHOW_TIP}
+            audienceTitle="Everyone: learners, guests, and admins. Administrators only: row stays in the admin editor but is hidden from the catalog outline for everyone else."
+            showAriaLabel="Show in catalog path outline"
+            audienceAriaLabel="Who can see this in the catalog outline"
           />
           <div className="max-md:flex max-md:w-full max-md:justify-end md:contents">
             <div className="flex items-center justify-end gap-1 max-md:col-span-full max-md:col-start-1 max-md:row-auto max-md:pt-0 md:col-start-5 md:row-start-1 md:self-center">
@@ -4454,6 +4363,17 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     [paths]
   );
 
+  const pathToolbarListboxOptions = useMemo(() => {
+    if (pathsLoading) return [];
+    return [
+      { value: '__new__', label: '+ Create new path' },
+      ...sortedPaths.map((p) => ({
+        value: p.id,
+        label: `${p.title || p.id} (${p.id})`,
+      })),
+    ];
+  }, [pathsLoading, sortedPaths]);
+
   const changeTypeSource = useMemo((): PathBranchNode | null => {
     if (branchModal.kind !== 'changeType') return null;
     return findBranchNode(pathBranchTree, branchModal.nodeId);
@@ -4972,27 +4892,16 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                 </li>
               </AdminLabelInfoTip>
             </div>
-            <select
+            <AdminListboxSelect
               id="admin-learning-path-select"
               value={pathSelector}
-              onChange={(e) => pickPath(e.target.value)}
+              onChange={pickPath}
+              options={pathToolbarListboxOptions}
               disabled={pathsLoading}
-              className="admin-toolbar-main-select box-border min-h-11 min-w-0 w-full touch-manipulation rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50 md:text-sm lg:min-w-[12rem] lg:flex-1 lg:max-w-none"
-            >
-              <option value="" disabled>
-                Choose a path…
-              </option>
-              {!pathsLoading && (
-                <>
-                  <option value="__new__">+ Create new path</option>
-                  {sortedPaths.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.title || p.id} ({p.id})
-                    </option>
-                  ))}
-                </>
-              )}
-            </select>
+              placeholder={pathsLoading ? 'Loading paths…' : 'Choose a path…'}
+              emptyMessage="No paths in list"
+              triggerClassName="admin-toolbar-main-select box-border min-h-11 min-w-0 w-full touch-manipulation rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50 md:text-sm lg:min-w-[12rem] lg:flex-1 lg:max-w-none"
+            />
             <div className="flex min-w-0 flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:justify-between md:gap-x-4 md:gap-y-2 lg:flex-row lg:flex-nowrap lg:items-center lg:justify-start lg:gap-x-3 lg:gap-y-0 lg:shrink-0">
               <div className="flex w-full min-w-0 flex-row flex-nowrap items-center gap-2 overflow-x-auto overflow-y-visible overscroll-x-contain border-t border-[var(--border-color)]/60 pt-3 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] md:w-auto md:max-w-[min(100%,42rem)] md:flex-wrap md:overflow-visible md:border-t-0 md:pt-0 lg:w-auto lg:max-w-none lg:flex-nowrap lg:shrink-0 [&::-webkit-scrollbar]:hidden">
                 <div className="flex min-w-0 shrink-0 flex-nowrap items-center gap-2">

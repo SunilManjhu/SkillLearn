@@ -1756,7 +1756,7 @@ export function AdminCatalogTaxonomyPanel({
                     Linked courses
                   </p>
                   <ul
-                    className="max-h-[min(50vh,20rem)] space-y-1.5 overflow-y-auto overscroll-y-contain rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/50 p-3 text-sm"
+                    className="max-h-[min(50vh,20rem)] space-y-0 overflow-y-auto overscroll-y-contain rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/50 px-2 py-0 text-sm [scrollbar-width:thin] [-webkit-overflow-scrolling:touch]"
                   >
                     {[...confirm.linkedCourses]
                       .sort((a, b) => {
@@ -1770,8 +1770,8 @@ export function AdminCatalogTaxonomyPanel({
                             key={c.id}
                             className={
                               blocked
-                                ? 'rounded-lg border border-[#8b8c8c]/75 bg-[#757676]/10 px-2.5 py-2'
-                                : 'rounded-lg px-2.5 py-1.5'
+                                ? 'rounded-lg border border-[#8b8c8c]/75 bg-[#757676]/10 px-2.5 py-1.5 leading-snug'
+                                : 'rounded-lg px-2.5 py-1 leading-snug'
                             }
                           >
                             <span className="font-medium text-[var(--text-primary)]">{displayCourseLabelWithId(c)}</span>

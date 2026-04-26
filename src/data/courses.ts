@@ -1,3 +1,5 @@
+import type { PathOutlineAudienceRole } from './pathMindmap';
+
 /**
  * `video` (default): embedded player from `videoUrl`. `web`: open `webUrl` in a new tab. `quiz`: in-player quiz.
  * `divider`: syllabus-only heading in the module list; not playable (uses `title` as the label).
@@ -83,12 +85,19 @@ export interface Lesson {
   webUrl?: string;
   /** Required when `contentKind === 'quiz'`. */
   quiz?: QuizDefinition;
+  /**
+   * Same shape as path outline `visibleToRoles`: omit or both roles → visible to learners and admins;
+   * `[]` → hidden for everyone in the course player/overview; `['admin']` → admins only.
+   */
+  visibleToRoles?: PathOutlineAudienceRole[];
 }
 
 export interface Module {
   id: string;
   title: string;
   lessons: Lesson[];
+  /** @see Lesson.visibleToRoles — applies to this section (module) and its lessons in the learner shell. */
+  visibleToRoles?: PathOutlineAudienceRole[];
 }
 
 export type CourseLevel = 'Beginner' | 'Intermediate' | 'Advanced' | 'Proficient';
@@ -108,6 +117,11 @@ export interface Course {
   /** Skill tags (multi), e.g. React, Python. */
   skills: string[];
   modules: Module[];
+  /**
+   * Same shape as path outline `visibleToRoles`: omit or both roles → visible to learners and admins;
+   * `[]` → hidden for everyone in catalog browse and the course shell; `['admin']` → admins only.
+   */
+  visibleToRoles?: PathOutlineAudienceRole[];
   /**
    * Platform catalog visibility for documents in `publishedCourses`. When `false`, the course is a draft: hidden from
    * learner browse, path outlines, and path builder pickers until published. Omit or `undefined` = visible (legacy).

@@ -140,7 +140,9 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
   const reduceMotion = useReducedMotion();
   const collapseTransition = { duration: reduceMotion ? 0 : 0.28 };
   const modalTransition = { duration: reduceMotion ? 0 : 0.2 };
-  const [expandedModules, setExpandedModules] = useState<string[]>([course.modules[0].id]);
+  const [expandedModules, setExpandedModules] = useState<string[]>(() =>
+    course.modules[0]?.id ? [course.modules[0].id] : []
+  );
   const [showRatingPrompt, setShowRatingPrompt] = useState(false);
   const [existingRating, setExistingRating] = useState<CourseRating | null>(null);
   const [ratingStars, setRatingStars] = useState(0);
@@ -162,6 +164,14 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
         : [...prev, moduleId]
     );
   };
+
+  useLayoutEffect(() => {
+    setExpandedModules((prev) => {
+      const kept = prev.filter((id) => course.modules.some((m) => m.id === id));
+      if (kept.length > 0) return kept;
+      return course.modules[0]?.id ? [course.modules[0].id] : [];
+    });
+  }, [course.id, curriculumKey]);
 
   useEffect(() => {
     if (!contentDeepLink) return;

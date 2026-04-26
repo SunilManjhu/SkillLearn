@@ -15,6 +15,7 @@ import { AdminUserRolesSection } from './admin/AdminUserRolesSection';
 import { AdminCreatorInventorySection } from './admin/AdminCreatorInventorySection';
 import { AdminHeroPhoneAdsSection } from './admin/AdminHeroPhoneAdsSection';
 import { AdminLabelInfoTip } from './admin/adminLabelInfoTip';
+import { AdminListboxSelect } from './admin/AdminListboxSelect';
 import { useAdminActionToast } from './admin/useAdminActionToast';
 
 interface AdminPageProps {
@@ -94,7 +95,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   const [phoneAdsDirty, setPhoneAdsDirty] = useState(false);
   const [navigationGuardOpen, setNavigationGuardOpen] = useState(false);
   const [pendingNavigation, setPendingNavigation] = useState<PendingAdminNavigation | null>(null);
-  const courseRef = useRef<HTMLSelectElement | null>(null);
+  const courseRef = useRef<HTMLButtonElement | null>(null);
   const titleRef = useRef<HTMLInputElement | null>(null);
   const messageRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -194,6 +195,19 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   });
 
   const selectedCourse = sortedCourses.find((c) => c.id === courseId);
+  const alertModuleOptions = useMemo(() => {
+    const mods = selectedCourse?.modules ?? [];
+    return [
+      { value: '', label: '— None —' },
+      ...mods.map((m) => ({ value: m.id, label: `${m.title} (${m.id})` })),
+    ];
+  }, [selectedCourse]);
+  const alertLessonOptions = useMemo(() => {
+    const rows = (selectedCourse?.modules ?? []).flatMap((m) =>
+      m.lessons.map((l) => ({ value: l.id, label: `${l.title} (${l.id})` }))
+    );
+    return [{ value: '', label: '— None —' }, ...rows];
+  }, [selectedCourse]);
   const courseMissing = !courseId;
   const titleMissing = !title.trim();
   const messageMissing = !message.trim();
@@ -209,6 +223,19 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       { id: 'creators', label: 'Creators', icon: <Library size={16} aria-hidden /> },
     ],
     []
+  );
+
+  const topTabOptions = useMemo(
+    () => topTabs.map((t) => ({ value: t.id, label: t.label })),
+    [topTabs]
+  );
+  const alertTypeOptions = useMemo(
+    () => ALERT_TYPES.map((t) => ({ value: t.value, label: t.label })),
+    []
+  );
+  const alertCourseOptions = useMemo(
+    () => sortedCourses.map((c) => ({ value: c.id, label: `${c.title} (${c.id})` })),
+    [sortedCourses]
   );
 
   const handleSend = async () => {
@@ -269,9 +296,9 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   );
 
   return (
-    <div className="admin-portal min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] px-3 pb-20 pt-24 sm:px-6 sm:pb-16">
+    <div className="admin-portal min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] px-2 pb-20 pt-24 sm:px-3 sm:pb-16 md:px-4 lg:px-5 xl:px-6">
       <div
-        className="mx-auto min-w-0 max-w-6xl space-y-5 sm:space-y-6"
+        className="mx-auto min-w-0 w-full max-w-[min(100%,112rem)] space-y-5 sm:space-y-6"
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
@@ -307,22 +334,18 @@ export const AdminPage: React.FC<AdminPageProps> = ({
           >
             Section
           </label>
-          <select
+          <AdminListboxSelect
             id="admin-top-tab-select"
             value={tab}
-            onChange={(e) => {
-              const next = e.target.value as AdminHistoryTab;
-              if (next === tab) return;
-              requestAdminNavigation({ kind: 'tab', tab: next });
+            onChange={(next) => {
+              const nextTab = next as AdminHistoryTab;
+              if (nextTab === tab) return;
+              requestAdminNavigation({ kind: 'tab', tab: nextTab });
             }}
-            className="box-border min-h-11 w-full touch-manipulation rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-base font-semibold text-[var(--text-primary)]"
-          >
-            {topTabs.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.label}
-              </option>
-            ))}
-          </select>
+            options={topTabOptions}
+            placeholder="Section"
+            triggerClassName="!rounded-xl !bg-[var(--bg-secondary)] font-semibold"
+          />
         </div>
 
         <div className="-mx-1 hidden gap-2 overflow-x-auto overflow-y-hidden overscroll-x-contain px-1 py-0.5 [scrollbar-width:none] sm:flex sm:flex-wrap sm:overflow-visible [&::-webkit-scrollbar]:hidden">
@@ -392,41 +415,29 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                   <label htmlFor="admin-alerts-type" className="block text-xs font-semibold text-[var(--text-secondary)]">
                     Type
                   </label>
-                  <select
+                  <AdminListboxSelect
                     id="admin-alerts-type"
                     value={type}
-                    onChange={(e) => setType(e.target.value as BroadcastAlertType)}
-                    className="box-border min-h-11 w-full touch-manipulation rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] sm:text-sm"
-                  >
-                    {ALERT_TYPES.map((t) => (
-                      <option key={t.value} value={t.value}>
-                        {t.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(next) => setType(next as BroadcastAlertType)}
+                    options={alertTypeOptions}
+                    placeholder="Alert type"
+                  />
                 </div>
 
                 <div className="space-y-1">
                   <label htmlFor="admin-alerts-course" className="block text-xs font-semibold text-[var(--text-secondary)]">
                     Course
                   </label>
-                  <select
+                  <AdminListboxSelect
                     id="admin-alerts-course"
                     ref={courseRef}
                     value={courseId}
-                    onChange={(e) => setCourseId(e.target.value)}
+                    onChange={setCourseId}
+                    options={alertCourseOptions}
+                    placeholder="Select a course…"
                     aria-invalid={showValidationHints && courseMissing ? true : undefined}
                     aria-describedby={showValidationHints && courseMissing ? 'admin-alerts-course-err' : undefined}
-                    className={`box-border min-h-11 w-full touch-manipulation rounded-lg border bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] sm:text-sm ${
-                      showValidationHints && courseMissing ? 'border-[#616161]' : 'border-[var(--border-color)]'
-                    }`}
-                  >
-                    {sortedCourses.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.title} ({c.id})
-                      </option>
-                    ))}
-                  </select>
+                  />
                   {showValidationHints && courseMissing ? (
                     <p id="admin-alerts-course-err" className="text-xs text-[#a1a2a2]" role="alert">
                       Course is required.
@@ -453,40 +464,28 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                     <label htmlFor="admin-alerts-module" className="block text-xs font-semibold text-[var(--text-secondary)]">
                       Module (optional)
                     </label>
-                    <select
+                    <AdminListboxSelect
                       id="admin-alerts-module"
                       value={moduleId}
-                      onChange={(e) => setModuleId(e.target.value)}
-                      className="box-border min-h-11 w-full touch-manipulation rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-base text-[var(--text-primary)] sm:text-sm"
-                    >
-                      <option value="">— None —</option>
-                      {(selectedCourse?.modules ?? []).map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.title} ({m.id})
-                        </option>
-                      ))}
-                    </select>
+                      onChange={setModuleId}
+                      options={alertModuleOptions}
+                      placeholder="— None —"
+                      triggerClassName="!bg-[var(--bg-secondary)]"
+                    />
                   </div>
 
                   <div className="space-y-1">
                     <label htmlFor="admin-alerts-lesson" className="block text-xs font-semibold text-[var(--text-secondary)]">
                       Lesson (optional)
                     </label>
-                    <select
+                    <AdminListboxSelect
                       id="admin-alerts-lesson"
                       value={lessonId}
-                      onChange={(e) => setLessonId(e.target.value)}
-                      className="box-border min-h-11 w-full touch-manipulation rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-base text-[var(--text-primary)] sm:text-sm"
-                    >
-                      <option value="">— None —</option>
-                      {(selectedCourse?.modules ?? []).flatMap((m) =>
-                        m.lessons.map((l) => (
-                          <option key={l.id} value={l.id}>
-                            {l.title} ({l.id})
-                          </option>
-                        ))
-                      )}
-                    </select>
+                      onChange={setLessonId}
+                      options={alertLessonOptions}
+                      placeholder="— None —"
+                      triggerClassName="!bg-[var(--bg-secondary)]"
+                    />
                   </div>
                 </div>
               </details>

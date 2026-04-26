@@ -70,7 +70,13 @@ import {
   lessonQuizDefinition,
   lessonWebHref,
 } from '../utils/lessonContent';
-import { firstPlayableLesson, nextPlayableLessonAfter } from '../utils/courseLessons';
+import {
+  courseLessonIdsKey,
+  firstPlayableLesson,
+  flattenLessons,
+  nextPlayableLessonAfter,
+} from '../utils/courseLessons';
+import { OVERLAY_LISTBOX_OPTION_ROW } from '../ui/customMenuClasses';
 import { CourseQuizPanel } from './CourseQuizPanel';
 import { CoursePlayerSidebarPanels } from './CoursePlayerSidebarPanels';
 import {
@@ -106,12 +112,15 @@ function resolvePlayableLessonForPlayer(
   progressByLesson: Record<string, LessonProgress>,
   preferred?: Lesson
 ): Lesson {
+  const flatIds = new Set(flattenLessons(course).map((l) => l.id));
+  const preferredInCourse =
+    preferred && flatIds.has(preferred.id) ? preferred : undefined;
   const fromDividerOrPlayable = (l: Lesson | undefined): Lesson | null => {
     if (!l) return null;
     if (isPlayableCatalogLesson(l)) return l;
     return nextPlayableLessonAfter(course, l.id) ?? firstPlayableLesson(course) ?? null;
   };
-  const direct = fromDividerOrPlayable(preferred);
+  const direct = fromDividerOrPlayable(preferredInCourse);
   if (direct) return direct;
   for (const mod of course.modules) {
     for (const lesson of mod.lessons) {
@@ -119,7 +128,13 @@ function resolvePlayableLessonForPlayer(
       if (!isLessonPlaybackComplete(progressByLesson[lesson.id])) return lesson;
     }
   }
-  return firstPlayableLesson(course) ?? course.modules[0]!.lessons[0]!;
+  const fallbackPlayable = firstPlayableLesson(course);
+  if (fallbackPlayable) return fallbackPlayable;
+  const firstMod = course.modules[0];
+  const firstLes = firstMod?.lessons[0];
+  if (firstLes) return firstLes;
+  /** Defensive: empty syllabus should not mount the player; parent should gate. */
+  return preferredInCourse ?? preferred!;
 }
 
 function formatYtClock(totalSeconds: number): string {
@@ -198,8 +213,15 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
   const [expandedModules, setExpandedModules] = useState<string[]>(() => {
     // Expand the module containing the current lesson
     const mod = course.modules.find(m => m.lessons.some(l => l.id === currentLesson.id));
-    return mod ? [mod.id] : [course.modules[0].id];
+    if (mod) return [mod.id];
+    return course.modules[0]?.id ? [course.modules[0].id] : [];
   });
+  const courseShellLessonKey = useMemo(() => courseLessonIdsKey(course), [course]);
+  useLayoutEffect(() => {
+    const mod = course.modules.find((m) => m.lessons.some((l) => l.id === currentLesson.id));
+    if (!mod) return;
+    setExpandedModules((prev) => (prev.includes(mod.id) ? prev : [...prev, mod.id]));
+  }, [course.id, courseShellLessonKey, currentLesson.id, course]);
   const [youtubeCaptionsEnabled, setYoutubeCaptionsEnabled] = useState(() => readYoutubeCaptionsPreference());
   const youtubeCaptionsEnabledRef = useRef(youtubeCaptionsEnabled);
   youtubeCaptionsEnabledRef.current = youtubeCaptionsEnabled;
@@ -3419,7 +3441,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                             </span>
                           </div>
                           <div
-                            className="mx-1 max-h-[min(92vh,26rem)] space-y-0.5 overflow-y-auto overscroll-contain px-1 pb-1 [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.12)_transparent]"
+                            className="mx-1 max-h-[min(92vh,26rem)] space-y-0 overflow-y-auto overscroll-contain px-1 pb-1 [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.12)_transparent]"
                             role="listbox"
                             aria-label="Speed options"
                           >
@@ -3432,7 +3454,7 @@ export const CoursePlayer: React.FC<CoursePlayerProps> = ({
                                   role="option"
                                   aria-selected={selected}
                                   onClick={() => handleYtPlaybackRateSelect(r)}
-                                  className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] tabular-nums transition-colors ${
+                                  className={`${OVERLAY_LISTBOX_OPTION_ROW} text-[13px] ${
                                     selected
                                       ? 'bg-brand-500/[0.14] text-white ring-1 ring-brand-400/25'
                                       : 'text-white/[0.88] hover:bg-white/[0.06] hover:text-white'

@@ -39,7 +39,8 @@ function newNodeId(): string {
   return `m_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
-function parseVisibleToRolesField(o: Record<string, unknown>): PathOutlineAudienceRole[] | undefined {
+/** Parse Firestore `visibleToRoles` on course/module/lesson/path nodes (same shape everywhere). */
+export function parseVisibleToRolesField(o: Record<string, unknown>): PathOutlineAudienceRole[] | undefined {
   if (!Array.isArray(o.visibleToRoles)) return undefined;
   if (o.visibleToRoles.length === 0) return [];
   const r = o.visibleToRoles.filter((x) => x === 'user' || x === 'admin') as PathOutlineAudienceRole[];
@@ -57,18 +58,29 @@ function mergeVisibleToRoles(
   return { ...node, visibleToRoles: vr };
 }
 
-/** Learner outline: guests and signed-in non-admins are treated as `user`. */
-export function mindmapNodeVisibleToViewer(
-  node: MindmapTreeNode,
+/**
+ * Same semantics as path outline rows: omit or both roles → everyone; `[]` → hidden for all;
+ * `['admin']` → administrators only (Firestore `users/{uid}.role === 'admin'`).
+ */
+export function outlineVisibleToRolesVisibleToViewer(
+  visibleToRoles: PathOutlineAudienceRole[] | undefined,
   viewerIsAdmin: boolean
 ): boolean {
-  const r = node.visibleToRoles;
+  const r = visibleToRoles;
   if (r !== undefined && r.length === 0) return false;
   if (!r || r.length === 0) return true;
   if (viewerIsAdmin) {
     return r.includes('admin') || r.includes('user');
   }
   return r.includes('user');
+}
+
+/** Learner outline: guests and signed-in non-admins are treated as `user`. */
+export function mindmapNodeVisibleToViewer(
+  node: MindmapTreeNode,
+  viewerIsAdmin: boolean
+): boolean {
+  return outlineVisibleToRolesVisibleToViewer(node.visibleToRoles, viewerIsAdmin);
 }
 
 /**

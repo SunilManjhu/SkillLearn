@@ -6,6 +6,12 @@ import { User as FirebaseUser } from '../firebase';
 import type { AuthProfileSnapshot } from '../utils/authProfileCache';
 import { payloadToHash } from '../utils/appHistory';
 import { useSignInModal } from './SignInModalProvider';
+import {
+  SHELL_DROPDOWN_PANEL,
+  SHELL_DROPDOWN_PATH_LINK,
+  SHELL_DROPDOWN_SKILLS_BUTTON,
+  SHELL_PROFILE_MENUITEM,
+} from '../ui/customMenuClasses';
 
 /** Let Ctrl/Cmd/middle-click etc. use the browser; plain primary click uses SPA `onNavigate`. */
 function skipModifiedNavClick(e: React.MouseEvent): boolean {
@@ -502,11 +508,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               <ChevronDown size={14} className={`${openDropdown === 'paths' ? 'rotate-180' : ''} transition-transform`} />
             </button>
             {openDropdown === 'paths' && (
-              <div 
-                className="absolute top-full left-0 w-56 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-b-lg shadow-xl py-2 z-50"
-              >
+              <div className={SHELL_DROPDOWN_PANEL}>
                 {learningPaths.length === 0 ? (
-                  <p className="px-4 py-2 text-sm text-[var(--text-secondary)] app-dark:text-[color:var(--nav-soft)]">
+                  <p className="px-3 py-1.5 text-sm leading-tight text-[var(--text-secondary)] app-dark:text-[color:var(--nav-soft)]">
                     No Learning Paths yet
                   </p>
                 ) : (
@@ -520,7 +524,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                         handleItemSelect(`__path_${index}`);
                       }}
                       onMouseEnter={() => setFocusedItemIndex(index)}
-                      className={`block w-full cursor-pointer px-4 py-2 text-left no-underline transition-colors focus:outline-none ${focusedItemIndex === index ? 'bg-[var(--hover-bg)] text-brand-500' : 'hover:bg-[var(--hover-bg)] hover:text-brand-500'}`}
+                      className={`${SHELL_DROPDOWN_PATH_LINK} ${focusedItemIndex === index ? 'bg-[var(--hover-bg)] text-brand-500' : 'hover:bg-[var(--hover-bg)] hover:text-brand-500'}`}
                     >
                       {path.title || path.id}
                       {path.adminPreviewOwnerUid ? (
@@ -557,9 +561,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               Skills <ChevronDown size={14} className={`${openDropdown === 'skills' ? 'rotate-180' : ''} transition-transform`} />
             </button>
             {openDropdown === 'skills' && (
-              <div 
-                className="absolute top-full left-0 w-56 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-b-lg shadow-xl py-2 z-50"
-              >
+              <div className={SHELL_DROPDOWN_PANEL}>
                 {skillItems.map((item, index) => {
                   const selected = tagIsActive(catalogActiveSkillTags, item);
                   return (
@@ -569,7 +571,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       aria-pressed={selected}
                       onClick={() => handleItemSelect(item)}
                       onMouseEnter={() => setFocusedItemIndex(index)}
-                      className={`w-full min-h-10 text-left px-4 py-2 transition-colors focus:outline-none ${selected ? 'bg-brand-500/15 font-medium text-brand-500' : ''} ${focusedItemIndex === index ? 'bg-[var(--hover-bg)] text-brand-500' : 'hover:bg-[var(--hover-bg)] hover:text-brand-500'}`}
+                      className={`${SHELL_DROPDOWN_SKILLS_BUTTON} ${selected ? 'bg-brand-500/15 font-medium text-brand-500' : ''} ${focusedItemIndex === index ? 'bg-[var(--hover-bg)] text-brand-500' : 'hover:bg-[var(--hover-bg)] hover:text-brand-500'}`}
                     >
                       {item}
                     </button>
@@ -754,7 +756,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       <X size={20} />
                     </button>
                   </div>
-                  <div className="py-2">
+                  <div className="py-1">
                     <button
                       type="button"
                       role="menuitem"
@@ -762,7 +764,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                         setOpenDropdown(null);
                         onNavigate('profile');
                       }}
-                      className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
+                      className={`${SHELL_PROFILE_MENUITEM} text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]`}
                     >
                       <User size={16} aria-hidden />
                       Profile Details
@@ -775,7 +777,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                           setOpenDropdown(null);
                           onNavigate('creator');
                         }}
-                        className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
+                        className={`${SHELL_PROFILE_MENUITEM} text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]`}
                       >
                         <PenLine size={16} aria-hidden />
                         Creator studio
@@ -789,20 +791,20 @@ export const Navbar: React.FC<NavbarProps> = ({
                           setOpenDropdown(null);
                           onNavigate('admin');
                         }}
-                        className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-brand-500 transition-colors hover:bg-brand-500/10"
+                        className={`${SHELL_PROFILE_MENUITEM} text-brand-500 hover:bg-brand-500/10`}
                       >
                         <Shield size={16} aria-hidden />
                         Admin
                       </button>
                     )}
                   </div>
-                  <div className="border-t border-[var(--border-color)] py-2">
-                    <button 
+                  <div className="border-t border-[var(--border-color)] py-1">
+                    <button
                       onClick={() => {
                         setOpenDropdown(null);
                         onLogout();
                       }}
-                      className="w-full flex items-center gap-3 px-4 py-2 text-sm text-red-400 hover:bg-red-500/10 transition-colors text-left"
+                      className={`${SHELL_PROFILE_MENUITEM} text-red-400 hover:bg-red-500/10`}
                     >
                       <LogOut size={16} />
                       Logout

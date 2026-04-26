@@ -269,7 +269,7 @@ export const AdminModerationSection: React.FC<AdminModerationSectionProps> = ({
       </div>
 
       {subTab === 'reports' && (
-        <div className="max-h-[min(28rem,55vh)] space-y-2 overflow-y-auto overscroll-contain">
+        <div className="max-h-[min(28rem,55vh)] space-y-1.5 overflow-y-auto overscroll-contain">
           {reports.length === 0 ? (
             <p className="text-sm text-[var(--text-muted)] py-6 text-center">No reports yet.</p>
           ) : (
@@ -318,7 +318,7 @@ export const AdminModerationSection: React.FC<AdminModerationSectionProps> = ({
       )}
 
       {subTab === 'suggestions' && (
-        <div className="max-h-[min(28rem,55vh)] space-y-2 overflow-y-auto overscroll-contain">
+        <div className="max-h-[min(28rem,55vh)] space-y-1.5 overflow-y-auto overscroll-contain">
           {suggestions.length === 0 ? (
             <p className="text-sm text-[var(--text-muted)] py-6 text-center">No suggestions yet.</p>
           ) : (
@@ -359,7 +359,7 @@ export const AdminModerationSection: React.FC<AdminModerationSectionProps> = ({
       )}
 
       {subTab === 'contact' && (
-        <div className="max-h-[min(28rem,55vh)] space-y-2 overflow-y-auto overscroll-contain">
+        <div className="max-h-[min(28rem,55vh)] space-y-1.5 overflow-y-auto overscroll-contain">
           {contactMessages.length === 0 ? (
             <p className="text-sm text-[var(--text-muted)] py-6 text-center">No contact messages yet.</p>
           ) : (

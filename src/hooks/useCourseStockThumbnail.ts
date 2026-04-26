@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Course } from '../data/courses';
 import {
   getStockThumbnailForCourse,
+  placeholderThumbnailUrlForCourseId,
   shouldReplaceWithStockThumbnail,
 } from '../utils/courseStockThumbnail';
 
@@ -13,20 +14,30 @@ export type UseCourseStockThumbnailResult = {
 };
 
 /**
- * When `VITE_PEXELS_API_KEY` is set and the course uses a placeholder thumbnail, fetches a
- * royalty-free landscape photo from Pexels based on title, category, and skills.
+ * Placeholder thumbnails (`picsum`, empty, etc.): unique image per course via Picsum seed.
+ * With `VITE_PEXELS_API_KEY`, also tries Pexels for a metadata-based stock photo (commit 9f2f1c4).
  */
 export function useCourseStockThumbnail(course: Course): UseCourseStockThumbnailResult {
   const apiKey = import.meta.env.VITE_PEXELS_API_KEY as string | undefined;
-  const [imageUrl, setImageUrl] = useState(course.thumbnail);
+  const replacePlaceholder = shouldReplaceWithStockThumbnail(course.thumbnail);
+  const [imageUrl, setImageUrl] = useState(() =>
+    replacePlaceholder ? placeholderThumbnailUrlForCourseId(course.id) : course.thumbnail
+  );
   const [imageCreditTitle, setImageCreditTitle] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    setImageUrl(course.thumbnail);
+    const key = typeof apiKey === 'string' ? apiKey.trim() : '';
+
+    if (!shouldReplaceWithStockThumbnail(course.thumbnail)) {
+      setImageUrl(course.thumbnail);
+      setImageCreditTitle(undefined);
+      return;
+    }
+
+    setImageUrl(placeholderThumbnailUrlForCourseId(course.id));
     setImageCreditTitle(undefined);
 
-    const key = typeof apiKey === 'string' ? apiKey.trim() : '';
-    if (!key || !shouldReplaceWithStockThumbnail(course.thumbnail)) {
+    if (!key) {
       return;
     }
 
@@ -37,9 +48,11 @@ export function useCourseStockThumbnail(course: Course): UseCourseStockThumbnail
       categories: course.categories,
       skills: course.skills,
     }).then((photo) => {
-      if (cancelled || !photo) return;
-      setImageUrl(photo.url);
-      setImageCreditTitle(`Photo: ${photo.photographer} on Pexels (free to use)`);
+      if (cancelled) return;
+      if (photo) {
+        setImageUrl(photo.url);
+        setImageCreditTitle(`Photo: ${photo.photographer} on Pexels (free to use)`);
+      }
     });
 
     return () => {

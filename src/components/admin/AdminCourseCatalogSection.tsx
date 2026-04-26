@@ -51,6 +51,9 @@ import { AdminCatalogCategoriesPanel } from './AdminCatalogCategoriesPanel';
 import { AdminCatalogCategoryPresetsPanel } from './AdminCatalogCategoryPresetsPanel';
 import { AdminCatalogSkillPresetsPanel } from './AdminCatalogSkillPresetsPanel';
 import { AdminCatalogTaxonomyPanel } from './AdminCatalogTaxonomyPanel';
+import { AdminCatalogCoursePicker } from './AdminCatalogCoursePicker';
+import { AdminListboxSelect } from './AdminListboxSelect';
+import { ADMIN_COURSE_LEVEL_LISTBOX_OPTIONS } from './adminListboxSharedOptions';
 import {
   ADMIN_INSERT_STRIP_CHIP_BTN_EXPAND_ROW as ADMIN_CATALOG_INSERT_CHIP_BTN_EXPAND_ROW,
   ADMIN_INSERT_STRIP_CHIP_BTN_EXPAND_ROW_PAIR as ADMIN_CATALOG_INSERT_CHIP_BTN_EXPAND_ROW_PAIR,
@@ -58,6 +61,10 @@ import {
   ADMIN_INSERT_STRIP_CHIP_BTN_PERSIST_PAIR as ADMIN_CATALOG_INSERT_CHIP_BTN_PERSIST_PAIR,
   ADMIN_INSERT_STRIP_OUTER_EXPAND_HOVER as CATALOG_INSERT_OUTER_EXPAND_HOVER,
 } from './adminInsertStripClasses';
+import {
+  CourseHierarchyVisibilityCells,
+  COURSE_HIERARCHY_VISIBILITY_SHOW_TIP,
+} from './CourseHierarchyVisibilityControls';
 import { CatalogMiniRichEditor } from './CatalogMiniRichEditor';
 import {
   catalogMiniRichIsEffectivelyEmpty,
@@ -81,6 +88,7 @@ import {
   remapStructuredCourseModuleLessonIdsByOrder,
 } from '../../utils/courseStructuredIds';
 import { validateCourseDraft, validateLessonQuiz } from '../../utils/courseDraftValidation';
+import { compactVisibleToRolesForPersist } from '../../data/pathMindmap';
 import { isPlayableCatalogLesson, lessonWebHref } from '../../utils/lessonContent';
 import {
   listPublishedCourseDocumentIds,
@@ -942,6 +950,10 @@ const ADMIN_CATALOG_BRANCH_KIND_BADGE_CLASS = ADMIN_CATALOG_KIND_BADGE_NEUTRAL;
 const ADMIN_CATALOG_MODULE_BADGE_CLASS = ADMIN_CATALOG_KIND_BADGE_NEUTRAL;
 const ADMIN_CATALOG_LESSON_BADGE_CLASS = ADMIN_CATALOG_KIND_BADGE_NEUTRAL;
 
+/** Inset focus ring: course-details header uses `overflow-x-auto`; padding would misalign vs. Categories; inset avoids clipping. */
+const ADMIN_COURSE_DETAILS_HEADER_CONTROL_FOCUS =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#a1a2a2]/45';
+
 function catalogLessonBranchKindModalLabel(lesson: Lesson): string {
   if (lesson.contentKind === 'divider') return 'Divider';
   if (lesson.contentKind === 'web') return 'External page';
@@ -1785,6 +1797,15 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     const set = new Set(draft.skills.map((s) => s.trim().toLowerCase()));
     return skillSelectOptions.filter((o) => !set.has(o.toLowerCase()));
   }, [draft, skillSelectOptions]);
+
+  const categoryAddListboxOptions = useMemo(
+    () => categoriesNotOnDraft.map((opt) => ({ value: opt, label: opt })),
+    [categoriesNotOnDraft]
+  );
+  const skillAddListboxOptions = useMemo(
+    () => skillsNotOnDraft.map((opt) => ({ value: opt, label: opt })),
+    [skillsNotOnDraft]
+  );
 
   const refreshList = useCallback(async (): Promise<Course[]> => {
     setListLoading(true);
@@ -3217,15 +3238,17 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     setBaselineJson(nextBaseline);
   }, [publishedList, creatorDraftRows, selector, draft, isDirty, isAdminMergedCatalog]);
 
-  const onCourseSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const id = e.target.value;
-    if (id === '') return;
-    if (isDirty && id !== selector) {
-      setCourseLeaveDialog({ kind: 'select', nextId: id });
-      return;
-    }
-    void applyPickCourse(id);
-  };
+  const pickCourseFromMenu = useCallback(
+    (id: string) => {
+      if (id === '') return;
+      if (isDirty && id !== selector) {
+        setCourseLeaveDialog({ kind: 'select', nextId: id });
+        return;
+      }
+      void applyPickCourse(id);
+    },
+    [isDirty, selector, applyPickCourse]
+  );
 
   const handleSave = async () => {
     if (!draft) return;
@@ -3959,6 +3982,93 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     if (draft.modules.length < 2 || !draft.modules[sourceMi]) setChangeModuleKindModal(null);
   }, [draft, changeModuleKindModal]);
 
+  const splitDividerInsertListboxOptions = useMemo(() => {
+    if (!splitDividerNewModuleModal || !draft) return [];
+    return splitDividerIntoNewModuleInsertOptions(draft, splitDividerNewModuleModal.mi).map((o) => ({
+      value: String(o.insertAt),
+      label: o.label,
+    }));
+  }, [draft, splitDividerNewModuleModal]);
+
+  const changeModuleKindTargetListboxOptions = useMemo(() => {
+    if (!changeModuleKindModal || !draft) return [];
+    return draft.modules
+      .map((m, i) =>
+        i === changeModuleKindModal.sourceMi
+          ? null
+          : { value: String(i), label: catalogModuleTitleLine(m, i + 1) }
+      )
+      .filter((x): x is { value: string; label: string } => x != null);
+  }, [draft, changeModuleKindModal]);
+
+  const changeModuleKindInsertListboxOptions = useMemo(() => {
+    if (!changeModuleKindModal || !draft) return [];
+    const mod =
+      draft.modules[changeModuleKindModal.targetMi] ?? { id: '', title: '', lessons: [] };
+    return moduleDividerMergePositionOptions(mod).map((o) => ({
+      value: String(o.insertAt),
+      label: o.label,
+    }));
+  }, [draft, changeModuleKindModal]);
+
+  const catalogModulePlaceSlotListboxOptions = useMemo(() => {
+    if (!catalogPlaceModal || catalogPlaceModal.kind !== 'module' || !draft) return [];
+    if (catalogPlaceMode === 'copy') {
+      return Array.from({ length: draft.modules.length + 1 }, (_, i) => ({
+        value: String(i),
+        label:
+          i === 0
+            ? `Before ${catalogModuleTitleLine(draft.modules[0]!, 1)}`
+            : i >= draft.modules.length
+              ? `After ${catalogModuleTitleLine(
+                  draft.modules[draft.modules.length - 1]!,
+                  draft.modules.length
+                )}`
+              : `After ${catalogModuleTitleLine(draft.modules[i - 1]!, i)} · before ${catalogModuleTitleLine(
+                  draft.modules[i]!,
+                  i + 1
+                )}`,
+      }));
+    }
+    const smi = catalogPlaceModal.sourceMi;
+    const without = draft.modules.filter((_, j) => j !== smi);
+    return Array.from({ length: without.length + 1 }, (_, i) => ({
+      value: String(i),
+      label:
+        without.length === 0
+          ? 'Only position'
+          : i === 0
+            ? `Before ${catalogModuleTitleLine(without[0]!, 1)}`
+            : i >= without.length
+              ? `After ${catalogModuleTitleLine(
+                  without[without.length - 1]!,
+                  without.length
+                )}`
+              : `After ${catalogModuleTitleLine(without[i - 1]!, i)} · before ${catalogModuleTitleLine(
+                  without[i]!,
+                  i + 1
+                )}`,
+    }));
+  }, [catalogPlaceModal, catalogPlaceMode, draft]);
+
+  const catalogLessonModuleListboxOptions = useMemo(() => {
+    if (!draft || !catalogPlaceModal || catalogPlaceModal.kind !== 'lesson') return [];
+    return draft.modules.map((m, mj) => ({
+      value: String(mj),
+      label: catalogModuleTitleLine(m, mj + 1),
+    }));
+  }, [draft, catalogPlaceModal]);
+
+  const catalogLessonSlotListboxOptions = useMemo(() => {
+    if (!draft || !catalogPlaceModal || catalogPlaceModal.kind !== 'lesson') return [];
+    const targetMod = draft.modules[catalogLessonTargetMi];
+    if (!targetMod) return [];
+    return Array.from({ length: targetMod.lessons.length + 1 }, (_, i) => ({
+      value: String(i),
+      label: catalogLessonInsertOptionLabel(targetMod, i),
+    }));
+  }, [draft, catalogPlaceModal, catalogLessonTargetMi]);
+
   useEffect(() => {
     if (!addLessonBranchModal || !draft) return;
     const { mi, insertAt } = addLessonBranchModal;
@@ -4331,32 +4441,17 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 </div>
               </span>
             </div>
-            <select
+            <AdminCatalogCoursePicker
               id="admin-catalog-course-select"
               value={selector}
-              onFocus={openCourseCatalogOnce}
-              onMouseDown={openCourseCatalogOnce}
-              onChange={onCourseSelectChange}
-              className="admin-toolbar-main-select box-border min-h-11 min-w-0 w-full touch-manipulation rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-base text-[var(--text-primary)] md:text-sm lg:min-w-[12rem] lg:flex-1 lg:max-w-none"
-            >
-              <option value="" disabled>
-                {!catalogRequested
-                  ? 'Select a course…'
-                  : listLoading
-                    ? 'Loading courses…'
-                    : 'Select a course…'}
-              </option>
-              {catalogRequested && !listLoading && (
-                <>
-                  <option value="__new__">New Course</option>
-                  {catalogCourseMenuRows.map((row) => (
-                    <option key={row.value} value={row.value} title={row.title}>
-                      {row.label}
-                    </option>
-                  ))}
-                </>
-              )}
-            </select>
+              onRequestOptions={openCourseCatalogOnce}
+              onTriggerPrime={openCourseCatalogOnce}
+              onPick={pickCourseFromMenu}
+              rows={catalogCourseMenuRows}
+              catalogRequested={catalogRequested}
+              listLoading={listLoading}
+              triggerClassName="lg:min-w-[12rem] lg:flex-1 lg:max-w-none"
+            />
           <div className="flex min-w-0 flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:justify-between md:gap-x-4 md:gap-y-2 lg:flex-row lg:flex-nowrap lg:items-center lg:justify-start lg:gap-x-3 lg:gap-y-0 lg:shrink-0">
             <div className="flex w-full min-w-0 flex-row flex-nowrap items-center gap-2 overflow-x-auto overflow-y-visible overscroll-x-contain border-t border-[var(--border-color)]/60 pt-3 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] md:w-auto md:max-w-[min(100%,42rem)] md:flex-wrap md:overflow-visible md:border-t-0 md:pt-0 lg:w-auto lg:max-w-none lg:flex-nowrap lg:shrink-0 [&::-webkit-scrollbar]:hidden">
               <div className="flex min-w-0 shrink-0 flex-nowrap items-center gap-2">
@@ -4389,27 +4484,17 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 <span className="inline-flex shrink-0 text-[var(--text-muted)]" title="Level">
                   <SlidersHorizontal size={16} aria-hidden />
                 </span>
-                <select
+                <AdminListboxSelect
                   id="admin-catalog-course-level-mobile"
                   value={draft?.level ?? ''}
                   disabled={!draft}
                   aria-label="Course level"
-                  title="Course level"
-                  onChange={(e) =>
-                    draft && updateDraft({ level: e.target.value as Course['level'] })
-                  }
-                  className="admin-toolbar-main-select box-border min-h-11 min-w-0 w-full flex-1 rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {!draft && (
-                    <option value="" disabled>
-                      —
-                    </option>
-                  )}
-                  <option value="Beginner">Beginner</option>
-                  <option value="Intermediate">Intermediate</option>
-                  <option value="Advanced">Advanced</option>
-                  <option value="Proficient">Proficient</option>
-                </select>
+                  triggerTitle="Course level"
+                  onChange={(next) => draft && updateDraft({ level: next as Course['level'] })}
+                  options={ADMIN_COURSE_LEVEL_LISTBOX_OPTIONS}
+                  placeholder="—"
+                  triggerClassName="admin-toolbar-main-select box-border min-h-11 min-w-0 w-full flex-1 rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                />
               </div>
               <div className="hidden min-h-11 min-w-[10.5rem] shrink-0 items-center gap-1.5 md:flex">
                 <label htmlFor="admin-catalog-course-level" className="sr-only">
@@ -4418,27 +4503,17 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 <span className="inline-flex shrink-0 text-[var(--text-muted)]" title="Level">
                   <SlidersHorizontal size={16} aria-hidden />
                 </span>
-                <select
+                <AdminListboxSelect
                   id="admin-catalog-course-level"
                   value={draft?.level ?? ''}
                   disabled={!draft}
                   aria-label="Course level"
-                  title="Course level"
-                  onChange={(e) =>
-                    draft && updateDraft({ level: e.target.value as Course['level'] })
-                  }
-                  className="admin-toolbar-main-select box-border min-h-11 w-full min-w-[9rem] max-w-[11rem] rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {!draft && (
-                    <option value="" disabled>
-                      —
-                    </option>
-                  )}
-                  <option value="Beginner">Beginner</option>
-                  <option value="Intermediate">Intermediate</option>
-                  <option value="Advanced">Advanced</option>
-                  <option value="Proficient">Proficient</option>
-                </select>
+                  triggerTitle="Course level"
+                  onChange={(next) => draft && updateDraft({ level: next as Course['level'] })}
+                  options={ADMIN_COURSE_LEVEL_LISTBOX_OPTIONS}
+                  placeholder="—"
+                  triggerClassName="admin-toolbar-main-select box-border min-h-11 w-full min-w-[9rem] max-w-[11rem] rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-2 text-sm text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                />
               </div>
             </div>
 
@@ -4602,33 +4677,88 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
             {courseDetailsOpen && (
               <div className="border-t border-[var(--border-color)] p-3 sm:p-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-12 xl:gap-x-5 xl:gap-y-4">
-            <label className="block min-w-0 space-y-1 xl:col-span-7">
-              <span className="text-xs font-semibold text-[var(--text-secondary)]">Course title</span>
-              <input
-                id="admin-course-title"
-                value={draft.title}
-                onChange={(e) => updateDraft({ title: e.target.value })}
-                placeholder="Short catalog name, e.g. Web Foundations"
-                className={`w-full min-w-0 bg-[var(--bg-primary)] border rounded-lg px-3 py-2 text-sm ${
-                  showValidationHints && fieldErrors.courseTitle
-                    ? 'border-[#616161]'
-                    : 'border-[var(--border-color)]'
-                }`}
-              />
-            </label>
-            <label className="block min-w-0 space-y-1 xl:col-span-5">
-              <span className="text-xs font-semibold text-[var(--text-secondary)]">Author</span>
-              <input
-                id="admin-course-author"
-                value={draft.author}
-                onChange={(e) => updateDraft({ author: e.target.value })}
-                className={`w-full min-w-0 bg-[var(--bg-primary)] border rounded-lg px-3 py-2 text-sm ${
-                  showValidationHints && fieldErrors.courseAuthor
-                    ? 'border-[#616161]'
-                    : 'border-[var(--border-color)]'
-                }`}
-              />
-            </label>
+            <div className="col-span-full flex min-w-0 flex-nowrap items-end gap-2 overflow-x-auto overflow-y-visible pb-1 pt-0.5 [-webkit-overflow-scrolling:touch] sm:gap-3">
+              <label className="flex min-w-[12rem] flex-[2_1_16rem] flex-col gap-1">
+                <span className="text-xs font-semibold text-[var(--text-secondary)]">Course title</span>
+                <input
+                  id="admin-course-title"
+                  value={draft.title}
+                  onChange={(e) => updateDraft({ title: e.target.value })}
+                  placeholder="Short catalog name, e.g. Web Foundations"
+                  className={`box-border min-h-11 w-full min-w-0 rounded-lg border bg-[var(--bg-primary)] px-3 py-2 text-sm ${ADMIN_COURSE_DETAILS_HEADER_CONTROL_FOCUS} ${
+                    showValidationHints && fieldErrors.courseTitle
+                      ? 'border-[#616161]'
+                      : 'border-[var(--border-color)]'
+                  }`}
+                />
+              </label>
+              <label className="flex w-36 min-w-[9rem] shrink-0 flex-col gap-1 sm:w-40">
+                <span className="text-xs font-semibold text-[var(--text-secondary)]">Author</span>
+                <input
+                  id="admin-course-author"
+                  value={draft.author}
+                  onChange={(e) => updateDraft({ author: e.target.value })}
+                  className={`box-border min-h-11 w-full min-w-0 rounded-lg border bg-[var(--bg-primary)] px-3 py-2 text-sm ${ADMIN_COURSE_DETAILS_HEADER_CONTROL_FOCUS} ${
+                    showValidationHints && fieldErrors.courseAuthor
+                      ? 'border-[#616161]'
+                      : 'border-[var(--border-color)]'
+                  }`}
+                />
+              </label>
+              <div className="flex shrink-0 flex-nowrap items-center gap-x-2 self-end pb-0.5">
+                <CourseHierarchyVisibilityCells
+                  visibleToRoles={draft.visibleToRoles}
+                  onChange={(next) => {
+                    const c = compactVisibleToRolesForPersist(next);
+                    updateDraft({ visibleToRoles: c });
+                  }}
+                  nested
+                  audienceListboxId="admin-catalog-vis-course"
+                  showColumnTip={COURSE_HIERARCHY_VISIBILITY_SHOW_TIP}
+                  audienceTitle="Everyone: learners, guests, and admins. Administrators only: hidden from the library and learner course shell for everyone except admins."
+                  showAriaLabel="Show course in library and learner course shell"
+                  audienceAriaLabel="Who can see this course in the library and learner course shell"
+                />
+              </div>
+              <label className="flex w-24 shrink-0 flex-col gap-1">
+                <span className="text-xs font-semibold text-[var(--text-secondary)]">Duration label</span>
+                <input
+                  value={draft.duration}
+                  onChange={(e) => updateDraft({ duration: e.target.value })}
+                  className={`box-border min-h-11 w-full min-w-0 rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm ${ADMIN_COURSE_DETAILS_HEADER_CONTROL_FOCUS}`}
+                />
+              </label>
+              <label className="flex w-[5.5rem] shrink-0 flex-col gap-1">
+                <span className="text-xs font-semibold text-[var(--text-secondary)]">Rating (0–5)</span>
+                <input
+                  id="admin-course-rating"
+                  type="number"
+                  min={0}
+                  max={5}
+                  step={0.1}
+                  value={draft.rating}
+                  onChange={(e) => updateDraft({ rating: Number(e.target.value) })}
+                  className={`box-border min-h-11 w-full min-w-0 rounded-lg border bg-[var(--bg-primary)] px-2 py-2 text-sm [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${ADMIN_COURSE_DETAILS_HEADER_CONTROL_FOCUS} ${
+                    showValidationHints && fieldErrors.courseRating
+                      ? 'border-[#616161]'
+                      : 'border-[var(--border-color)]'
+                  }`}
+                />
+              </label>
+              <label className="flex min-w-[9rem] max-w-[20rem] flex-[1_1_11rem] flex-col gap-1">
+                <span className="text-xs font-semibold text-[var(--text-secondary)]">Thumbnail URL</span>
+                <input
+                  id="admin-course-thumbnail"
+                  value={draft.thumbnail}
+                  onChange={(e) => updateDraft({ thumbnail: e.target.value })}
+                  className={`box-border min-h-11 w-full min-w-0 rounded-lg border bg-[var(--bg-primary)] px-3 py-2 font-mono text-sm ${ADMIN_COURSE_DETAILS_HEADER_CONTROL_FOCUS} ${
+                    showValidationHints && fieldErrors.courseThumbnail
+                      ? 'border-[#616161]'
+                      : 'border-[var(--border-color)]'
+                  }`}
+                />
+              </label>
+            </div>
             <div
               id="admin-course-categories"
               aria-labelledby="admin-course-categories-label"
@@ -4728,27 +4858,22 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   ))
                 )}
               </div>
-              <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,11rem)_minmax(0,1fr)_auto] sm:items-stretch">
-                <select
+              <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(12rem,1.75fr)_minmax(8rem,1fr)_auto] sm:items-stretch">
+                <AdminListboxSelect
                   key={`admin-cat-pick-${draft.categories.join('\u001f')}`}
+                  id="admin-course-add-category-from-list"
+                  value=""
                   aria-label="Add category from list"
-                  defaultValue=""
-                  onChange={(e) => {
-                    const v = e.currentTarget.value;
+                  onChange={(v) => {
                     if (!v) return;
                     addDraftCategory(v);
-                    e.currentTarget.selectedIndex = 0;
                   }}
-                  onBlur={registerDraftTaxonomyExtras}
-                  className="box-border min-h-11 min-w-0 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] touch-manipulation"
-                >
-                  <option value="">Add from list…</option>
-                  {categoriesNotOnDraft.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
+                  onTriggerBlur={registerDraftTaxonomyExtras}
+                  options={categoryAddListboxOptions}
+                  placeholder="Add from list…"
+                  emptyMessage="All listed categories are on this course."
+                  triggerClassName="box-border min-h-11 min-w-0 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] touch-manipulation"
+                />
                 <input
                   type="text"
                   id="admin-course-custom-category"
@@ -4820,27 +4945,22 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   ))
                 )}
               </div>
-              <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,11rem)_minmax(0,1fr)_auto] sm:items-stretch">
-                <select
+              <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(12rem,1.75fr)_minmax(8rem,1fr)_auto] sm:items-stretch">
+                <AdminListboxSelect
                   key={`admin-skill-pick-${draft.skills.join('\u001f')}`}
+                  id="admin-course-add-skill-from-list"
+                  value=""
                   aria-label="Add skill from list"
-                  defaultValue=""
-                  onChange={(e) => {
-                    const v = e.currentTarget.value;
+                  onChange={(v) => {
                     if (!v) return;
                     addDraftSkill(v);
-                    e.currentTarget.selectedIndex = 0;
                   }}
-                  onBlur={registerDraftTaxonomyExtras}
-                  className="box-border min-h-11 min-w-0 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] touch-manipulation"
-                >
-                  <option value="">Add from list…</option>
-                  {skillsNotOnDraft.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
+                  onTriggerBlur={registerDraftTaxonomyExtras}
+                  options={skillAddListboxOptions}
+                  placeholder="Add from list…"
+                  emptyMessage="All listed skills are on this course."
+                  triggerClassName="box-border min-h-11 min-w-0 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] touch-manipulation"
+                />
                 <input
                   type="text"
                   id="admin-course-custom-skill"
@@ -4869,48 +4989,6 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 >
                   Add
                 </button>
-              </div>
-            </div>
-            <div className="sm:col-span-2 xl:col-span-12">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-12 lg:items-end lg:gap-x-4 lg:gap-y-2">
-                <label className="flex min-w-0 flex-col gap-1 sm:col-span-1 lg:col-span-2">
-                  <span className="text-xs font-semibold text-[var(--text-secondary)]">Duration label</span>
-                  <input
-                    value={draft.duration}
-                    onChange={(e) => updateDraft({ duration: e.target.value })}
-                    className="box-border w-full min-w-0 min-h-11 rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm"
-                  />
-                </label>
-                <label className="flex min-w-0 flex-col gap-1 sm:col-span-1 lg:col-span-2">
-                  <span className="text-xs font-semibold text-[var(--text-secondary)]">Rating (0–5)</span>
-                  <input
-                    id="admin-course-rating"
-                    type="number"
-                    min={0}
-                    max={5}
-                    step={0.1}
-                    value={draft.rating}
-                    onChange={(e) => updateDraft({ rating: Number(e.target.value) })}
-                    className={`box-border w-full min-w-0 min-h-11 rounded-lg border bg-[var(--bg-primary)] px-3 py-2 text-sm [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
-                      showValidationHints && fieldErrors.courseRating
-                        ? 'border-[#616161]'
-                        : 'border-[var(--border-color)]'
-                    }`}
-                  />
-                </label>
-                <label className="flex min-w-0 flex-col gap-1 sm:col-span-2 lg:col-span-8">
-                  <span className="text-xs font-semibold text-[var(--text-secondary)]">Thumbnail URL</span>
-                  <input
-                    id="admin-course-thumbnail"
-                    value={draft.thumbnail}
-                    onChange={(e) => updateDraft({ thumbnail: e.target.value })}
-                    className={`w-full min-w-0 min-h-11 bg-[var(--bg-primary)] border rounded-lg px-3 py-2 text-sm font-mono ${
-                      showValidationHints && fieldErrors.courseThumbnail
-                        ? 'border-[#616161]'
-                        : 'border-[var(--border-color)]'
-                    }`}
-                  />
-                </label>
               </div>
             </div>
             <div className="sm:col-span-2 xl:col-span-12">
@@ -5189,7 +5267,20 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       )}
                     </div>
                   </div>
-                  <div className="flex w-full shrink-0 flex-wrap items-center justify-start gap-0.5 border-t border-[var(--border-color)]/50 pt-2 sm:gap-1 md:w-auto md:justify-end md:border-t-0 md:pt-0">
+                  <div className="flex w-full min-w-0 shrink-0 flex-wrap items-center justify-start gap-x-2 gap-y-2 border-t border-[var(--border-color)]/50 pt-2 sm:gap-x-2 md:w-auto md:flex-nowrap md:justify-end md:border-t-0 md:pt-0">
+                    <CourseHierarchyVisibilityCells
+                      visibleToRoles={mod.visibleToRoles}
+                      onChange={(next) => {
+                        const c = compactVisibleToRolesForPersist(next);
+                        updateModule(mi, { visibleToRoles: c });
+                      }}
+                      nested
+                      audienceListboxId={`admin-catalog-vis-mod-${mi}`}
+                      showColumnTip={COURSE_HIERARCHY_VISIBILITY_SHOW_TIP}
+                      audienceTitle="Everyone: learners, guests, and admins. Administrators only: this module and its lessons are hidden in the overview and player for everyone else."
+                      showAriaLabel="Show module in learner course shell"
+                      audienceAriaLabel="Who can see this module in the overview and player"
+                    />
                     <button
                       type="button"
                       disabled={busy || !draft || (baselineJson !== null && !isDirty)}
@@ -5324,7 +5415,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           : ''
                       }`}
                     >
-                      <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
+                      <div className="flex w-full min-w-0 flex-col gap-2">
+                        <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:gap-2">
                         {lesson.contentKind === 'divider' ? (
                           <div
                             className="flex min-h-11 min-w-0 w-full flex-1 flex-col gap-1.5 rounded-lg py-0 -mx-0.5 px-0.5 sm:flex-row sm:items-center md:min-h-10 sm:gap-2 sm:py-0.5 sm:-mx-1 sm:px-1"
@@ -5455,7 +5547,20 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             )}
                         </div>
                         )}
-                        <div className="flex w-full shrink-0 flex-row flex-wrap items-center justify-start gap-0.5 border-t border-[var(--border-color)]/50 pt-2 sm:justify-end sm:gap-0.5 md:w-auto md:border-t-0 md:pt-0">
+                        <div className="flex w-full min-w-0 shrink-0 flex-wrap items-center justify-start gap-x-2 gap-y-2 border-t border-[var(--border-color)]/50 pt-2 sm:w-auto sm:border-0 sm:pt-0 sm:justify-end sm:gap-x-2 md:flex-nowrap">
+                          <CourseHierarchyVisibilityCells
+                            visibleToRoles={lesson.visibleToRoles}
+                            onChange={(next) => {
+                              const c = compactVisibleToRolesForPersist(next);
+                              updateLesson(mi, li, { visibleToRoles: c });
+                            }}
+                            nested
+                            audienceListboxId={`admin-catalog-vis-${mi}-${li}`}
+                            showColumnTip={COURSE_HIERARCHY_VISIBILITY_SHOW_TIP}
+                            audienceTitle="Everyone: learners, guests, and admins. Administrators only: this row is hidden in the overview and player for everyone else."
+                            showAriaLabel="Show lesson or divider in learner course shell"
+                            audienceAriaLabel="Who can see this row in the overview and player"
+                          />
                           <button
                             type="button"
                             disabled={busy || !draft || (baselineJson !== null && !isDirty)}
@@ -5587,6 +5692,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           >
                             <ArrowDown size={18} aria-hidden />
                           </button>
+                        </div>
                         </div>
                       </div>
                       {(lesson.contentKind === 'divider'
@@ -6588,23 +6694,17 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
                     Place new module in the course
                   </span>
-                  <select
-                    className="min-h-11 w-full max-w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[#8b8c8c]/80 focus:ring-2 focus:ring-[#a1a2a2]/25"
+                  <AdminListboxSelect
+                    id="admin-catalog-split-divider-insert"
                     value={String(splitDividerNewModuleModal.insertAt)}
-                    onChange={(e) => {
-                      const insertAt = Number(e.target.value);
+                    onChange={(next) => {
+                      const insertAt = Number(next);
                       setSplitDividerNewModuleModal((prev) => (prev ? { ...prev, insertAt } : null));
                     }}
-                  >
-                    {splitDividerIntoNewModuleInsertOptions(
-                      draft,
-                      splitDividerNewModuleModal.mi
-                    ).map((o) => (
-                      <option key={String(o.insertAt)} value={String(o.insertAt)}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
+                    options={splitDividerInsertListboxOptions}
+                    placeholder="Placement"
+                    triggerClassName="min-h-11 w-full max-w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[#8b8c8c]/80 focus:ring-2 focus:ring-[#a1a2a2]/25"
+                  />
                 </label>
                 <button
                   type="button"
@@ -6748,11 +6848,11 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
                       Merge into module
                     </span>
-                    <select
-                      className="min-h-11 w-full max-w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[#8b8c8c]/80 focus:ring-2 focus:ring-[#a1a2a2]/25"
+                    <AdminListboxSelect
+                      id="admin-catalog-change-module-kind-target"
                       value={String(changeModuleKindModal.targetMi)}
-                      onChange={(e) => {
-                        const nextT = Number(e.target.value);
+                      onChange={(next) => {
+                        const nextT = Number(next);
                         setChangeModuleKindModal((prev) => {
                           if (!prev) return prev;
                           const d = draftRef.current;
@@ -6760,36 +6860,26 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           return { ...prev, targetMi: nextT, insertAt: len };
                         });
                       }}
-                    >
-                      {draft.modules.map((m, i) =>
-                        i === changeModuleKindModal.sourceMi ? null : (
-                          <option key={i} value={String(i)}>
-                            {catalogModuleTitleLine(m, i + 1)}
-                          </option>
-                        )
-                      )}
-                    </select>
+                      options={changeModuleKindTargetListboxOptions}
+                      placeholder="Target module"
+                      triggerClassName="min-h-11 w-full max-w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[#8b8c8c]/80 focus:ring-2 focus:ring-[#a1a2a2]/25"
+                    />
                   </label>
                   <label className="block min-w-0">
                     <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
                       Place divider and lessons after
                     </span>
-                    <select
-                      className="min-h-11 w-full max-w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[#8b8c8c]/80 focus:ring-2 focus:ring-[#a1a2a2]/25"
+                    <AdminListboxSelect
+                      id="admin-catalog-change-module-kind-insert"
                       value={String(changeModuleKindModal.insertAt)}
-                      onChange={(e) => {
-                        const insertAt = Number(e.target.value);
+                      onChange={(next) => {
+                        const insertAt = Number(next);
                         setChangeModuleKindModal((prev) => (prev ? { ...prev, insertAt } : null));
                       }}
-                    >
-                      {moduleDividerMergePositionOptions(
-                        draft.modules[changeModuleKindModal.targetMi] ?? { id: '', title: '', lessons: [] }
-                      ).map((o) => (
-                        <option key={`${o.insertAt}-${o.label}`} value={String(o.insertAt)}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </select>
+                      options={changeModuleKindInsertListboxOptions}
+                      placeholder="Position"
+                      triggerClassName="min-h-11 w-full max-w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[#8b8c8c]/80 focus:ring-2 focus:ring-[#a1a2a2]/25"
+                    />
                   </label>
                 </div>
                 <button
@@ -7080,59 +7170,23 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                         ? 'Order among all modules in this draft.'
                         : 'Order among the remaining modules (this one is taken out first, then placed here).'}
                     </p>
-                    <select
+                    <AdminListboxSelect
                       id="catalog-place-module-slot"
                       aria-describedby="catalog-place-module-slot-hint"
-                      className="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
-                      value={
+                      value={String(
                         catalogPlaceMode === 'copy'
                           ? catalogModuleCopyInsertIdx
                           : catalogModuleMoveInsertIdx
-                      }
-                      onChange={(e) => {
-                        const v = Number(e.target.value);
+                      )}
+                      onChange={(next) => {
+                        const v = Number(next);
                         if (catalogPlaceMode === 'copy') setCatalogModuleCopyInsertIdx(v);
                         else setCatalogModuleMoveInsertIdx(v);
                       }}
-                    >
-                      {catalogPlaceMode === 'copy'
-                        ? Array.from({ length: draft.modules.length + 1 }, (_, i) => (
-                            <option key={i} value={i}>
-                              {i === 0
-                                ? `Before ${catalogModuleTitleLine(draft.modules[0]!, 1)}`
-                                : i >= draft.modules.length
-                                  ? `After ${catalogModuleTitleLine(
-                                      draft.modules[draft.modules.length - 1]!,
-                                      draft.modules.length
-                                    )}`
-                                  : `After ${catalogModuleTitleLine(
-                                      draft.modules[i - 1]!,
-                                      i
-                                    )} · before ${catalogModuleTitleLine(draft.modules[i]!, i + 1)}`}
-                            </option>
-                          ))
-                        : (() => {
-                            const smi = catalogPlaceModal.sourceMi;
-                            const without = draft.modules.filter((_, j) => j !== smi);
-                            return Array.from({ length: without.length + 1 }, (_, i) => (
-                              <option key={i} value={i}>
-                                {without.length === 0
-                                  ? 'Only position'
-                                  : i === 0
-                                    ? `Before ${catalogModuleTitleLine(without[0]!, 1)}`
-                                    : i >= without.length
-                                      ? `After ${catalogModuleTitleLine(
-                                          without[without.length - 1]!,
-                                          without.length
-                                        )}`
-                                      : `After ${catalogModuleTitleLine(without[i - 1]!, i)} · before ${catalogModuleTitleLine(
-                                          without[i]!,
-                                          i + 1
-                                        )}`}
-                              </option>
-                            ));
-                          })()}
-                    </select>
+                      options={catalogModulePlaceSlotListboxOptions}
+                      placeholder="Position"
+                      triggerClassName="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                    />
                   </div>
                 </>
               ) : (
@@ -7168,18 +7222,14 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             >
                               Module
                             </label>
-                            <select
+                            <AdminListboxSelect
                               id="catalog-place-lesson-module"
-                              className="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
-                              value={catalogLessonTargetMi}
-                              onChange={(e) => setCatalogLessonTargetMi(Number(e.target.value))}
-                            >
-                              {draft.modules.map((m, mj) => (
-                                <option key={mj} value={mj}>
-                                  {catalogModuleTitleLine(m, mj + 1)}
-                                </option>
-                              ))}
-                            </select>
+                              value={String(catalogLessonTargetMi)}
+                              onChange={(next) => setCatalogLessonTargetMi(Number(next))}
+                              options={catalogLessonModuleListboxOptions}
+                              placeholder="Module"
+                              triggerClassName="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                            />
                           </div>
                           <div>
                             <label
@@ -7195,19 +7245,15 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                               Order among rows in the selected module (including the row you are moving when it is the
                               same module).
                             </p>
-                            <select
+                            <AdminListboxSelect
                               id="catalog-place-lesson-slot"
                               aria-describedby="catalog-place-lesson-slot-hint"
-                              className="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
-                              value={liClamped}
-                              onChange={(e) => setCatalogLessonInsertIdx(Number(e.target.value))}
-                            >
-                              {Array.from({ length: liMax + 1 }, (_, i) => (
-                                <option key={i} value={i}>
-                                  {catalogLessonInsertOptionLabel(targetMod, i)}
-                                </option>
-                              ))}
-                            </select>
+                              value={String(liClamped)}
+                              onChange={(next) => setCatalogLessonInsertIdx(Number(next))}
+                              options={catalogLessonSlotListboxOptions}
+                              placeholder="Position in module"
+                              triggerClassName="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                            />
                           </div>
                         </div>
                       </>

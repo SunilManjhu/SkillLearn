@@ -8,6 +8,7 @@ import {
 } from 'firebase/firestore';
 import type { Course, Lesson, Module, QuizDefinition, QuizQuestion } from '../data/courses';
 import { MAX_QUIZ_CHOICES, MAX_QUIZ_QUESTIONS } from '../data/courses';
+import { compactVisibleToRolesForPersist, parseVisibleToRolesField } from '../data/pathMindmap';
 import { coerceQuizIndex } from './quizCoercion';
 import { dedupeLabelsPreserveOrder, isCourseLevel, normalizeCourseTaxonomy } from './courseTaxonomy';
 import { db, handleFirestoreError, OperationType } from '../firebase';
@@ -135,6 +136,8 @@ function parseLesson(raw: unknown): Lesson | null {
     if (o.contentKind === 'web') lesson.contentKind = 'web';
     if (typeof o.webUrl === 'string') lesson.webUrl = o.webUrl;
   }
+  const lvr = parseVisibleToRolesField(o);
+  if (lvr !== undefined) lesson.visibleToRoles = lvr;
   return lesson;
 }
 
@@ -148,7 +151,10 @@ function parseModule(raw: unknown): Module | null {
     if (pl) lessons.push(pl);
   }
   if (lessons.length === 0) return null;
-  return { id: o.id, title: o.title, lessons };
+  const mod: Module = { id: o.id, title: o.title, lessons };
+  const mvr = parseVisibleToRolesField(o);
+  if (mvr !== undefined) mod.visibleToRoles = mvr;
+  return mod;
 }
 
 export function docToCourse(id: string, data: Record<string, unknown>): Course | null {
@@ -207,6 +213,8 @@ export function docToCourse(id: string, data: Record<string, unknown>): Course |
   if (data.catalogPublished === false) {
     course.catalogPublished = false;
   }
+  const cvr = parseVisibleToRolesField(data);
+  if (cvr !== undefined) course.visibleToRoles = cvr;
   return normalizeCourseTaxonomy(course);
 }
 
@@ -271,13 +279,33 @@ function stripUndefinedDeep(value: unknown): unknown {
   return out;
 }
 
+function courseWithCompactedVisibilityRoles(course: Course): Course {
+  const cr = compactVisibleToRolesForPersist(course.visibleToRoles);
+  return {
+    ...course,
+    ...(cr !== undefined ? { visibleToRoles: cr } : {}),
+    modules: course.modules.map((m) => {
+      const mr = compactVisibleToRolesForPersist(m.visibleToRoles);
+      return {
+        ...m,
+        ...(mr !== undefined ? { visibleToRoles: mr } : {}),
+        lessons: m.lessons.map((l) => {
+          const lr = compactVisibleToRolesForPersist(l.visibleToRoles);
+          return { ...l, ...(lr !== undefined ? { visibleToRoles: lr } : {}) };
+        }),
+      };
+    }),
+  };
+}
+
 /**
  * Persists full course shape to `publishedCourses` / `creatorCourses`.
  * Always writes `catalogPublished` as a boolean so a full `setDoc` never drops a draft (`false`) when the in-memory
  * course omits the field (treated as published).
  */
 export function courseToFirestorePayload(course: Course): Record<string, unknown> {
-  const { id: _id, ...rest } = course;
+  const compacted = courseWithCompactedVisibilityRoles(course);
+  const { id: _id, ...rest } = compacted;
   const cleaned = stripUndefinedDeep(rest) as Record<string, unknown>;
   const catalogPublished = course.catalogPublished !== false;
   return {

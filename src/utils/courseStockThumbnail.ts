@@ -1,6 +1,6 @@
 import type { Course } from '../data/courses';
 
-const SESSION_PREFIX = 'skilllearn.pexelsThumb.v1:';
+const SESSION_PREFIX = 'skilllearn.pexelsThumb.v2:';
 const MEMORY_CACHE = new Map<string, CachedStockPhoto>();
 const IN_FLIGHT = new Map<string, Promise<CachedStockPhoto | null>>();
 
@@ -16,6 +16,16 @@ type PexelsSearchResponse = {
     photographer?: string;
   }>;
 };
+
+/**
+ * Stable unique placeholder image per course when Pexels is unavailable or returns nothing.
+ * Uses Picsum `seed` so the same course id always maps to the same image (cache-friendly).
+ */
+export function placeholderThumbnailUrlForCourseId(courseId: string): string {
+  const safe = courseId.replace(/[^a-zA-Z0-9_-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'course';
+  const seed = safe.length > 48 ? safe.slice(0, 48) : safe;
+  return `https://picsum.photos/seed/${seed}/800/450`;
+}
 
 /** True when the stored URL is a placeholder we should try to replace with a stock search. */
 export function shouldReplaceWithStockThumbnail(thumbnail: string): boolean {
@@ -105,7 +115,12 @@ function writeSession(key: string, value: CachedStockPhoto): void {
   }
 }
 
-async function fetchPexelsPhoto(apiKey: string, query: string): Promise<CachedStockPhoto | null> {
+async function fetchPexelsPhoto(
+  apiKey: string,
+  query: string,
+  /** Distinct per course so shared search text (e.g. similar titles) does not always pick the same hit. */
+  pickSalt: string
+): Promise<CachedStockPhoto | null> {
   const url = new URL('https://api.pexels.com/v1/search');
   url.searchParams.set('query', query);
   url.searchParams.set('per_page', '8');
@@ -124,7 +139,8 @@ async function fetchPexelsPhoto(apiKey: string, query: string): Promise<CachedSt
   let pick = photos[0]!;
   if (photos.length > 1) {
     let h = 0;
-    for (let i = 0; i < query.length; i += 1) h = (h * 31 + query.charCodeAt(i)) | 0;
+    const s = `${query}\0${pickSalt}`;
+    for (let i = 0; i < s.length; i += 1) h = (h * 31 + s.charCodeAt(i)) | 0;
     pick = photos[Math.abs(h) % photos.length]!;
   }
 
@@ -160,7 +176,7 @@ export async function getStockThumbnailForCourse(
 
   let p = IN_FLIGHT.get(key);
   if (!p) {
-    p = fetchPexelsPhoto(apiKey.trim(), query).then((photo) => {
+    p = fetchPexelsPhoto(apiKey.trim(), query, course.id).then((photo) => {
       IN_FLIGHT.delete(key);
       if (photo) {
         MEMORY_CACHE.set(key, photo);

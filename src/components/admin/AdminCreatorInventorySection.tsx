@@ -7,6 +7,11 @@ import { listCreatorCoursesForAdminByOwner } from '../../utils/creatorCoursesFir
 import { listCreatorLearningPathsForAdminByOwner } from '../../utils/creatorLearningPathsFirestore';
 import { useAdminActionToast } from './useAdminActionToast';
 import { AdminLabelInfoTip } from './adminLabelInfoTip';
+import {
+  ADMIN_EMBEDDED_SCROLL_LIST,
+  CUSTOM_LISTBOX_OPTION_TWO_LINE,
+  CUSTOM_LISTBOX_PANEL,
+} from '../../ui/customMenuClasses';
 
 const ALL_CREATORS_KEY = '__ALL__';
 
@@ -536,7 +541,7 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
                   role="listbox"
                   tabIndex={-1}
                   aria-label="Creator options"
-                  className="absolute z-50 mt-1 max-h-[min(15rem,50dvh)] w-full min-w-0 overflow-y-auto overscroll-contain rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] py-1 shadow-lg outline-none ring-offset-2 ring-offset-[var(--bg-primary)] focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/50 [scrollbar-width:thin] [-webkit-overflow-scrolling:touch]"
+                  className={`absolute z-50 mt-1 max-h-[min(15rem,50dvh)] w-full min-w-0 ${CUSTOM_LISTBOX_PANEL} outline-none ring-offset-2 ring-offset-[var(--bg-primary)] focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/50`}
                   onKeyDown={(e) => {
                     if (listboxOptions.length === 0) return;
                     if (e.key === 'ArrowDown') {
@@ -567,7 +572,9 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
                   }}
                 >
                   {listboxOptions.length === 0 ? (
-                    <li className="px-3 py-2 text-xs text-[var(--text-muted)]">No matches.</li>
+                    <li className="px-2 py-1.5 text-xs leading-tight text-[var(--text-muted)] sm:px-2.5">
+                      No matches.
+                    </li>
                   ) : (
                     listboxOptions.map((opt, idx) => (
                       <li key={opt.key || '__clear__'} role="presentation">
@@ -576,7 +583,7 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
                           id={`admin-creator-opt-${idx}`}
                           role="option"
                           aria-selected={activeListIndex === idx}
-                          className={`flex w-full min-h-11 flex-col items-start gap-0.5 px-3 py-2 text-left text-sm hover:bg-[var(--hover-bg)] ${
+                          className={`${CUSTOM_LISTBOX_OPTION_TWO_LINE} ${
                             activeListIndex === idx ? 'bg-[var(--hover-bg)] ring-2 ring-inset ring-[#a1a2a2]/45' : ''
                           }`}
                           onMouseDown={(e) => e.preventDefault()}
@@ -626,11 +633,13 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
               ) : courseRows.length === 0 ? (
                 <p className="text-xs text-[var(--text-muted)]">No creator courses for this scope.</p>
               ) : (
-                <ul className="max-h-72 space-y-0 overflow-y-auto overflow-x-hidden overscroll-contain rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] p-2 max-md:p-1.5 text-sm [scrollbar-width:thin] [scrollbar-color:var(--border-light)_var(--bg-secondary)] [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-[var(--bg-secondary)] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[var(--border-light)]">
+                <ul
+                  className={`max-h-72 space-y-0 ${ADMIN_EMBEDDED_SCROLL_LIST} [scrollbar-color:var(--border-light)_var(--bg-secondary)] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-[var(--bg-secondary)] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[var(--border-light)]`}
+                >
                   {courseRows.map(({ course: c, ownerUid }) => (
                     <li
                       key={`${ownerUid}:${c.id}`}
-                      className="flex flex-col gap-2 border-b border-[var(--border-color)] py-2 last:border-0 max-md:gap-1.5 sm:flex-row sm:items-center sm:gap-3 sm:py-2.5"
+                      className="flex flex-col gap-2 border-b border-[var(--border-color)] py-1.5 last:border-0 max-md:gap-1.5 sm:flex-row sm:items-center sm:gap-3 sm:py-2"
                     >
                       <div className="min-w-0 flex-1">
                         {showOwnerOnRows ? (
@@ -676,11 +685,13 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
               ) : pathRows.length === 0 ? (
                 <p className="text-xs text-[var(--text-muted)]">No creator paths for this scope.</p>
               ) : (
-                <ul className="max-h-72 space-y-0 overflow-y-auto overflow-x-hidden overscroll-contain rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] p-2 max-md:p-1.5 text-sm [scrollbar-width:thin] [scrollbar-color:var(--border-light)_var(--bg-secondary)] [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-[var(--bg-secondary)] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[var(--border-light)]">
+                <ul
+                  className={`max-h-72 space-y-0 ${ADMIN_EMBEDDED_SCROLL_LIST} [scrollbar-color:var(--border-light)_var(--bg-secondary)] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-[var(--bg-secondary)] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[var(--border-light)]`}
+                >
                   {pathRows.map(({ path: p, ownerUid }) => (
                     <li
                       key={`${ownerUid}:${p.id}`}
-                      className="flex flex-col gap-2 border-b border-[var(--border-color)] py-2 last:border-0 max-md:gap-1.5 sm:flex-row sm:items-center sm:gap-3 sm:py-2.5"
+                      className="flex flex-col gap-2 border-b border-[var(--border-color)] py-1.5 last:border-0 max-md:gap-1.5 sm:flex-row sm:items-center sm:gap-3 sm:py-2"
                     >
                       <div className="min-w-0 flex-1">
                         {showOwnerOnRows ? (
