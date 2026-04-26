@@ -3776,8 +3776,6 @@ export type PathPersistenceMode =
 
 export interface PathBuilderSectionProps {
   publishedList: Course[];
-  /** Courses whose titles must not collide with a path title (published + creator drafts as in the catalog). */
-  coursesForPathTitleConflictCheck: Course[];
   onRefreshPublishedList: () => Promise<void>;
   onCatalogChanged: () => void | Promise<void>;
   onPathsDirtyChange?: (dirty: boolean) => void;
@@ -3795,7 +3793,6 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
   function PathBuilderSection(
     {
       publishedList,
-      coursesForPathTitleConflictCheck,
       onRefreshPublishedList: _onRefreshPublishedList,
       onCatalogChanged,
       onPathsDirtyChange,
@@ -4768,8 +4765,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
         mode: isCreatorPaths ? 'creator' : 'admin',
         creatorOwnerUid: pathPersistence?.kind === 'creator' ? pathPersistence.ownerUid : undefined,
       });
-      const courseRows = coursesForPathTitleConflictCheck.map((c) => ({ id: c.id, title: c.title }));
-      const titleHit = findPathSaveTitleConflict(pathDraft.title, pathDraft.id, pathRows, courseRows);
+      const titleHit = findPathSaveTitleConflict(pathDraft.title, pathDraft.id, pathRows);
       if (titleHit) {
         setPathTitleConflict(titleHit);
         return;

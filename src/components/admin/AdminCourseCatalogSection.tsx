@@ -110,11 +110,7 @@ import {
   type LearningPathCourseRefHit,
 } from '../../utils/learningPathCourseDelete';
 import { purgeLearnerFirestoreDataForCourse } from '../../utils/courseDeleteFirestorePurge';
-import {
-  findCourseSaveTitleConflict,
-  loadPathTitlesForConflictCheck,
-  type TitleConflictHit,
-} from '../../utils/catalogDisplayNameConflicts';
+import { findCourseSaveTitleConflict, type TitleConflictHit } from '../../utils/catalogDisplayNameConflicts';
 import { AdminDisplayNameConflictDialog } from './AdminDisplayNameConflictDialog';
 import { AdminCourseAiAssistant } from './AdminCourseAiAssistant';
 import { AdminLessonContentPreview } from './AdminLessonContentPreview';
@@ -3278,32 +3274,18 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       showActionToast(err, 'danger');
       return;
     }
-    try {
-      const pathTitles = await loadPathTitlesForConflictCheck({
-        mode: isCreatorCatalog ? 'creator' : 'admin',
-        creatorOwnerUid: catalogPersistence?.kind === 'creator' ? catalogPersistence.ownerUid : undefined,
-      });
-      const courseRows =
-        isCreatorCatalog
-          ? [...publishedList, ...publishedCoursesForPicker].map((c) => ({ id: c.id, title: c.title }))
-          : isAdminMergedCatalog
-            ? [...publishedList, ...creatorDraftRows.map((r) => r.course)].map((c) => ({
-                id: c.id,
-                title: c.title,
-              }))
-            : publishedList.map((c) => ({ id: c.id, title: c.title }));
-      const titleHit = findCourseSaveTitleConflict(
-        normalized.title,
-        normalized.id,
-        pathTitles,
-        courseRows
-      );
-      if (titleHit) {
-        setCourseTitleConflict(titleHit);
-        return;
-      }
-    } catch {
-      showActionToast('Could not verify title uniqueness. Try again.', 'danger');
+    const courseRows =
+      isCreatorCatalog
+        ? [...publishedList, ...publishedCoursesForPicker].map((c) => ({ id: c.id, title: c.title }))
+        : isAdminMergedCatalog
+          ? [...publishedList, ...creatorDraftRows.map((r) => r.course)].map((c) => ({
+              id: c.id,
+              title: c.title,
+            }))
+          : publishedList.map((c) => ({ id: c.id, title: c.title }));
+    const titleHit = findCourseSaveTitleConflict(normalized.title, normalized.id, courseRows);
+    if (titleHit) {
+      setCourseTitleConflict(titleHit);
       return;
     }
     setBusy(true);
@@ -6267,7 +6249,6 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           ref={pathBuilderRef}
           key={pathBuilderResetKey}
           publishedList={publishedList}
-          coursesForPathTitleConflictCheck={courseRowsForTaxonomyPickers}
           onRefreshPublishedList={async () => {
             await refreshList();
           }}

@@ -58,12 +58,8 @@ export async function loadPathTitlesForConflictCheck(options: {
 export function findCourseSaveTitleConflict(
   draftTitle: string,
   draftCourseId: string,
-  paths: TitleConflictHit[],
   courses: { id: string; title: string }[]
 ): TitleConflictHit | null {
-  for (const p of paths) {
-    if (displayTitlesCollide(draftTitle, p.title)) return p;
-  }
   for (const c of courses) {
     if (c.id === draftCourseId) continue;
     if (displayTitlesCollide(draftTitle, c.title)) {
@@ -73,20 +69,15 @@ export function findCourseSaveTitleConflict(
   return null;
 }
 
+/** Paths may share a display title with a course; only other paths collide. */
 export function findPathSaveTitleConflict(
   pathTitle: string,
   pathId: string,
-  paths: TitleConflictHit[],
-  courses: { id: string; title: string }[]
+  paths: TitleConflictHit[]
 ): TitleConflictHit | null {
   for (const p of paths) {
     if (p.id === pathId) continue;
     if (displayTitlesCollide(pathTitle, p.title)) return p;
-  }
-  for (const c of courses) {
-    if (displayTitlesCollide(pathTitle, c.title)) {
-      return { entity: 'course', id: c.id, title: c.title };
-    }
   }
   return null;
 }
