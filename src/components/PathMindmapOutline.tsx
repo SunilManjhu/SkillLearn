@@ -25,8 +25,16 @@ import {
   readPathMindmapOutlineExpand,
   writePathMindmapOutlineExpand,
 } from '../utils/pathOutlineUiSession';
-import { PathOutlineTreeGroup, PathOutlineTreeItem } from './PathOutlineTreeGroup';
-import { PathSectionDividerCard } from './PathSectionDividerCard';
+import {
+  PATH_OUTLINE_EXTERNAL_LINK_UNDERLINE,
+  PathOutlineDividerExternalLinkAnchor,
+} from './PathOutlineDividerExternalLinkRow';
+import {
+  PathOutlineTreeGroup,
+  PathOutlineTreeItem,
+  usePathOutlineTreeLayout,
+} from './PathOutlineTreeGroup';
+import { LearnerPathSectionDividerShell } from './LearnerPathSectionDividerShell';
 
 /** Matches Tailwind `md` (768px): flat path outline on small viewports. */
 function useOutlineCompactMobile(): boolean {
@@ -563,8 +571,12 @@ function OutlineBranchExpandControl({
   hasChildren: boolean;
   expanded: boolean;
 }) {
+  const outlineTreeLayout = usePathOutlineTreeLayout();
   const panelId = `path-branch-panel-${nodeId}`;
   if (!hasChildren) {
+    if (outlineTreeLayout === 'flat') {
+      return <span className="hidden shrink-0" aria-hidden />;
+    }
     return <span className="hidden w-10 shrink-0 sm:w-11 md:inline-flex" aria-hidden />;
   }
   return (
@@ -588,7 +600,6 @@ function OutlineBranchExpandControl({
 function OutlineNode({
   node,
   depth,
-  sectionIndex = 0,
   catalogCourses,
   onOpenCourse,
   onOpenLesson,
@@ -599,11 +610,10 @@ function OutlineNode({
   isBranchExpanded,
   toggleBranch,
   outlineCompactMobile,
+  pathId,
 }: {
   node: MindmapTreeNode;
   depth: number;
-  /** Only used when `depth === 0` (top-level section number). */
-  sectionIndex?: number;
   catalogCourses: readonly Course[];
   onOpenCourse: (courseId: string) => void;
   onOpenLesson: (courseId: string, lessonId: string) => void;
@@ -615,7 +625,11 @@ function OutlineNode({
   toggleBranch: (nodeId: string) => void;
   /** Below `md`: no chevrons / borders / indent; all sections & branches shown expanded. */
   outlineCompactMobile: boolean;
+  /** Stable id for `aria-controls` / session keys on divider rows (matches flat path course list). */
+  pathId?: string;
 }) {
+  const outlineTreeLayout = usePathOutlineTreeLayout();
+  const branchRowPlMobile = outlineTreeLayout === 'flat' ? 'max-md:pl-0' : 'max-md:pl-2';
   const label = node.label.trim() || node.id;
   const nk = nodeKind(node);
   /** Top-level `module` sections use the same chrome as text labels. */
@@ -658,9 +672,8 @@ function OutlineNode({
     const expanded = isSectionExpanded(node.id);
     const panelId = `path-section-panel-${node.id}`;
     const isEmptySection = !hasExpandableContent && childCount === 0;
-    /** Has subtree rows but nothing maps to the published catalog (shows “0 courses” otherwise). */
-    const isZeroCatalogCourses = !isEmptySection && catalogCourseCount === 0;
-    const showNoCoursesInSectionUx = isEmptySection || isZeroCatalogCourses;
+    /** Strong “no courses” banner only when the section has no outline rows (avoid contradicting visible dividers/labels). */
+    const showStrongEmptySectionBanner = isEmptySection;
     /** Catalog courses or external web links — without either, the section has nothing useful to expand into. */
     const sectionHasUsefulContent =
       catalogCourseCount > 0 || externalLinkCountInSection > 0;
@@ -669,11 +682,7 @@ function OutlineNode({
     const showSectionBody =
       !hasExpandableContent || !canExpandSection || expanded;
     const courseCountLabel =
-      showNoCoursesInSectionUx
-        ? null
-        : catalogCourseCount === 1
-          ? '1 course'
-          : `${catalogCourseCount} courses`;
+      catalogCourseCount === 1 ? '1 course' : `${catalogCourseCount} courses`;
 
     const sectionProgressColumn =
       showSectionProgress && sectionProgress ? (
@@ -687,11 +696,11 @@ function OutlineNode({
 
     return (
       <section className="mt-1.5 scroll-mt-2 border-t border-[var(--border-color)] pt-1.5 first:mt-0 first:border-t-0 first:pt-0 max-md:mt-3 max-md:border-0 max-md:pt-0 first:max-md:mt-0">
-        <h3 className="min-w-0 max-w-full pl-0 leading-snug text-[var(--text-primary)] md:pl-6 md:pr-5">
+        <h3 className="min-w-0 max-w-full px-0 leading-snug text-[var(--text-primary)]">
           <div
-            className={`flex min-w-0 max-w-full items-start gap-1 sm:items-center sm:gap-1.5${
+            className={`flex min-w-0 max-w-full items-start gap-2 sm:items-center${
               canExpandSection
-                ? ' cursor-pointer rounded-lg py-1 pl-0.5 pr-1 transition-colors hover:bg-[var(--hover-bg)]/80 sm:pl-1 sm:pr-1.5'
+                ? ' cursor-pointer rounded-lg py-1 pl-0 pr-0.5 transition-colors hover:bg-[var(--hover-bg)]/80 sm:pr-1'
                 : ' py-1'
             }`}
             onClick={
@@ -700,63 +709,42 @@ function OutlineNode({
                 : undefined
             }
           >
-            <div className="flex shrink-0 items-start self-start md:contents">
-              {canExpandSection ? (
-                <button
-                  type="button"
-                  data-outline-section-chevron=""
-                  className="flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)]/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 touch-manipulation sm:min-h-11 sm:min-w-11"
-                  aria-expanded={expanded}
-                  aria-controls={panelId}
-                  id={`path-section-trigger-${node.id}`}
-                  aria-label={expanded ? 'Collapse section' : 'Expand section'}
-                >
-                  <ChevronDown
-                    size={20}
-                    className={`shrink-0 transition-transform duration-200 ${expanded ? 'rotate-0' : '-rotate-90'}`}
-                    aria-hidden
-                  />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  disabled
-                  className="flex min-h-10 min-w-10 shrink-0 cursor-not-allowed items-center justify-center rounded-md text-[var(--text-muted)] opacity-45 sm:min-h-11 sm:min-w-11"
-                  aria-label={
-                    hasExpandableContent
-                      ? 'Nothing to expand. This section has no linked catalog courses or web links yet.'
-                      : 'Nothing to expand. This section has no courses or topics in the list below.'
-                  }
-                >
-                  <ChevronDown
-                    size={20}
-                    className="shrink-0 -rotate-90 transition-transform duration-200"
-                    aria-hidden
-                  />
-                </button>
-              )}
-            </div>
-            <div
-              className={`flex w-8 shrink-0 items-center justify-start text-lg font-bold leading-snug tabular-nums max-md:min-h-10 max-md:w-9 md:justify-end sm:w-9 sm:text-xl ${
-                sectionHasUsefulContent ? 'text-[var(--text-secondary)]' : 'text-[var(--text-muted)]'
-              }`}
-            >
-              {sectionIndex + 1}.
-            </div>
+            {canExpandSection ? (
+              <button
+                type="button"
+                data-outline-section-chevron=""
+                className="flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)]/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 touch-manipulation sm:min-h-11 sm:min-w-11"
+                aria-expanded={expanded}
+                aria-controls={panelId}
+                id={`path-section-trigger-${node.id}`}
+                aria-label={expanded ? 'Collapse section' : 'Expand section'}
+              >
+                <ChevronDown
+                  size={20}
+                  className={`shrink-0 transition-transform duration-200 ${expanded ? 'rotate-0' : '-rotate-90'}`}
+                  aria-hidden
+                />
+              </button>
+            ) : hasExpandableContent ? (
+              <span
+                className="flex min-h-10 min-w-10 shrink-0 items-center justify-center sm:min-h-11 sm:min-w-11"
+                aria-hidden
+              />
+            ) : null}
             <div className="flex min-w-0 max-w-full flex-1 flex-col gap-1 md:flex-row md:items-center md:gap-2.5">
               <div className="flex min-w-0 max-w-full flex-1 flex-col justify-center gap-0.5 sm:min-w-0 sm:flex-row sm:items-center sm:gap-2.5 md:contents">
                 <div className="flex min-w-0 w-full max-w-full flex-row items-center gap-2 md:min-w-0 md:flex-1 md:order-1">
                   <span
                     id={`path-section-title-${node.id}`}
-                    className={`min-w-0 flex-1 text-lg font-bold leading-snug break-words sm:text-xl ${
+                    className={`min-w-0 flex-1 text-xs font-semibold uppercase leading-snug tracking-[0.1em] break-words ${
                       sectionHasUsefulContent ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'
                     }`}
                     aria-describedby={
-                      showNoCoursesInSectionUx
-                        ? node.locked
-                          ? `path-section-locked-hint-${node.id}`
-                          : `path-section-empty-hint-${node.id}`
-                        : undefined
+                      node.locked && showStrongEmptySectionBanner
+                        ? `path-section-locked-hint-${node.id}`
+                        : !node.locked && showStrongEmptySectionBanner
+                          ? `path-section-empty-hint-${node.id}`
+                          : undefined
                     }
                   >
                     {label}
@@ -779,7 +767,7 @@ function OutlineNode({
                   ) : null}
                   <div className="flex min-w-0 w-full flex-1 justify-stretch sm:justify-end md:w-auto md:min-w-0 md:justify-end">
                     <div className="flex w-full min-w-0 max-w-full flex-col items-stretch justify-center sm:max-w-[18rem] sm:items-start md:max-w-none md:items-end">
-                      {showNoCoursesInSectionUx ? (
+                      {showStrongEmptySectionBanner ? (
                         node.locked ? (
                           <span className="flex w-full min-w-0 max-w-full flex-wrap items-center gap-x-2 gap-y-1 text-xs font-medium normal-case text-[var(--text-muted)] sm:text-sm">
                             <Lock
@@ -818,12 +806,12 @@ function OutlineNode({
               </div>
             </div>
           </div>
-          {showNoCoursesInSectionUx && node.locked ? (
+          {showStrongEmptySectionBanner && node.locked ? (
             <span id={`path-section-locked-hint-${node.id}`} className="sr-only">
               This section is locked. You do not have access yet. Nothing is wrong with your account.
             </span>
           ) : null}
-          {showNoCoursesInSectionUx && !node.locked ? (
+          {showStrongEmptySectionBanner && !node.locked ? (
             <span id={`path-section-empty-hint-${node.id}`} className="sr-only">
               No courses are linked to this section yet. Check back later—new content may be added.
             </span>
@@ -836,15 +824,16 @@ function OutlineNode({
               catalogCourses={catalogCourses}
               onOpenCourse={onOpenCourse}
               onOpenLesson={onOpenLesson}
-              className="mt-1 pl-0 sm:mt-1 md:pl-[6.375rem]"
+              className="mt-1 pl-0 sm:mt-1 md:pl-0"
             />
-            {hasExpandableContent && sectionHasUsefulContent ? (
+            {/* Nested outline layout must not depend on catalog course count (chevron still uses `sectionHasUsefulContent`). */}
+            {hasExpandableContent ? (
               <ul
                 id={panelId}
                 role="list"
                 aria-labelledby={`path-section-title-${node.id}`}
                 hidden={!showSectionBody}
-                className="mt-2 min-w-0 max-w-full list-none space-y-2 border-0 bg-transparent p-0 pl-3 ring-0 sm:pl-4 md:ml-8 md:mt-1.5 md:space-y-1 md:rounded-xl md:border md:border-[var(--border-light)]/70 md:bg-[var(--bg-primary)]/45 md:py-1 md:pl-7 md:pr-5 md:ring-1 md:ring-[var(--border-color)]/20"
+                className="mt-2 min-w-0 max-w-full list-none space-y-2 border-0 bg-transparent p-0 pl-0 ring-0 sm:pl-0 md:ml-0 md:mt-2 md:space-y-2"
               >
                 {node.children.map((ch) => (
                   <li key={ch.id} className="min-w-0">
@@ -861,6 +850,7 @@ function OutlineNode({
                       isBranchExpanded={isBranchExpanded}
                       toggleBranch={toggleBranch}
                       outlineCompactMobile={outlineCompactMobile}
+                      pathId={pathId}
                     />
                   </li>
                 ))}
@@ -875,75 +865,46 @@ function OutlineNode({
   if (depth === 1 && nk === 'divider') {
     const hasNested = node.children.length > 0;
     const dividerTitle = node.label.trim() || 'Untitled section';
-    if (!hasNested) {
-      return (
-        <div
-          className="min-w-0 border-t border-[var(--border-color)]/55 pt-3 mt-3 first:mt-0 first:border-t-0 first:pt-0"
-          role="presentation"
-        >
-          <PathSectionDividerCard
-            title={dividerTitle}
-            eyebrow={node.dividerEyebrow?.trim() || 'Section divider'}
-          />
-        </div>
-      );
-    }
-    const nestedOpen = isBranchExpanded(node.id);
-    const panelId = `path-branch-panel-${node.id}`;
+    const expandable = hasNested && !outlineCompactMobile;
+    const panelOpen = isBranchExpanded(node.id);
+    const panelId = pathId
+      ? `path-courserow-divider-${pathId}-${node.id}`
+      : `path-mindmap-divider-${node.id}`;
+
     return (
-      <div className="min-w-0 border-t border-[var(--border-color)]/55 pt-3 mt-3 first:mt-0 first:border-t-0 first:pt-0">
-        <div
-          className={`flex min-w-0 max-w-full items-center gap-1 py-0.5 pr-0 sm:gap-1.5 sm:py-0.5 sm:pl-0.5 sm:pr-1${
-            !outlineCompactMobile
-              ? ' min-h-12 cursor-pointer rounded-lg transition-colors hover:bg-[var(--hover-bg)]/40 sm:min-h-[3.25rem]'
-              : ''
-          }`}
-          onClick={
-            !outlineCompactMobile
-              ? (e) => handleOutlineBranchHeaderClick(e, true, node.id, toggleBranch)
-              : undefined
-          }
-        >
-          <OutlineBranchExpandControl nodeId={node.id} hasChildren expanded={nestedOpen} />
-          {!outlineCompactMobile ? (
-            <OutlineBranchStatusLeadSlot
-              hasNested
-              isLabel={false}
-              depth={1}
-              status={rowStatus}
-              externalLink={false}
-            />
-          ) : null}
-          <PathSectionDividerCard
-            title={dividerTitle}
-            eyebrow={node.dividerEyebrow?.trim() || 'Section divider'}
-            className="max-md:ml-0"
-          />
-        </div>
-        <div id={panelId} hidden={!nestedOpen}>
-          <PathOutlineTreeGroup parentDepth={1}>
-            {node.children.map((ch) => (
-              <PathOutlineTreeItem key={ch.id}>
-                <OutlineNode
-                  node={ch}
-                  depth={2}
-                  sectionIndex={sectionIndex}
-                  catalogCourses={catalogCourses}
-                  onOpenCourse={onOpenCourse}
-                  onOpenLesson={onOpenLesson}
-                  progressUserId={progressUserId}
-                  progressSnapshotVersion={progressSnapshotVersion}
-                  isSectionExpanded={isSectionExpanded}
-                  toggleSection={toggleSection}
-                  isBranchExpanded={isBranchExpanded}
-                  toggleBranch={toggleBranch}
-                  outlineCompactMobile={outlineCompactMobile}
-                />
-              </PathOutlineTreeItem>
-            ))}
-          </PathOutlineTreeGroup>
-        </div>
-      </div>
+      <LearnerPathSectionDividerShell
+        title={dividerTitle}
+        dividerEyebrow={node.dividerEyebrow}
+        panelId={panelId}
+        expandable={expandable}
+        panelOpen={panelOpen}
+        onToggle={expandable ? () => toggleBranch(node.id) : undefined}
+        panel={
+          hasNested ? (
+            <PathOutlineTreeGroup parentDepth={1} variant="flat">
+              {node.children.map((ch) => (
+                <PathOutlineTreeItem key={ch.id}>
+                  <OutlineNode
+                    node={ch}
+                    depth={2}
+                    catalogCourses={catalogCourses}
+                    onOpenCourse={onOpenCourse}
+                    onOpenLesson={onOpenLesson}
+                    progressUserId={progressUserId}
+                    progressSnapshotVersion={progressSnapshotVersion}
+                    isSectionExpanded={isSectionExpanded}
+                    toggleSection={toggleSection}
+                    isBranchExpanded={isBranchExpanded}
+                    toggleBranch={toggleBranch}
+                    outlineCompactMobile={outlineCompactMobile}
+                    pathId={pathId}
+                  />
+                </PathOutlineTreeItem>
+              ))}
+            </PathOutlineTreeGroup>
+          ) : undefined
+        }
+      />
     );
   }
 
@@ -965,7 +926,9 @@ function OutlineNode({
               externalLink={nk === 'link'}
             />
           ) : null}
-          <div className="flex min-w-0 max-w-full flex-1 flex-row flex-wrap items-center gap-x-2 gap-y-1 max-md:pl-2 md:flex-nowrap md:items-center md:justify-between md:gap-2">
+          <div
+            className={`flex min-w-0 max-w-full flex-1 flex-row flex-wrap items-center gap-x-2 gap-y-1 ${branchRowPlMobile} md:flex-nowrap md:items-center md:justify-between md:gap-2`}
+          >
             <div className="flex min-w-0 flex-1 flex-col gap-0.5 md:min-w-0 md:flex-1">
               <div className="flex min-w-0 flex-1 flex-row items-center gap-2">
                 {outlineCompactMobile && !isLabelRow ? (
@@ -977,15 +940,12 @@ function OutlineNode({
                   />
                 ) : null}
                 {safeLinkHref ? (
-                  <a
+                  <PathOutlineDividerExternalLinkAnchor
                     href={safeLinkHref}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="min-w-0 flex-1 text-base font-semibold leading-snug text-[var(--text-primary)] underline decoration-[var(--border-light)] decoration-1 underline-offset-[3px] transition-colors hover:bg-[var(--hover-bg)]/60 hover:decoration-[var(--text-secondary)] [overflow-wrap:anywhere]"
+                    label={label}
+                    className={`min-w-0 flex-1 text-base font-semibold leading-snug text-[var(--text-primary)] ${PATH_OUTLINE_EXTERNAL_LINK_UNDERLINE}`}
                     onClick={(e) => e.stopPropagation()}
-                  >
-                    {label}
-                  </a>
+                  />
                 ) : canOpenLesson && courseId && lessonId ? (
                   <button
                     type="button"
@@ -1083,7 +1043,9 @@ function OutlineNode({
             externalLink={!hasNested && nk === 'link'}
           />
         ) : null}
-        <div className="flex min-w-0 max-w-full flex-1 flex-row flex-wrap items-center gap-x-2 gap-y-1 max-md:pl-2 md:flex-nowrap md:items-center md:justify-between md:gap-2">
+        <div
+          className={`flex min-w-0 max-w-full flex-1 flex-row flex-wrap items-center gap-x-2 gap-y-1 ${branchRowPlMobile} md:flex-nowrap md:items-center md:justify-between md:gap-2`}
+        >
           <div className="flex min-w-0 flex-1 flex-row items-center gap-2 md:min-w-0 md:flex-1">
             {outlineCompactMobile && !hasNested && !isLabelRow ? (
               <PathRowStatusLead
@@ -1095,15 +1057,12 @@ function OutlineNode({
               />
             ) : null}
             {safeLinkHref ? (
-              <a
+              <PathOutlineDividerExternalLinkAnchor
                 href={safeLinkHref}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={`${nestedLabelClass} min-w-0 flex-1 text-[var(--text-primary)] underline decoration-[var(--border-light)] decoration-1 underline-offset-[3px] transition-colors hover:bg-[var(--hover-bg)]/60 hover:decoration-[var(--text-secondary)] [overflow-wrap:anywhere]`}
+                label={label}
+                className={`${nestedLabelClass} min-w-0 flex-1 text-[var(--text-primary)] ${PATH_OUTLINE_EXTERNAL_LINK_UNDERLINE}`}
                 onClick={(e) => e.stopPropagation()}
-              >
-                {label}
-              </a>
+              />
             ) : canOpenLesson && courseId && lessonId ? (
               <button
                 type="button"
@@ -1171,6 +1130,7 @@ function OutlineNode({
                   isBranchExpanded={isBranchExpanded}
                   toggleBranch={toggleBranch}
                   outlineCompactMobile={outlineCompactMobile}
+                  pathId={pathId}
                 />
               </PathOutlineTreeItem>
             ))}
@@ -1301,17 +1261,16 @@ export const PathMindmapOutline: React.FC<PathMindmapOutlineProps> = ({
 
   return (
     <div
-      className="min-w-0 max-w-full overflow-x-hidden rounded-none border-0 bg-transparent px-0 py-1 md:rounded-xl md:border md:border-[var(--border-light)]/80 md:bg-[var(--bg-primary)]/50 md:px-6 md:py-2 md:shadow-[inset_0_1px_0_color-mix(in_srgb,var(--border-color)_35%,transparent)]"
+      className="min-w-0 max-w-full overflow-x-hidden border-0 bg-transparent px-0 py-1"
       role="region"
       aria-label={`Learning Path syllabus: ${pathTitle}`}
     >
       <div className="space-y-0">
-        {branchesForViewer.map((node, i) => (
+        {branchesForViewer.map((node) => (
           <React.Fragment key={node.id}>
             <OutlineNode
               node={node}
               depth={0}
-              sectionIndex={i}
               catalogCourses={catalogCourses}
               onOpenCourse={onOpenCourse}
               onOpenLesson={onOpenLesson}
@@ -1322,6 +1281,7 @@ export const PathMindmapOutline: React.FC<PathMindmapOutlineProps> = ({
               isBranchExpanded={isBranchExpanded}
               toggleBranch={toggleBranch}
               outlineCompactMobile={outlineCompactMobile}
+              pathId={pathId}
             />
           </React.Fragment>
         ))}

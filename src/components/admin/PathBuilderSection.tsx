@@ -101,6 +101,7 @@ import {
 } from '../../utils/reorderScrollViewport';
 import { scrollDisclosureRowToTop } from '../../utils/scrollDisclosureRowToTop';
 import {
+  ADMIN_INSERT_STRIP_CHIP_BTN_PERSIST,
   ADMIN_INSERT_STRIP_OUTER_EXPAND_HOVER,
   PATH_INSERT_STRIP_CHIP_BTN_EXPAND_ROW,
   PATH_INSERT_STRIP_CHIP_BTN_EXPAND_ROW_PAIR,
@@ -719,6 +720,20 @@ function findBranchNode(roots: PathBranchNode[], id: string): PathBranchNode | n
   return null;
 }
 
+/** Depth 0 = top-level root; used with {@link pathBranchRowHasExpandableNested} for accordion expand rules. */
+function findBranchNodeDepth(
+  roots: PathBranchNode[],
+  id: string,
+  depth = 0
+): { node: PathBranchNode; depth: number } | null {
+  for (const n of roots) {
+    if (n.id === id) return { node: n, depth };
+    const sub = findBranchNodeDepth(n.children, id, depth + 1);
+    if (sub) return sub;
+  }
+  return null;
+}
+
 /** Parent branch id, or `null` if `targetId` is a top-level root (or missing). */
 function findParentIdOfBranch(roots: PathBranchNode[], targetId: string): string | null {
   for (const r of roots) {
@@ -750,19 +765,6 @@ function findDepthOfBranchId(roots: PathBranchNode[], targetId: string): number 
     return null;
   }
   return walk(roots, 0);
-}
-
-/**
- * Rows that show a disclosure control (pill + chevron), including empty top-level outline modules
- * and nested section dividers — must stay in sync with {@link PathBranchRow} and {@link accordionExpandBranchRow}.
- */
-function pathBranchDisclosureEligible(b: PathBranchNode, depth: number): boolean {
-  const canNestBranches = (depth === 0 && b.kind !== 'divider') || (b.kind === 'divider' && depth >= 1);
-  const hasNestedRows = b.children.length > 0;
-  return (
-    canNestBranches &&
-    (hasNestedRows || (b.kind === 'divider' && depth >= 1) || (depth === 0 && b.kind === 'label'))
-  );
 }
 
 /** Top-level sections and divider rows may list child outline rows (divider groups are one extra level). */
@@ -931,7 +933,7 @@ function applyCopyNameToBranchRoot(
   }
   const trimmed = nameInput.trim();
   const base = duplicateRootEditableTitleBase(root, publishedList);
-  const finalLabel = trimmed.length > 0 ? trimmed : base;
+  const finalLabel = trimmed.length > 0 ? trimmed : `${base} (copy)`;
   if (root.kind === 'label') {
     return { ...root, label: finalLabel };
   }
@@ -946,7 +948,7 @@ function applyCopyNameToBranchRoot(
 
 type PlaceBranchCommitPayload =
   | { mode: 'copy'; branch: PathBranchNode }
-  | { mode: 'move'; sourceId: string; /** When the row has an editable title (link / divider / label), applied on move so renames can resolve sibling duplicate-title checks. */ nameInput?: string };
+  | { mode: 'move'; sourceId: string };
 
 type PlaceBranchRememberedInsert =
   | { kind: 'end' }
@@ -1121,7 +1123,7 @@ function PlaceDuplicateBranchModal({
   useEffect(() => {
     if (!open) return;
     if (duplicateRootHasEditableTitle(sourceSnapshot)) {
-      setCopyNameInput(duplicateRootEditableTitleBase(sourceSnapshot, publishedList));
+      setCopyNameInput(duplicateRootEditableTitleBase(sourceSnapshot, publishedList) + ' (copy)');
       const id = window.requestAnimationFrame(() => {
         window.requestAnimationFrame(() => {
           const el = copyNameInputRef.current;
@@ -1266,9 +1268,7 @@ function PlaceDuplicateBranchModal({
                 Name for the duplicate
               </label>
               <p id="place-dup-copy-name-hint" className="mt-1 text-[11px] leading-snug text-[var(--text-muted)]">
-                Used for <strong className="text-[var(--text-secondary)]">Copy</strong> (duplicate title). For{' '}
-                <strong className="text-[var(--text-secondary)]">Move</strong>, this updates the moved row’s title when
-                it’s a link, divider, or outline label — so you can avoid duplicate names at the destination.
+                Used if you press <strong className="text-[var(--text-secondary)]">Copy</strong> below. Move ignores this field.
               </p>
               <input
                 ref={copyNameInputRef}
@@ -1474,13 +1474,7 @@ function PlaceDuplicateBranchModal({
                 type="button"
                 title={!canCommit || !moveTargetOk ? 'Pick a valid destination in this outline for a move, or re-open the list.' : undefined}
                 disabled={!canCommit || !moveTargetOk}
-                onClick={() =>
-                  onCommit(effectiveParentId, insertIdx, {
-                    mode: 'move',
-                    sourceId: sourceSnapshot.id,
-                    ...(showCopyNameField ? { nameInput: copyNameInput } : {}),
-                  })
-                }
+                onClick={() => onCommit(effectiveParentId, insertIdx, { mode: 'move', sourceId: sourceSnapshot.id })}
                 className={`${primaryCtaClass} ${gdriveBlue}`}
               >
                 <ArrowRightLeft size={16} className="shrink-0 opacity-95" aria-hidden />
@@ -1519,13 +1513,7 @@ function PlaceDuplicateBranchModal({
                   type="button"
                   title={moveTitleDuplicateDialog}
                   disabled={moveDisabledDuplicateDialog}
-                  onClick={() =>
-                    onCommit(effectiveParentId, insertIdx, {
-                      mode: 'move',
-                      sourceId: sourceSnapshot.id,
-                      ...(showCopyNameField ? { nameInput: copyNameInput } : {}),
-                    })
-                  }
+                  onClick={() => onCommit(effectiveParentId, insertIdx, { mode: 'move', sourceId: sourceSnapshot.id })}
                   className={`${primaryCtaClass} ${gdriveBlue}`}
                 >
                   <ArrowRightLeft size={16} className="shrink-0 opacity-95" aria-hidden />
@@ -1792,10 +1780,9 @@ function stripBranchExpandState(next: Set<string>, tree: PathBranchNode[], nodeI
   }
 }
 
-/** Collapse sibling branches (and their open descendants); expand `id` when it supports disclosure (not only when it has children). */
+/** Collapse sibling branches (and their open descendants); expand `id` when it may show nested outline (incl. empty top-level modules). */
 function accordionExpandBranchRow(prev: Set<string>, tree: PathBranchNode[], id: string): Set<string> {
-  const node = findBranchNode(tree, id);
-  const depth = findDepthOfBranchId(tree, id);
+  const located = findBranchNodeDepth(tree, id);
   const siblings = findSiblingBranchIds(tree, id);
   const next = new Set(prev);
   if (siblings) {
@@ -1803,7 +1790,7 @@ function accordionExpandBranchRow(prev: Set<string>, tree: PathBranchNode[], id:
       if (sid !== id) stripBranchExpandState(next, tree, sid);
     }
   }
-  if (node != null && depth != null && pathBranchDisclosureEligible(node, depth)) {
+  if (located && pathBranchRowHasExpandableNested(located.node, located.depth)) {
     next.add(id);
   }
   return next;
@@ -1817,29 +1804,6 @@ function countPathBranchTreeNodes(nodes: readonly PathBranchNode[]): number {
     n += countPathBranchTreeNodes(node.children);
   }
   return n;
-}
-
-/**
- * Ids that may hold expand/collapse disclosure state (for pruning when the tree changes).
- * Includes parents with children, plus rows that use disclosure with an empty nested list
- * (top-level outline modules; nested section dividers).
- */
-function collectBranchIdsForExpandRetention(nodes: PathBranchNode[], depth = 0): Set<string> {
-  const out = new Set<string>();
-  function walk(ns: PathBranchNode[], d: number) {
-    for (const n of ns) {
-      if (n.children.length > 0) {
-        out.add(n.id);
-        walk(n.children, d + 1);
-      } else if (d === 0 && n.kind === 'label') {
-        out.add(n.id);
-      } else if (d >= 1 && n.kind === 'divider') {
-        out.add(n.id);
-      }
-    }
-  }
-  walk(nodes, depth);
-  return out;
 }
 
 /** Restore admin branch tree from Firestore mind map nodes. */
@@ -2910,9 +2874,14 @@ function pathBranchKindBadgeShortLabel(kind: PathBranchNode['kind']): string {
 const PATH_TOP_LEVEL_INSERT_PAIR_INNER =
   'flex w-full min-w-0 flex-col gap-1.5 max-md:!pl-0 md:flex-row md:flex-wrap md:items-stretch md:justify-center md:gap-1.5 md:py-0.5';
 
-/** Nested path “Add branch here” inner — keep in sync with `CATALOG_LESSON_INSERT_INNER_HOVER` in the course catalog. */
+/** Nested path “Add branch here” inner — keep in sync with `CATALOG_LESSON_INSERT_INNER_*` in the course catalog. */
 const PATH_NESTED_BRANCH_INSERT_INNER =
   'flex w-full pl-3 max-md:!pl-0 items-center justify-center md:min-h-0 md:py-0.5';
+const PATH_NESTED_BRANCH_INSERT_INNER_PERSIST =
+  'flex w-full pl-3 max-md:!pl-0 justify-center';
+/** md+: strip always expanded (matches catalog lesson insert when module has no rows). */
+const PATH_INSERT_OUTER_PERSIST =
+  'group/pathStrip relative z-0 mb-0 min-h-0 min-w-0 list-none overflow-visible py-0';
 
 type PathInsertBranchAtOpts = {
   /** When adding from a gutter, skip the kind picker and open the matching step (e.g. module name for `preset: 'label'`). */
@@ -2926,7 +2895,10 @@ function topLevelRowAllowsChildBranches(row: PathBranchNode): boolean {
 
 /** Mirrors `PathBranchRow` disclosure: section + divider rows may expand/collapse nested children. */
 function pathBranchRowHasExpandableNested(b: PathBranchNode, depth: number): boolean {
-  return pathBranchDisclosureEligible(b, depth);
+  const canNestBranches = (depth === 0 && b.kind !== 'divider') || (b.kind === 'divider' && depth >= 1);
+  const hasNestedRows = b.children.length > 0;
+  // Top-level outline modules (`label`) always show a disclosure chevron, even before adding children.
+  return canNestBranches && (hasNestedRows || (b.kind === 'divider' && depth >= 1) || (depth === 0 && b.kind === 'label'));
 }
 
 function pathBranchNodeIsCollapsed(
@@ -2934,9 +2906,25 @@ function pathBranchNodeIsCollapsed(
   depth: number,
   expandedBranchIds: ReadonlySet<string>
 ): boolean {
-  // Any row with a disclosure chevron follows `expandedBranchIds` (including empty outline modules and empty nested dividers).
-  if (!pathBranchDisclosureEligible(b, depth)) return false;
-  return !expandedBranchIds.has(b.id);
+  const hasNestedRows = b.children.length > 0;
+  const hasExpandableNested = pathBranchRowHasExpandableNested(b, depth);
+  // Outline modules (top-level `label`) should show a disclosure chevron even before they have children,
+  // matching the catalog module affordance.
+  if (depth === 0 && b.kind === 'label') return hasExpandableNested && !expandedBranchIds.has(b.id);
+  return hasNestedRows && hasExpandableNested && !expandedBranchIds.has(b.id);
+}
+
+/** Ids that may appear in `expandedBranchIds` — aligned with {@link pathBranchRowHasExpandableNested} (includes empty top-level outline modules). */
+function collectBranchIdsEligibleForExpandState(nodes: PathBranchNode[], depth = 0): Set<string> {
+  const out = new Set<string>();
+  function walk(ns: PathBranchNode[], d: number) {
+    for (const n of ns) {
+      if (pathBranchRowHasExpandableNested(n, d)) out.add(n.id);
+      if (n.children.length > 0) walk(n.children, d + 1);
+    }
+  }
+  walk(nodes, depth);
+  return out;
 }
 
 /** Shorten outline titles for insert-strip buttons (mobile-friendly). */
@@ -2958,6 +2946,7 @@ function PathBranchInsertSlot({
   previousRowDepth,
   publishedList,
   insertListOwnerDisplayName,
+  persistVisibleOnMd = false,
   onInsertBranchAt,
 }: {
   parentId: string | null;
@@ -2974,6 +2963,8 @@ function PathBranchInsertSlot({
    * (outline module or section divider when its nested list is open).
    */
   insertListOwnerDisplayName?: string;
+  /** When true (nested list with no children yet): chip stays visible on md+ like course catalog lesson insert. */
+  persistVisibleOnMd?: boolean;
   onInsertBranchAt: (
     parentId: string | null,
     insertIndex: number,
@@ -3000,6 +2991,9 @@ function PathBranchInsertSlot({
     branchUnderAbove && prev
       ? pathInsertAddBranchUnderLabel(branchNodeDisplayLabel(prev, publishedList))
       : nestedLabelFallback;
+  const nestedStripTitle =
+    'Adds a row inside this outline section at this position among its items.';
+  const delayHoverReveal = !persistVisibleOnMd;
   const {
     stripOuterCursorClass,
     waitCursorOverlayOpen,
@@ -3010,7 +3004,10 @@ function PathBranchInsertSlot({
     onPointerLeave,
     onFocusCapture,
     onBlurCapture,
-  } = useInsertStripRevealCursor(true);
+  } = useInsertStripRevealCursor(delayHoverReveal);
+  const outerLiClass = persistVisibleOnMd
+    ? `${PATH_INSERT_OUTER_PERSIST} ${stripOuterCursorClass}`.trim()
+    : `group/pathStrip relative z-0 mb-0 min-h-0 min-w-0 list-none ${ADMIN_INSERT_STRIP_OUTER_EXPAND_HOVER} ${stripOuterCursorClass}`.trim();
   return (
     <>
       <InsertStripWaitCursorPortal
@@ -3019,7 +3016,8 @@ function PathBranchInsertSlot({
         clientY={waitCursorClientY}
       />
       <li
-        className={`group/pathStrip relative z-0 mb-0 min-h-0 min-w-0 list-none ${ADMIN_INSERT_STRIP_OUTER_EXPAND_HOVER} ${stripOuterCursorClass}`.trim()}
+        className={outerLiClass}
+        title={!atTopLevel && !persistVisibleOnMd ? nestedStripTitle : undefined}
         onPointerEnter={onPointerEnter}
         onPointerMove={onPointerMove}
         onPointerLeave={onPointerLeave}
@@ -3027,7 +3025,7 @@ function PathBranchInsertSlot({
         onBlurCapture={onBlurCapture}
       >
         {atTopLevel ? (
-          branchUnderAbove ? (
+          branchUnderAbove && prev != null && prev.children.length > 0 ? (
             <div className={PATH_TOP_LEVEL_INSERT_PAIR_INNER}>
               <button
                 type="button"
@@ -3064,12 +3062,21 @@ function PathBranchInsertSlot({
             </div>
           )
         ) : (
-          <div className={PATH_NESTED_BRANCH_INSERT_INNER}>
+          <div
+            className={
+              persistVisibleOnMd ? PATH_NESTED_BRANCH_INSERT_INNER_PERSIST : PATH_NESTED_BRANCH_INSERT_INNER
+            }
+          >
             <button
               type="button"
+              title={persistVisibleOnMd ? nestedStripTitle : undefined}
               aria-label={nestedAddBranchLabel}
               onClick={() => onInsertBranchAt(parentId, insertIndex)}
-              className={PATH_INSERT_STRIP_CHIP_BTN_EXPAND_ROW}
+              className={
+                persistVisibleOnMd
+                  ? ADMIN_INSERT_STRIP_CHIP_BTN_PERSIST
+                  : PATH_INSERT_STRIP_CHIP_BTN_EXPAND_ROW
+              }
             >
               <Plus size={14} className="shrink-0 opacity-90" aria-hidden />
               <span className="min-w-0 text-center [overflow-wrap:anywhere]">{nestedAddBranchLabel}</span>
@@ -3244,14 +3251,12 @@ function PathBranchRow({
   const isCollapsed = pathBranchNodeIsCollapsed(b, depth, expandedBranchIds);
   /**
    * Show nested list + insert slots when:
-   * - Rows with disclosure + empty nested list: only when expanded (chevron hides “add first branch” gutter).
-   * - Otherwise: show when empty (first insert) or when expanded with children.
+   * - Top-level outline modules are expanded (even if empty) so the chevron can hide/show the empty state.
+   * - Other nestable rows: always show when empty (so the first insert is visible), or when expanded with children.
    */
   const showNestedBranchList =
     canNestBranches &&
-    (pathBranchDisclosureEligible(b, depth) && !hasNestedRows
-      ? !isCollapsed
-      : !hasNestedRows || !isCollapsed);
+    (depth === 0 && b.kind === 'label' ? !isCollapsed : !hasNestedRows || !isCollapsed);
 
   const kindBadgeClass = 'bg-[#757676]/15 text-[#393a3a] app-dark:text-[#cfcfcf]';
 
@@ -3704,18 +3709,17 @@ function PathBranchTreeList({
       }
     >
       <Fragment key={`ins-${insKey}-0`}>
-        {/* Empty nested list: top-level gutter Add branch here already inserts at index 0 under the parent row. */}
-        {!(parentId !== null && depth > 0 && nodes.length === 0) ? (
-          <PathBranchInsertSlot
-            parentId={parentId}
-            insertIndex={0}
-            expandedBranchIds={expandedBranchIds}
-            previousRow={parentId === null ? null : undefined}
-            publishedList={publishedList}
-            insertListOwnerDisplayName={parentId != null ? insertListOwnerDisplayName : undefined}
-            onInsertBranchAt={onInsertBranchAt}
-          />
-        ) : null}
+        {/* Always show leading insert (including empty nested lists) so outline modules match catalog “add branch at start of module”. */}
+        <PathBranchInsertSlot
+          parentId={parentId}
+          insertIndex={0}
+          expandedBranchIds={expandedBranchIds}
+          previousRow={parentId === null ? null : undefined}
+          publishedList={publishedList}
+          insertListOwnerDisplayName={parentId != null ? insertListOwnerDisplayName : undefined}
+          persistVisibleOnMd={parentId !== null && nodes.length === 0}
+          onInsertBranchAt={onInsertBranchAt}
+        />
       </Fragment>
       {nodes.map((b, i) => {
         const omitNestedTrailingSlot = parentId !== null && depth > 0 && i === nodes.length - 1;
@@ -3871,8 +3875,6 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
   const pathBranchTreeRef = useRef<PathBranchNode[]>([]);
   pathBranchTreeRef.current = pathBranchTree;
   const pathBranchMindMapRootRef = useRef<HTMLDivElement | null>(null);
-  /** After expanding a branch row, align its card to the top of the viewport. */
-  const pendingBranchDisclosureScrollRef = useRef<string | null>(null);
   const pendingPathBranchReorderFocusRef = useRef<{
     nodeId: string;
     control: 'up' | 'down';
@@ -3946,12 +3948,10 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     (id: string) => {
       setExpandedBranchIds((prev) => {
         if (prev.has(id)) {
-          pendingBranchDisclosureScrollRef.current = null;
           const next = new Set<string>(prev);
           stripBranchExpandState(next, pathBranchTree, id);
           return next;
         }
-        pendingBranchDisclosureScrollRef.current = id;
         return accordionExpandBranchRow(prev, pathBranchTree, id);
       });
     },
@@ -3960,7 +3960,6 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
 
   const focusBranchRow = useCallback(
     (id: string) => {
-      pendingBranchDisclosureScrollRef.current = id;
       setExpandedBranchIds((prev) => accordionExpandBranchRow(prev, pathBranchTree, id));
     },
     [pathBranchTree]
@@ -4201,14 +4200,14 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
   }, [pathSelector, pathPersistence]);
 
   useEffect(() => {
-    // `applyPickNewPath` seeds `expandedBranchIds` for the default outline module — do not clear on `__new__`.
+    // `applyPickNewPath` seeds `expandedBranchIds` for the default outline module — do not wipe on `__new__`.
     if (pathSelector === '__new__') return;
     setExpandedBranchIds(new Set());
   }, [pathSelector]);
 
-  /** Remove expand state for branches that no longer exist or no longer support disclosure. */
+  /** Remove expand state for ids that are not valid for the current tree (e.g. removed rows). */
   useEffect(() => {
-    const valid = collectBranchIdsForExpandRetention(pathBranchTree);
+    const valid = collectBranchIdsEligibleForExpandState(pathBranchTree);
     setExpandedBranchIds((prev) => {
       const next = new Set<string>();
       for (const id of prev) {
@@ -4540,10 +4539,11 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
       const reserveIds = pathSelector === '__new__' && pathDraft?.id ? [pathDraft.id] : [];
       const docIds = await pathDocumentIdsForAllocation();
       const newId = firstAvailableStructuredLearningPathIdFromDocIds(docIds, reserveIds);
+      const t = sourcePath.title.trim();
       const newPath: LearningPath = {
         ...deepClone(sourcePath),
         id: newId,
-        title: sourcePath.title,
+        title: t.endsWith(' (copy)') ? t : `${t} (copy)`,
         courseIds: [...sourcePath.courseIds],
         catalogPublished: false,
       };
@@ -4869,15 +4869,6 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     }
     setPathConfirmDialog({ kind: 'deletePublished' });
   };
-
-  useLayoutEffect(() => {
-    const id = pendingBranchDisclosureScrollRef.current;
-    if (!id) return;
-    pendingBranchDisclosureScrollRef.current = null;
-    const sel = `[data-path-branch-node-id="${escapeSelectorAttrValue(id)}"]`;
-    const row = queryElementInScopeOrDocument(pathBranchMindMapRootRef.current, sel);
-    scrollDisclosureRowToTop(null, row);
-  }, [expandedBranchIds]);
 
   return (
     <div className="min-w-0 w-full space-y-4">
@@ -5589,17 +5580,9 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                   }
                 }
                 setPathBranchTree(next);
-                setExpandedBranchIds((prev) => {
-                  let s = prev;
-                  if (branchModal.parentId != null) {
-                    s = accordionExpandBranchRow(s, next, branchModal.parentId!);
-                  }
-                  // New empty nested dividers use expand state for the nested gutter — open once so it matches “just added” UX; user can collapse like an outline module.
-                  if (branch.kind === 'divider' && branch.children.length === 0) {
-                    s = accordionExpandBranchRow(new Set(s), next, branch.id);
-                  }
-                  return s;
-                });
+                if (branchModal.parentId != null) {
+                  setExpandedBranchIds((prev) => accordionExpandBranchRow(prev, next, branchModal.parentId!));
+                }
                 setBranchModal({ kind: 'closed' });
               }
             }}
@@ -5807,10 +5790,6 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                   showActionToast('Could not move that branch.', 'danger');
                   return;
                 }
-                const renamed =
-                  payload.nameInput !== undefined && duplicateRootHasEditableTitle(extracted)
-                    ? applyCopyNameToBranchRoot(extracted, payload.nameInput, publishedList)
-                    : extracted;
                 let adj = insertIndex;
                 const srcParent = findParentIdOfBranch(roots, sourceId);
                 if (srcParent === parentId) {
@@ -5820,8 +5799,8 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                     adj = insertIndex - 1;
                   }
                 }
-                const next = insertChildAtParent(without, parentId, adj, renamed);
-                if (findBranchNode(next, renamed.id) == null) {
+                const next = insertChildAtParent(without, parentId, adj, extracted);
+                if (findBranchNode(next, extracted.id) == null) {
                   showActionToast('Could not place the branch.', 'danger');
                   return;
                 }
@@ -5836,7 +5815,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                 if (parentId != null) {
                   setExpandedBranchIds((prev) => accordionExpandBranchRow(prev, next, parentId));
                 } else {
-                  setExpandedBranchIds((prev) => accordionExpandBranchRow(prev, next, renamed.id));
+                  setExpandedBranchIds((prev) => accordionExpandBranchRow(prev, next, extracted.id));
                 }
                 setBranchModal({ kind: 'closed' });
                 showActionToast('Branch moved.');

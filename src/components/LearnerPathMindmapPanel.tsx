@@ -22,8 +22,9 @@ import {
 } from '../utils/courseProgress';
 import { LearnerPathCourseRowList } from './LearnerPathCourseRowList';
 import { PathMindmapOutline } from './PathMindmapOutline';
+import { LearnerPathSectionDividerShell } from './LearnerPathSectionDividerShell';
+import { PathOutlineDividerExternalLinkRow } from './PathOutlineDividerExternalLinkRow';
 import { PathOutlineTreeGroup, PathOutlineTreeItem } from './PathOutlineTreeGroup';
-import { PathSectionDividerCard } from './PathSectionDividerCard';
 
 export type LearnerPathMindmapPanelProps = {
   pathId: string;
@@ -63,7 +64,6 @@ type PathCourseRowDividerCollapseApi = {
 
 type SectionDividerOutlineBlockProps = {
   pathId: string;
-  placement: 'section' | 'nested';
   dividerId: string;
   title: string;
   /** Small caps line above title (from path admin). */
@@ -80,7 +80,6 @@ type SectionDividerOutlineBlockProps = {
 
 function SectionDividerOutlineBlock({
   pathId,
-  placement,
   dividerId,
   title,
   dividerEyebrow,
@@ -98,48 +97,17 @@ function SectionDividerOutlineBlock({
   const open = dividerCollapse.isOpen(dividerId);
   const panelId = `path-courserow-divider-${pathId}-${dividerId}`;
 
-  const wrapClass =
-    placement === 'section'
-      ? 'min-w-0 border-t border-[var(--border-color)]/55 first:border-t-0'
-      : 'min-w-0';
-
-  const onHeaderKeyDown = expandable
-    ? (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          dividerCollapse.toggle(dividerId);
-        }
-      }
-    : undefined;
-
   return (
-    <div className={`${wrapClass} flex min-w-0 flex-col gap-3`} role="presentation">
-      <div
-        className={
-          expandable
-            ? 'min-w-0 max-w-full cursor-pointer rounded-lg py-0.5 transition-colors hover:bg-[var(--hover-bg)]/40 sm:py-0.5'
-            : 'min-w-0 max-w-full py-0.5'
-        }
-        role={expandable ? 'button' : undefined}
-        tabIndex={expandable ? 0 : undefined}
-        aria-expanded={expandable ? open : undefined}
-        aria-controls={expandable ? panelId : undefined}
-        aria-label={
-          expandable ? `${open ? 'Collapse' : 'Expand'} links and topics under ${title}` : undefined
-        }
-        onClick={expandable ? () => dividerCollapse.toggle(dividerId) : undefined}
-        onKeyDown={onHeaderKeyDown}
-      >
-        <div className="min-w-0">
-          <PathSectionDividerCard
-            title={title}
-            eyebrow={dividerEyebrow?.trim() || 'Section divider'}
-          />
-        </div>
-      </div>
-      {hasNested ? (
-        <div id={panelId} hidden={expandable && !open}>
-          <PathOutlineTreeGroup parentDepth={treeGroupParentDepth}>
+    <LearnerPathSectionDividerShell
+      title={title}
+      dividerEyebrow={dividerEyebrow}
+      panelId={panelId}
+      expandable={expandable}
+      panelOpen={open}
+      onToggle={expandable ? () => dividerCollapse.toggle(dividerId) : undefined}
+      panel={
+        hasNested ? (
+          <PathOutlineTreeGroup parentDepth={treeGroupParentDepth} variant="flat">
             {nested.map((ch, idx) => (
               <PathOutlineTreeItem key={pathCourseRowNestedSegmentKey(ch, idx)}>
                 <PathCourseRowNestedSegment
@@ -155,9 +123,9 @@ function SectionDividerOutlineBlock({
               </PathOutlineTreeItem>
             ))}
           </PathOutlineTreeGroup>
-        </div>
-      ) : null}
-    </div>
+        ) : undefined
+      }
+    />
   );
 }
 
@@ -188,7 +156,6 @@ function PathCourseRowNestedSegment({
     return (
       <SectionDividerOutlineBlock
         pathId={pathId}
-        placement="nested"
         dividerId={seg.id}
         title={title}
         dividerEyebrow={seg.dividerEyebrow}
@@ -213,14 +180,7 @@ function PathCourseRowNestedSegment({
   if (seg.type === 'link') {
     const safeHref = normalizeExternalHref(seg.href);
     return safeHref ? (
-      <a
-        href={safeHref}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-block min-w-0 text-sm font-medium leading-snug text-[var(--text-primary)] underline decoration-[var(--border-light)] decoration-1 underline-offset-[3px] transition-colors hover:bg-[var(--hover-bg)]/60 hover:decoration-[var(--text-secondary)] [overflow-wrap:anywhere] sm:text-[15px]"
-      >
-        {seg.label}
-      </a>
+      <PathOutlineDividerExternalLinkRow href={safeHref} label={seg.label} />
     ) : (
       <p className="text-sm font-semibold text-[var(--text-primary)] [overflow-wrap:anywhere]">{seg.label}</p>
     );
@@ -569,7 +529,6 @@ export const LearnerPathMindmapPanel: React.FC<LearnerPathMindmapPanelProps> = (
                       <SectionDividerOutlineBlock
                         key={seg.id}
                         pathId={pathId}
-                        placement="section"
                         dividerId={seg.id}
                         title={seg.label.trim() || 'Untitled section'}
                         dividerEyebrow={seg.dividerEyebrow}
