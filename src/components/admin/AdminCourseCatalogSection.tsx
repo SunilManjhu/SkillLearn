@@ -263,7 +263,6 @@ function nextDividerIdLegacy(): string {
 function emptyCourse(docId: string): Course {
   const structured = isStructuredCourseId(docId);
   const mid = structured ? `${docId}M1` : 'm1';
-  const lid = structured ? `${docId}M1L1` : 'l1';
   return {
     id: docId,
     title: '',
@@ -279,13 +278,7 @@ function emptyCourse(docId: string): Course {
       {
         id: mid,
         title: '',
-        lessons: [
-          {
-            id: lid,
-            title: '',
-            videoUrl: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
-          },
-        ],
+        lessons: [],
       },
     ],
   };
@@ -1361,7 +1354,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const [baselineJson, setBaselineJson] = useState<string | null>(null);
   /** Turn on inline field errors after first failed save. */
   const [showValidationHints, setShowValidationHints] = useState(false);
-  /** New Course (__new__) opens course details + first module/lesson; published picks start collapsed (see effect). */
+  /** New Course (__new__) opens course details + first module (lessons added manually); published picks start collapsed (see effect). */
   const [courseDetailsOpen, setCourseDetailsOpen] = useState(false);
   /** Description + author bio: optional; collapsed by default to save space. */
   const [courseDescriptionBioOpen, setCourseDescriptionBioOpen] = useState(false);
@@ -2378,22 +2371,14 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       if (!d) return null;
       const idx = Math.max(0, Math.min(insertIndex, d.modules.length));
       pendingOpenNewModuleIndexRef.current = idx;
-      pendingOpenNewLessonKeyRef.current = `${idx}:0`;
+      pendingOpenNewLessonKeyRef.current = null;
       pendingScrollToNewModuleTitleMiRef.current = idx;
       const structured = isStructuredCourseId(d.id);
       const mid = structured ? nextModuleIdForCourse(d) : nextModuleIdLegacy(d.modules);
-      const lid = structured ? `${mid}L1` : nextLessonIdLegacy(d);
       const newModule = {
         id: mid,
         title: '',
-        lessons: [
-          {
-            id: lid,
-            title: '',
-            videoUrl: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
-            __adminRowKey: crypto.randomUUID(),
-          } as LessonWithAdminKey,
-        ],
+        lessons: [] as Lesson[],
       };
       const modules = [...d.modules.slice(0, idx), newModule, ...d.modules.slice(idx)];
       let next: Course = { ...d, modules };
@@ -3033,7 +3018,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           targetId: `admin-module-id-${mi}`,
           scope: 'module',
           moduleIndex: mi,
-          lessonKeys: [`${mi}:0`],
+          lessonKeys: m.lessons.length ? [`${mi}:0`] : undefined,
         };
       }
       if (catalogMiniRichIsEffectivelyEmpty(m.title)) {
@@ -3041,15 +3026,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
           targetId: `admin-module-title-${mi}`,
           scope: 'module',
           moduleIndex: mi,
-          lessonKeys: [`${mi}:0`],
-        };
-      }
-      if (!m.lessons.length) {
-        return {
-          targetId: `admin-module-title-${mi}`,
-          scope: 'module',
-          moduleIndex: mi,
-          lessonKeys: [],
+          lessonKeys: m.lessons.length ? [`${mi}:0`] : undefined,
         };
       }
       for (let li = 0; li < m.lessons.length; li += 1) {
@@ -3402,8 +3379,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     const newId = firstAvailableStructuredCourseIdFromDocIds(docIds, reserveDraftCn);
     const copy = remapCourseToStructuredIds(deepClone(fromEditor), newId);
     copy.catalogPublished = false;
-    const t = fromEditor.title.trim();
-    copy.title = t.endsWith(' (copy)') ? t : `${t} (copy)`;
+    copy.title = fromEditor.title;
     pendingFocusCourseTitleRef.current = true;
     setSelector('__new__');
     const keyed = ensureCourseLessonRowKeys(copy);
@@ -4085,7 +4061,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
     if (selector === '__new__') {
       setCourseDetailsOpen(true);
       setOpenModules({ 0: true });
-      setOpenLessons({ '0:0': true });
+      setOpenLessons({});
       prevCatalogOpenStateRef.current = { selector, draftId: did };
       return;
     }

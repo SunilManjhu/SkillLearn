@@ -152,7 +152,6 @@ function parseModule(raw: unknown): Module | null {
     const pl = parseLesson(l);
     if (pl) lessons.push(pl);
   }
-  if (lessons.length === 0) return null;
   const mod: Module = { id: o.id, title: o.title, lessons };
   const mvr = parseVisibleToRolesField(o);
   if (mvr !== undefined) mod.visibleToRoles = mvr;

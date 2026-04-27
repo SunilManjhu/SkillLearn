@@ -71,7 +71,7 @@ export function validateCourseDraft(c: Course): string | null {
     const m = c.modules[mi];
     if (!m.id.trim()) return `Module ${mi + 1}: Module ID is required.`;
     if (catalogMiniRichIsEffectivelyEmpty(m.title)) return `Module ${mi + 1}: Module title is required.`;
-    if (!m.lessons.length) return 'Each module needs at least one lesson.';
+    if (!m.lessons.length) continue;
     const playableInModule = m.lessons.filter((les) => les.contentKind !== 'divider').length;
     if (playableInModule === 0) {
       return `Module ${mi + 1}: Add at least one playable lesson (video, external page, or quiz), not only section dividers.`;

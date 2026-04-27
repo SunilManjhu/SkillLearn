@@ -752,6 +752,19 @@ function findDepthOfBranchId(roots: PathBranchNode[], targetId: string): number 
   return walk(roots, 0);
 }
 
+/**
+ * Rows that show a disclosure control (pill + chevron), including empty top-level outline modules
+ * and nested section dividers — must stay in sync with {@link PathBranchRow} and {@link accordionExpandBranchRow}.
+ */
+function pathBranchDisclosureEligible(b: PathBranchNode, depth: number): boolean {
+  const canNestBranches = (depth === 0 && b.kind !== 'divider') || (b.kind === 'divider' && depth >= 1);
+  const hasNestedRows = b.children.length > 0;
+  return (
+    canNestBranches &&
+    (hasNestedRows || (b.kind === 'divider' && depth >= 1) || (depth === 0 && b.kind === 'label'))
+  );
+}
+
 /** Top-level sections and divider rows may list child outline rows (divider groups are one extra level). */
 function parentAllowsChildRows(roots: PathBranchNode[], parentId: string | null): boolean {
   if (parentId === null) return true;
@@ -918,7 +931,7 @@ function applyCopyNameToBranchRoot(
   }
   const trimmed = nameInput.trim();
   const base = duplicateRootEditableTitleBase(root, publishedList);
-  const finalLabel = trimmed.length > 0 ? trimmed : `${base} (copy)`;
+  const finalLabel = trimmed.length > 0 ? trimmed : base;
   if (root.kind === 'label') {
     return { ...root, label: finalLabel };
   }
@@ -933,7 +946,7 @@ function applyCopyNameToBranchRoot(
 
 type PlaceBranchCommitPayload =
   | { mode: 'copy'; branch: PathBranchNode }
-  | { mode: 'move'; sourceId: string };
+  | { mode: 'move'; sourceId: string; /** When the row has an editable title (link / divider / label), applied on move so renames can resolve sibling duplicate-title checks. */ nameInput?: string };
 
 type PlaceBranchRememberedInsert =
   | { kind: 'end' }
@@ -1108,7 +1121,7 @@ function PlaceDuplicateBranchModal({
   useEffect(() => {
     if (!open) return;
     if (duplicateRootHasEditableTitle(sourceSnapshot)) {
-      setCopyNameInput(duplicateRootEditableTitleBase(sourceSnapshot, publishedList) + ' (copy)');
+      setCopyNameInput(duplicateRootEditableTitleBase(sourceSnapshot, publishedList));
       const id = window.requestAnimationFrame(() => {
         window.requestAnimationFrame(() => {
           const el = copyNameInputRef.current;
@@ -1253,7 +1266,9 @@ function PlaceDuplicateBranchModal({
                 Name for the duplicate
               </label>
               <p id="place-dup-copy-name-hint" className="mt-1 text-[11px] leading-snug text-[var(--text-muted)]">
-                Used if you press <strong className="text-[var(--text-secondary)]">Copy</strong> below. Move ignores this field.
+                Used for <strong className="text-[var(--text-secondary)]">Copy</strong> (duplicate title). For{' '}
+                <strong className="text-[var(--text-secondary)]">Move</strong>, this updates the moved row’s title when
+                it’s a link, divider, or outline label — so you can avoid duplicate names at the destination.
               </p>
               <input
                 ref={copyNameInputRef}
@@ -1459,7 +1474,13 @@ function PlaceDuplicateBranchModal({
                 type="button"
                 title={!canCommit || !moveTargetOk ? 'Pick a valid destination in this outline for a move, or re-open the list.' : undefined}
                 disabled={!canCommit || !moveTargetOk}
-                onClick={() => onCommit(effectiveParentId, insertIdx, { mode: 'move', sourceId: sourceSnapshot.id })}
+                onClick={() =>
+                  onCommit(effectiveParentId, insertIdx, {
+                    mode: 'move',
+                    sourceId: sourceSnapshot.id,
+                    ...(showCopyNameField ? { nameInput: copyNameInput } : {}),
+                  })
+                }
                 className={`${primaryCtaClass} ${gdriveBlue}`}
               >
                 <ArrowRightLeft size={16} className="shrink-0 opacity-95" aria-hidden />
@@ -1498,7 +1519,13 @@ function PlaceDuplicateBranchModal({
                   type="button"
                   title={moveTitleDuplicateDialog}
                   disabled={moveDisabledDuplicateDialog}
-                  onClick={() => onCommit(effectiveParentId, insertIdx, { mode: 'move', sourceId: sourceSnapshot.id })}
+                  onClick={() =>
+                    onCommit(effectiveParentId, insertIdx, {
+                      mode: 'move',
+                      sourceId: sourceSnapshot.id,
+                      ...(showCopyNameField ? { nameInput: copyNameInput } : {}),
+                    })
+                  }
                   className={`${primaryCtaClass} ${gdriveBlue}`}
                 >
                   <ArrowRightLeft size={16} className="shrink-0 opacity-95" aria-hidden />
@@ -1765,9 +1792,10 @@ function stripBranchExpandState(next: Set<string>, tree: PathBranchNode[], nodeI
   }
 }
 
-/** Collapse sibling branches (and their open descendants); expand `id` when it has children. */
+/** Collapse sibling branches (and their open descendants); expand `id` when it supports disclosure (not only when it has children). */
 function accordionExpandBranchRow(prev: Set<string>, tree: PathBranchNode[], id: string): Set<string> {
   const node = findBranchNode(tree, id);
+  const depth = findDepthOfBranchId(tree, id);
   const siblings = findSiblingBranchIds(tree, id);
   const next = new Set(prev);
   if (siblings) {
@@ -1775,7 +1803,7 @@ function accordionExpandBranchRow(prev: Set<string>, tree: PathBranchNode[], id:
       if (sid !== id) stripBranchExpandState(next, tree, sid);
     }
   }
-  if (node && node.children.length > 0) {
+  if (node != null && depth != null && pathBranchDisclosureEligible(node, depth)) {
     next.add(id);
   }
   return next;
@@ -1791,18 +1819,26 @@ function countPathBranchTreeNodes(nodes: readonly PathBranchNode[]): number {
   return n;
 }
 
-/** Ids of branches that have children (for pruning expand state when the tree changes). */
-function collectBranchIdsWithChildren(nodes: PathBranchNode[]): Set<string> {
+/**
+ * Ids that may hold expand/collapse disclosure state (for pruning when the tree changes).
+ * Includes parents with children, plus rows that use disclosure with an empty nested list
+ * (top-level outline modules; nested section dividers).
+ */
+function collectBranchIdsForExpandRetention(nodes: PathBranchNode[], depth = 0): Set<string> {
   const out = new Set<string>();
-  function walk(ns: PathBranchNode[]) {
+  function walk(ns: PathBranchNode[], d: number) {
     for (const n of ns) {
       if (n.children.length > 0) {
         out.add(n.id);
-        walk(n.children);
+        walk(n.children, d + 1);
+      } else if (d === 0 && n.kind === 'label') {
+        out.add(n.id);
+      } else if (d >= 1 && n.kind === 'divider') {
+        out.add(n.id);
       }
     }
   }
-  walk(nodes);
+  walk(nodes, depth);
   return out;
 }
 
@@ -2890,9 +2926,7 @@ function topLevelRowAllowsChildBranches(row: PathBranchNode): boolean {
 
 /** Mirrors `PathBranchRow` disclosure: section + divider rows may expand/collapse nested children. */
 function pathBranchRowHasExpandableNested(b: PathBranchNode, depth: number): boolean {
-  const canNestBranches = (depth === 0 && b.kind !== 'divider') || (b.kind === 'divider' && depth >= 1);
-  const hasNestedRows = b.children.length > 0;
-  return canNestBranches && (hasNestedRows || (b.kind === 'divider' && depth >= 1));
+  return pathBranchDisclosureEligible(b, depth);
 }
 
 function pathBranchNodeIsCollapsed(
@@ -2900,9 +2934,9 @@ function pathBranchNodeIsCollapsed(
   depth: number,
   expandedBranchIds: ReadonlySet<string>
 ): boolean {
-  const hasNestedRows = b.children.length > 0;
-  const hasExpandableNested = pathBranchRowHasExpandableNested(b, depth);
-  return hasNestedRows && hasExpandableNested && !expandedBranchIds.has(b.id);
+  // Any row with a disclosure chevron follows `expandedBranchIds` (including empty outline modules and empty nested dividers).
+  if (!pathBranchDisclosureEligible(b, depth)) return false;
+  return !expandedBranchIds.has(b.id);
 }
 
 /** Shorten outline titles for insert-strip buttons (mobile-friendly). */
@@ -3208,8 +3242,16 @@ function PathBranchRow({
   /** Dividers always use the disclosure control so grouped rows are obvious; collapse only hides when there are children. */
   const hasExpandableNested = pathBranchRowHasExpandableNested(b, depth);
   const isCollapsed = pathBranchNodeIsCollapsed(b, depth, expandedBranchIds);
-  /** Show nested list + insert slots when empty (first sub-branch) or when expanded with children. */
-  const showNestedBranchList = canNestBranches && (!hasNestedRows || !isCollapsed);
+  /**
+   * Show nested list + insert slots when:
+   * - Rows with disclosure + empty nested list: only when expanded (chevron hides “add first branch” gutter).
+   * - Otherwise: show when empty (first insert) or when expanded with children.
+   */
+  const showNestedBranchList =
+    canNestBranches &&
+    (pathBranchDisclosureEligible(b, depth) && !hasNestedRows
+      ? !isCollapsed
+      : !hasNestedRows || !isCollapsed);
 
   const kindBadgeClass = 'bg-[#757676]/15 text-[#393a3a] app-dark:text-[#cfcfcf]';
 
@@ -4159,12 +4201,14 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
   }, [pathSelector, pathPersistence]);
 
   useEffect(() => {
+    // `applyPickNewPath` seeds `expandedBranchIds` for the default outline module — do not clear on `__new__`.
+    if (pathSelector === '__new__') return;
     setExpandedBranchIds(new Set());
   }, [pathSelector]);
 
-  /** Remove expand state for branches that no longer exist or no longer have children. */
+  /** Remove expand state for branches that no longer exist or no longer support disclosure. */
   useEffect(() => {
-    const valid = collectBranchIdsWithChildren(pathBranchTree);
+    const valid = collectBranchIdsForExpandRetention(pathBranchTree);
     setExpandedBranchIds((prev) => {
       const next = new Set<string>();
       for (const id of prev) {
@@ -4448,14 +4492,21 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
     const docIds = await pathDocumentIdsForAllocation();
     const newId = firstAvailableStructuredLearningPathIdFromDocIds(docIds, reserveIds);
     const fresh: LearningPath = { id: newId, title: '', courseIds: [], catalogPublished: false };
+    const defaultModule: PathBranchNode = {
+      id: newMindmapNodeId(),
+      kind: 'label',
+      label: '',
+      children: [],
+    };
     setShowPathCourseRequiredHint(false);
-    setPathBranchTree([]);
-    setPathBranchTreeBaselineJson('[]');
+    setPathBranchTree([defaultModule]);
+    setPathBranchTreeBaselineJson(JSON.stringify([defaultModule]));
     setBranchModal({ kind: 'closed' });
     setPathTitleFocusKey((k) => k + 1);
     setPathSelector('__new__');
     setPathDraft(fresh);
     setPathBaselineJson(JSON.stringify(fresh));
+    setExpandedBranchIds(new Set([defaultModule.id]));
   }, [pathSelector, pathDraft, pathDocumentIdsForAllocation]);
 
   const pickPath = useCallback(
@@ -4489,11 +4540,10 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
       const reserveIds = pathSelector === '__new__' && pathDraft?.id ? [pathDraft.id] : [];
       const docIds = await pathDocumentIdsForAllocation();
       const newId = firstAvailableStructuredLearningPathIdFromDocIds(docIds, reserveIds);
-      const t = sourcePath.title.trim();
       const newPath: LearningPath = {
         ...deepClone(sourcePath),
         id: newId,
-        title: t.endsWith(' (copy)') ? t : `${t} (copy)`,
+        title: sourcePath.title,
         courseIds: [...sourcePath.courseIds],
         catalogPublished: false,
       };
@@ -5539,9 +5589,17 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                   }
                 }
                 setPathBranchTree(next);
-                if (branchModal.parentId != null) {
-                  setExpandedBranchIds((prev) => accordionExpandBranchRow(prev, next, branchModal.parentId!));
-                }
+                setExpandedBranchIds((prev) => {
+                  let s = prev;
+                  if (branchModal.parentId != null) {
+                    s = accordionExpandBranchRow(s, next, branchModal.parentId!);
+                  }
+                  // New empty nested dividers use expand state for the nested gutter — open once so it matches “just added” UX; user can collapse like an outline module.
+                  if (branch.kind === 'divider' && branch.children.length === 0) {
+                    s = accordionExpandBranchRow(new Set(s), next, branch.id);
+                  }
+                  return s;
+                });
                 setBranchModal({ kind: 'closed' });
               }
             }}
@@ -5749,6 +5807,10 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                   showActionToast('Could not move that branch.', 'danger');
                   return;
                 }
+                const renamed =
+                  payload.nameInput !== undefined && duplicateRootHasEditableTitle(extracted)
+                    ? applyCopyNameToBranchRoot(extracted, payload.nameInput, publishedList)
+                    : extracted;
                 let adj = insertIndex;
                 const srcParent = findParentIdOfBranch(roots, sourceId);
                 if (srcParent === parentId) {
@@ -5758,8 +5820,8 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                     adj = insertIndex - 1;
                   }
                 }
-                const next = insertChildAtParent(without, parentId, adj, extracted);
-                if (findBranchNode(next, extracted.id) == null) {
+                const next = insertChildAtParent(without, parentId, adj, renamed);
+                if (findBranchNode(next, renamed.id) == null) {
                   showActionToast('Could not place the branch.', 'danger');
                   return;
                 }
@@ -5774,7 +5836,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                 if (parentId != null) {
                   setExpandedBranchIds((prev) => accordionExpandBranchRow(prev, next, parentId));
                 } else {
-                  setExpandedBranchIds((prev) => accordionExpandBranchRow(prev, next, extracted.id));
+                  setExpandedBranchIds((prev) => accordionExpandBranchRow(prev, next, renamed.id));
                 }
                 setBranchModal({ kind: 'closed' });
                 showActionToast('Branch moved.');
