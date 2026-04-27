@@ -933,7 +933,7 @@ function applyCopyNameToBranchRoot(
   }
   const trimmed = nameInput.trim();
   const base = duplicateRootEditableTitleBase(root, publishedList);
-  const finalLabel = trimmed.length > 0 ? trimmed : `${base} (copy)`;
+  const finalLabel = trimmed.length > 0 ? trimmed : base;
   if (root.kind === 'label') {
     return { ...root, label: finalLabel };
   }
@@ -1002,6 +1002,8 @@ function PlaceDuplicateBranchModal({
   const [parentId, setParentId] = useState<string | null>(null);
   const [insertIndex, setInsertIndex] = useState(0);
   const [copyNameInput, setCopyNameInput] = useState('');
+  /** Bumps when the copy name field is (re)seeded so layout can focus + select all after DOM matches state. */
+  const [copyNameFocusKey, setCopyNameFocusKey] = useState(0);
   const copyNameInputRef = useRef<HTMLInputElement>(null);
 
   const rootsRef = useRef(roots);
@@ -1121,20 +1123,31 @@ function PlaceDuplicateBranchModal({
   }, [open, onRemember, effectiveParentId, insertIndex, siblings.length]);
 
   useEffect(() => {
-    if (!open) return;
-    if (duplicateRootHasEditableTitle(sourceSnapshot)) {
-      setCopyNameInput(duplicateRootEditableTitleBase(sourceSnapshot, publishedList) + ' (copy)');
-      const id = window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(() => {
-          const el = copyNameInputRef.current;
-          el?.focus({ preventScroll: true });
-          el?.select();
-        });
-      });
-      return () => window.cancelAnimationFrame(id);
+    if (!open) {
+      setCopyNameInput('');
+      setCopyNameFocusKey(0);
+      return;
     }
-    setCopyNameInput('');
+    if (duplicateRootHasEditableTitle(sourceSnapshot)) {
+      setCopyNameInput(duplicateRootEditableTitleBase(sourceSnapshot, publishedList));
+      setCopyNameFocusKey((k) => k + 1);
+    } else {
+      setCopyNameInput('');
+      setCopyNameFocusKey(0);
+    }
   }, [open, sourceSnapshot.id, sourceSnapshot, publishedList]);
+
+  useLayoutEffect(() => {
+    if (!open || fixedMode || !duplicateRootHasEditableTitle(sourceSnapshot)) return;
+    if (copyNameFocusKey === 0) return;
+    const el = copyNameInputRef.current;
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    const len = el.value.length;
+    if (len > 0) {
+      el.setSelectionRange(0, len);
+    }
+  }, [open, fixedMode, sourceSnapshot.id, sourceSnapshot.kind, copyNameFocusKey]);
 
   /** Remount selects when sibling titles change so option text never stays stale (browser/React edge cases). */
   const positionSelectKey = useMemo(
@@ -2872,13 +2885,13 @@ function pathBranchKindBadgeShortLabel(kind: PathBranchNode['kind']): string {
 
 /** Top-level path inserts: two chips on one gutter (mirrors catalog lesson/module boundary layout). */
 const PATH_TOP_LEVEL_INSERT_PAIR_INNER =
-  'flex w-full min-w-0 flex-col gap-1.5 max-md:!pl-0 md:flex-row md:flex-wrap md:items-stretch md:justify-center md:gap-1.5 md:py-0.5';
+  'flex w-full min-w-0 flex-col gap-1.5 @max-[35.999rem]/path-outline:!pl-0 @min-[36rem]/path-outline:flex-row @min-[36rem]/path-outline:flex-wrap @min-[36rem]/path-outline:items-stretch @min-[36rem]/path-outline:justify-center @min-[36rem]/path-outline:gap-1.5 @min-[36rem]/path-outline:py-0.5';
 
 /** Nested path “Add branch here” inner — keep in sync with `CATALOG_LESSON_INSERT_INNER_*` in the course catalog. */
 const PATH_NESTED_BRANCH_INSERT_INNER =
-  'flex w-full pl-3 max-md:!pl-0 items-center justify-center md:min-h-0 md:py-0.5';
+  'flex w-full pl-3 @max-[35.999rem]/path-outline:!pl-0 items-center justify-center @min-[36rem]/path-outline:min-h-0 @min-[36rem]/path-outline:py-0.5';
 const PATH_NESTED_BRANCH_INSERT_INNER_PERSIST =
-  'flex w-full pl-3 max-md:!pl-0 justify-center';
+  'flex w-full pl-3 @max-[35.999rem]/path-outline:!pl-0 justify-center';
 /** md+: strip always expanded (matches catalog lesson insert when module has no rows). */
 const PATH_INSERT_OUTER_PERSIST =
   'group/pathStrip relative z-0 mb-0 min-h-0 min-w-0 list-none overflow-visible py-0';
@@ -3049,7 +3062,7 @@ function PathBranchInsertSlot({
               </button>
             </div>
           ) : (
-            <div className="flex w-full max-md:!pl-0 items-center justify-center md:min-h-0 md:py-0.5">
+            <div className="flex w-full @max-[35.999rem]/path-outline:!pl-0 items-center justify-center @min-[36rem]/path-outline:min-h-0 @min-[36rem]/path-outline:py-0.5">
               <button
                 type="button"
                 aria-label="Add module here"
@@ -3174,7 +3187,7 @@ function PathNestedOutlineBoundaryInsertRow({
 
 /** Outline row (nested): one compact row on md — badge, field(s), show, audience, actions (no separate “Title” header row). */
 const PATH_BRANCH_OUTLINE_ROW_GRID =
-  'grid w-full min-w-0 grid-cols-1 gap-y-1 max-md:gap-y-1 md:grid-cols-[auto_minmax(0,1fr)_8.25rem_14rem_minmax(7.25rem,max-content)] md:grid-rows-1 md:items-center md:gap-x-3 md:gap-y-0';
+  'grid w-full min-w-0 grid-cols-1 gap-y-1 @max-[35.999rem]/path-outline:gap-y-1 @min-[36rem]/path-outline:grid-cols-[auto_minmax(0,1fr)_8.25rem_14rem_minmax(7.25rem,max-content)] @min-[36rem]/path-outline:grid-rows-1 @min-[36rem]/path-outline:items-center @min-[36rem]/path-outline:gap-x-3 @min-[36rem]/path-outline:gap-y-0';
 
 /**
  * Same vertical envelope as catalog module title + `ADMIN_CATALOG_KIND_BADGE_BASE` (min-h-11, sm:h-7).
@@ -3376,8 +3389,10 @@ function PathBranchRow({
   const renderOutlineRowMainCells = () => {
     if (b.kind === 'label') {
       return (
-        <div className="max-md:flex max-md:min-w-0 max-md:flex-row max-md:flex-wrap max-md:items-center max-md:gap-2 md:contents">
-          <div className="flex shrink-0 items-center md:col-start-1 md:row-start-1">{branchBadgeGroup}</div>
+        <div className="@max-[35.999rem]/path-outline:flex @max-[35.999rem]/path-outline:min-w-0 @max-[35.999rem]/path-outline:flex-row @max-[35.999rem]/path-outline:flex-wrap @max-[35.999rem]/path-outline:items-center @max-[35.999rem]/path-outline:gap-2 @min-[36rem]/path-outline:contents">
+          <div className="flex shrink-0 items-center @min-[36rem]/path-outline:col-start-1 @min-[36rem]/path-outline:row-start-1">
+            {branchBadgeGroup}
+          </div>
           <input
             type="text"
             value={b.label}
@@ -3385,7 +3400,7 @@ function PathBranchRow({
             onClick={(e) => e.stopPropagation()}
             onKeyDown={(e) => e.stopPropagation()}
             aria-label="Module title"
-            className={`${PATH_BRANCH_SINGLE_LINE_INPUT_CLASS} max-md:flex-1 md:col-start-2 md:row-start-1`}
+            className={`${PATH_BRANCH_SINGLE_LINE_INPUT_CLASS} @max-[35.999rem]/path-outline:flex-1 @min-[36rem]/path-outline:col-start-2 @min-[36rem]/path-outline:row-start-1`}
             placeholder="Enter module name…"
           />
         </div>
@@ -3393,9 +3408,11 @@ function PathBranchRow({
     }
     if (b.kind === 'divider') {
       return (
-        <div className="max-md:flex max-md:min-w-0 max-md:flex-col max-md:gap-2 md:contents">
-          <div className="flex shrink-0 items-center md:col-start-1 md:row-start-1">{branchBadgeGroup}</div>
-          <div className="min-w-0 max-md:w-full md:col-start-2 md:row-start-1">
+        <div className="@max-[35.999rem]/path-outline:flex @max-[35.999rem]/path-outline:min-w-0 @max-[35.999rem]/path-outline:flex-col @max-[35.999rem]/path-outline:gap-2 @min-[36rem]/path-outline:contents">
+          <div className="flex shrink-0 items-center @min-[36rem]/path-outline:col-start-1 @min-[36rem]/path-outline:row-start-1">
+            {branchBadgeGroup}
+          </div>
+          <div className="min-w-0 w-full @min-[36rem]/path-outline:col-start-2 @min-[36rem]/path-outline:row-start-1">
             <PathSectionDividerCard
               showEyebrow
               eyebrow={
@@ -3433,9 +3450,11 @@ function PathBranchRow({
       const hrefForOpen = normalizedHref ?? b.href.trim();
       return (
         <>
-          <div className="max-md:flex max-md:min-w-0 max-md:flex-col max-md:items-stretch max-md:gap-1.5 md:contents">
-            <div className="flex items-center md:col-start-1 md:row-start-1">{branchBadgeGroup}</div>
-            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end sm:gap-x-3 sm:gap-y-2 md:col-start-2 md:row-start-1">
+          <div className="@max-[35.999rem]/path-outline:flex @max-[35.999rem]/path-outline:min-w-0 @max-[35.999rem]/path-outline:flex-col @max-[35.999rem]/path-outline:items-stretch @max-[35.999rem]/path-outline:gap-1.5 @min-[36rem]/path-outline:contents">
+            <div className="flex items-center @min-[36rem]/path-outline:col-start-1 @min-[36rem]/path-outline:row-start-1">
+              {branchBadgeGroup}
+            </div>
+            <div className="flex min-w-0 w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end sm:gap-x-3 sm:gap-y-2 @min-[36rem]/path-outline:col-start-2 @min-[36rem]/path-outline:row-start-1">
               <input
                 type="text"
                 value={b.label}
@@ -3480,9 +3499,11 @@ function PathBranchRow({
       );
     }
     return (
-      <div className="max-md:flex max-md:min-w-0 max-md:flex-row max-md:flex-wrap max-md:items-center max-md:gap-2 md:contents">
-        <div className="flex shrink-0 items-center md:col-start-1 md:row-start-1">{branchBadgeGroup}</div>
-        <span className="flex min-h-11 min-w-0 flex-1 items-center truncate text-sm font-bold leading-none text-[var(--text-primary)] sm:h-7 sm:min-h-0 md:col-start-2 md:row-start-1">
+      <div className="@max-[35.999rem]/path-outline:flex @max-[35.999rem]/path-outline:min-w-0 @max-[35.999rem]/path-outline:flex-row @max-[35.999rem]/path-outline:flex-wrap @max-[35.999rem]/path-outline:items-center @max-[35.999rem]/path-outline:gap-2 @min-[36rem]/path-outline:contents">
+        <div className="flex shrink-0 items-center @min-[36rem]/path-outline:col-start-1 @min-[36rem]/path-outline:row-start-1">
+          {branchBadgeGroup}
+        </div>
+        <span className="flex min-h-11 min-w-0 flex-1 items-center truncate text-sm font-bold leading-none text-[var(--text-primary)] sm:h-7 sm:min-h-0 @min-[36rem]/path-outline:col-start-2 @min-[36rem]/path-outline:row-start-1">
           {branchNodeDisplayLabel(b, publishedList)}
         </span>
       </div>
@@ -3567,8 +3588,10 @@ function PathBranchRow({
       data-path-branch-node-id={b.id}
       className={`min-w-0 list-none ${rowDivider}${
         depth === 0
-          ? `grid grid-cols-1 gap-y-1 px-2 py-1 max-md:gap-y-1 max-md:px-2 max-md:py-1 sm:px-3 md:grid md:grid-cols-[auto_minmax(0,1fr)_8.25rem_14rem_minmax(7.25rem,max-content)] md:items-stretch md:gap-x-3 md:px-4 md:py-1 ${
-              showNestedBranchList ? 'md:grid-rows-[auto_auto] md:gap-y-0' : 'md:grid-rows-1 md:gap-y-0'
+          ? `grid grid-cols-1 gap-y-1 px-2 py-1 @max-[35.999rem]/path-outline:gap-y-1 @max-[35.999rem]/path-outline:px-2 @max-[35.999rem]/path-outline:py-1 sm:px-3 @min-[36rem]/path-outline:grid @min-[36rem]/path-outline:grid-cols-[auto_minmax(0,1fr)_8.25rem_14rem_minmax(7.25rem,max-content)] @min-[36rem]/path-outline:items-stretch @min-[36rem]/path-outline:gap-x-3 @min-[36rem]/path-outline:px-4 @min-[36rem]/path-outline:py-1 ${
+              showNestedBranchList
+                ? '@min-[36rem]/path-outline:grid-rows-[auto_auto] @min-[36rem]/path-outline:gap-y-0'
+                : '@min-[36rem]/path-outline:grid-rows-1 @min-[36rem]/path-outline:gap-y-0'
             }`
           : showNestedBranchList
             ? 'flex w-full min-w-0 flex-col'
@@ -3590,8 +3613,8 @@ function PathBranchRow({
             showAriaLabel="Show in catalog path outline"
             audienceAriaLabel="Who can see this in the catalog outline"
           />
-          <div className="max-md:flex max-md:w-full max-md:justify-end md:contents">
-            <div className="flex items-center justify-end gap-1 max-md:col-span-full max-md:col-start-1 max-md:row-auto md:col-start-5 md:row-start-1 md:justify-end">
+          <div className="@max-[35.999rem]/path-outline:flex @max-[35.999rem]/path-outline:w-full @max-[35.999rem]/path-outline:justify-end @min-[36rem]/path-outline:contents">
+            <div className="flex items-center justify-end gap-1 @max-[35.999rem]/path-outline:col-span-full @max-[35.999rem]/path-outline:col-start-1 @max-[35.999rem]/path-outline:row-auto @min-[36rem]/path-outline:col-start-5 @min-[36rem]/path-outline:row-start-1 @min-[36rem]/path-outline:justify-end">
               {branchActionButtons}
             </div>
           </div>
@@ -3600,8 +3623,8 @@ function PathBranchRow({
         <div
           className={`${PATH_BRANCH_OUTLINE_ROW_GRID} ${
             siblingIndex === 0
-              ? 'max-md:pb-1 max-md:pt-0 pb-1.5 pt-0 sm:pb-1.5 sm:pt-0'
-              : 'max-md:py-1 py-1.5 sm:py-1.5'
+              ? '@max-[35.999rem]/path-outline:pb-1 @max-[35.999rem]/path-outline:pt-0 pb-1.5 pt-0 sm:pb-1.5 sm:pt-0'
+              : '@max-[35.999rem]/path-outline:py-1 py-1.5 sm:py-1.5'
           }`}
           onFocusCapture={onBranchRowFocusCapture}
           role="group"
@@ -3619,15 +3642,15 @@ function PathBranchRow({
             showAriaLabel="Show in catalog path outline"
             audienceAriaLabel="Who can see this in the catalog outline"
           />
-          <div className="max-md:flex max-md:w-full max-md:justify-end md:contents">
-            <div className="flex items-center justify-end gap-1 max-md:col-span-full max-md:col-start-1 max-md:row-auto max-md:pt-0 md:col-start-5 md:row-start-1 md:self-center">
+          <div className="@max-[35.999rem]/path-outline:flex @max-[35.999rem]/path-outline:w-full @max-[35.999rem]/path-outline:justify-end @min-[36rem]/path-outline:contents">
+            <div className="flex items-center justify-end gap-1 @max-[35.999rem]/path-outline:col-span-full @max-[35.999rem]/path-outline:col-start-1 @max-[35.999rem]/path-outline:row-auto @max-[35.999rem]/path-outline:pt-0 @min-[36rem]/path-outline:col-start-5 @min-[36rem]/path-outline:row-start-1 @min-[36rem]/path-outline:self-center">
               {branchActionButtons}
             </div>
           </div>
         </div>
       )}
       {showNestedBranchList ? (
-        <div className="col-span-full min-w-0 w-full md:row-start-2">
+        <div className="col-span-full min-w-0 w-full @min-[36rem]/path-outline:row-start-2">
           <PathBranchTreeList
             parentId={b.id}
             insertListOwnerDisplayName={branchNodeDisplayLabel(b, publishedList)}
@@ -3704,8 +3727,8 @@ function PathBranchTreeList({
       className={
         depth > 0
           ? 'space-y-0 border-l border-[var(--border-color)]/50 pl-2 sm:pl-3'
-            : // Reserve a little space so the first md “between rows” insert strip does not overlap controls above the list.
-            'space-y-0 pt-0 sm:pt-0.5 md:pt-1'
+            : // Reserve a little space so the first wide-outline “between rows” insert strip does not overlap controls above the list.
+            'space-y-0 pt-0 sm:pt-0.5 @min-[36rem]/path-outline:pt-1'
       }
     >
       <Fragment key={`ins-${insKey}-0`}>
@@ -4226,6 +4249,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
       if (!el) return;
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       el.focus({ preventScroll: true });
+      el.select();
     });
     return () => cancelAnimationFrame(rafId);
   }, [pathSelector, pathDraft?.id, pathTitleFocusKey, pathDetailsOpen]);
@@ -4543,7 +4567,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
       const newPath: LearningPath = {
         ...deepClone(sourcePath),
         id: newId,
-        title: t.endsWith(' (copy)') ? t : `${t} (copy)`,
+        title: t,
         courseIds: [...sourcePath.courseIds],
         catalogPublished: false,
       };
@@ -5392,7 +5416,7 @@ export const PathBuilderSection = forwardRef<PathBuilderSectionHandle, PathBuild
                     </p>
                   </div>
                 ) : (
-                  <div ref={pathBranchMindMapRootRef} className="min-w-0">
+                  <div ref={pathBranchMindMapRootRef} className="@container/path-outline min-w-0">
                     <PathBranchTreeList
                       parentId={null}
                       nodes={pathBranchTree}

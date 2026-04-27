@@ -85,12 +85,12 @@ export function CourseHierarchyVisibilityCells({
     return (
       <div
         data-path-branch-outline-visibility
-        className="max-md:col-span-full max-md:col-start-1 max-md:row-auto max-md:flex max-md:min-w-0 max-md:flex-col max-md:gap-2 max-md:overflow-x-auto md:contents"
+        className="@max-[35.999rem]/path-outline:col-span-full @max-[35.999rem]/path-outline:col-start-1 @max-[35.999rem]/path-outline:row-auto @max-[35.999rem]/path-outline:flex @max-[35.999rem]/path-outline:min-w-0 @max-[35.999rem]/path-outline:flex-col @max-[35.999rem]/path-outline:gap-2 @max-[35.999rem]/path-outline:overflow-x-auto @min-[36rem]/path-outline:contents"
       >
-        <div className="col-start-3 row-start-1 flex min-w-0 shrink-0 items-center justify-center justify-self-center max-md:justify-start md:justify-self-center">
+        <div className="col-start-3 row-start-1 flex min-w-0 shrink-0 items-center justify-center justify-self-center @max-[35.999rem]/path-outline:justify-start @min-[36rem]/path-outline:justify-self-center">
           {showCell}
         </div>
-        <div className="col-start-4 row-start-1 flex w-full min-w-0 max-w-[22rem] items-start justify-self-stretch max-md:max-w-none md:min-w-[12rem]">
+        <div className="col-start-4 row-start-1 flex w-full min-w-0 max-w-[22rem] items-start justify-self-stretch @max-[35.999rem]/path-outline:max-w-none @min-[36rem]/path-outline:min-w-[12rem]">
           {roleCell}
         </div>
       </div>

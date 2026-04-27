@@ -30,7 +30,7 @@ export function PathSectionDividerCard({
   const ariaLabel = typeof title === 'string' ? `Section divider: ${title}` : undefined;
   return (
     <div
-      className={`flex min-w-0 flex-1 items-center gap-3 rounded-xl border border-[var(--border-light)]/55 bg-[var(--bg-secondary)] px-3 py-2.5 shadow-sm sm:gap-3.5 sm:px-4 sm:py-3 ${className}`.trim()}
+      className={`flex w-full min-w-0 flex-1 flex-nowrap items-center gap-3 overflow-hidden rounded-xl border border-[var(--border-light)]/55 bg-[var(--bg-secondary)] px-3 py-2.5 shadow-sm sm:gap-3.5 sm:px-4 sm:py-3 ${className}`.trim()}
       role="group"
       aria-label={ariaLabel}
     >

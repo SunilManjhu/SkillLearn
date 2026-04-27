@@ -4153,7 +4153,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   }, [selector, baselineJson, courseDetailsOpen]);
 
   return (
-    <div className="min-w-0 space-y-4 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3 sm:space-y-6 sm:p-6">
+    <div className="min-w-0 @container/catalog space-y-4 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3 sm:space-y-6 sm:p-6">
       <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:justify-between">
         <h2 className="flex min-w-0 items-center gap-2 text-base font-bold sm:text-lg">
           <BookOpen size={20} className="shrink-0 text-admin-icon" />
@@ -5118,14 +5118,14 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 className="space-y-0 pb-0 pt-0"
               >
                 <div
-                  className={`flex flex-col items-stretch gap-1.5 md:flex-row md:flex-wrap md:items-center md:justify-between md:gap-x-2 md:gap-y-1 ${
+                  className={`flex flex-col items-stretch gap-1.5 @xl/catalog:flex-row @xl/catalog:flex-wrap @xl/catalog:items-center @xl/catalog:justify-between @xl/catalog:gap-x-2 @xl/catalog:gap-y-1 ${
                     openModules[mi] ? 'pb-0' : ''
                   }`}
                 >
-                  <div className="flex min-h-11 w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-center md:min-h-10 md:flex-1 md:gap-2">
+                  <div className="flex min-h-11 w-full min-w-0 flex-col gap-2 @xl/catalog:flex-row @xl/catalog:items-center md:min-h-10 @xl/catalog:flex-1 @xl/catalog:gap-2">
                     <div className="flex min-h-11 min-w-0 w-full flex-1 flex-col gap-0.5 md:min-h-10">
-                      <div className="flex min-w-0 w-full flex-col gap-1.5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-2 sm:gap-y-0.5">
-                        <div className="flex min-w-0 shrink-0 items-center gap-x-1.5 sm:contents">
+                      <div className="flex min-w-0 w-full flex-col gap-1.5 @xl/catalog:flex-row @xl/catalog:flex-wrap @xl/catalog:items-center @xl/catalog:gap-x-2 @xl/catalog:gap-y-0.5">
+                        <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-1.5">
                         <button
                           type="button"
                           className={`${ADMIN_CATALOG_MODULE_BADGE_CLASS} items-center gap-1`}
@@ -5188,7 +5188,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           -
                         </span>
                         </div>
-                        <div className="min-w-0 w-full sm:flex-1 sm:min-w-0">
+                        <div className="min-w-0 w-full @xl/catalog:min-w-0 @xl/catalog:flex-1">
                           <CatalogMiniRichEditor
                             id={`admin-module-title-${mi}`}
                             value={mod.title}
@@ -5225,7 +5225,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       )}
                     </div>
                   </div>
-                  <div className="flex w-full min-w-0 shrink-0 flex-wrap items-center justify-start gap-x-2 gap-y-2 border-t border-[var(--border-color)]/50 pt-2 sm:gap-x-2 md:w-auto md:flex-nowrap md:justify-end md:border-t-0 md:pt-0">
+                  <div className="flex w-full min-w-0 shrink-0 flex-wrap items-center justify-start gap-x-2 gap-y-2 border-t border-[var(--border-color)]/50 pt-2 sm:gap-x-2 @xl/catalog:w-auto @xl/catalog:flex-nowrap @xl/catalog:justify-end @xl/catalog:border-t-0 @xl/catalog:pt-0">
                     <CourseHierarchyVisibilityCells
                       visibleToRoles={mod.visibleToRoles}
                       onChange={(next) => {
@@ -5374,14 +5374,14 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       }`}
                     >
                       <div className="flex w-full min-w-0 flex-col gap-2">
-                        <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:gap-2">
+                        <div className="flex w-full min-w-0 flex-col gap-2 @xl/catalog:flex-row @xl/catalog:items-start @xl/catalog:gap-2">
                         {lesson.contentKind === 'divider' ? (
                           <div
-                            className="flex min-h-11 min-w-0 w-full flex-1 flex-col gap-1.5 rounded-lg py-0 -mx-0.5 px-0.5 sm:flex-row sm:items-center md:min-h-10 sm:gap-2 sm:py-0.5 sm:-mx-1 sm:px-1"
+                            className="flex min-h-11 min-w-0 w-full flex-1 flex-col gap-1.5 rounded-lg py-0 -mx-0.5 px-0.5 @xl/catalog:flex-row @xl/catalog:items-center md:min-h-10 @xl/catalog:gap-2 @xl/catalog:py-0.5 @xl/catalog:-mx-1 @xl/catalog:px-1"
                             role="group"
                             aria-label="Section divider row"
                           >
-                            <div className="flex shrink-0 items-center gap-1.5 sm:contents">
+                            <div className="flex shrink-0 flex-wrap items-center gap-1.5">
                             <button
                               type="button"
                               onClick={() => toggleDividerSection(mi, li)}
@@ -5414,7 +5414,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                               <SlidersHorizontal size={18} aria-hidden />
                             </button>
                             </div>
-                            <div className="min-w-0 flex-1">
+                            <div className="min-w-0 w-full flex-1">
                               <CatalogMiniRichEditor
                                 id={`admin-lesson-title-${mi}-${li}`}
                                 value={lesson.title}
@@ -5428,8 +5428,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           </div>
                         ) : (
                         <div className="flex min-h-11 min-w-0 w-full flex-1 flex-col gap-0.5 md:min-h-10">
-                          <div className="flex min-w-0 w-full flex-col gap-1.5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-2 sm:gap-y-0.5">
-                            <div className="flex min-w-0 shrink-0 items-center gap-x-1.5 sm:contents">
+                          <div className="flex min-w-0 w-full flex-col gap-1.5 @xl/catalog:flex-row @xl/catalog:flex-wrap @xl/catalog:items-center @xl/catalog:gap-x-2 @xl/catalog:gap-y-0.5">
+                            <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-1.5">
                               <button
                                 type="button"
                                 onClick={() => toggleLessonOpen(mi, li)}
@@ -5475,7 +5475,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                                 -
                               </span>
                             </div>
-                            <div className="min-w-0 w-full sm:flex-1 sm:min-w-0">
+                            <div className="min-w-0 w-full @xl/catalog:min-w-0 @xl/catalog:flex-1">
                               <CatalogMiniRichEditor
                                 id={`admin-lesson-title-${mi}-${li}`}
                                 value={lesson.title}
@@ -5505,7 +5505,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             )}
                         </div>
                         )}
-                        <div className="flex w-full min-w-0 shrink-0 flex-wrap items-center justify-start gap-x-2 gap-y-2 border-t border-[var(--border-color)]/50 pt-2 sm:w-auto sm:border-0 sm:pt-0 sm:justify-end sm:gap-x-2 md:flex-nowrap">
+                        <div className="flex w-full min-w-0 shrink-0 flex-wrap items-center justify-start gap-x-2 gap-y-2 border-t border-[var(--border-color)]/50 pt-2 @xl/catalog:w-auto @xl/catalog:border-0 @xl/catalog:pt-0 @xl/catalog:justify-end sm:gap-x-2 md:flex-nowrap">
                           <CourseHierarchyVisibilityCells
                             visibleToRoles={lesson.visibleToRoles}
                             onChange={(next) => {
