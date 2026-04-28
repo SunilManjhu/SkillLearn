@@ -534,20 +534,6 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    /** Curated category/skill labels shown as “Popular” chips in the public course library (admin-managed). */
-    function isValidCatalogPopularTopicsWrite(data) {
-      return data.keys().hasAll(['labels', 'updatedAt']) &&
-        data.keys().hasOnly(['labels', 'updatedAt']) &&
-        data.labels is list && data.labels.size() <= 80 &&
-        data.updatedAt is timestamp;
-    }
-
-    match /siteSettings/catalogPopularTopics {
-      allow read: if true;
-      allow create, update: if isAdmin() && isValidCatalogPopularTopicsWrite(request.resource.data);
-      allow delete: if false;
-    }
-
     // Ordered Gemini model ids + per-model on/off for in-app AI. Falls back to build env when doc missing.
     // No recursion (Firestore rules disallow it): each index j is bool or past end of list (flags.size() <= j).
     function geminiEnabledFlagsAllBool(flags) {

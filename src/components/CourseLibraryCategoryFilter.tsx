@@ -5,8 +5,8 @@ import type { LibraryFilterState } from '../utils/courseTaxonomy';
 import { COURSE_LEVELS, toggleFilterTag } from '../utils/courseTaxonomy';
 
 export type CourseLibraryCategoryFilterProps = {
-  /** Admin “Popular topics” order (Firestore `siteSettings/catalogPopularTopics`); shown in the first topic row when non-empty. */
-  curatedPopularTopics: readonly string[];
+  /** Up to three most-used category/skill labels on visible catalog courses; order is by usage then label. */
+  popularTopics: readonly string[];
   /** All category labels selectable in the filter (presets + discovery); canonical casing for toggles. */
   categoryFilterPool: readonly string[];
   moreTopics: readonly string[];
@@ -76,7 +76,7 @@ function FilterTagButton({ label, selected, onToggle, variant = 'skill' }: TagRo
 export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLibraryCategoryFilterProps>(
   function CourseLibraryCategoryFilter(
     {
-      curatedPopularTopics,
+      popularTopics,
       categoryFilterPool,
       moreTopics,
       mainSkills,
@@ -104,13 +104,13 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
     const filterLabels = (labels: readonly string[]) =>
       q ? labels.filter((l) => l.toLowerCase().includes(q)) : [...labels];
 
-    const curatedLower = useMemo(
-      () => new Set(curatedPopularTopics.map((l) => l.trim().toLowerCase()).filter(Boolean)),
-      [curatedPopularTopics]
+    const popularLower = useMemo(
+      () => new Set(popularTopics.map((l) => l.trim().toLowerCase()).filter(Boolean)),
+      [popularTopics]
     );
 
-    const visibleCuratedPopular = useMemo(() => {
-      const base = filterLabels(curatedPopularTopics);
+    const visiblePopularTopics = useMemo(() => {
+      const base = filterLabels(popularTopics);
       return base.filter((label) => {
         const k = label.trim().toLowerCase();
         if (!k) return false;
@@ -119,16 +119,30 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
           skillPool.some((p) => p.trim().toLowerCase() === k)
         );
       });
-    }, [curatedPopularTopics, categoryPool, skillPool, q]);
+    }, [popularTopics, categoryPool, skillPool, q]);
 
-    const moreTopicsDedupedFromCurated = useMemo(
-      () => moreTopics.filter((t) => !curatedLower.has(t.trim().toLowerCase())),
-      [moreTopics, curatedLower]
+    const moreTopicsDedupedFromPopular = useMemo(
+      () => moreTopics.filter((t) => !popularLower.has(t.trim().toLowerCase())),
+      [moreTopics, popularLower]
     );
 
-    const visibleMoreCat = useMemo(() => filterLabels(moreTopicsDedupedFromCurated), [moreTopicsDedupedFromCurated, q]);
-    const visibleMainSkill = useMemo(() => filterLabels(mainSkills), [mainSkills, q]);
-    const visibleMoreSkill = useMemo(() => filterLabels(moreSkills), [moreSkills, q]);
+    const visibleMoreCat = useMemo(() => filterLabels(moreTopicsDedupedFromPopular), [moreTopicsDedupedFromPopular, q]);
+    const mainSkillsDedupedFromPopular = useMemo(
+      () => mainSkills.filter((t) => !popularLower.has(t.trim().toLowerCase())),
+      [mainSkills, popularLower]
+    );
+    const moreSkillsDedupedFromPopular = useMemo(
+      () => moreSkills.filter((t) => !popularLower.has(t.trim().toLowerCase())),
+      [moreSkills, popularLower]
+    );
+    const visibleMainSkill = useMemo(
+      () => filterLabels(mainSkillsDedupedFromPopular),
+      [mainSkillsDedupedFromPopular, q]
+    );
+    const visibleMoreSkill = useMemo(
+      () => filterLabels(moreSkillsDedupedFromPopular),
+      [moreSkillsDedupedFromPopular, q]
+    );
     const visibleLevels = useMemo(() => {
       const labels = levelsPresent != null ? [...levelsPresent] : [...COURSE_LEVELS];
       return q ? labels.filter((l) => l.toLowerCase().includes(q)) : labels;
@@ -228,7 +242,7 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
     };
 
     const anyVisible =
-      visibleCuratedPopular.length +
+      visiblePopularTopics.length +
         visibleMoreCat.length +
         visibleMainSkill.length +
         visibleMoreSkill.length +
@@ -309,6 +323,30 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
             />
           </div>
           <div className="flex shrink-0 items-center gap-0.5 self-stretch pr-0.5">
+            {query.trim() !== '' ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setQuery('');
+                }}
+                className="inline-flex h-full min-h-10 min-w-11 touch-manipulation items-center justify-center rounded-full text-[var(--text-muted)] outline-none transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/55 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)] app-dark:focus-visible:ring-[#757676]/60 md:min-w-10"
+                aria-label="Clear search text"
+              >
+                <X size={18} strokeWidth={2} aria-hidden />
+              </button>
+            ) : null}
+            {/* Clear-all (X) before chevrons on mobile + desktop — matches nav filter expectation. */}
+            <button
+              type="button"
+              tabIndex={activeCount > 0 ? 0 : -1}
+              aria-hidden={activeCount === 0}
+              onClick={activeCount > 0 ? clearAllFilters : undefined}
+              className={`inline-flex h-full min-h-10 min-w-11 touch-manipulation items-center justify-center rounded-full text-[var(--text-muted)] outline-none transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/55 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)] app-dark:focus-visible:ring-[#757676]/60 md:min-w-10 ${activeCount === 0 ? 'pointer-events-none max-md:hidden md:hidden' : ''}`}
+              aria-label="Clear all filters"
+            >
+              <X size={18} strokeWidth={2} aria-hidden />
+            </button>
             {/* Mobile: open/close full filter panel (input also opens on focus). */}
             <button
               type="button"
@@ -323,19 +361,6 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
             >
               <ChevronDown size={20} className={`transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden />
             </button>
-            {query.trim() !== '' ? (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setQuery('');
-                }}
-                className="inline-flex h-full min-h-10 min-w-11 touch-manipulation items-center justify-center rounded-full text-[var(--text-muted)] outline-none transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/55 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)] app-dark:focus-visible:ring-[#757676]/60 md:min-w-10"
-                aria-label="Clear search text"
-              >
-                <X size={18} strokeWidth={2} aria-hidden />
-              </button>
-            ) : null}
             <button
               type="button"
               onClick={(e) => {
@@ -348,16 +373,6 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
               aria-label={open ? 'Close filter options' : 'Open filter options'}
             >
               <ChevronDown size={18} className={`transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden />
-            </button>
-            <button
-              type="button"
-              tabIndex={activeCount > 0 ? 0 : -1}
-              aria-hidden={activeCount === 0}
-              onClick={activeCount > 0 ? clearAllFilters : undefined}
-              className={`inline-flex h-full min-h-10 min-w-11 touch-manipulation items-center justify-center rounded-full text-[var(--text-muted)] outline-none transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/55 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)] app-dark:focus-visible:ring-[#757676]/60 md:min-w-10 ${activeCount === 0 ? 'pointer-events-none max-md:hidden md:invisible' : ''}`}
-              aria-label="Clear all filters"
-            >
-              <X size={18} strokeWidth={2} aria-hidden />
             </button>
           </div>
         </div>
@@ -373,13 +388,13 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
             <div
               className="max-h-[min(65vh,28rem)] overflow-y-auto overscroll-y-contain px-3 py-3 max-md:max-h-[min(62dvh,26rem)] max-md:px-4 max-md:pb-[max(1rem,env(safe-area-inset-bottom,0px))] max-md:pt-4 [scrollbar-width:thin] [scrollbar-color:var(--border-light)_var(--bg-secondary)] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-[var(--bg-secondary)] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[var(--border-light)]"
             >
-              {visibleCuratedPopular.length > 0 ? (
+              {visiblePopularTopics.length > 0 ? (
                 <section className="mb-4">
                   <div className="title mb-2 text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
                     Popular topics
                   </div>
                   <div className="flex flex-wrap gap-2 max-md:gap-2.5">
-                    {visibleCuratedPopular.map((label) => {
+                    {visiblePopularTopics.map((label) => {
                       const k = label.trim().toLowerCase();
                       const catCanon = categoryPool.find((p) => p.trim().toLowerCase() === k);
                       const skillCanon = skillPool.find((p) => p.trim().toLowerCase() === k);
@@ -400,7 +415,7 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
                 </section>
               ) : null}
 
-              {visibleCuratedPopular.length > 0 && visibleMoreCat.length > 0 ? (
+              {visiblePopularTopics.length > 0 && visibleMoreCat.length > 0 ? (
                 <div className="mb-4 border-t border-[var(--border-color)]" />
               ) : null}
 
@@ -424,7 +439,7 @@ export const CourseLibraryCategoryFilter = forwardRef<HTMLInputElement, CourseLi
                 </section>
               ) : null}
 
-              {(visibleCuratedPopular.length > 0 || visibleMoreCat.length > 0) &&
+              {(visiblePopularTopics.length > 0 || visibleMoreCat.length > 0) &&
               (visibleMainSkill.length > 0 || visibleMoreSkill.length > 0 || visibleLevels.length > 0) ? (
                 <div className="mb-4 border-t border-[var(--border-color)]" />
               ) : null}

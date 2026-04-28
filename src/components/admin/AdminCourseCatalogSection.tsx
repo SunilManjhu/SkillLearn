@@ -1393,17 +1393,6 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   draftRef.current = draft;
   const [busy, setBusy] = useState(false);
   const [listLoading, setListLoading] = useState(false);
-  /**
-   * After the first `refreshList()` completes for this catalog scope, Popular-topic prune may persist to
-   * localStorage. Until then, skip pruning so labels that exist only on published courses (e.g. “CBSE”) are not
-   * stripped while `publishedList` is still empty on first paint / reload.
-   */
-  const [publishedCatalogSnapshotReady, setPublishedCatalogSnapshotReady] = useState(false);
-
-  useEffect(() => {
-    setPublishedCatalogSnapshotReady(false);
-  }, [catalogPersistence, includeCreatorDraftCourses]);
-
   /** True after first focus on Course select or explicit Reload list — then options include New Course + published. */
   const [catalogRequested, setCatalogRequested] = useState(false);
   const catalogRequestedRef = useRef(false);
@@ -1883,7 +1872,6 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       return list;
     } finally {
       setListLoading(false);
-      setPublishedCatalogSnapshotReady(true);
     }
   }, [catalogPersistence, includeCreatorDraftCourses]);
 
@@ -4311,20 +4299,6 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         </div>
       </div>
 
-      {isCreatorCatalog && (
-        <p
-          className="rounded-xl border border-[#8b8c8c]/65 bg-[#757676]/12 px-3 py-2.5 text-xs leading-relaxed text-[var(--text-secondary)] sm:text-sm"
-          role="note"
-        >
-          <span className="font-semibold text-[var(--text-primary)]">Finding your work:</span> switch to{' '}
-          <strong className="text-[var(--text-primary)]">Catalog</strong> to create or edit courses, and to{' '}
-          <strong className="text-[var(--text-primary)]">Paths</strong> to edit learning paths. Use{' '}
-          <strong className="text-[var(--text-primary)]">Reload list</strong> if something you saved does not
-          appear here. After saving, your drafts show in <strong className="text-[var(--text-primary)]">Browse Catalog</strong>{' '}
-          for your account only (Draft label) until an admin publishes them for all learners.
-        </p>
-      )}
-
       <div className="-mx-1 flex min-h-11 flex-wrap items-center gap-2 border-b border-[var(--border-color)] px-1 pb-2">
         <button
           type="button"
@@ -6205,7 +6179,6 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
       {contentCatalogSubTab === 'taxonomy' && (
         <AdminCatalogTaxonomyPanel
           publishedList={publishedList}
-          publishedCatalogSnapshotReady={publishedCatalogSnapshotReady}
           categoryPresets={categoryPresetsState}
           skillPresets={skillPresetsState}
           onPresetsChanged={(next) => {

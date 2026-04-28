@@ -25,13 +25,6 @@ export const CreatorPage: React.FC<CreatorPageProps> = ({ user, onDismiss, onCat
             </div>
             <div className="min-w-0">
               <h1 className="text-lg font-bold tracking-tight sm:text-xl">Creator studio</h1>
-              <p className="mt-0.5 line-clamp-3 text-xs text-[var(--text-secondary)] sm:text-sm sm:line-clamp-none">
-                Use <strong className="font-semibold text-[var(--text-primary)]">Catalog</strong> for courses
-                and <strong className="font-semibold text-[var(--text-primary)]">Paths</strong> for learning
-                paths. Your drafts also appear in <strong className="font-semibold text-[var(--text-primary)]">Browse Catalog</strong>{' '}
-                (with a “Draft” label) so you can preview them like learners; everyone else only sees content
-                after an admin publishes it.
-              </p>
             </div>
           </div>
           <button

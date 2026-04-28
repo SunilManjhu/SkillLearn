@@ -17,6 +17,11 @@ import { AdminLabelInfoTip } from './admin/adminLabelInfoTip';
 import { useAdminActionToast } from './admin/useAdminActionToast';
 import { useCourseStockThumbnail } from '../hooks/useCourseStockThumbnail';
 import { useSignInModal } from './SignInModalProvider';
+import {
+  readCreatorBrowseCatalogPreference,
+  type CreatorBrowseCatalogPreference,
+  writeCreatorBrowseCatalogPreference,
+} from '../utils/creatorBrowseCatalogPreference';
 
 const bioStorageKey = (uid: string) => `skilllearn-profile-bio:${uid}`;
 
@@ -53,6 +58,7 @@ interface ProfilePageProps {
   courses: Course[];
   user: User | null;
   isAuthReady: boolean;
+  isCreator?: boolean;
   onShowCertificate: (courseId: string, userName: string, date: string, certId: string) => void;
   /** Increment (e.g. from navbar certificate notification) to open Completed Courses modal. */
   openCompletedCoursesSignal?: number;
@@ -75,6 +81,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   courses,
   user,
   isAuthReady,
+  isCreator = false,
   onShowCertificate,
   openCompletedCoursesSignal = 0,
   onDismiss,
@@ -94,6 +101,9 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const { showActionToast, actionToast } = useAdminActionToast();
+  const [creatorCatalogPref, setCreatorCatalogPref] = useState<CreatorBrowseCatalogPreference>(() =>
+    user?.uid ? readCreatorBrowseCatalogPreference(user.uid) : 'both'
+  );
 
   const { enabled: aiModelsEnabled, setEnabled: setAiModelsEnabled } = useLearnerGeminiEnabled();
   const { visible: assistantVisible, setVisible: setAssistantVisible } = useLearnerAssistantVisible();
@@ -195,6 +205,11 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       setBio('');
     }
   }, [user]);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    setCreatorCatalogPref(readCreatorBrowseCatalogPreference(user.uid));
+  }, [user?.uid]);
 
   const heroName = user?.displayName?.trim() || user?.email?.split('@')[0] || 'User';
   const photoUrl = user?.photoURL;
@@ -591,6 +606,64 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
           </div>
           </section>
         </div>
+
+        {isCreator ? (
+          <div className="mt-4 space-y-2 border-b border-[var(--border-color)] pb-4 sm:mt-5 sm:space-y-3 sm:pb-5">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold text-[var(--text-primary)]">Creators</h3>
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                Catalog & paths
+              </span>
+            </div>
+            <div
+              role="group"
+              aria-label="Creator browse: courses and learning paths in the nav"
+              className="inline-flex w-full min-w-0 gap-1 rounded-xl border border-[var(--border-color)] bg-[var(--hover-bg)]/30 p-1"
+            >
+              {(
+                [
+                  { id: 'all', label: 'Other courses / paths' },
+                  { id: 'mine', label: 'My courses / paths' },
+                  { id: 'both', label: 'Show both' },
+                ] as const
+              ).map((opt) => {
+                const selected = creatorCatalogPref === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => {
+                      if (!user?.uid) return;
+                      setCreatorCatalogPref(opt.id);
+                      writeCreatorBrowseCatalogPreference(user.uid, opt.id);
+                      showActionToast(
+                        opt.id === 'both'
+                          ? 'Browse Catalog and Learning Paths show your items and the rest of the catalog.'
+                          : opt.id === 'mine'
+                            ? 'Browse Catalog and Learning Paths show your courses and paths only.'
+                            : 'Browse Catalog and Learning Paths show catalog courses and paths only (not your drafts).'
+                      );
+                    }}
+                    className={`min-h-11 flex-1 rounded-lg px-2 py-2 text-[0.7rem] font-semibold leading-tight transition-colors sm:px-3 sm:text-sm sm:leading-normal ${
+                      selected
+                        ? 'bg-brand-500/15 text-brand-500'
+                        : 'text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-xs leading-relaxed text-[var(--text-secondary)]">
+              Controls what you see under{' '}
+              <strong className="font-semibold text-[var(--text-primary)]">Browse Catalog</strong> and{' '}
+              <strong className="font-semibold text-[var(--text-primary)]">Learning Paths</strong> in the nav
+              (courses and paths).
+            </p>
+          </div>
+        ) : null}
 
         {user && onDeleteAccount && (
           <div className="mt-4 space-y-3 pt-4 sm:mt-5 sm:space-y-4 sm:pt-5">

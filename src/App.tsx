@@ -136,6 +136,11 @@ import {
   readPersistedUiThemeForUser,
   writePersistedUiThemeForUser,
 } from './utils/uiThemePreference';
+import {
+  CREATOR_BROWSE_CATALOG_PREFERENCE_CHANGED,
+  readCreatorBrowseCatalogPreference,
+  type CreatorBrowseCatalogPreference,
+} from './utils/creatorBrowseCatalogPreference';
 import { stashAuthReturnState, consumeAuthReturnState, type AuthReturnPayload } from './utils/authReturnContext';
 import {
   APP_HISTORY_KEY,
@@ -190,9 +195,10 @@ import {
   toggleFilterTag,
   type LibraryFilterState,
 } from './utils/courseTaxonomy';
-import { sortLabelsLocaleCi } from './utils/catalogTaxonomyAdminOrder';
-import { filterPopularTopicsToUniverse } from './utils/catalogPopularTopics';
-import { subscribeCatalogPopularTopics } from './utils/catalogPopularTopicsFirestore';
+import {
+  clearLegacyCatalogPopularTopicsLocalStorage,
+  computeCrossKindPopularTopicLabels,
+} from './utils/catalogPopularUsage';
 import { PhoneMockupAdRail } from './components/PhoneMockupAdRail';
 import type { PhoneMockupAdSlide } from './utils/heroPhoneAdsShared';
 import { readPublicHeroPhoneAdsCache } from './utils/heroPhoneAdsPublicCache';
@@ -667,8 +673,6 @@ export default function App() {
     skillTags: [],
     level: null,
   });
-  /** Site-wide Popular topic labels from Firestore (`siteSettings/catalogPopularTopics`). */
-  const [libraryPopularTopicsFromSite, setLibraryPopularTopicsFromSite] = useState<string[]>([]);
   /** Navbar Browse → Skills / topic: narrows catalog without showing in Course filters pill. Cleared when Course filters change or clearFilters. */
   const [navCatalogSkillTag, setNavCatalogSkillTag] = useState<string | null>(null);
   const [navCatalogCategoryTag, setNavCatalogCategoryTag] = useState<string | null>(null);
@@ -682,6 +686,11 @@ export default function App() {
     () => readPublicHeroPhoneAdsCache() ?? []
   );
   const [focusedCourseIndex, setFocusedCourseIndex] = useState(-1);
+  const [creatorBrowseCatalogPref, setCreatorBrowseCatalogPref] =
+    useState<CreatorBrowseCatalogPreference>(() => {
+      const uid = readCachedAuthProfile()?.uid ?? null;
+      return uid ? readCreatorBrowseCatalogPreference(uid) : 'both';
+    });
   const [focusedFooterIndex, setFocusedFooterIndex] = useState(-1);
   const [user, setUser] = useState<User | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -2181,6 +2190,10 @@ export default function App() {
         ? ADMIN_DELETE_BLOCKED_SOLE_MSG
         : ADMIN_DELETE_BLOCKED_MULTI_MSG;
 
+  useEffect(() => {
+    clearLegacyCatalogPopularTopicsLocalStorage();
+  }, []);
+
   /** Preset + discovery pools; “more” lists still include labels not on any course until filtered below. */
   const browseCatalogTaxonomy = useMemo(
     () =>
@@ -2248,32 +2261,17 @@ export default function App() {
     [libraryBrowseMainCategories, moreCategories]
   );
 
-  const libraryPopularTopicsOrdered = useMemo(() => {
-    const universe = new Set<string>();
-    for (const x of libraryBrowseMainCategories) {
-      const t = x.trim();
-      if (t) universe.add(t.toLowerCase());
-    }
-    for (const x of moreCategories) {
-      const t = x.trim();
-      if (t) universe.add(t.toLowerCase());
-    }
-    for (const x of libraryBrowseMainSkills) {
-      const t = x.trim();
-      if (t) universe.add(t.toLowerCase());
-    }
-    for (const x of moreSkills) {
-      const t = x.trim();
-      if (t) universe.add(t.toLowerCase());
-    }
-    return sortLabelsLocaleCi(filterPopularTopicsToUniverse(libraryPopularTopicsFromSite, universe));
-  }, [
-    libraryBrowseMainCategories,
-    moreCategories,
-    libraryBrowseMainSkills,
-    moreSkills,
-    libraryPopularTopicsFromSite,
-  ]);
+  /** Up to three highest-usage topic labels across categories and skills (see `computeCrossKindPopularTopicLabels`). */
+  const libraryPopularTopicsOrdered = useMemo(
+    () =>
+      computeCrossKindPopularTopicLabels({
+        courses: browseVisibleCatalogCourses,
+        categoryPool: categoryFilterPoolForLibrary,
+        skillPool: catalogBrowseSkills,
+        limit: 3,
+      }),
+    [browseVisibleCatalogCourses, categoryFilterPoolForLibrary, catalogBrowseSkills]
+  );
 
   useEffect(() => {
     setLibraryFilters((prev) => {
@@ -2293,12 +2291,6 @@ export default function App() {
       return { categoryTags: nextCat, skillTags: nextSkill, level: nextLevel };
     });
   }, [categoryFilterPoolForLibrary, catalogBrowseSkills, libraryBrowseLevelsOrdered]);
-
-  useEffect(() => {
-    return subscribeCatalogPopularTopics((labels) => {
-      setLibraryPopularTopicsFromSite(labels.length > 0 ? [...labels] : []);
-    });
-  }, []);
 
   const filteredCatalogRows = useMemo(
     () =>
@@ -2349,6 +2341,96 @@ export default function App() {
     () => filteredCatalogRows.map((r) => r.course),
     [filteredCatalogRows]
   );
+
+  const viewerHasCreatorStudio = !!user && adminAccessResolved && (isCreatorUser || isAdminUser);
+  const showCreatorBrowseTabs = selectedLearningPathId == null && viewerHasCreatorStudio;
+
+  useEffect(() => {
+    // Avoid a brief "both" flash during auth restore: we may have a cached uid/pref
+    // but `user` is temporarily null until Firebase finishes.
+    if (!isAuthReady) return;
+    if (!user?.uid) {
+      setCreatorBrowseCatalogPref('both');
+      return;
+    }
+    // While admin/creator flags are still resolving, `viewerHasCreatorStudio` is false.
+    // Do not reset the persisted catalog preference to 'both' during that window — it
+    // causes a full-catalog flash before roles resolve (see debug logs H1-H4).
+    if (!adminAccessResolved) return;
+
+    if (!viewerHasCreatorStudio) {
+      setCreatorBrowseCatalogPref('both');
+      return;
+    }
+    setCreatorBrowseCatalogPref(readCreatorBrowseCatalogPreference(user.uid));
+  }, [isAuthReady, adminAccessResolved, viewerHasCreatorStudio, user?.uid]);
+
+  useEffect(() => {
+    if (!isAuthReady || !viewerHasCreatorStudio || !user?.uid) return;
+    const onPrefChanged = () => setCreatorBrowseCatalogPref(readCreatorBrowseCatalogPreference(user.uid));
+    window.addEventListener(CREATOR_BROWSE_CATALOG_PREFERENCE_CHANGED, onPrefChanged);
+    return () => window.removeEventListener(CREATOR_BROWSE_CATALOG_PREFERENCE_CHANGED, onPrefChanged);
+  }, [isAuthReady, viewerHasCreatorStudio, user?.uid]);
+
+  const filteredMyCourseRows = useMemo(
+    () => filteredCatalogRows.filter((r) => r.fromCreatorDraft && !r.adminPreviewOwnerUid),
+    [filteredCatalogRows]
+  );
+
+  const filteredAllCourseRows = useMemo(
+    () => filteredCatalogRows.filter((r) => !r.fromCreatorDraft),
+    [filteredCatalogRows]
+  );
+
+  const catalogGridRows = useMemo(() => {
+    // Avoid a flash on reload: we may already have cached draft rows + a persisted preference,
+    // but creator/admin role checks resolve async (which drives `showCreatorBrowseTabs`).
+    const hasOwnDraftRows = filteredMyCourseRows.length > 0;
+
+    if (!showCreatorBrowseTabs) {
+      if (creatorBrowseCatalogPref === 'mine' && hasOwnDraftRows) return filteredMyCourseRows;
+      if (creatorBrowseCatalogPref === 'all' && hasOwnDraftRows) return filteredAllCourseRows;
+      return filteredCatalogRows;
+    }
+
+    if (creatorBrowseCatalogPref === 'mine') return filteredMyCourseRows;
+    if (creatorBrowseCatalogPref === 'all') return filteredAllCourseRows;
+    // 'both' shows a combined grid (drafts already carry badges).
+    return filteredCatalogRows;
+  }, [
+    showCreatorBrowseTabs,
+    filteredCatalogRows,
+    filteredMyCourseRows,
+    filteredAllCourseRows,
+    creatorBrowseCatalogPref,
+  ]);
+
+  const catalogGridCourses = useMemo(() => catalogGridRows.map((r) => r.course), [catalogGridRows]);
+
+  /** Navbar Learning Paths menu: same mine / all / both rules as the Course Library grid for creators. */
+  const filteredMyNavbarPathRows = useMemo(
+    () => navbarCatalogPathRows.filter((r) => r.fromCreatorDraft && !r.adminPreviewOwnerUid),
+    [navbarCatalogPathRows]
+  );
+  const filteredAllNavbarPathRows = useMemo(
+    () => navbarCatalogPathRows.filter((r) => !r.fromCreatorDraft),
+    [navbarCatalogPathRows]
+  );
+  const navbarLearningPathsForNav = useMemo(() => {
+    // Unlike courses, the navbar Learning Paths list should NOT “fallback to all” while roles are resolving.
+    // If the preference is 'mine' and there are 0 draft paths, showing 0 is correct — showing all briefly
+    // causes the visible flash (see debug logs `paths-pre`: navLen 5 -> 0).
+    if (creatorBrowseCatalogPref === 'mine') return filteredMyNavbarPathRows;
+    if (creatorBrowseCatalogPref === 'all') return filteredAllNavbarPathRows;
+    return navbarCatalogPathRows;
+  }, [
+    navbarCatalogPathRows,
+    filteredMyNavbarPathRows,
+    filteredAllNavbarPathRows,
+    creatorBrowseCatalogPref,
+  ]);
+
+  // Creator catalog view is controlled via persisted preference; no local tab state needed.
 
   const handleCourseRowClick = (row: CatalogCourseRow, focusIndex?: number) => {
     if (focusIndex !== undefined) {
@@ -3551,7 +3633,7 @@ export default function App() {
         {selectedLearningPathId == null ? (
           <>
             <div className="relative z-0 grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4">
-              {filteredCatalogRows.map((row, index) => (
+              {catalogGridRows.map((row, index) => (
                 <CourseCard
                   key={
                     row.fromCreatorDraft
@@ -3571,7 +3653,7 @@ export default function App() {
                 />
               ))}
             </div>
-            {filteredCourses.length === 0 && (
+            {catalogGridCourses.length === 0 && (
               <div className="px-2 py-12 text-center sm:py-20">
                 <p className="text-base text-[var(--text-muted)] sm:text-lg">
                   No courses match these filters.
@@ -3823,7 +3905,7 @@ export default function App() {
             currentView === 'catalog' && selectedLearningPathId == null ? (
               <CourseLibraryCategoryFilter
                 ref={catalogCategoryFilterTriggerRef}
-                curatedPopularTopics={libraryPopularTopicsOrdered}
+                popularTopics={libraryPopularTopicsOrdered}
                 categoryFilterPool={categoryFilterPoolForLibrary}
                 moreTopics={moreCategories}
                 mainSkills={libraryBrowseMainSkills}
@@ -3841,7 +3923,7 @@ export default function App() {
             navCatalogCategoryTag ? [navCatalogCategoryTag] : libraryFilters.categoryTags
           }
           catalogActiveSkillTags={navCatalogSkillTag ? [navCatalogSkillTag] : libraryFilters.skillTags}
-          learningPaths={navbarCatalogPathRows.map((r) => ({
+          learningPaths={navbarLearningPathsForNav.map((r) => ({
             id: r.id,
             title: r.title,
             fromCreatorDraft: r.fromCreatorDraft,
@@ -4042,6 +4124,7 @@ export default function App() {
               courses={catalogCourses}
               user={user}
               isAuthReady={isAuthReady}
+              isCreator={!!user && adminAccessResolved && (isCreatorUser || isAdminUser)}
               onShowCertificate={handleShowCertificate}
               openCompletedCoursesSignal={completedCoursesModalSignal}
               onDismiss={handleProfileDismiss}

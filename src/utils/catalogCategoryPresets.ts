@@ -1,5 +1,5 @@
 /**
- * Course topic presets: "Popular topics" (main pills) + "More topics" bucket for the library filter,
+ * Course topic presets: main topic pills + "More topics" bucket for the library filter,
  * Browse menu, and admin category pickers. Live values load from Firestore; {@link getCachedCatalogCategoryPresets}
  * mirrors the last fetch for sync helpers (e.g. category extras).
  */

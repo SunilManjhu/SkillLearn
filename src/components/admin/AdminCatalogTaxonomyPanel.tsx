@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { Check, GripVertical, Pin, PinOff, Search, Trash2, X } from 'lucide-react';
+import { Check, Cog, Search, Tag, Trash2, X } from 'lucide-react';
 import { auth } from '../../firebase';
 import { AnimatePresence, motion } from 'motion/react';
 import type { Course } from '../../data/courses';
@@ -22,26 +22,16 @@ import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { useDialogKeyboard } from '../../hooks/useDialogKeyboard';
 import {
   mergeUniverseWithAdminOrder,
-  orderInsertBefore,
   orderWithoutLabel,
   readCatalogTaxonomyAdminOrder,
-  sortLabelsLocaleCi,
   writeCatalogTaxonomyAdminOrder,
 } from '../../utils/catalogTaxonomyAdminOrder';
 import {
-  filterPopularTopicsToUniverse,
-  popularTopicsHasLabel,
-  popularTopicsInsertCopyBefore,
-  popularTopicsRemoveLabel,
-  popularTopicsRenameLabel,
-  readCatalogPopularTopicsLocal,
-  writeCatalogPopularTopicsLocal,
-} from '../../utils/catalogPopularTopics';
-import {
-  loadCatalogPopularTopicsFromFirestore,
-  saveCatalogPopularTopicsFirestore,
-  subscribeCatalogPopularTopics,
-} from '../../utils/catalogPopularTopicsFirestore';
+  buildCategorySkillUsageMaps,
+  courseCountForCategoryLabel,
+  courseCountForSkillLabel,
+  formatTaxonomyUsageCountDisplay,
+} from '../../utils/catalogPopularUsage';
 import type { CatalogTaxonomyProposal } from '../../utils/catalogTaxonomyProposalsFirestore';
 import {
   approveTaxonomyProposalAndMerge,
@@ -53,61 +43,6 @@ import {
 } from '../../utils/catalogTaxonomyProposalsFirestore';
 
 type TaxonomyKind = 'category' | 'skill';
-
-const TAXONOMY_DRAG_MIME = 'application/x-skilllearn-taxonomy';
-
-/** WebKit often omits custom MIME from `dataTransfer.types` during `dragover`; mirror JSON on `text/plain` for reliable drops. */
-const TAXONOMY_DRAG_TEXT_PREFIX = '__skilllearn_taxonomy__:';
-
-type TaxonomyDragPayload =
-  | { scope: 'taxonomy'; kind: TaxonomyKind; label: string }
-  | { scope: 'popular'; label: string };
-
-function writeTaxonomyDragPayload(dt: DataTransfer, payload: TaxonomyDragPayload): void {
-  const json = JSON.stringify(payload);
-  dt.setData(TAXONOMY_DRAG_MIME, json);
-  dt.setData('text/plain', `${TAXONOMY_DRAG_TEXT_PREFIX}${json}`);
-}
-
-/** True while dragging our taxonomy payload — `getData` is often empty during `dragover` for custom MIME types. */
-function taxonomyDragMimeIsOnTransfer(e: React.DragEvent): boolean {
-  try {
-    const types = [...e.dataTransfer.types].map((t) => t.toLowerCase());
-    if (types.includes(TAXONOMY_DRAG_MIME.toLowerCase())) return true;
-    if (types.some((t) => t === 'text/plain' || t === 'text')) {
-      const plain = e.dataTransfer.getData('text/plain');
-      return typeof plain === 'string' && plain.startsWith(TAXONOMY_DRAG_TEXT_PREFIX);
-    }
-  } catch {
-    return false;
-  }
-  return false;
-}
-
-function readTaxonomyDragPayload(e: React.DragEvent): TaxonomyDragPayload | null {
-  try {
-    let raw = e.dataTransfer.getData(TAXONOMY_DRAG_MIME);
-    if (!raw) {
-      const plain = e.dataTransfer.getData('text/plain');
-      if (typeof plain === 'string' && plain.startsWith(TAXONOMY_DRAG_TEXT_PREFIX)) {
-        raw = plain.slice(TAXONOMY_DRAG_TEXT_PREFIX.length);
-      }
-    }
-    if (!raw) return null;
-    const o = JSON.parse(raw) as { scope?: string; kind?: string; label?: string };
-    if (typeof o.label !== 'string' || !o.label.trim()) return null;
-    const label = o.label.trim();
-    if (o.scope === 'popular') return { scope: 'popular', label };
-    if (o.scope === 'taxonomy' && (o.kind === 'category' || o.kind === 'skill')) {
-      return { scope: 'taxonomy', kind: o.kind, label };
-    }
-    // Legacy payloads (before `scope` was added)
-    if (o.kind === 'category' || o.kind === 'skill') return { scope: 'taxonomy', kind: o.kind, label };
-    return null;
-  } catch {
-    return null;
-  }
-}
 
 function lower(s: string): string {
   return s.trim().toLowerCase();
@@ -214,7 +149,7 @@ const Chip: React.FC<{
   onEditCancel: () => void;
   onRemove: () => void;
   disabled?: boolean;
-  /** When nested inside a drag row wrapper that already provides the outer chrome. */
+  /** Dense taxonomy row: no outer chip border (parent supplies the shell). */
   frameless?: boolean;
   /** Softer remove control (dense taxonomy lists). */
   mutedActions?: boolean;
@@ -236,8 +171,8 @@ const Chip: React.FC<{
     <div
       className={
         frameless
-          ? 'inline-flex max-w-full items-center gap-1 px-1 py-1'
-          : 'inline-flex max-w-full items-center gap-1 rounded-full border border-[var(--border-color)] bg-[var(--hover-bg)]/60 px-2.5 py-1.5'
+          ? 'inline-flex max-w-full items-center gap-2 px-1 py-1'
+          : 'inline-flex max-w-full items-center gap-1.5 rounded-full border border-[var(--border-color)] bg-[var(--hover-bg)]/60 px-2.5 py-1.5'
       }
     >
       {editing ? (
@@ -279,7 +214,6 @@ const Chip: React.FC<{
           <span className="min-w-0 truncate">{label}</span>
         </button>
       )}
-      <span className="mx-0.5 h-4 w-px shrink-0 bg-[var(--border-color)]" aria-hidden />
       <button
         type="button"
         disabled={disabled || editing}
@@ -312,10 +246,7 @@ function TaxonomySection({
   headerCount,
   onRenameEverywhere,
   onRemoveEverywhere,
-  onDragDrop,
-  popularTopicsPinned,
-  popularTopicsSiteWide = false,
-  onTogglePopularPin,
+  courseUsageCount,
   onApproveProposal,
   onRejectProposal,
   onWithdrawProposal,
@@ -335,13 +266,8 @@ function TaxonomySection({
   headerCount?: number;
   onRenameEverywhere: (fromExact: string, toExact: string) => Promise<void>;
   onRemoveEverywhere: (name: string) => Promise<void>;
-  onDragDrop: (payload: Extract<TaxonomyDragPayload, { scope: 'taxonomy' }>, targetKind: TaxonomyKind, beforeLabel: string | null) => void;
-  /** Current Popular list for pin / unpin UI (site-wide Firestore when `popularTopicsSiteWide`). */
-  popularTopicsPinned: readonly string[];
-  /** When true, pins apply to all learners (Firestore); otherwise creator-only localStorage. */
-  popularTopicsSiteWide?: boolean;
-  /** Pin when absent from Popular; unpin when already pinned. */
-  onTogglePopularPin: (label: string) => void | Promise<void>;
+  /** Number of catalog courses using this label (categories vs skills per `kind`). */
+  courseUsageCount: (label: string) => number;
   onApproveProposal: (p: CatalogTaxonomyProposal) => void;
   onRejectProposal: (p: CatalogTaxonomyProposal) => void;
   onWithdrawProposal: (p: CatalogTaxonomyProposal) => void;
@@ -359,16 +285,6 @@ function TaxonomySection({
 
   /** Always show pending rows (do not hide behind global search — admins must always see Approve/Reject). */
   const pendingVisible = pendingProposals;
-
-  /** Pin / unpin (Popular) and taxonomy drag handles — allowed when not busy, even if taxonomy is read-only or filtered. */
-  const pinDragEnabled = !busy && editingLabel == null;
-  /** Reorder within column / migrate category ↔ skill — admin only. */
-  const taxonomyReorderEnabled = pinDragEnabled && !readOnlyTaxonomy;
-
-  const popularPinnedLower = useMemo(
-    () => new Set(popularTopicsPinned.map((x) => lower(x))),
-    [popularTopicsPinned]
-  );
 
   const startInlineEdit = (src: string) => {
     if (readOnlyTaxonomy) return;
@@ -403,7 +319,7 @@ function TaxonomySection({
   return (
     <section className="flex min-h-0 min-w-0 flex-col rounded-xl border border-[var(--border-color)]/70 bg-[var(--bg-primary)]/25 p-3 sm:p-4">
       <div className="flex min-w-0 shrink-0 items-center justify-between gap-2">
-        <h3 className="text-[11px] font-medium uppercase tracking-[0.06em] text-[var(--text-muted)]">{title}</h3>
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">{title}</h3>
         {headerCount != null ? (
           <span className="shrink-0 rounded-full border border-[var(--border-color)]/80 bg-[var(--bg-secondary)]/50 px-2 py-0.5 text-[11px] font-normal normal-case tracking-normal text-[var(--text-muted)] tabular-nums">
             {headerCount}
@@ -462,220 +378,42 @@ function TaxonomySection({
 
         <div className={chipListClassName}>
           {filtered.map((label) => {
-            const isPopularPinned = popularPinnedLower.has(lower(label));
+            const n = courseUsageCount(label);
             return (
-            <div
-              key={label.toLowerCase()}
-              className="group/chip inline-flex w-full max-w-full min-w-0 items-stretch gap-0.5 rounded-lg border border-[var(--border-color)]/55 bg-[var(--bg-secondary)]/35 py-0.5 pl-0.5 pr-1"
-              onDragOver={
-                taxonomyReorderEnabled
-                  ? (e) => {
-                      e.preventDefault();
-                      e.dataTransfer.dropEffect = 'move';
-                    }
-                  : undefined
-              }
-              onDrop={
-                taxonomyReorderEnabled
-                  ? (e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      const p = readTaxonomyDragPayload(e);
-                      if (!p || p.scope !== 'taxonomy') return;
-                      if (p.kind === kind && lower(p.label) === lower(label)) return;
-                      onDragDrop(p, kind, label);
-                    }
-                  : undefined
-              }
-            >
               <div
-                role="button"
-                tabIndex={pinDragEnabled ? 0 : -1}
-                draggable={pinDragEnabled}
-                onDragStart={
-                  pinDragEnabled
-                    ? (e) => {
-                        writeTaxonomyDragPayload(e.dataTransfer, { scope: 'taxonomy', kind, label });
-                        e.dataTransfer.effectAllowed = 'move';
-                      }
-                    : undefined
-                }
-                className={
-                  pinDragEnabled
-                    ? 'inline-flex min-h-9 min-w-9 shrink-0 cursor-grab touch-manipulation items-center justify-center rounded-md text-[var(--text-muted)]/55 transition-colors hover:text-[var(--text-muted)] group-hover/chip:text-[var(--text-muted)] active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/40'
-                    : 'inline-flex min-h-9 min-w-9 shrink-0 cursor-not-allowed items-center justify-center rounded-md text-[var(--text-muted)]/35'
-                }
-                aria-label={
-                  readOnlyTaxonomy
-                    ? `Use the pin button to add or remove “${label}” from Popular`
-                    : kind === 'category'
-                      ? `Drag ${label} to reorder or move to Skills; use the pin button for Popular`
-                      : `Drag ${label} to reorder or move to Categories; use the pin button for Popular`
-                }
-                onKeyDown={(e) => {
-                  if (!pinDragEnabled) return;
-                  if (e.key === 'Enter' || e.key === ' ') e.preventDefault();
-                }}
+                key={label.toLowerCase()}
+                className="group/chip flex w-full max-w-full min-w-0 items-center gap-2 rounded-lg border border-[var(--border-color)]/55 bg-[var(--bg-secondary)]/35 py-1 pl-2 pr-2"
               >
-                <GripVertical size={16} aria-hidden />
-              </div>
-              <button
-                type="button"
-                disabled={!pinDragEnabled}
-                onClick={() => onTogglePopularPin(label)}
-                aria-pressed={isPopularPinned}
-                className={`inline-flex min-h-9 min-w-9 shrink-0 touch-manipulation items-center justify-center rounded-md transition-colors hover:bg-[#757676]/12 disabled:pointer-events-none disabled:opacity-35 ${
-                  isPopularPinned
-                    ? 'text-[#616161] app-dark:text-[var(--tone-200)]'
-                    : 'text-[var(--text-muted)]/55 hover:text-[var(--text-muted)]'
-                }`}
-                title={
-                  isPopularPinned
-                    ? popularTopicsSiteWide
-                      ? 'Remove from Popular (site-wide)'
-                      : 'Remove from Popular (this device)'
-                    : popularTopicsSiteWide
-                      ? 'Pin to Popular (site-wide)'
-                      : 'Pin to Popular (this device)'
-                }
-                aria-label={
-                  isPopularPinned ? `Unpin ${label} from Popular topics` : `Pin ${label} to Popular topics`
-                }
-              >
-                {isPopularPinned ? <PinOff size={15} aria-hidden /> : <Pin size={15} aria-hidden />}
-              </button>
-              <div className="min-w-0 self-center border-0 bg-transparent">
-                <Chip
-                  label={label}
-                  editing={editingLabel != null && lower(editingLabel) === lower(label)}
-                  editValue={editingLabel != null && lower(editingLabel) === lower(label) ? editingValue : label}
-                  onEditStart={() => startInlineEdit(label)}
-                  onEditChange={setEditingValue}
-                  onEditCommit={() => void commitInlineEdit()}
-                  onEditCancel={cancelInlineEdit}
-                  disabled={chipDisabled}
-                  onRemove={() => void onRemoveEverywhere(label)}
-                  frameless
-                  mutedActions
-                />
-              </div>
-            </div>
-            );
-          })}
-          {taxonomyReorderEnabled && globalTrimmed && filtered.length === 0 && items.length > 0 ? (
-            <div
-              className={`flex min-h-11 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-[var(--border-color)]/55 bg-[var(--bg-secondary)]/20 px-3 py-2 text-center text-[11px] leading-snug text-[var(--text-muted)] ${listLayout === 'grid' ? 'col-span-1 w-full sm:col-span-2' : 'w-full'}`}
-              onDragOver={(e) => {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const p = readTaxonomyDragPayload(e);
-                if (!p || p.scope !== 'taxonomy') return;
-                onDragDrop(p, kind, null);
-              }}
-            >
-              No {kind === 'category' ? 'categories' : 'skills'} match the filter — drop here to move from the
-              other column or reorder at the end of this list.
-            </div>
-          ) : null}
-          {taxonomyReorderEnabled && filtered.length > 0 ? (
-            <div
-              className={`flex min-h-9 min-w-[min(100%,9rem)] items-center justify-center rounded-lg border border-dashed border-[var(--border-color)]/55 bg-[var(--bg-secondary)]/20 px-2 text-center text-xs text-[var(--text-muted)] ${listLayout === 'grid' ? 'col-span-1 w-full sm:col-span-2' : 'w-full'}`}
-              onDragOver={(e) => {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const p = readTaxonomyDragPayload(e);
-                if (!p || p.scope !== 'taxonomy') return;
-                onDragDrop(p, kind, null);
-              }}
-            >
-              End of list
-            </div>
-          ) : null}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function PopularTopicsSection({
-  items,
-  busy,
-  globalFilterText,
-  scopeSubtitle,
-  onRemoveFromList,
-}: {
-  items: readonly string[];
-  busy: boolean;
-  globalFilterText: string;
-  /** e.g. “Site-wide” (admin) vs “This device” (creator preview). */
-  scopeSubtitle: string;
-  onRemoveFromList: (label: string) => void | Promise<void>;
-}) {
-  const globalTrimmed = globalFilterText.trim();
-
-  const filtered = useMemo(() => {
-    let base = [...items];
-    if (globalTrimmed) base = base.filter((x) => includesCI(x, globalTrimmed));
-    return base;
-  }, [items, globalTrimmed]);
-
-  return (
-    <section className="flex min-h-0 min-w-0 flex-col rounded-xl border border-[var(--border-color)]/70 bg-[var(--bg-primary)]/25 p-3 sm:p-4">
-      <div className="flex min-w-0 shrink-0 items-center justify-between gap-2">
-        <h3 className="text-[11px] font-medium uppercase tracking-[0.06em] text-[var(--text-muted)]">Popular</h3>
-        <span className="shrink-0 rounded-full border border-[#8b8c8c]/75 bg-[#616161]/10 px-2 py-0.5 text-[10px] font-normal normal-case tracking-normal text-[#393a3a] app-dark:text-[#cfcfcf]">
-          {scopeSubtitle}
-        </span>
-      </div>
-
-      <div className="mt-3 flex min-h-0 min-w-0 flex-1 flex-col gap-2">
-        {items.length === 0 ? (
-          <div className="flex min-h-[5.625rem] flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-[var(--border-color)]/55 bg-[var(--bg-secondary)]/20 px-4 py-4 text-center text-xs leading-snug text-[var(--text-muted)]">
-            <Pin size={18} strokeWidth={1.5} className="shrink-0 text-[var(--text-muted)]/50" aria-hidden />
-            <p className="max-w-[16rem] text-xs leading-relaxed text-[var(--text-muted)]">
-              Tap the pin on the chip. Tap again (unpin icon) to remove from Popular.
-            </p>
-          </div>
-        ) : null}
-
-        {items.length > 0 && filtered.length === 0 && globalTrimmed ? (
-          <div className="flex min-h-11 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-[var(--border-color)]/55 bg-[var(--bg-secondary)]/20 px-3 py-2 text-center text-[11px] leading-snug text-[var(--text-muted)]">
-            No Popular topics match the filter — use the pin on a category or skill chip to add more.
-          </div>
-        ) : null}
-
-        <div className="flex min-h-0 max-h-[70dvh] min-w-0 flex-1 flex-col content-start gap-1.5 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch]">
-          {filtered.map((label) => (
-            <div
-              key={label.toLowerCase()}
-              className="group/chip inline-flex w-full max-w-full min-w-0 items-center gap-1 rounded-lg border border-[var(--border-color)]/55 bg-[var(--bg-secondary)]/35 py-0.5 pl-2 pr-1"
-            >
-              <div className="min-w-0 self-center border-0 bg-transparent py-0.5">
-                <span className="inline-flex min-h-8 min-w-0 max-w-full items-center text-left text-xs font-medium text-[var(--text-primary)]">
-                  <span className="min-w-0 truncate">{label}</span>
+                <span
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center text-[var(--text-muted)]"
+                  aria-hidden
+                >
+                  {kind === 'category' ? <Tag size={17} strokeWidth={1.75} /> : <Cog size={17} strokeWidth={1.75} />}
+                </span>
+                <div className="min-w-0 flex-1 self-center border-0 bg-transparent">
+                  <Chip
+                    label={label}
+                    editing={editingLabel != null && lower(editingLabel) === lower(label)}
+                    editValue={editingLabel != null && lower(editingLabel) === lower(label) ? editingValue : label}
+                    onEditStart={() => startInlineEdit(label)}
+                    onEditChange={setEditingValue}
+                    onEditCommit={() => void commitInlineEdit()}
+                    onEditCancel={cancelInlineEdit}
+                    disabled={chipDisabled}
+                    onRemove={() => void onRemoveEverywhere(label)}
+                    frameless
+                    mutedActions
+                  />
+                </div>
+                <span
+                  className="shrink-0 tabular-nums text-xs font-semibold tracking-tight text-[var(--text-primary)]"
+                  title={`${n} course${n === 1 ? '' : 's'}`}
+                >
+                  {formatTaxonomyUsageCountDisplay(n)}
                 </span>
               </div>
-              <span className="mx-0.5 h-4 w-px shrink-0 self-center bg-[var(--border-color)]/60" aria-hidden />
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => onRemoveFromList(label)}
-                className="inline-flex min-h-8 min-w-8 shrink-0 items-center justify-center self-center rounded-md text-[var(--text-muted)]/50 transition-colors hover:bg-[#757676]/12 hover:text-[#a1a2a2] disabled:opacity-40"
-                aria-label={`Remove ${label} from Popular topics`}
-                title="Remove from this list"
-              >
-                <X size={15} aria-hidden />
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </section>
@@ -684,7 +422,6 @@ function PopularTopicsSection({
 
 export function AdminCatalogTaxonomyPanel({
   publishedList,
-  publishedCatalogSnapshotReady,
   categoryPresets,
   skillPresets,
   onPresetsChanged,
@@ -695,11 +432,6 @@ export function AdminCatalogTaxonomyPanel({
   isCreatorCatalog = false,
 }: {
   publishedList: Course[];
-  /**
-   * False until the parent’s first `refreshList()` has finished for this catalog scope. Prevents persisting a pruned
-   * Popular list while `publishedList` is still empty (course-only labels would be wrongly removed).
-   */
-  publishedCatalogSnapshotReady: boolean;
   categoryPresets: CatalogCategoryPresetsState;
   skillPresets: CatalogSkillPresetsState;
   onPresetsChanged: (next: { categories: CatalogCategoryPresetsState; skills: CatalogSkillPresetsState }) => void;
@@ -728,17 +460,11 @@ export function AdminCatalogTaxonomyPanel({
   }));
   /** Bumps when admin display order (localStorage) changes so merged lists recompute. */
   const [orderRevision, setOrderRevision] = useState(0);
-  /** Creator: bumps when Popular topics (localStorage) change. */
-  const [popularRevision, setPopularRevision] = useState(0);
-  /** Admin: live list from Firestore `siteSettings/catalogPopularTopics`. */
-  const [popularFirestoreLabels, setPopularFirestoreLabels] = useState<string[]>([]);
-  const popularTopicsRawRef = useRef<string[]>([]);
-  const legacyPopularTopicsMigratedRef = useRef(false);
   const [globalQuery, setGlobalQuery] = useState('');
   const [debouncedGlobal, setDebouncedGlobal] = useState('');
   const [authUid, setAuthUid] = useState<string | null>(() => auth.currentUser?.uid ?? null);
   const [taxonomyProposals, setTaxonomyProposals] = useState<CatalogTaxonomyProposal[]>([]);
-  const [suggestTargetKind, setSuggestTargetKind] = useState<TaxonomyKind>('category');
+  const [suggestTargetKind, setSuggestTargetKind] = useState<TaxonomyKind | null>(null);
   const [headerSuggestBusy, setHeaderSuggestBusy] = useState(false);
 
   useEffect(() => {
@@ -769,44 +495,6 @@ export function AdminCatalogTaxonomyPanel({
       showActionToast('Could not load pending taxonomy proposals (index or permissions).', 'danger')
     );
   }, [isCreatorCatalog, authUid, showActionToast]);
-
-  useEffect(() => {
-    if (isCreatorCatalog) {
-      setPopularFirestoreLabels([]);
-      return;
-    }
-    return subscribeCatalogPopularTopics((labels) => {
-      setPopularFirestoreLabels(labels.length > 0 ? [...labels] : []);
-    });
-  }, [isCreatorCatalog]);
-
-  /** One-time: if Firestore doc is empty but this browser had legacy local pins, upload so the site matches. */
-  useEffect(() => {
-    if (isCreatorCatalog || legacyPopularTopicsMigratedRef.current) return;
-    let cancelled = false;
-    void (async () => {
-      const remote = await loadCatalogPopularTopicsFromFirestore();
-      if (cancelled) return;
-      if (remote.length > 0) {
-        legacyPopularTopicsMigratedRef.current = true;
-        return;
-      }
-      const local = readCatalogPopularTopicsLocal();
-      if (local.length === 0) {
-        legacyPopularTopicsMigratedRef.current = true;
-        return;
-      }
-      const ok = await saveCatalogPopularTopicsFirestore(local);
-      if (cancelled) return;
-      if (ok) {
-        legacyPopularTopicsMigratedRef.current = true;
-        showActionToast('Imported Popular topics from this browser into the site (Firebase).', 'neutral');
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [isCreatorCatalog, showActionToast]);
 
   const pendingCategoryProposals = useMemo(
     () => taxonomyProposals.filter((p) => p.kind === 'category'),
@@ -875,107 +563,7 @@ export function AdminCatalogTaxonomyPanel({
     return mergeUniverseWithAdminOrder(universe, readCatalogTaxonomyAdminOrder('skill'));
   }, [skillPresets.mainPills, skillPresets.moreSkills, taxonomy.skills.more, applyPending, orderRevision]);
 
-  const labelUniverseLower = useMemo(() => {
-    const s = new Set<string>();
-    for (const x of categoryItems) s.add(lower(x));
-    for (const x of skillItems) s.add(lower(x));
-    return s;
-  }, [categoryItems, skillItems]);
-
-  const popularTopicsRaw = useMemo(() => {
-    if (isCreatorCatalog) return readCatalogPopularTopicsLocal();
-    return popularFirestoreLabels;
-  }, [isCreatorCatalog, popularFirestoreLabels, popularRevision]);
-
-  const popularTopics = useMemo(
-    () => sortLabelsLocaleCi(filterPopularTopicsToUniverse(popularTopicsRaw, labelUniverseLower)),
-    [popularTopicsRaw, labelUniverseLower]
-  );
-
-  popularTopicsRawRef.current = popularTopicsRaw;
-
-  useLayoutEffect(() => {
-    if (!publishedCatalogSnapshotReady || isCreatorCatalog) return;
-    const pruned = filterPopularTopicsToUniverse(popularTopicsRaw, labelUniverseLower);
-    if (pruned.length !== popularTopicsRaw.length) {
-      void saveCatalogPopularTopicsFirestore(pruned).then((ok) => {
-        if (!ok) {
-          showActionToast('Could not update Popular topics after pruning stale labels.', 'danger');
-        }
-      });
-    }
-  }, [
-    popularTopicsRaw,
-    labelUniverseLower,
-    publishedCatalogSnapshotReady,
-    isCreatorCatalog,
-    showActionToast,
-  ]);
-
-  const onPopularCopyFromTaxonomy = useCallback(
-    async (label: string, beforeLabel: string | null) => {
-      if (isCreatorCatalog) {
-        const base = filterPopularTopicsToUniverse(readCatalogPopularTopicsLocal(), labelUniverseLower);
-        const next = popularTopicsInsertCopyBefore(base, label, beforeLabel);
-        if (!next) {
-          showActionToast('Already in Popular topics.', 'neutral');
-          return;
-        }
-        writeCatalogPopularTopicsLocal(next);
-        setPopularRevision((r) => r + 1);
-        showActionToast(`Copied “${label.trim()}” to Popular topics (this device).`, 'neutral');
-        return;
-      }
-      const base = filterPopularTopicsToUniverse(popularTopicsRawRef.current, labelUniverseLower);
-      const next = popularTopicsInsertCopyBefore(base, label, beforeLabel);
-      if (!next) {
-        showActionToast('Already in Popular topics.', 'neutral');
-        return;
-      }
-      const ok = await saveCatalogPopularTopicsFirestore(next);
-      if (!ok) showActionToast('Could not save Popular topics.', 'danger');
-      else showActionToast(`Copied “${label.trim()}” to Popular topics.`, 'neutral');
-    },
-    [isCreatorCatalog, labelUniverseLower, showActionToast]
-  );
-
-  const onPopularRemoveFromList = useCallback(
-    async (label: string) => {
-      if (isCreatorCatalog) {
-        const base = filterPopularTopicsToUniverse(readCatalogPopularTopicsLocal(), labelUniverseLower);
-        writeCatalogPopularTopicsLocal(popularTopicsRemoveLabel(base, label));
-        setPopularRevision((r) => r + 1);
-        showActionToast(`Removed “${label}” from Popular topics (this device).`, 'neutral');
-        return;
-      }
-      const base = filterPopularTopicsToUniverse(popularTopicsRawRef.current, labelUniverseLower);
-      const ok = await saveCatalogPopularTopicsFirestore(popularTopicsRemoveLabel(base, label));
-      if (!ok) showActionToast('Could not save Popular topics.', 'danger');
-      else showActionToast(`Removed “${label}” from Popular topics.`, 'neutral');
-    },
-    [isCreatorCatalog, labelUniverseLower, showActionToast]
-  );
-
-  const onTogglePopularPin = useCallback(
-    async (label: string) => {
-      if (isCreatorCatalog) {
-        const base = filterPopularTopicsToUniverse(readCatalogPopularTopicsLocal(), labelUniverseLower);
-        if (popularTopicsHasLabel(base, label)) {
-          await onPopularRemoveFromList(label);
-        } else {
-          await onPopularCopyFromTaxonomy(label, null);
-        }
-        return;
-      }
-      const base = filterPopularTopicsToUniverse(popularTopicsRawRef.current, labelUniverseLower);
-      if (popularTopicsHasLabel(base, label)) {
-        await onPopularRemoveFromList(label);
-      } else {
-        await onPopularCopyFromTaxonomy(label, null);
-      }
-    },
-    [isCreatorCatalog, labelUniverseLower, onPopularRemoveFromList, onPopularCopyFromTaxonomy]
-  );
+  const catalogUsageMaps = useMemo(() => buildCategorySkillUsageMaps(publishedList), [publishedList]);
 
   const suggestProposal = useCallback(
     async (kind: TaxonomyKind, label: string): Promise<boolean> => {
@@ -1006,23 +594,55 @@ export function AdminCatalogTaxonomyPanel({
   );
 
   const suggestDraftTrimmed = globalQuery.trim();
-  const showHeaderSuggest =
+  const headerSearchTrimmed = debouncedGlobal.trim();
+
+  /** Row visibility: wait for debounced search so the block does not flash while typing. */
+  const canSuggestAsCategoryDebounced =
+    isCreatorCatalog &&
+    headerSearchTrimmed.length > 0 &&
+    !headerSuggestBusy &&
+    !categoryItems.some((x) => lower(x) === lower(headerSearchTrimmed)) &&
+    !pendingCategoryProposals.some((p) => lower(p.label) === lower(headerSearchTrimmed));
+  const canSuggestAsSkillDebounced =
+    isCreatorCatalog &&
+    headerSearchTrimmed.length > 0 &&
+    !headerSuggestBusy &&
+    !skillItems.some((x) => lower(x) === lower(headerSearchTrimmed)) &&
+    !pendingSkillProposals.some((p) => lower(p.label) === lower(headerSearchTrimmed));
+  const showSuggestHeaderRow = canSuggestAsCategoryDebounced || canSuggestAsSkillDebounced;
+
+  /** Submit button: use live input so Enter works without waiting for debounce. */
+  const canSuggestAsCategoryNow =
     isCreatorCatalog &&
     suggestDraftTrimmed.length > 0 &&
     !headerSuggestBusy &&
-    (suggestTargetKind === 'category'
-      ? !categoryItems.some((x) => lower(x) === lower(suggestDraftTrimmed)) &&
-        !pendingCategoryProposals.some((p) => lower(p.label) === lower(suggestDraftTrimmed))
-      : !skillItems.some((x) => lower(x) === lower(suggestDraftTrimmed)) &&
-        !pendingSkillProposals.some((p) => lower(p.label) === lower(suggestDraftTrimmed)));
+    !categoryItems.some((x) => lower(x) === lower(suggestDraftTrimmed)) &&
+    !pendingCategoryProposals.some((p) => lower(p.label) === lower(suggestDraftTrimmed));
+  const canSuggestAsSkillNow =
+    isCreatorCatalog &&
+    suggestDraftTrimmed.length > 0 &&
+    !headerSuggestBusy &&
+    !skillItems.some((x) => lower(x) === lower(suggestDraftTrimmed)) &&
+    !pendingSkillProposals.some((p) => lower(p.label) === lower(suggestDraftTrimmed));
+
+  const showHeaderSuggest =
+    suggestTargetKind === 'category'
+      ? canSuggestAsCategoryNow
+      : suggestTargetKind === 'skill'
+        ? canSuggestAsSkillNow
+        : false;
 
   const headerSuggestBlockedHint =
-    isCreatorCatalog && suggestDraftTrimmed.length > 0 && !showHeaderSuggest && !headerSuggestBusy
+    showSuggestHeaderRow &&
+    suggestDraftTrimmed.length > 0 &&
+    !showHeaderSuggest &&
+    !headerSuggestBusy &&
+    suggestTargetKind != null
       ? suggestTargetKind === 'category'
         ? pendingCategoryProposals.some((p) => lower(p.label) === lower(suggestDraftTrimmed))
           ? 'Already pending for this label.'
           : categoryItems.some((x) => lower(x) === lower(suggestDraftTrimmed))
-            ? 'Already listed as a topic.'
+            ? 'Already listed as a category.'
             : null
         : pendingSkillProposals.some((p) => lower(p.label) === lower(suggestDraftTrimmed))
           ? 'Already pending for this label.'
@@ -1031,9 +651,24 @@ export function AdminCatalogTaxonomyPanel({
             : null
       : null;
 
+  useEffect(() => {
+    if (!showSuggestHeaderRow) {
+      setSuggestTargetKind(null);
+      return;
+    }
+    setSuggestTargetKind((prev) => {
+      if (prev === 'category' && canSuggestAsCategoryDebounced) return 'category';
+      if (prev === 'skill' && canSuggestAsSkillDebounced) return 'skill';
+      if (canSuggestAsCategoryDebounced) return 'category';
+      if (canSuggestAsSkillDebounced) return 'skill';
+      return 'category';
+    });
+  }, [showSuggestHeaderRow, canSuggestAsCategoryDebounced, canSuggestAsSkillDebounced]);
+
   const submitHeaderSuggest = useCallback(async () => {
     const t = globalQuery.trim();
     if (!isCreatorCatalog || !t || headerSuggestBusy) return;
+    if (suggestTargetKind !== 'category' && suggestTargetKind !== 'skill') return;
     const k = lower(t);
     const canSubmit =
       suggestTargetKind === 'category'
@@ -1121,7 +756,6 @@ export function AdminCatalogTaxonomyPanel({
     async (p: CatalogTaxonomyProposal) => {
       if (!authUid) return;
       if (!isCreatorCatalog) return;
-      if (!window.confirm(`Withdraw proposal “${p.label}”?`)) return;
       setBusy(true);
       try {
         const ok = await deleteTaxonomyProposal(p.id);
@@ -1186,200 +820,6 @@ export function AdminCatalogTaxonomyPanel({
 
     return { updated, failed };
   };
-
-  const saveCoursesConcurrently = useCallback(async (nextCourses: Course[]) => {
-    const CONCURRENCY = 6;
-    let failed: Course | null = null;
-    let i = 0;
-    const updated: Course[] = [];
-    const worker = async () => {
-      while (true) {
-        if (failed) return;
-        const idx = i;
-        i += 1;
-        const c = nextCourses[idx];
-        if (!c) return;
-        const ok = await onSaveCourse(c);
-        if (!ok) {
-          failed = c;
-          return;
-        }
-        updated.push(c);
-      }
-    };
-    const n = Math.min(CONCURRENCY, nextCourses.length);
-    await Promise.all(Array.from({ length: n }, () => worker()));
-    return { updated, failed };
-  }, [onSaveCourse]);
-
-  const performMigrate = useCallback(
-    async (
-      fromKind: TaxonomyKind,
-      label: string,
-      toKind: TaxonomyKind,
-      beforeLabel: string | null,
-      catOrdSnapshot: readonly string[],
-      skillOrdSnapshot: readonly string[]
-    ) => {
-      if (isCreatorCatalog) return;
-      if (fromKind === toKind) return;
-      const k = lower(label);
-      const t = label.trim();
-      if (!t) return;
-
-      if (fromKind === 'category') {
-        if (removingWouldDeleteLastMainPill(categoryPresets.mainPills, t)) {
-          showActionToast(
-            'Can’t move the last “Popular topic” (main pill). Add another main topic under Topic presets first.',
-            'danger'
-          );
-          return;
-        }
-        const blocked = coursesWithOnlyThisCategory(publishedList, t);
-        if (blocked.length > 0) {
-          showActionToast(formatBlockedCategoryRemovalMessage(blocked, t), 'danger');
-          return;
-        }
-      } else if (removingWouldDeleteLastMainPill(skillPresets.mainPills, t)) {
-        showActionToast(
-          'Can’t move the last main skill pill. Add another main skill under Skill presets first.',
-          'danger'
-        );
-        return;
-      }
-
-      showActionToast('Updating…', 'neutral');
-      setBusy(true);
-      try {
-        let nextCourses: Course[] = [];
-        if (fromKind === 'category') {
-          nextCourses = publishedList
-            .map((c) => {
-              const cats = c.categories ?? [];
-              if (!cats.some((x) => lower(x) === k)) return null;
-              const nextCats = cats.filter((x) => lower(x) !== k);
-              if (nextCats.length === 0) return null;
-              const nextSkills = dedupeLabelsPreserveOrder([...(c.skills ?? []), t]);
-              return { ...c, categories: nextCats, skills: nextSkills } as Course;
-            })
-            .filter((x): x is Course => x != null);
-        } else {
-          nextCourses = publishedList
-            .map((c) => {
-              const skills = c.skills ?? [];
-              if (!skills.some((x) => lower(x) === k)) return null;
-              const nextSkills = skills.filter((x) => lower(x) !== k);
-              const nextCats = dedupeLabelsPreserveOrder([...(c.categories ?? []), t]);
-              return { ...c, categories: nextCats, skills: nextSkills } as Course;
-            })
-            .filter((x): x is Course => x != null);
-        }
-
-        if (nextCourses.length > 0) {
-          const courseUpdate = await saveCoursesConcurrently(nextCourses);
-          if (courseUpdate.failed) {
-            showActionToast(formatCourseSaveFailedMessage(fromKind, courseUpdate.failed), 'danger');
-            return;
-          }
-        }
-
-        let nextCatsState: CatalogCategoryPresetsState;
-        let nextSkillsState: CatalogSkillPresetsState;
-
-        if (fromKind === 'category') {
-          nextCatsState = normalizeCatalogCategoryPresets({
-            mainPills: categoryPresets.mainPills.filter((x) => lower(x) !== k),
-            moreTopics: categoryPresets.moreTopics.filter((x) => lower(x) !== k),
-          });
-          removeCatalogCategoryExtra(t);
-          const alreadySkill = [...skillPresets.mainPills, ...skillPresets.moreSkills].some((x) => lower(x) === k);
-          nextSkillsState = alreadySkill
-            ? normalizeCatalogSkillPresets(skillPresets)
-            : normalizeCatalogSkillPresets({
-                mainPills: skillPresets.mainPills,
-                moreSkills: dedupeLabelsPreserveOrder([...skillPresets.moreSkills, t]),
-              });
-        } else {
-          nextSkillsState = normalizeCatalogSkillPresets({
-            mainPills: skillPresets.mainPills.filter((x) => lower(x) !== k),
-            moreSkills: skillPresets.moreSkills.filter((x) => lower(x) !== k),
-          });
-          removeCatalogSkillExtra(t);
-          const alreadyCat = [...categoryPresets.mainPills, ...categoryPresets.moreTopics].some((x) => lower(x) === k);
-          nextCatsState = alreadyCat
-            ? normalizeCatalogCategoryPresets(categoryPresets)
-            : normalizeCatalogCategoryPresets({
-                mainPills: categoryPresets.mainPills,
-                moreTopics: dedupeLabelsPreserveOrder([...categoryPresets.moreTopics, t]),
-              });
-        }
-
-        await saveCatalogCategoryPresets(nextCatsState);
-        await saveCatalogSkillPresets(nextSkillsState);
-        onPresetsChanged({ categories: nextCatsState, skills: nextSkillsState });
-
-        const nextCatOrder =
-          fromKind === 'category'
-            ? orderWithoutLabel(catOrdSnapshot, t)
-            : orderInsertBefore(orderWithoutLabel(catOrdSnapshot, t), t, beforeLabel);
-        const nextSkillOrder =
-          fromKind === 'category'
-            ? orderInsertBefore(orderWithoutLabel(skillOrdSnapshot, t), t, beforeLabel)
-            : orderWithoutLabel(skillOrdSnapshot, t);
-
-        writeCatalogTaxonomyAdminOrder('category', nextCatOrder);
-        writeCatalogTaxonomyAdminOrder('skill', nextSkillOrder);
-        setOrderRevision((r) => r + 1);
-
-        await onRefreshList();
-        await onCatalogChanged();
-        const movedTo = toKind === 'skill' ? 'Skills' : 'Categories';
-        showActionToast(`Moved “${t}” to ${movedTo}.${formatUpdatedCoursesToastSuffix(nextCourses)}`);
-      } finally {
-        setBusy(false);
-      }
-    },
-    [
-      publishedList,
-      categoryPresets,
-      skillPresets,
-      onPresetsChanged,
-      onRefreshList,
-      onCatalogChanged,
-      showActionToast,
-      saveCoursesConcurrently,
-      isCreatorCatalog,
-    ]
-  );
-
-  const handleTaxonomyDragDrop = useCallback(
-    (payload: Extract<TaxonomyDragPayload, { scope: 'taxonomy' }>, targetKind: TaxonomyKind, beforeLabel: string | null) => {
-      if (isCreatorCatalog) return;
-      if (busy) return;
-      const { kind: srcKind, label } = payload;
-      if (beforeLabel && lower(beforeLabel) === lower(label)) return;
-
-      if (srcKind === targetKind) {
-        const next =
-          targetKind === 'category'
-            ? orderInsertBefore(categoryItems, label, beforeLabel)
-            : orderInsertBefore(skillItems, label, beforeLabel);
-        writeCatalogTaxonomyAdminOrder(targetKind, next);
-        setOrderRevision((r) => r + 1);
-        return;
-      }
-
-      void performMigrate(
-        srcKind,
-        label,
-        targetKind,
-        beforeLabel,
-        categoryItems,
-        skillItems
-      );
-    },
-    [busy, categoryItems, skillItems, performMigrate, isCreatorCatalog]
-  );
 
   const closeConfirm = useCallback(() => setConfirm(null), []);
 
@@ -1450,11 +890,6 @@ export function AdminCatalogTaxonomyPanel({
         if (so) writeCatalogTaxonomyAdminOrder('skill', orderWithoutLabel(so, label));
       }
 
-      const nextPopular = popularTopicsRemoveLabel(popularTopicsRawRef.current, label);
-      const popularOk = await saveCatalogPopularTopicsFirestore(nextPopular);
-      if (!popularOk) {
-        showActionToast('Could not update Popular topics.', 'danger');
-      }
       setOrderRevision((r) => r + 1);
       await onRefreshList();
       await onCatalogChanged();
@@ -1555,11 +990,6 @@ export function AdminCatalogTaxonomyPanel({
         }
       }
 
-      const nextPopular = popularTopicsRenameLabel(popularTopicsRawRef.current, from, to);
-      const popularOk = await saveCatalogPopularTopicsFirestore(nextPopular);
-      if (!popularOk) {
-        showActionToast('Could not update Popular topics.', 'danger');
-      }
       setOrderRevision((r) => r + 1);
       await onRefreshList();
       await onCatalogChanged();
@@ -1607,7 +1037,7 @@ export function AdminCatalogTaxonomyPanel({
                   }
                 }}
                 placeholder="Filter categories or skills…"
-                className="h-10 w-full rounded-lg border border-[var(--border-color)]/90 bg-[var(--bg-secondary)]/40 py-2 pl-9 pr-3 text-sm text-[var(--text-primary)] outline-none transition-[border-color,box-shadow] placeholder:text-[var(--text-muted)]/65 focus:border-[#8b8c8c]/80 focus:ring-2 focus:ring-[#a1a2a2]/20"
+                className="h-10 w-full rounded-lg border border-[var(--border-color)]/90 bg-[var(--bg-secondary)]/55 py-2 pl-9 pr-3 text-sm text-[var(--text-primary)] outline-none transition-[border-color,box-shadow] placeholder:text-[var(--text-muted)]/65 focus:border-[#8b8c8c]/80 focus:ring-2 focus:ring-[#a1a2a2]/20 app-dark:bg-[#1c1c1c]/55"
               />
             </div>
             {showClearAllSearches ? (
@@ -1621,58 +1051,67 @@ export function AdminCatalogTaxonomyPanel({
             ) : null}
           </div>
 
-          {isCreatorCatalog ? (
-            <div className="flex min-w-0 flex-col gap-2 border-t border-[var(--border-color)]/60 pt-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
-              <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">Suggest as</span>
-              <div
-                className="inline-flex rounded-lg border border-[var(--border-color)]/80 bg-[var(--bg-secondary)]/30 p-0.5"
-                role="group"
-                aria-label="Suggest label kind"
-              >
-                <button
-                  type="button"
-                  onClick={() => setSuggestTargetKind('category')}
-                  className={`min-h-9 min-w-[5.5rem] rounded-md px-2.5 text-xs font-semibold transition-colors ${
-                    suggestTargetKind === 'category'
-                      ? 'bg-[var(--bg-primary)] text-[var(--text-primary)] shadow-sm'
-                      : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
-                  }`}
+          {showSuggestHeaderRow ? (
+            <div className="flex w-full min-w-0 flex-row flex-wrap items-center gap-x-2 gap-y-1 border-t border-[var(--border-color)]/60 pt-3">
+              <div className="flex min-w-0 flex-row flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                  Suggest as
+                </span>
+                <div
+                  className="inline-flex rounded-full border border-[var(--border-color)]/70 bg-[var(--bg-secondary)]/25 p-0.5"
+                  role="group"
+                  aria-label="Suggest label kind"
                 >
-                  Topic
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSuggestTargetKind('skill')}
-                  className={`min-h-9 min-w-[5.5rem] rounded-md px-2.5 text-xs font-semibold transition-colors ${
-                    suggestTargetKind === 'skill'
-                      ? 'bg-[var(--bg-primary)] text-[var(--text-primary)] shadow-sm'
-                      : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
-                  }`}
-                >
-                  Skill
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setSuggestTargetKind('category')}
+                    className={`inline-flex min-h-9 min-w-0 items-center justify-center gap-1 rounded-full px-3 text-xs font-semibold transition-colors ${
+                      suggestTargetKind === 'category'
+                        ? 'bg-[#214371] text-white shadow-sm app-dark:bg-[#214371] app-dark:text-white'
+                        : 'text-[var(--text-muted)] hover:bg-[var(--bg-secondary)]/50 hover:text-[var(--text-primary)]'
+                    }`}
+                  >
+                    <Tag size={14} strokeWidth={2} className="shrink-0 opacity-90" aria-hidden />
+                    Category
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSuggestTargetKind('skill')}
+                    className={`inline-flex min-h-9 min-w-0 items-center justify-center gap-1 rounded-full px-3 text-xs font-semibold transition-colors ${
+                      suggestTargetKind === 'skill'
+                        ? 'bg-[#214371] text-white shadow-sm app-dark:bg-[#214371] app-dark:text-white'
+                        : 'text-[var(--text-muted)] hover:bg-[var(--bg-secondary)]/50 hover:text-[var(--text-primary)]'
+                    }`}
+                  >
+                    <Cog size={14} strokeWidth={2} className="shrink-0 opacity-90" aria-hidden />
+                    Skill
+                  </button>
+                </div>
+                {showHeaderSuggest ? (
+                  <button
+                    type="button"
+                    disabled={headerSuggestBusy}
+                    onClick={() => void submitHeaderSuggest()}
+                    className="inline-flex min-h-9 min-w-0 flex-1 touch-manipulation items-center justify-center rounded-lg border border-[#8b8c8c]/75 bg-[#757676]/12 px-3 text-sm font-medium text-[#393a3a] hover:bg-[#757676]/18 disabled:opacity-40 app-dark:text-[#e7e7e7] sm:min-w-[10rem] sm:flex-none"
+                  >
+                    {headerSuggestBusy ? 'Submitting…' : `Suggest “${suggestDraftTrimmed}”`}
+                  </button>
+                ) : null}
               </div>
-              {showHeaderSuggest ? (
-                <button
-                  type="button"
-                  disabled={headerSuggestBusy}
-                  onClick={() => void submitHeaderSuggest()}
-                  className="inline-flex min-h-9 flex-1 touch-manipulation items-center justify-center rounded-lg border border-[#8b8c8c]/75 bg-[#757676]/12 px-3 text-sm font-medium text-[#393a3a] hover:bg-[#757676]/18 disabled:opacity-40 app-dark:text-[#e7e7e7] sm:flex-none"
-                >
-                  {headerSuggestBusy ? 'Submitting…' : `Suggest “${suggestDraftTrimmed}”`}
-                </button>
-              ) : null}
               {headerSuggestBlockedHint ? (
-                <p className="w-full text-xs text-[#393a3a] app-dark:text-[#cfcfcf]" role="status">
+                <span
+                  className="ml-auto w-full min-w-0 max-w-full shrink-0 text-end text-[11px] leading-snug text-[#393a3a] sm:w-auto sm:max-w-[min(100%,20rem)] app-dark:text-[#cfcfcf]"
+                  role="status"
+                >
                   {headerSuggestBlockedHint}
-                </p>
+                </span>
               ) : null}
             </div>
           ) : null}
         </div>
       </header>
 
-      <div className="grid min-h-0 min-w-0 grid-cols-1 gap-3 lg:grid-cols-3 lg:items-stretch lg:gap-3">
+      <div className="grid min-h-0 min-w-0 grid-cols-1 gap-3 lg:grid-cols-2 lg:items-stretch lg:gap-4">
         <div className="min-h-0 min-w-0">
           <TaxonomySection
             title="Categories"
@@ -1689,23 +1128,10 @@ export function AdminCatalogTaxonomyPanel({
             onRemoveEverywhere={async (name) => {
               removeEverywhere('category', name);
             }}
-            onDragDrop={handleTaxonomyDragDrop}
-            popularTopicsPinned={popularTopics}
-            popularTopicsSiteWide={!isCreatorCatalog}
-            onTogglePopularPin={onTogglePopularPin}
+            courseUsageCount={(label) => courseCountForCategoryLabel(catalogUsageMaps, label)}
             onApproveProposal={(p) => void handleApproveProposal(p)}
             onRejectProposal={(p) => void handleRejectProposal(p)}
             onWithdrawProposal={(p) => void handleWithdrawProposal(p)}
-          />
-        </div>
-
-        <div className="min-h-0 min-w-0">
-          <PopularTopicsSection
-            items={popularTopics}
-            busy={busy}
-            globalFilterText={debouncedGlobal}
-            scopeSubtitle={isCreatorCatalog ? 'This device' : 'Site-wide'}
-            onRemoveFromList={onPopularRemoveFromList}
           />
         </div>
 
@@ -1725,10 +1151,7 @@ export function AdminCatalogTaxonomyPanel({
             onRemoveEverywhere={async (name) => {
               removeEverywhere('skill', name);
             }}
-            onDragDrop={handleTaxonomyDragDrop}
-            popularTopicsPinned={popularTopics}
-            popularTopicsSiteWide={!isCreatorCatalog}
-            onTogglePopularPin={onTogglePopularPin}
+            courseUsageCount={(label) => courseCountForSkillLabel(catalogUsageMaps, label)}
             onApproveProposal={(p) => void handleApproveProposal(p)}
             onRejectProposal={(p) => void handleRejectProposal(p)}
             onWithdrawProposal={(p) => void handleWithdrawProposal(p)}
