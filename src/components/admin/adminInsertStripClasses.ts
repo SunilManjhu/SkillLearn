@@ -7,7 +7,7 @@
 export const ADMIN_INSERT_STRIP_REVEAL_DELAY_MS = 250;
 
 export const ADMIN_INSERT_STRIP_OUTER_EXPAND_HOVER =
-  'max-md:overflow-visible max-md:py-0 md:overflow-hidden md:py-0 md:transition-[max-height] md:duration-200 md:ease-out md:delay-0 md:max-h-3 md:hover:max-h-[4.25rem] md:hover:delay-[250ms] md:focus-within:max-h-[4.25rem] md:focus-within:delay-[250ms]';
+  'max-md:overflow-visible max-md:py-0 md:overflow-hidden md:py-0 md:transition-[max-height] md:duration-200 md:ease-out md:delay-0 md:max-h-3 md:hover:max-h-[4.25rem] md:hover:delay-[250ms] md:focus-within:max-h-[4.25rem] md:focus-within:delay-[250ms] md:rounded-md md:outline md:outline-1 md:outline-dashed md:outline-[var(--border-color)]/35 md:hover:outline-[var(--border-color)]/55 md:focus-within:outline-[var(--border-color)]/65';
 
 export const ADMIN_INSERT_STRIP_CHIP_BTN_PERSIST =
   'cursor-pointer flex w-full min-w-0 max-w-full min-h-11 touch-manipulation items-center justify-center gap-1.5 rounded-md border border-dashed border-[var(--border-color)]/50 bg-[var(--bg-secondary)]/25 px-4 py-1.5 text-[11px] font-semibold text-[var(--text-muted)] opacity-90 transition-[background-color,border-color,color,opacity] duration-150 ease-out hover:border-[#8b8c8c]/50 hover:bg-[#616161]/15 hover:text-[#393a3a] hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/40 app-dark:hover:bg-[#757676]/20 app-dark:hover:text-[#e7e7e7] sm:px-6';

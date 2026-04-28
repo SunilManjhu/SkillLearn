@@ -716,6 +716,22 @@ function lessonRowHiddenUnderCollapsedDivider(
   return !!sectionsCollapsed[`${mi}:${d}`];
 }
 
+/** Last list index shown in the catalog (playable rows under a collapsed divider are skipped). */
+function catalogLastVisibleLessonRowIndex(
+  mod: Module,
+  mi: number,
+  sectionsCollapsed: Record<string, boolean>
+): number | null {
+  const L = mod.lessons.length;
+  if (L === 0) return null;
+  for (let li = L - 1; li >= 0; li -= 1) {
+    if (!lessonRowHiddenUnderCollapsedDivider(mod, mi, li, sectionsCollapsed)) {
+      return li;
+    }
+  }
+  return null;
+}
+
 /** Playable row sits in a subsection (nearest divider above in this module). */
 function lessonRowInSectionUnderDivider(mod: Module, li: number): boolean {
   const row = mod.lessons[li];
@@ -726,6 +742,17 @@ function lessonRowInSectionUnderDivider(mod: Module, li: number): boolean {
 /** Insert position `insertAt` is inside a subsection (after a divider, before the next divider). */
 function lessonInsertSlotInSectionUnderDivider(mod: Module, insertAt: number): boolean {
   return nearestSectionDividerIndexAbove(mod, insertAt) !== null;
+}
+
+/**
+ * `insertAt` is the last insert index inside the subsection under the nearest divider above
+ * (append here stays in that subsection; smaller `insertAt` in the same block are “between” rows).
+ */
+function catalogInsertSlotIsTailOfSubsectionUnderDivider(mod: Module, insertAt: number): boolean {
+  const divIx = nearestSectionDividerIndexAbove(mod, insertAt);
+  if (divIx === null) return false;
+  const endEx = indexOfNextDividerOrEnd(mod, divIx + 1);
+  return insertAt === endEx;
 }
 
 function catalogInsertStripQuoteName(raw: string, maxLen = 44): string {
@@ -771,6 +798,31 @@ function catalogInsertAfterLessonRowParams(
     buttonLabel: catalogInsertAddBranchUnderLabel(name),
     ariaLabel: `Add branch under ${name}`,
   };
+}
+
+/**
+ * Same insert index and labels as a gutter **after** the module’s last row (used at the module boundary
+ * where we omit a duplicate `CatalogLessonInsertSlot`).
+ */
+function catalogInsertAfterLastLessonRowParams(
+  mod: Module,
+  mi: number,
+  sectionsCollapsed: Record<string, boolean>
+): { insertAt: number; buttonLabel: string; ariaLabel: string; title?: string } {
+  const L = mod.lessons.length;
+  if (L === 0) {
+    const modName = catalogMiniRichPlainText(mod.title ?? '') || 'Module';
+    return {
+      insertAt: 0,
+      buttonLabel: catalogInsertAddBranchUnderLabel(modName),
+      ariaLabel: `Add branch at the start of ${modName}`,
+    };
+  }
+  const lastVis = catalogLastVisibleLessonRowIndex(mod, mi, sectionsCollapsed);
+  if (lastVis === null) {
+    return catalogInsertAfterLessonRowParams(mod, mi, L - 1, sectionsCollapsed);
+  }
+  return catalogInsertAfterLessonRowParams(mod, mi, lastVis, sectionsCollapsed);
 }
 
 /** Indents catalog rows / gaps that belong under a section divider (mobile-first). */
@@ -1059,6 +1111,7 @@ function CatalogLessonModuleBoundaryInsertRow({
   onAddModule,
   branchButtonLabel,
   branchAriaLabel,
+  branchButtonTitle,
   moduleAriaLabel,
 }: {
   persistVisibleOnMd: boolean;
@@ -1066,9 +1119,12 @@ function CatalogLessonModuleBoundaryInsertRow({
   onAddModule: () => void;
   branchButtonLabel: string;
   branchAriaLabel: string;
+  /** Tooltip for the add-branch chip (default: end of module list). */
+  branchButtonTitle?: string;
   moduleAriaLabel: string;
 }) {
   const branchTitle =
+    branchButtonTitle ??
     'Adds a row at the end of this module’s list (same as the last gutter above).';
   const moduleTitle = 'Adds a new module at this position in the course outline.';
   const gutterTitle = persistVisibleOnMd ? undefined : `${branchTitle} ${moduleTitle}`;
@@ -1360,6 +1416,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
   const [courseDescriptionBioOpen, setCourseDescriptionBioOpen] = useState(false);
   const [openModules, setOpenModules] = useState<Record<number, boolean>>({});
   const [openLessons, setOpenLessons] = useState<Record<string, boolean>>({});
+  const anyModuleExpanded = useMemo(() => Object.values(openModules).some(Boolean), [openModules]);
   /** Divider row key `mi:li` → true hides playable rows under that divider until the next divider (default: expanded). */
   const [dividerSectionsCollapsed, setDividerSectionsCollapsed] = useState<Record<string, boolean>>({});
   /** After a successful save while a lesson was expanded: offer “add another” at this insert index. */
@@ -5091,11 +5148,13 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               </div>
             </div>
 
-            <CatalogModuleInsertSlot
-              persistVisibleOnMd={draft.modules.length === 0}
-              ariaLabel="Add module here before the first module"
-              onClick={() => addModuleAt(0)}
-            />
+            {!anyModuleExpanded && (
+              <CatalogModuleInsertSlot
+                persistVisibleOnMd={draft.modules.length === 0}
+                ariaLabel="Add module here before the first module"
+                onClick={() => addModuleAt(0)}
+              />
+            )}
 
             {draft.modules.map((mod, mi) => {
               const toggleThisModuleRow = () => {
@@ -5347,7 +5406,13 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     onClick={() => setAddLessonBranchModal({ mi, insertAt: 0 })}
                   />
                   <div>
-                  {mod.lessons.map((lesson, li) => {
+                  {(() => {
+                    const lastVisibleLessonLi = catalogLastVisibleLessonRowIndex(
+                      mod,
+                      mi,
+                      dividerSectionsCollapsed
+                    );
+                    return mod.lessons.map((lesson, li) => {
                     const lessonRowKey = lessonRowDomKey(lesson, mi, li);
                     if (lessonRowHiddenUnderCollapsedDivider(mod, mi, li, dividerSectionsCollapsed)) {
                       return <Fragment key={lessonRowKey} />;
@@ -5361,6 +5426,9 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             dividerSectionsCollapsed
                           )
                         : null;
+                    const isCollapsedDividerRow =
+                      lesson.contentKind === 'divider' &&
+                      !!dividerSectionsCollapsed[`${mi}:${li}`];
                     return (
                     <Fragment key={lessonRowKey}>
                     <div
@@ -6119,15 +6187,31 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       )}
                     </div>
                     {insertAfterThisRow ? (
+                      isCollapsedDividerRow && lastVisibleLessonLi === li ? null : (
                       <div
                         className={
-                          lessonInsertSlotInSectionUnderDivider(mod, insertAfterThisRow.insertAt)
+                          isCollapsedDividerRow
+                            ? undefined
+                            : lessonInsertSlotInSectionUnderDivider(mod, insertAfterThisRow.insertAt)
                             ? CATALOG_LESSON_SECTION_UNDER_DIVIDER_INDENT
                             : undefined
                         }
                       >
                         <CatalogLessonInsertSlot
-                          persistVisibleOnMd={false}
+                          persistVisibleOnMd={(() => {
+                            const rowBeforeGutter = mod.lessons[li];
+                            if (
+                              rowBeforeGutter?.contentKind === 'divider' &&
+                              dividerSectionsCollapsed[`${mi}:${li}`]
+                            ) {
+                              return false;
+                            }
+                            const at = insertAfterThisRow.insertAt;
+                            return (
+                              lessonInsertSlotInSectionUnderDivider(mod, at) &&
+                              catalogInsertSlotIsTailOfSubsectionUnderDivider(mod, at)
+                            );
+                          })()}
                           ariaLabel={insertAfterThisRow.ariaLabel}
                           buttonLabel={insertAfterThisRow.buttonLabel}
                           title={insertAfterThisRow.title}
@@ -6136,28 +6220,55 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           }
                         />
                       </div>
+                      )
                     ) : null}
                     </Fragment>
                   );
-                  })}
-                  {mod.lessons.length > 0 && (
-                    <CatalogLessonModuleBoundaryInsertRow
-                      persistVisibleOnMd={false}
-                      onAddBranch={() => setAddLessonBranchModal({ mi, insertAt: mod.lessons.length })}
-                      onAddModule={() => addModuleAt(mi + 1)}
-                      branchButtonLabel={catalogInsertAddBranchUnderLabel(
-                        catalogMiniRichPlainText(mod.title ?? '') || 'Module'
-                      )}
-                      branchAriaLabel={`Add branch at the end of ${catalogMiniRichPlainText(mod.title ?? '') || 'Module'}`}
-                      moduleAriaLabel={`Add module here after module ${mi + 1}`}
-                    />
-                  )}
+                  });
+                  })()}
+                  {mod.lessons.length > 0 && (() => {
+                    const endAfterLast = catalogInsertAfterLastLessonRowParams(
+                      mod,
+                      mi,
+                      dividerSectionsCollapsed
+                    );
+                    const lastVis =
+                      catalogLastVisibleLessonRowIndex(mod, mi, dividerSectionsCollapsed) ??
+                      mod.lessons.length - 1;
+                    const lastRow = mod.lessons[lastVis];
+                    const collapsedLastDivider =
+                      lastRow?.contentKind === 'divider' &&
+                      !!dividerSectionsCollapsed[`${mi}:${lastVis}`];
+                    const boundarySubsectionIndent =
+                      !collapsedLastDivider &&
+                      lessonInsertSlotInSectionUnderDivider(mod, endAfterLast.insertAt)
+                        ? CATALOG_LESSON_SECTION_UNDER_DIVIDER_INDENT
+                        : undefined;
+                    const branchBoundaryTitle =
+                      endAfterLast.title ??
+                      (boundarySubsectionIndent != null
+                        ? 'Adds a row at the end of this subsection (under the section divider), before the next divider or end of module.'
+                        : undefined);
+                    return (
+                      <div className={boundarySubsectionIndent}>
+                        <CatalogLessonInsertSlot
+                          persistVisibleOnMd={boundarySubsectionIndent != null}
+                          ariaLabel={endAfterLast.ariaLabel}
+                          buttonLabel={endAfterLast.buttonLabel}
+                          title={branchBoundaryTitle}
+                          onClick={() =>
+                            setAddLessonBranchModal({ mi, insertAt: endAfterLast.insertAt })
+                          }
+                        />
+                      </div>
+                    );
+                  })()}
                   </div>
                 </div>
                 </>
                 )}
               </div>
-              {(!openModules[mi] || mod.lessons.length === 0) && (
+              {!anyModuleExpanded && (
                 <CatalogModuleInsertSlot
                   persistVisibleOnMd={false}
                   ariaLabel={`Add module here after module ${mi + 1}`}

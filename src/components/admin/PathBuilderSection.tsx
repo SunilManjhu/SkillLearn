@@ -3754,6 +3754,15 @@ function PathBranchTreeList({
           pathBranchRowHasExpandableNested(b, depth) &&
           !pathBranchNodeIsCollapsed(b, depth, expandedBranchIds);
         /**
+         * Top-level expanded module/section with visible nested children: the nested list already contains insert controls
+         * (including its boundary row). Avoid rendering a second top-level insert strip directly below it.
+         */
+        const omitTrailingAfterExpandedTopLevelWithChildren =
+          parentId === null &&
+          b.children.length > 0 &&
+          pathBranchRowHasExpandableNested(b, depth) &&
+          !pathBranchNodeIsCollapsed(b, depth, expandedBranchIds);
+        /**
          * Expanded divider with children: the nested `PathBranchTreeList` already ends with
          * `PathNestedOutlineBoundaryInsertRow` — skip this trailing strip or it duplicates “add at end of divider”.
          */
@@ -3764,10 +3773,16 @@ function PathBranchTreeList({
         const showTrailingInsertSlot =
           !omitNestedTrailingSlot &&
           !omitTopLevelTrailingSlot &&
+          !omitTrailingAfterExpandedTopLevelWithChildren &&
           !omitTrailingAfterExpandedDividerWithChildren;
+        /**
+         * Divider row: when its nested list is collapsed, treat the next gutter as “add under divider” (quick add without
+         * expanding). When it is expanded (including empty-but-open), the gutter after the divider should insert at the
+         * parent list level (the module/section), since “add under divider” is already available inside the open list.
+         */
         const dividerTrailingTargetsInnerList =
           b.kind === 'divider' &&
-          !pathBranchNodeIsCollapsed(b, depth, expandedBranchIds);
+          pathBranchNodeIsCollapsed(b, depth, expandedBranchIds);
         const trailingInsertParentId = dividerTrailingTargetsInnerList ? b.id : parentId;
         const trailingInsertIndex = dividerTrailingTargetsInnerList ? b.children.length : i + 1;
         const trailingInsertListOwnerDisplayName =
@@ -3820,8 +3835,9 @@ function PathBranchTreeList({
           const lastIsDivider = last?.kind === 'divider';
           const lastDividerDisplayName =
             lastIsDivider ? branchNodeDisplayLabel(last, publishedList) : undefined;
-          const onAddBranchUnderLastDivider =
-            lastIsDivider ? () => onInsertBranchAt(last!.id, last!.children.length) : undefined;
+          // Avoid context-confusing “Add under divider” at the section boundary (especially when dividers are collapsed).
+          // To add inside a divider group, expand the divider and use its nested insert strips.
+          const onAddBranchUnderLastDivider = undefined;
           return (
         <PathNestedOutlineBoundaryInsertRow
           sectionDisplayName={
