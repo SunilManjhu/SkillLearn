@@ -46,6 +46,7 @@ import type { CatalogTaxonomyProposal } from '../../utils/catalogTaxonomyProposa
 import {
   approveTaxonomyProposalAndMerge,
   createTaxonomyProposal,
+  deleteTaxonomyProposal,
   setTaxonomyProposalRejected,
   subscribeMyPendingTaxonomyProposals,
   subscribePendingTaxonomyProposals,
@@ -306,6 +307,7 @@ function TaxonomySection({
   readOnlyTaxonomy,
   pendingProposals,
   showAdminProposalActions,
+  showCreatorWithdrawActions,
   listLayout = 'wrap',
   headerCount,
   onRenameEverywhere,
@@ -316,6 +318,7 @@ function TaxonomySection({
   onTogglePopularPin,
   onApproveProposal,
   onRejectProposal,
+  onWithdrawProposal,
 }: {
   title: string;
   kind: TaxonomyKind;
@@ -325,6 +328,7 @@ function TaxonomySection({
   readOnlyTaxonomy: boolean;
   pendingProposals: readonly CatalogTaxonomyProposal[];
   showAdminProposalActions: boolean;
+  showCreatorWithdrawActions: boolean;
   /** `grid`: two columns of chips from `sm` up (course catalog taxonomy mock). */
   listLayout?: 'wrap' | 'grid';
   /** Optional count pill in the section header (e.g. total labels). */
@@ -340,6 +344,7 @@ function TaxonomySection({
   onTogglePopularPin: (label: string) => void | Promise<void>;
   onApproveProposal: (p: CatalogTaxonomyProposal) => void;
   onRejectProposal: (p: CatalogTaxonomyProposal) => void;
+  onWithdrawProposal: (p: CatalogTaxonomyProposal) => void;
 }) {
   const [editingLabel, setEditingLabel] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState('');
@@ -436,6 +441,17 @@ function TaxonomySection({
                       className="inline-flex min-h-9 min-w-[5rem] items-center justify-center rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-40"
                     >
                       Reject
+                    </button>
+                  </div>
+                ) : showCreatorWithdrawActions ? (
+                  <div className="flex shrink-0 flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => onWithdrawProposal(p)}
+                      className="inline-flex min-h-9 min-w-[6rem] items-center justify-center rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-40"
+                    >
+                      Withdraw
                     </button>
                   </div>
                 ) : null}
@@ -1101,6 +1117,23 @@ export function AdminCatalogTaxonomyPanel({
     [authUid, showActionToast]
   );
 
+  const handleWithdrawProposal = useCallback(
+    async (p: CatalogTaxonomyProposal) => {
+      if (!authUid) return;
+      if (!isCreatorCatalog) return;
+      if (!window.confirm(`Withdraw proposal “${p.label}”?`)) return;
+      setBusy(true);
+      try {
+        const ok = await deleteTaxonomyProposal(p.id);
+        if (!ok) showActionToast('Could not withdraw proposal.', 'danger');
+        else showActionToast(`Withdrew “${p.label.trim()}”.`, 'neutral');
+      } finally {
+        setBusy(false);
+      }
+    },
+    [authUid, isCreatorCatalog, showActionToast]
+  );
+
   const updateCoursesEverywhere = async (kind: TaxonomyKind, from: string, to?: string) => {
     const fromK = lower(from);
     if (kind === 'category' && !to) {
@@ -1650,6 +1683,7 @@ export function AdminCatalogTaxonomyPanel({
             readOnlyTaxonomy={isCreatorCatalog}
             pendingProposals={pendingCategoryProposals}
             showAdminProposalActions={!isCreatorCatalog}
+            showCreatorWithdrawActions={isCreatorCatalog}
             headerCount={categoryItems.length}
             onRenameEverywhere={(from, to) => renameEverywhere('category', from, to)}
             onRemoveEverywhere={async (name) => {
@@ -1661,6 +1695,7 @@ export function AdminCatalogTaxonomyPanel({
             onTogglePopularPin={onTogglePopularPin}
             onApproveProposal={(p) => void handleApproveProposal(p)}
             onRejectProposal={(p) => void handleRejectProposal(p)}
+            onWithdrawProposal={(p) => void handleWithdrawProposal(p)}
           />
         </div>
 
@@ -1684,6 +1719,7 @@ export function AdminCatalogTaxonomyPanel({
             readOnlyTaxonomy={isCreatorCatalog}
             pendingProposals={pendingSkillProposals}
             showAdminProposalActions={!isCreatorCatalog}
+            showCreatorWithdrawActions={isCreatorCatalog}
             headerCount={skillItems.length}
             onRenameEverywhere={(from, to) => renameEverywhere('skill', from, to)}
             onRemoveEverywhere={async (name) => {
@@ -1695,6 +1731,7 @@ export function AdminCatalogTaxonomyPanel({
             onTogglePopularPin={onTogglePopularPin}
             onApproveProposal={(p) => void handleApproveProposal(p)}
             onRejectProposal={(p) => void handleRejectProposal(p)}
+            onWithdrawProposal={(p) => void handleWithdrawProposal(p)}
           />
         </div>
       </div>

@@ -1,6 +1,7 @@
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   onSnapshot,
   orderBy,
@@ -148,6 +149,20 @@ export async function setTaxonomyProposalRejected(
     return true;
   } catch (e) {
     handleFirestoreError(e, OperationType.WRITE, `${CATALOG_TAXONOMY_PROPOSALS_COLLECTION}/${proposalId}`);
+    return false;
+  }
+}
+
+/**
+ * Creator withdraw: delete a pending proposal. Firestore rules allow deleting own pending docs.
+ * Admin can also delete proposals.
+ */
+export async function deleteTaxonomyProposal(proposalId: string): Promise<boolean> {
+  try {
+    await deleteDoc(doc(db, CATALOG_TAXONOMY_PROPOSALS_COLLECTION, proposalId));
+    return true;
+  } catch (e) {
+    handleFirestoreError(e, OperationType.DELETE, `${CATALOG_TAXONOMY_PROPOSALS_COLLECTION}/${proposalId}`);
     return false;
   }
 }

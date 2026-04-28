@@ -508,7 +508,7 @@ service cloud.firestore {
 
     function isValidCatalogSkillPresetsWrite(data) {
       return data.keys().hasAll(['mainPills', 'moreSkills']) &&
-        data.mainPills is list && data.mainPills.size() > 0 && data.mainPills.size() <= 40 &&
+        data.mainPills is list && data.mainPills.size() <= 40 &&
         data.moreSkills is list && data.moreSkills.size() <= 40 &&
         (!('updatedAt' in data) || data.updatedAt is timestamp);
     }

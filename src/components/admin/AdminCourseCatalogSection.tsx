@@ -53,6 +53,7 @@ import { AdminCatalogSkillPresetsPanel } from './AdminCatalogSkillPresetsPanel';
 import { AdminCatalogTaxonomyPanel } from './AdminCatalogTaxonomyPanel';
 import { AdminCatalogCoursePicker } from './AdminCatalogCoursePicker';
 import { AdminListboxSelect } from './AdminListboxSelect';
+import { AdminSmartMultiselect } from './AdminSmartMultiselect';
 import { ADMIN_COURSE_LEVEL_LISTBOX_OPTIONS } from './adminListboxSharedOptions';
 import {
   ADMIN_INSERT_STRIP_CHIP_BTN_EXPAND_ROW as ADMIN_CATALOG_INSERT_CHIP_BTN_EXPAND_ROW,
@@ -4851,73 +4852,22 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                   </div>
                 </span>
               </div>
-              <div className="flex max-h-24 min-h-9 flex-wrap gap-1.5 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch] pr-0.5">
-                {draft.categories.length === 0 ? (
-                  <span className="text-xs text-[var(--text-muted)]">Add at least one category.</span>
-                ) : (
-                  draft.categories.map((cat) => (
-                    <span
-                      key={cat}
-                      className="inline-flex max-w-full min-w-0 items-center gap-1 rounded-lg border border-[var(--border-color)] bg-[var(--hover-bg)] px-2 py-1 text-xs font-medium text-[var(--text-primary)]"
-                    >
-                      <span className="truncate">{cat}</span>
-                      <button
-                        type="button"
-                        onClick={() => removeDraftCategory(cat)}
-                        className="shrink-0 rounded p-0.5 text-[var(--text-muted)] hover:bg-[var(--bg-primary)] hover:text-[var(--text-primary)] min-h-8 min-w-8 inline-flex items-center justify-center"
-                        aria-label={`Remove category ${cat}`}
-                      >
-                        <X size={14} aria-hidden />
-                      </button>
-                    </span>
-                  ))
-                )}
-              </div>
-              <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(12rem,1.75fr)_minmax(8rem,1fr)_auto] sm:items-stretch">
-                <AdminListboxSelect
-                  key={`admin-cat-pick-${draft.categories.join('\u001f')}`}
-                  id="admin-course-add-category-from-list"
-                  value=""
-                  aria-label="Add category from list"
-                  onChange={(v) => {
-                    if (!v) return;
-                    addDraftCategory(v);
-                  }}
-                  onTriggerBlur={registerDraftTaxonomyExtras}
-                  options={categoryAddListboxOptions}
-                  placeholder="Add from list…"
-                  emptyMessage="All listed categories are on this course."
-                  triggerClassName="box-border min-h-11 min-w-0 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] touch-manipulation"
-                />
-                <input
-                  type="text"
-                  id="admin-course-custom-category"
-                  placeholder="Or type custom…"
-                  aria-label="Add custom category"
-                  onKeyDown={(e) => {
-                    if (e.key !== 'Enter') return;
-                    e.preventDefault();
-                    const el = e.currentTarget;
-                    addDraftCategory(el.value);
-                    el.value = '';
-                  }}
-                  onBlur={registerDraftTaxonomyExtras}
-                  className="box-border min-h-11 min-w-0 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    const el = document.getElementById('admin-course-custom-category');
-                    if (el instanceof HTMLInputElement) {
-                      addDraftCategory(el.value);
-                      el.value = '';
-                    }
-                  }}
-                  className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center rounded-lg border border-[var(--border-color)] px-3 text-sm font-bold text-[#616161] hover:bg-[var(--hover-bg)] app-dark:text-[var(--tone-100)] sm:w-auto sm:min-w-[5.25rem]"
-                >
-                  Add
-                </button>
-              </div>
+              <AdminSmartMultiselect
+                id="admin-course-category-smart-multiselect"
+                aria-label="Categories"
+                disabled={!draft}
+                value={draft.categories}
+                options={categoryAddListboxOptions.map((o) => o.value)}
+                allowCustom={!isCreatorCatalog}
+                onAdd={(v) => addDraftCategory(v)}
+                onRemove={(v) => removeDraftCategory(v)}
+                onTriggerBlur={registerDraftTaxonomyExtras}
+                placeholder="Search or add custom…"
+                emptyMessage="All listed categories are on this course."
+              />
+              {draft.categories.length === 0 ? (
+                <span className="mt-1 block text-xs text-[var(--text-muted)]">Add at least one category.</span>
+              ) : null}
             </div>
             <div
               id="admin-course-skills"
@@ -4930,81 +4880,28 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
               >
                 Skills
               </span>
-              <div className="flex max-h-24 min-h-9 flex-wrap gap-1.5 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch] pr-0.5">
-                {draft.skills.length === 0 ? (
-                  <span
-                    className={`text-xs ${
-                      showValidationHints && fieldErrors.courseSkills
-                        ? 'font-medium text-[#a1a2a2]'
-                        : 'text-[var(--text-muted)]'
-                    }`}
-                  >
-                    Add at least one skill.
-                  </span>
-                ) : (
-                  draft.skills.map((sk) => (
-                    <span
-                      key={sk}
-                      className="inline-flex max-w-full min-w-0 items-center gap-1 rounded-lg border border-[var(--border-color)] bg-[var(--hover-bg)] px-2 py-1 text-xs font-medium text-[var(--text-primary)]"
-                    >
-                      <span className="truncate">{sk}</span>
-                      <button
-                        type="button"
-                        onClick={() => removeDraftSkill(sk)}
-                        className="shrink-0 rounded p-0.5 text-[var(--text-muted)] hover:bg-[var(--bg-primary)] hover:text-[var(--text-primary)] min-h-8 min-w-8 inline-flex items-center justify-center"
-                        aria-label={`Remove skill ${sk}`}
-                      >
-                        <X size={14} aria-hidden />
-                      </button>
-                    </span>
-                  ))
-                )}
-              </div>
-              <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(12rem,1.75fr)_minmax(8rem,1fr)_auto] sm:items-stretch">
-                <AdminListboxSelect
-                  key={`admin-skill-pick-${draft.skills.join('\u001f')}`}
-                  id="admin-course-add-skill-from-list"
-                  value=""
-                  aria-label="Add skill from list"
-                  onChange={(v) => {
-                    if (!v) return;
-                    addDraftSkill(v);
-                  }}
-                  onTriggerBlur={registerDraftTaxonomyExtras}
-                  options={skillAddListboxOptions}
-                  placeholder="Add from list…"
-                  emptyMessage="All listed skills are on this course."
-                  triggerClassName="box-border min-h-11 min-w-0 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] touch-manipulation"
-                />
-                <input
-                  type="text"
-                  id="admin-course-custom-skill"
-                  placeholder="Or type custom…"
-                  aria-label="Add custom skill"
-                  onKeyDown={(e) => {
-                    if (e.key !== 'Enter') return;
-                    e.preventDefault();
-                    const el = e.currentTarget;
-                    addDraftSkill(el.value);
-                    el.value = '';
-                  }}
-                  onBlur={registerDraftTaxonomyExtras}
-                  className="box-border min-h-11 min-w-0 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    const el = document.getElementById('admin-course-custom-skill');
-                    if (el instanceof HTMLInputElement) {
-                      addDraftSkill(el.value);
-                      el.value = '';
-                    }
-                  }}
-                  className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center rounded-lg border border-[var(--border-color)] px-3 text-sm font-bold text-[#616161] hover:bg-[var(--hover-bg)] app-dark:text-[var(--tone-100)] sm:w-auto sm:min-w-[5.25rem]"
+              <AdminSmartMultiselect
+                id="admin-course-skill-smart-multiselect"
+                aria-label="Skills"
+                disabled={!draft}
+                value={draft.skills}
+                options={skillAddListboxOptions.map((o) => o.value)}
+                allowCustom={!isCreatorCatalog}
+                onAdd={(v) => addDraftSkill(v)}
+                onRemove={(v) => removeDraftSkill(v)}
+                onTriggerBlur={registerDraftTaxonomyExtras}
+                placeholder="Search or add custom…"
+                emptyMessage="All listed skills are on this course."
+              />
+              {draft.skills.length === 0 ? (
+                <span
+                  className={`mt-1 block text-xs ${
+                    showValidationHints && fieldErrors.courseSkills ? 'font-medium text-[#a1a2a2]' : 'text-[var(--text-muted)]'
+                  }`}
                 >
-                  Add
-                </button>
-              </div>
+                  Add at least one skill.
+                </span>
+              ) : null}
             </div>
             <div className="sm:col-span-2 xl:col-span-12">
               <div className="overflow-hidden rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/15">
