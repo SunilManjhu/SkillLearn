@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { BookOpen, ChevronDown, Library, Route, RefreshCw } from 'lucide-react';
+import { BookOpen, ChevronDown, Library, Route, RefreshCw, X } from 'lucide-react';
 import type { Course } from '../../data/courses';
 import type { LearningPath } from '../../data/learningPaths';
 import { subscribeUsersForAdmin, type AdminUserRow } from '../../utils/adminUsersFirestore';
@@ -125,18 +125,12 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
   const listboxOptions = useMemo(() => {
     const q = filterQuery;
     const out: { key: string; primary: string; secondary: string }[] = [];
-    const clearOpt = { key: '', primary: 'Select a creator…', secondary: 'Clear selection' };
-    if (rowMatchesFilter(q, clearOpt)) {
-      out.push(clearOpt);
-    }
-    const allOpt = {
+    // Always keep "All creators" pinned at top as reset/aggregate scope.
+    out.push({
       key: ALL_CREATORS_KEY,
       primary: 'All creators',
       secondary: 'Load courses and paths for every creator',
-    };
-    if (rowMatchesFilter(q, allOpt)) {
-      out.push(allOpt);
-    }
+    });
     for (const c of creators) {
       const primary = c.displayName;
       const secondary = c.email || c.id;
@@ -148,10 +142,15 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
     return out;
   }, [creators, filterQuery]);
 
+  const nonAllOptions = useMemo(
+    () => listboxOptions.filter((o) => o.key !== ALL_CREATORS_KEY),
+    [listboxOptions]
+  );
+
   const uniqueInlineSuffix = useMemo(() => {
-    if (!menuOpen || listboxOptions.length !== 1) return null;
-    return getInlineCompletionSuffix(filterQuery, listboxOptions[0]!);
-  }, [menuOpen, listboxOptions, filterQuery]);
+    if (!menuOpen || !filterQuery.trim() || nonAllOptions.length !== 1) return null;
+    return getInlineCompletionSuffix(filterQuery, nonAllOptions[0]!);
+  }, [menuOpen, nonAllOptions, filterQuery]);
 
   useEffect(() => {
     setLoadingUsers(true);
@@ -285,6 +284,14 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
     inputRef.current?.blur();
   };
 
+  const clearSelection = () => {
+    setSelectedKey('');
+    setFilterQuery('');
+    setActiveListIndex(null);
+    setMenuOpen(true);
+    queueMicrotask(() => inputRef.current?.focus({ preventScroll: true }));
+  };
+
   const showOwnerOnRows = selectedKey === ALL_CREATORS_KEY;
 
   return (
@@ -354,110 +361,117 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
               Created by
             </label>
             <div className="relative w-full max-w-md min-w-0">
-              {menuOpen ? (
-                <div className="relative rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)]">
-                  <div className="relative min-h-11 pr-10">
-                    <input
-                      ref={inputRef}
-                      id="admin-creator-inventory-combobox"
-                      type="text"
-                      role="combobox"
-                      aria-expanded
-                      aria-controls="admin-creator-inventory-listbox"
-                      aria-autocomplete="list"
-                      autoComplete="off"
-                      placeholder="Start typing to search creators…"
-                      value={filterQuery}
-                      onChange={(e) => {
-                        setFilterQuery(e.target.value);
+              <div className="relative rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)]">
+                <div className="relative min-h-11 pr-20">
+                  <input
+                    ref={inputRef}
+                    id="admin-creator-inventory-combobox"
+                    type="text"
+                    role="combobox"
+                    aria-expanded={menuOpen}
+                    aria-controls="admin-creator-inventory-listbox"
+                    aria-autocomplete="list"
+                    autoComplete="off"
+                    placeholder="Start typing to search creators…"
+                    value={menuOpen ? filterQuery : selectedInputDisplay}
+                    onChange={(e) => {
+                      if (!menuOpen) setMenuOpen(true);
+                      setFilterQuery(e.target.value);
+                      setActiveListIndex(null);
+                    }}
+                    onFocus={() => {
+                      if (!menuOpen) openMenu();
+                      setActiveListIndex(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        e.preventDefault();
+                        setMenuOpen(false);
+                        setFilterQuery('');
                         setActiveListIndex(null);
-                      }}
-                      onFocus={() => {
-                        setActiveListIndex(null);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Escape') {
+                        inputRef.current?.blur();
+                        return;
+                      }
+                      if (!menuOpen && (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter')) {
+                        e.preventDefault();
+                        openMenu();
+                        return;
+                      }
+                      if (listboxOptions.length > 0) {
+                        if (e.key === 'ArrowDown') {
                           e.preventDefault();
-                          setMenuOpen(false);
-                          setFilterQuery('');
-                          setActiveListIndex(null);
-                          inputRef.current?.blur();
+                          setActiveListIndex((i) => (i === null ? 0 : Math.min(i + 1, listboxOptions.length - 1)));
                           return;
                         }
-                        if (listboxOptions.length > 0) {
-                          if (e.key === 'ArrowDown') {
-                            e.preventDefault();
-                            setActiveListIndex((i) =>
-                              i === null ? 0 : Math.min(i + 1, listboxOptions.length - 1)
-                            );
-                            return;
-                          }
-                          if (e.key === 'ArrowUp') {
-                            e.preventDefault();
-                            setActiveListIndex((i) =>
-                              i === null
-                                ? listboxOptions.length - 1
-                                : Math.max(i - 1, 0)
-                            );
-                            return;
-                          }
-                        }
-                        if (e.key === 'Tab' && !e.shiftKey) {
-                          if (listboxOptions.length === 1) {
-                            e.preventDefault();
-                            const opt = listboxOptions[0]!;
-                            const full = fullInputLabelForOption(opt);
-                            if (filterQuery === full) {
-                              pickOption(opt.key);
-                            } else {
-                              setActiveListIndex(null);
-                              setFilterQuery(full);
-                              queueMicrotask(() => {
-                                const el = inputRef.current;
-                                if (el) el.setSelectionRange(full.length, full.length);
-                              });
-                            }
-                            return;
-                          }
-                          if (listboxOptions.length > 1) {
-                            e.preventDefault();
-                            setActiveListIndex(0);
-                            queueMicrotask(() => listRef.current?.focus());
-                            return;
-                          }
-                        }
-                        if (e.key === 'Enter') {
-                          const len = listboxOptions.length;
-                          if (len === 0) return;
-                          const hi = activeListIndexRef.current;
-                          if (hi !== null && hi >= 0 && hi < len) {
-                            e.preventDefault();
-                            pickOption(listboxOptions[hi]!.key);
-                            return;
-                          }
-                          if (len === 1) {
-                            e.preventDefault();
-                            pickOption(listboxOptions[0]!.key);
-                            return;
-                          }
-                          const t = filterQuery.trim();
-                          if (!t) return;
-                          const exactCreator = creators.find(
-                            (c) =>
-                              fullInputLabelForOption({
-                                key: c.id,
-                                primary: c.displayName,
-                                secondary: c.email || c.id,
-                              }).toLowerCase() === t.toLowerCase()
+                        if (e.key === 'ArrowUp') {
+                          e.preventDefault();
+                          setActiveListIndex((i) =>
+                            i === null ? listboxOptions.length - 1 : Math.max(i - 1, 0)
                           );
-                          if (exactCreator) {
-                            e.preventDefault();
-                            pickOption(exactCreator.id);
-                          }
+                          return;
                         }
-                      }}
-                      className="absolute inset-0 z-10 box-border h-full w-full border-0 bg-transparent py-2 pl-3 pr-2 text-base text-transparent caret-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] sm:text-sm"
-                    />
+                      }
+                      if (e.key === 'Tab' && !e.shiftKey) {
+                        if (nonAllOptions.length === 1) {
+                          e.preventDefault();
+                          const opt = nonAllOptions[0]!;
+                          const full = fullInputLabelForOption(opt);
+                          if (filterQuery === full) {
+                            pickOption(opt.key);
+                          } else {
+                            setActiveListIndex(null);
+                            setFilterQuery(full);
+                            queueMicrotask(() => {
+                              const el = inputRef.current;
+                              if (el) el.setSelectionRange(full.length, full.length);
+                            });
+                          }
+                          return;
+                        }
+                        if (listboxOptions.length > 0 && menuOpen) {
+                          e.preventDefault();
+                          setActiveListIndex(filterQuery.trim() ? (listboxOptions.length > 1 ? 1 : 0) : 0);
+                          queueMicrotask(() => listRef.current?.focus());
+                          return;
+                        }
+                      }
+                      if (e.key === 'Enter') {
+                        const len = listboxOptions.length;
+                        if (!menuOpen || len === 0) return;
+                        const hi = activeListIndexRef.current;
+                        if (hi !== null && hi >= 0 && hi < len) {
+                          e.preventDefault();
+                          pickOption(listboxOptions[hi]!.key);
+                          return;
+                        }
+                        if (nonAllOptions.length === 1) {
+                          e.preventDefault();
+                          pickOption(nonAllOptions[0]!.key);
+                          return;
+                        }
+                        const t = filterQuery.trim();
+                        if (!t) return;
+                        const exactCreator = creators.find(
+                          (c) =>
+                            fullInputLabelForOption({
+                              key: c.id,
+                              primary: c.displayName,
+                              secondary: c.email || c.id,
+                            }).toLowerCase() === t.toLowerCase()
+                        );
+                        if (exactCreator) {
+                          e.preventDefault();
+                          pickOption(exactCreator.id);
+                        }
+                      }
+                    }}
+                    className={
+                      menuOpen
+                        ? 'absolute inset-0 z-10 box-border h-full w-full border-0 bg-transparent py-2 pl-3 pr-2 text-base text-transparent caret-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] sm:text-sm'
+                        : 'box-border min-h-11 w-full rounded-lg border-0 bg-transparent py-2 pl-3 pr-2 text-base text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] sm:text-sm'
+                    }
+                  />
+                  {menuOpen ? (
                     <div
                       className="pointer-events-none flex min-h-11 items-center gap-0 py-2 pl-3 pr-2 text-base sm:text-sm"
                       aria-hidden
@@ -473,67 +487,44 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
                         <span className="text-[var(--text-muted)]">Start typing to search creators…</span>
                       )}
                     </div>
-                  </div>
+                  ) : null}
+                </div>
+
+                {selectedKey && selectedKey !== ALL_CREATORS_KEY ? (
                   <button
                     type="button"
                     tabIndex={-1}
-                    aria-label="Close creator list"
-                    className="absolute right-1 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
+                    aria-label="Clear creator selection"
+                    className="absolute right-10 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
                     onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => {
+                    onClick={clearSelection}
+                  >
+                    <X size={18} aria-hidden />
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  aria-label={menuOpen ? 'Close creator list' : 'Open creator list'}
+                  className="absolute right-1 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    if (menuOpen) {
                       setMenuOpen(false);
                       setFilterQuery('');
                       setActiveListIndex(null);
-                    }}
-                  >
-                    <ChevronDown size={18} className="rotate-180 transition-transform" aria-hidden />
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <input
-                    ref={inputRef}
-                    id="admin-creator-inventory-combobox"
-                    type="text"
-                    role="combobox"
-                    aria-expanded={false}
-                    aria-controls="admin-creator-inventory-listbox"
-                    aria-autocomplete="list"
-                    autoComplete="off"
-                    placeholder="Select a creator to view results"
-                    value={selectedInputDisplay}
-                    readOnly
-                    onChange={() => {}}
-                    onFocus={() => {
-                      openMenu();
-                    }}
-                    onKeyDown={(e) => {
-                      if (
-                        e.key === 'Enter' ||
-                        e.key === ' ' ||
-                        e.key === 'ArrowDown' ||
-                        e.key === 'ArrowUp'
-                      ) {
-                        e.preventDefault();
-                        openMenu();
-                      }
-                    }}
-                    className="box-border min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] py-2 pl-3 pr-10 text-base text-[var(--text-primary)] placeholder:text-[var(--text-muted)] read-only:cursor-pointer sm:text-sm"
+                      return;
+                    }
+                    openMenu();
+                  }}
+                >
+                  <ChevronDown
+                    size={18}
+                    className={`transition-transform ${menuOpen ? 'rotate-180' : ''}`}
+                    aria-hidden
                   />
-                  <button
-                    type="button"
-                    tabIndex={-1}
-                    aria-label="Open creator list"
-                    className="absolute right-1 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => {
-                      openMenu();
-                    }}
-                  >
-                    <ChevronDown size={18} className="transition-transform" aria-hidden />
-                  </button>
-                </>
-              )}
+                </button>
+              </div>
               {menuOpen && (
                 <ul
                   ref={listRef}
@@ -577,7 +568,7 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
                     </li>
                   ) : (
                     listboxOptions.map((opt, idx) => (
-                      <li key={opt.key || '__clear__'} role="presentation">
+                      <li key={opt.key} role="presentation">
                         <button
                           type="button"
                           id={`admin-creator-opt-${idx}`}
