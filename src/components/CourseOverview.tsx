@@ -121,6 +121,8 @@ interface CourseOverviewProps {
   /** One-shot scroll target (e.g. from a broadcast alert). */
   contentDeepLink?: { moduleId?: string; lessonId?: string } | null;
   onContentDeepLinkConsumed?: () => void;
+  /** When set (admin viewing a creator-studio course), shows the Firestore account that owns the draft. */
+  adminCreatorStudioAttribution?: string | null;
 }
 
 export const CourseOverview: React.FC<CourseOverviewProps> = ({
@@ -131,6 +133,7 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
   remoteDataVersion = 0,
   contentDeepLink = null,
   onContentDeepLinkConsumed,
+  adminCreatorStudioAttribution = null,
 }) => {
   const { openSignInModal } = useSignInModal();
   const progressUserId = user?.uid ?? null;
@@ -441,7 +444,20 @@ export const CourseOverview: React.FC<CourseOverviewProps> = ({
               <h1 className="text-3xl md:text-5xl font-bold mb-1 tracking-tight leading-tight">
                 {course.title}
               </h1>
-              
+
+              {adminCreatorStudioAttribution ? (
+                <p
+                  className="mb-3 flex max-w-2xl flex-wrap items-center gap-2 rounded-xl border border-orange-500/25 bg-orange-500/10 px-3 py-2 text-xs leading-snug text-[var(--text-secondary)]"
+                  role="note"
+                >
+                  <User size={14} className="shrink-0 text-brand-500" aria-hidden />
+                  <span>
+                    <span className="font-semibold text-[var(--text-primary)]">Studio owner (admin):</span>{' '}
+                    {adminCreatorStudioAttribution}
+                  </span>
+                </p>
+              ) : null}
+
               <div className="text-base md:text-lg text-[var(--text-secondary)] mb-4 leading-relaxed max-w-2xl [&_p]:mb-2 [&_p:last-child]:mb-0">
                 <CatalogRichText as="div" value={course.description} />
               </div>

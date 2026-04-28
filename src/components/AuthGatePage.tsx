@@ -2,7 +2,7 @@
  * Shared auth UI bits for `SignInModalProvider` (no dedicated `#/signin` / `#/signup` routes).
  */
 
-export type AuthGateNavView = 'privacy' | 'catalog' | 'home';
+export type AuthGateNavView = 'terms' | 'privacy' | 'catalog' | 'home';
 
 /** Shared body copy for the in-app sign-in modal. */
 export const AUTH_GOOGLE_GATE_DESCRIPTION =

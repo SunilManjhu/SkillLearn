@@ -175,6 +175,17 @@ export const SignInModalProvider: React.FC<SignInModalProviderProps> = ({
                         type="button"
                         onClick={() => {
                           closeSignInModal();
+                          onNavigate('terms', false);
+                        }}
+                        className="font-medium text-[var(--text-primary)] underline decoration-[var(--text-muted)] underline-offset-2 hover:opacity-90"
+                      >
+                        Terms of Service
+                      </button>{' '}
+                      and{' '}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          closeSignInModal();
                           onNavigate('privacy', false);
                         }}
                         className="font-medium text-[var(--text-primary)] underline decoration-[var(--text-muted)] underline-offset-2 hover:opacity-90"

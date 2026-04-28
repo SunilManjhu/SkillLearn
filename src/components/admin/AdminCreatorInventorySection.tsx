@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { BookOpen, ChevronDown, Library, Route, RefreshCw, X } from 'lucide-react';
+import { BookOpen, ChevronDown, Library, Route, RefreshCw, Search, X } from 'lucide-react';
 import type { Course } from '../../data/courses';
 import type { LearningPath } from '../../data/learningPaths';
 import { subscribeUsersForAdmin, type AdminUserRow } from '../../utils/adminUsersFirestore';
@@ -83,6 +83,24 @@ function rowMatchesFilter(query: string, opt: { key: string; primary: string; se
   return full.includes(q);
 }
 
+function creatorContentMatchesQuery(
+  qRaw: string,
+  title: string,
+  id: string,
+  ownerUid: string,
+  creators: AdminUserRow[]
+): boolean {
+  const q = qRaw.trim().toLowerCase();
+  if (!q) return true;
+  const t = title.toLowerCase();
+  const idLower = id.toLowerCase();
+  if (t.includes(q) || idLower.includes(q)) return true;
+  const creator = creators.find((c) => c.id === ownerUid);
+  const name = (creator?.displayName ?? ownerUid).toLowerCase();
+  const email = (creator?.email ?? '').toLowerCase();
+  return name.includes(q) || email.includes(q) || ownerUid.toLowerCase().includes(q);
+}
+
 /** Admin read-only inventory of `creatorCourses` + `creatorLearningPaths` per creator UID. */
 export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySectionProps> = ({
   onPreviewCreatorCourse,
@@ -102,6 +120,8 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  /** Bumped on each inventory load so in-flight “All creators” work can abort without applying stale results. */
+  const inventoryLoadGenerationRef = useRef(0);
 
   useLayoutEffect(() => {
     activeListIndexRef.current = activeListIndex;
@@ -111,9 +131,29 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
   const [pathsLoading, setPathsLoading] = useState(false);
   const [courseRows, setCourseRows] = useState<CourseRow[]>([]);
   const [pathRows, setPathRows] = useState<PathRow[]>([]);
+  /** Narrows loaded private courses/paths by title, id, or creator identity. */
+  const [creatorContentSearch, setCreatorContentSearch] = useState('');
+  /** Set while “All creators” loads sequentially (one creator at a time) to avoid a large parallel Firestore burst. */
+  const [aggregateLoadProgress, setAggregateLoadProgress] = useState<{ loaded: number; total: number } | null>(null);
   const { showActionToast, actionToast } = useAdminActionToast();
 
   const creators = useMemo(() => rows.filter((r) => r.role === 'creator'), [rows]);
+
+  const filteredCourseRowsForSearch = useMemo(
+    () =>
+      courseRows.filter(({ course: c, ownerUid }) =>
+        creatorContentMatchesQuery(creatorContentSearch, c.title, c.id, ownerUid, creators)
+      ),
+    [courseRows, creatorContentSearch, creators]
+  );
+
+  const filteredPathRowsForSearch = useMemo(
+    () =>
+      pathRows.filter(({ path: p, ownerUid }) =>
+        creatorContentMatchesQuery(creatorContentSearch, p.title, p.id, ownerUid, creators)
+      ),
+    [pathRows, creatorContentSearch, creators]
+  );
 
   const selectedCreator = creators.find((c) => c.id === selectedKey);
   const selectedInputDisplay = useMemo(() => {
@@ -182,6 +222,10 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
   }, [creators]);
 
   useEffect(() => {
+    setCreatorContentSearch('');
+  }, [selectedKey]);
+
+  useEffect(() => {
     if (!menuOpen) return;
     const onDown = (e: MouseEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
@@ -210,49 +254,92 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
 
   const loadInventory = useCallback(
     async (key: string, creatorList: AdminUserRow[]) => {
+      const loadId = ++inventoryLoadGenerationRef.current;
+      setAggregateLoadProgress(null);
+
       if (!key) {
         setCourseRows([]);
         setPathRows([]);
+        setCoursesLoading(false);
+        setPathsLoading(false);
         return;
       }
+
       setCoursesLoading(true);
       setPathsLoading(true);
+
+      const stillActive = () => loadId === inventoryLoadGenerationRef.current;
+
       try {
         if (key === ALL_CREATORS_KEY) {
-          const bundles = await Promise.all(
-            creatorList.map(async (c) => {
-              const [courses, paths] = await Promise.all([
-                listCreatorCoursesForAdminByOwner(c.id),
-                listCreatorLearningPathsForAdminByOwner(c.id),
-              ]);
-              return { ownerUid: c.id, courses, paths };
-            })
-          );
+          if (creatorList.length === 0) {
+            if (stillActive()) {
+              setCourseRows([]);
+              setPathRows([]);
+            }
+            return;
+          }
+          if (stillActive()) {
+            setCourseRows([]);
+            setPathRows([]);
+            setAggregateLoadProgress({ loaded: 0, total: creatorList.length });
+          }
+
           const coursesAcc: CourseRow[] = [];
           const pathsAcc: PathRow[] = [];
-          for (const b of bundles) {
-            for (const course of b.courses) coursesAcc.push({ course, ownerUid: b.ownerUid });
-            for (const path of b.paths) pathsAcc.push({ path, ownerUid: b.ownerUid });
+
+          for (let i = 0; i < creatorList.length; i++) {
+            if (!stillActive()) return;
+            const c = creatorList[i]!;
+            const [courses, paths] = await Promise.all([
+              listCreatorCoursesForAdminByOwner(c.id),
+              listCreatorLearningPathsForAdminByOwner(c.id),
+            ]);
+            if (!stillActive()) return;
+            for (const course of courses) coursesAcc.push({ course, ownerUid: c.id });
+            for (const path of paths) pathsAcc.push({ path, ownerUid: c.id });
+            const sortedCourses = [...coursesAcc].sort((a, b) =>
+              a.course.title.localeCompare(b.course.title, undefined, { sensitivity: 'base' })
+            );
+            const sortedPaths = [...pathsAcc].sort((a, b) =>
+              a.path.title.localeCompare(b.path.title, undefined, { sensitivity: 'base' })
+            );
+            if (stillActive()) {
+              setCourseRows(sortedCourses);
+              setPathRows(sortedPaths);
+              setAggregateLoadProgress({ loaded: i + 1, total: creatorList.length });
+            }
+            await new Promise<void>((resolve) => {
+              requestAnimationFrame(() => resolve());
+            });
           }
-          coursesAcc.sort((a, b) => a.course.title.localeCompare(b.course.title));
-          pathsAcc.sort((a, b) => a.path.title.localeCompare(b.path.title));
-          setCourseRows(coursesAcc);
-          setPathRows(pathsAcc);
         } else {
           const [courses, paths] = await Promise.all([
             listCreatorCoursesForAdminByOwner(key),
             listCreatorLearningPathsForAdminByOwner(key),
           ]);
-          setCourseRows(courses.map((course) => ({ course, ownerUid: key })));
-          setPathRows(paths.map((path) => ({ path, ownerUid: key })));
+          if (!stillActive()) return;
+          const sortedCourses = courses
+            .map((course) => ({ course, ownerUid: key }))
+            .sort((a, b) => a.course.title.localeCompare(b.course.title, undefined, { sensitivity: 'base' }));
+          const sortedPaths = paths
+            .map((path) => ({ path, ownerUid: key }))
+            .sort((a, b) => a.path.title.localeCompare(b.path.title, undefined, { sensitivity: 'base' }));
+          setCourseRows(sortedCourses);
+          setPathRows(sortedPaths);
         }
       } catch {
-        showActionToast('Failed to load creator inventory.', 'danger');
-        setCourseRows([]);
-        setPathRows([]);
+        if (stillActive()) {
+          showActionToast('Failed to load creator inventory.', 'danger');
+          setCourseRows([]);
+          setPathRows([]);
+        }
       } finally {
-        setCoursesLoading(false);
-        setPathsLoading(false);
+        if (stillActive()) {
+          setCoursesLoading(false);
+          setPathsLoading(false);
+          setAggregateLoadProgress(null);
+        }
       }
     },
     [showActionToast]
@@ -312,12 +399,19 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
               <li>
                 Read-only list of private courses and paths stored under{' '}
                 <code className="text-[#616161] app-dark:text-[var(--tone-200)]">creatorCourses</code> and{' '}
-                <code className="text-[#616161] app-dark:text-[var(--tone-200)]">creatorLearningPaths</code>.
+                <code className="text-[#616161] app-dark:text-[var(--tone-200)]">creatorLearningPaths</code>.{' '}
+                <strong className="font-semibold text-[var(--text-secondary)]">All creators</strong> loads each
+                workspace in sequence (not all at once) so large teams don’t spike reads.
               </li>
               <li>
                 Use <strong className="font-semibold text-[var(--text-secondary)]">Open overview</strong> for a course
                 or <strong className="font-semibold text-[var(--text-secondary)]">Open Path</strong> for a path to
                 view them in the learner experience.
+              </li>
+              <li>
+                <strong className="font-semibold text-[var(--text-secondary)]">Search courses and paths</strong>{' '}
+                (below) filters the two lists by title, id, or creator name/email once you have chosen{' '}
+                <strong className="font-semibold text-[var(--text-secondary)]">Created by</strong>.
               </li>
             </AdminLabelInfoTip>
           </div>
@@ -600,9 +694,70 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
             {selectedKey === ALL_CREATORS_KEY && (
               <p className="text-[11px] text-[var(--text-muted)]">
                 Showing aggregated private content for {creators.length} creator
-                {creators.length === 1 ? '' : 's'}.
+                {creators.length === 1 ? '' : 's'}. Creators load one at a time so Firestore isn’t queried for
+                everyone in parallel.
               </p>
             )}
+            {selectedKey === ALL_CREATORS_KEY && aggregateLoadProgress && coursesLoading ? (
+              <div className="mt-2 max-w-md space-y-1.5" role="status" aria-live="polite">
+                <p className="text-[11px] font-medium text-[var(--text-secondary)]">
+                  Loading workspaces… {aggregateLoadProgress.loaded} / {aggregateLoadProgress.total}
+                </p>
+                <div
+                  className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--border-color)]"
+                  aria-hidden
+                >
+                  <div
+                    className="h-full rounded-full bg-brand-500/75 transition-[width] duration-200 ease-out"
+                    style={{
+                      width: `${(100 * aggregateLoadProgress.loaded) / Math.max(1, aggregateLoadProgress.total)}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="min-w-0 space-y-1.5">
+            <label
+              htmlFor="admin-creator-content-search"
+              className="flex min-w-0 items-center gap-2 text-xs font-semibold text-[var(--text-secondary)]"
+            >
+              <Search size={14} className="shrink-0 text-admin-icon" aria-hidden />
+              Search courses & paths
+            </label>
+            <div className="relative max-w-md min-w-0">
+              <input
+                id="admin-creator-content-search"
+                type="search"
+                value={creatorContentSearch}
+                onChange={(e) => setCreatorContentSearch(e.target.value)}
+                disabled={!selectedKey}
+                placeholder={
+                  selectedKey
+                    ? 'Course or path name, id, or creator…'
+                    : 'Choose Created by first, then search here…'
+                }
+                autoComplete="off"
+                aria-describedby="admin-creator-content-search-hint"
+                className="box-border min-h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] py-2 pl-3 pr-10 text-sm text-[var(--text-primary)] outline-none ring-brand-500/30 placeholder:text-[var(--text-muted)] focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
+              />
+              {selectedKey && creatorContentSearch.trim() ? (
+                <button
+                  type="button"
+                  aria-label="Clear search"
+                  className="absolute right-2 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
+                  onClick={() => setCreatorContentSearch('')}
+                >
+                  <X size={16} aria-hidden />
+                </button>
+              ) : null}
+            </div>
+            <p id="admin-creator-content-search-hint" className="text-[11px] leading-snug text-[var(--text-muted)]">
+              {selectedKey
+                ? 'Filters both Private courses and Private paths. Matches title, id, or creator name/email.'
+                : 'Pick All creators or a creator under Created by — then type here to narrow the lists.'}
+            </p>
           </div>
 
           <div className="grid gap-4 min-w-0 lg:grid-cols-2 lg:gap-6">
@@ -611,7 +766,7 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
                 <BookOpen className="shrink-0 text-admin-icon" size={16} aria-hidden />
                 <span className="min-w-0">
                   Private courses (
-                {!selectedKey ? '—' : coursesLoading ? '…' : courseRows.length})
+                {!selectedKey ? '—' : coursesLoading ? '…' : filteredCourseRowsForSearch.length})
                 </span>
               </h3>
               {!selectedKey ? (
@@ -623,11 +778,15 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
                 <p className="text-xs text-[var(--text-muted)]">Loading…</p>
               ) : courseRows.length === 0 ? (
                 <p className="text-xs text-[var(--text-muted)]">No creator courses for this scope.</p>
+              ) : filteredCourseRowsForSearch.length === 0 ? (
+                <p className="text-xs text-[var(--text-muted)]">
+                  No courses match “{creatorContentSearch.trim()}”. Try another name, course id, or creator.
+                </p>
               ) : (
                 <ul
                   className={`max-h-72 space-y-0 ${ADMIN_EMBEDDED_SCROLL_LIST} [scrollbar-color:var(--border-light)_var(--bg-secondary)] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-[var(--bg-secondary)] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[var(--border-light)]`}
                 >
-                  {courseRows.map(({ course: c, ownerUid }) => (
+                  {filteredCourseRowsForSearch.map(({ course: c, ownerUid }) => (
                     <li
                       key={`${ownerUid}:${c.id}`}
                       className="flex flex-col gap-2 border-b border-[var(--border-color)] py-1.5 last:border-0 max-md:gap-1.5 sm:flex-row sm:items-center sm:gap-3 sm:py-2"
@@ -663,7 +822,7 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
                 <Route className="shrink-0 text-admin-icon" size={16} aria-hidden />
                 <span className="min-w-0">
                   Private paths (
-                {!selectedKey ? '—' : pathsLoading ? '…' : pathRows.length})
+                {!selectedKey ? '—' : pathsLoading ? '…' : filteredPathRowsForSearch.length})
                 </span>
               </h3>
               {!selectedKey ? (
@@ -675,11 +834,15 @@ export const AdminCreatorInventorySection: React.FC<AdminCreatorInventorySection
                 <p className="text-xs text-[var(--text-muted)]">Loading…</p>
               ) : pathRows.length === 0 ? (
                 <p className="text-xs text-[var(--text-muted)]">No creator paths for this scope.</p>
+              ) : filteredPathRowsForSearch.length === 0 ? (
+                <p className="text-xs text-[var(--text-muted)]">
+                  No paths match “{creatorContentSearch.trim()}”. Try another title, path id, or creator.
+                </p>
               ) : (
                 <ul
                   className={`max-h-72 space-y-0 ${ADMIN_EMBEDDED_SCROLL_LIST} [scrollbar-color:var(--border-light)_var(--bg-secondary)] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-[var(--bg-secondary)] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[var(--border-light)]`}
                 >
-                  {pathRows.map(({ path: p, ownerUid }) => (
+                  {filteredPathRowsForSearch.map(({ path: p, ownerUid }) => (
                     <li
                       key={`${ownerUid}:${p.id}`}
                       className="flex flex-col gap-2 border-b border-[var(--border-color)] py-1.5 last:border-0 max-md:gap-1.5 sm:flex-row sm:items-center sm:gap-3 sm:py-2"

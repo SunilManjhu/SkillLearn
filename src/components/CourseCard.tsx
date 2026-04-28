@@ -14,11 +14,25 @@ export interface CourseCardProps {
   showPrivateDraftBadge?: boolean;
   /** Overrides default “Draft · only you” when `showPrivateDraftBadge` (e.g. admin creator preview). */
   draftBadgeLabel?: string;
+  /**
+   * Admin-only: real-world owner of this creator-studio row. Omit for learners and non-admin shells so
+   * creator identity is not exposed in Browse Catalog.
+   */
+  adminStudioCreatorAttribution?: string | null;
 }
 
 export const CourseCard = forwardRef<HTMLDivElement, CourseCardProps>(
   (
-    { course, onClick, tabIndex = 0, onKeyDown, isFocused, showPrivateDraftBadge = false, draftBadgeLabel },
+    {
+      course,
+      onClick,
+      tabIndex = 0,
+      onKeyDown,
+      isFocused,
+      showPrivateDraftBadge = false,
+      draftBadgeLabel,
+      adminStudioCreatorAttribution,
+    },
     ref
   ) => {
     const { imageUrl, imageCreditTitle } = useCourseStockThumbnail(course);
@@ -79,6 +93,12 @@ export const CourseCard = forwardRef<HTMLDivElement, CourseCardProps>(
             <span className="inline-flex w-fit rounded-md border border-brand-500/35 bg-brand-500/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-brand-500">
               {draftBadgeLabel ?? 'Draft · only you'}
             </span>
+          ) : null}
+          {adminStudioCreatorAttribution ? (
+            <p className="text-[11px] font-medium leading-snug text-[var(--text-muted)]">
+              <span className="text-[var(--text-secondary)]">Creator: </span>
+              <span className="text-[var(--text-primary)]">{adminStudioCreatorAttribution}</span>
+            </p>
           ) : null}
           <p className="text-sm text-[var(--text-secondary)]">{course.author}</p>
           <div className="mt-auto flex items-center justify-between gap-2 pt-2 text-xs text-[var(--text-muted)]">

@@ -13,6 +13,7 @@ export type AppHistoryView =
   | 'about'
   | 'careers'
   | 'privacy'
+  | 'terms'
   | 'help'
   | 'contact'
   | 'status'
@@ -109,6 +110,7 @@ const SIMPLE_VIEWS: AppHistoryView[] = [
   'about',
   'careers',
   'privacy',
+  'terms',
   'help',
   'contact',
   'status',

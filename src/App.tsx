@@ -43,8 +43,15 @@ import {
   learningPathsLoadResultFromSnapshot,
   loadLearningPathsFromFirestore,
 } from './utils/learningPathsFirestore';
-import { listCreatorCoursesForAdminByOwner, loadCreatorCoursesForOwner } from './utils/creatorCoursesFirestore';
-import { loadCreatorLearningPathsForOwner } from './utils/creatorLearningPathsFirestore';
+import {
+  listCreatorCoursesForAdminByOwner,
+  loadAllCreatorCoursesForAdmin,
+  loadCreatorCoursesForOwner,
+} from './utils/creatorCoursesFirestore';
+import {
+  loadAllCreatorLearningPathsForAdmin,
+  loadCreatorLearningPathsForOwner,
+} from './utils/creatorLearningPathsFirestore';
 import {
   mergeOwnerPreviewCourseRows,
   mergeOwnerPreviewPathRows,
@@ -88,6 +95,7 @@ import {
   LogIn,
   AlertTriangle,
   LayoutGrid,
+  BookOpen,
 } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import {
@@ -138,10 +146,35 @@ import {
   writePersistedUiThemeForUser,
 } from './utils/uiThemePreference';
 import {
+  CREATOR_BOTH_CATALOG_SUB_SCOPE_CHANGED,
   CREATOR_BROWSE_CATALOG_PREFERENCE_CHANGED,
+  readCreatorBothCatalogSubScope,
   readCreatorBrowseCatalogPreference,
+  writeCreatorBothCatalogSubScope,
+  type CreatorBothCatalogSubScope,
   type CreatorBrowseCatalogPreference,
 } from './utils/creatorBrowseCatalogPreference';
+import {
+  ADMIN_BOTH_CATALOG_SUB_SCOPE_CHANGED,
+  ADMIN_BROWSE_CATALOG_PREFERENCE_CHANGED,
+  readAdminBothCatalogSubScope,
+  readAdminBrowseCatalogPreference,
+  writeAdminBothCatalogSubScope,
+  type AdminBothCatalogSubScope,
+  type AdminBrowseCatalogPreference,
+} from './utils/adminBrowseCatalogPreference';
+import { subscribeUsersForAdmin, type AdminUserRow } from './utils/adminUsersFirestore';
+import { formatAdminStudioOwnerAttribution } from './utils/adminStudioOwnerAttribution';
+import {
+  catalogCourseRowIsLearnerEveryoneCatalog,
+  catalogCourseRowIsCreatorRoleCatalog,
+  catalogCourseRowIsLearnerHiddenAdminVisible,
+  catalogCourseRowMatchesAdminBrowseShowAll,
+  learningPathRowIsLearnerEveryoneCatalog,
+  learningPathRowIsCreatorRoleCatalog,
+  learningPathRowIsLearnerHiddenAdminVisible,
+  learningPathRowMatchesAdminBrowseShowAll,
+} from './utils/adminBrowseCatalogFilters';
 import { stashAuthReturnState, consumeAuthReturnState, type AuthReturnPayload } from './utils/authReturnContext';
 import {
   APP_HISTORY_KEY,
@@ -217,6 +250,7 @@ type View =
   | 'about'
   | 'careers'
   | 'privacy'
+  | 'terms'
   | 'help'
   | 'contact'
   | 'status'
@@ -622,10 +656,28 @@ export default function App() {
   });
   /** Admin Creators tab: injected path row(s) for “Open Path” preview (another creator’s draft path). */
   const [adminCreatorPreviewPathRows, setAdminCreatorPreviewPathRows] = useState<CatalogLearningPathRow[]>([]);
+  /**
+   * When an admin’s browse pref is Creators’ catalog or Show all, merge other users’ `creatorCourses` /
+   * `creatorLearningPaths` into browse (signed-in user’s own drafts stay on `catalogCourseRows` / `catalogPathRows`).
+   */
+  const [adminOtherCreatorsCatalogCourseRows, setAdminOtherCreatorsCatalogCourseRows] = useState<
+    CatalogCourseRow[]
+  >([]);
+  const [adminOtherCreatorsCatalogPathRows, setAdminOtherCreatorsCatalogPathRows] = useState<
+    CatalogLearningPathRow[]
+  >([]);
   const combinedCatalogPathRows = useMemo(
-    () => [...catalogPathRows, ...adminCreatorPreviewPathRows],
-    [catalogPathRows, adminCreatorPreviewPathRows]
+    () => [...catalogPathRows, ...adminCreatorPreviewPathRows, ...adminOtherCreatorsCatalogPathRows],
+    [catalogPathRows, adminCreatorPreviewPathRows, adminOtherCreatorsCatalogPathRows]
   );
+  /** Own creator draft path ids plus other creators’ paths when admin has merged inventory into browse. */
+  const catalogPrivatePathIdsForOutline = useMemo(() => {
+    const merged = new Set(catalogPrivatePathIds);
+    for (const r of adminOtherCreatorsCatalogPathRows) {
+      merged.add(r.id);
+    }
+    return merged;
+  }, [catalogPrivatePathIds, adminOtherCreatorsCatalogPathRows]);
   const activeCatalogPathRow = useMemo((): CatalogLearningPathRow | null => {
     if (selectedLearningPathId == null) return null;
     return (
@@ -662,7 +714,7 @@ export default function App() {
 
   const { loading: pathMindmapOutlineLoading, children: pathMindmapOutlineChildren } =
     usePathMindmapOutlineChildren(selectedLearningPathId, {
-      creatorDraftPathIds: catalogPrivatePathIds,
+      creatorDraftPathIds: catalogPrivatePathIdsForOutline,
       useCreatorDraftMindmap:
         selectedLearningPathId != null
           ? (activeCatalogPathRow?.fromCreatorDraft ?? false)
@@ -692,6 +744,20 @@ export default function App() {
       const uid = readCachedAuthProfile()?.uid ?? null;
       return uid ? readCreatorBrowseCatalogPreference(uid) : 'both';
     });
+  const [creatorBothCatalogSubScope, setCreatorBothCatalogSubScope] = useState<CreatorBothCatalogSubScope>(() => {
+    const uid = readCachedAuthProfile()?.uid ?? null;
+    return uid ? readCreatorBothCatalogSubScope(uid) : 'mine';
+  });
+  const [adminBrowseCatalogPref, setAdminBrowseCatalogPref] = useState<AdminBrowseCatalogPreference>(() => {
+    const uid = readCachedAuthProfile()?.uid ?? null;
+    return uid ? readAdminBrowseCatalogPreference(uid) : 'both';
+  });
+  const [adminBothCatalogSubScope, setAdminBothCatalogSubScope] = useState<AdminBothCatalogSubScope>(() => {
+    const uid = readCachedAuthProfile()?.uid ?? null;
+    return uid ? readAdminBothCatalogSubScope(uid) : 'learner';
+  });
+  /** Resolves creator UIDs on catalog cards / overview for admins only. */
+  const [adminBrowseUserDirectory, setAdminBrowseUserDirectory] = useState<AdminUserRow[] | null>(null);
   const [focusedFooterIndex, setFocusedFooterIndex] = useState(-1);
   const [user, setUser] = useState<User | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -722,8 +788,8 @@ export default function App() {
   /** Admin-only: extra catalog rows from Creator inventory “Open / Play” (other users’ `creatorCourses`). */
   const [adminCreatorPreviewRows, setAdminCreatorPreviewRows] = useState<CatalogCourseRow[]>([]);
   const combinedCatalogRows = useMemo(
-    () => [...catalogCourseRows, ...adminCreatorPreviewRows],
-    [catalogCourseRows, adminCreatorPreviewRows]
+    () => [...catalogCourseRows, ...adminCreatorPreviewRows, ...adminOtherCreatorsCatalogCourseRows],
+    [catalogCourseRows, adminCreatorPreviewRows, adminOtherCreatorsCatalogCourseRows]
   );
   const catalogCourses = useMemo(
     () => combinedCatalogRows.map((r) => r.course),
@@ -812,6 +878,10 @@ export default function App() {
       ? isCreatorUser || isAdminUser
       : cachedUserRoleForShell === 'admin' || cachedUserRoleForShell === 'creator');
   const showCreatorBrowseTabs = selectedLearningPathId == null && viewerHasCreatorStudio;
+  /** When true, Course Library and Learning Paths use {@link adminBrowseCatalogPref} (admin role, optimistic from role cache). */
+  const useAdminBrowseScope =
+    Boolean(uidForRoleShell) &&
+    ((adminAccessResolved && isAdminUser) || (!adminAccessResolved && cachedUserRoleForShell === 'admin'));
   /**
    * For path outline filtering: subset of browse-surface course ids this viewer may see (course-level and
    * single-module `visibleToRoles`). `browseVisibleCourseIdSet` is publish/draft only; using it alone for path
@@ -827,6 +897,16 @@ export default function App() {
     }
     return ids;
   }, [browseVisibleCatalogRows, shellViewerIsAdmin, shellViewerIsCreator]);
+  /** Course ids a learner would see in browse — used when the signed-in viewer is admin to classify paths for admin browse scopes. */
+  const learnerOutlineCatalogCourseIdSet = useMemo(() => {
+    const ids = new Set<string>();
+    for (const row of browseVisibleCatalogRows) {
+      if (catalogCourseEntryVisibleToViewer(row.course, false, false)) {
+        ids.add(row.course.id);
+      }
+    }
+    return ids;
+  }, [browseVisibleCatalogRows]);
   /**
    * Learning Paths dropdown: omit creator-studio draft rows for **admin-only** accounts (admins who are not
    * creators), matching the rule that private creator catalog entries are not surfaced in public browse chrome.
@@ -1274,6 +1354,8 @@ export default function App() {
         setAuthSnapshot(null);
         setAdminCreatorPreviewRows([]);
         setAdminCreatorPreviewPathRows([]);
+        setAdminOtherCreatorsCatalogCourseRows([]);
+        setAdminOtherCreatorsCatalogPathRows([]);
         setSelectedCourseAdminPreviewOwnerUid(null);
         setSelectedLearningPathAdminPreviewOwnerUid(null);
         return;
@@ -2053,6 +2135,7 @@ export default function App() {
       'about',
       'careers',
       'privacy',
+      'terms',
       'help',
       'contact',
       'status',
@@ -2220,7 +2303,9 @@ export default function App() {
   /**
    * Courses used to build library filter / navbar topic pools. For creators (or admins with studio) with
    * browse pref “My courses / paths”, only own draft rows; with “Other courses / paths”, only non-draft
-   * catalog rows — matching what the Course Library grid can show for that pref.
+   * catalog rows — matching what the Course Library grid can show for that pref. With “Show both”, pools
+   * follow the My Courses / All Courses toggle under Course Library. Admins on “Show all” follow Learners’ /
+   * Creators & admin-only sub-tabs the same way.
    * While `adminAccessResolved` is false, `viewerHasCreatorStudio` is still false; if the signed-in (or
    * cached-profile) user has pref mine/all, use the same scoped rows anyway so navbar skills/categories
    * do not flash the full catalog (same idea as Learning Paths during auth restore).
@@ -2243,7 +2328,31 @@ export default function App() {
     const optimisticMineOrAllWhileRolesPending =
       !adminAccessResolved &&
       Boolean(uidOrCached) &&
-      (creatorBrowseCatalogPref === 'mine' || creatorBrowseCatalogPref === 'all');
+      (creatorBrowseCatalogPref === 'mine' ||
+        creatorBrowseCatalogPref === 'all' ||
+        (creatorBrowseCatalogPref === 'both' && viewerHasCreatorStudio));
+
+    if (useAdminBrowseScope) {
+      const visibleRows = browseVisibleCatalogRows.filter((r) => rowVisible(r));
+      switch (adminBrowseCatalogPref) {
+        case 'other':
+          return visibleRows.filter((r) => catalogCourseRowIsLearnerEveryoneCatalog(r)).map((r) => r.course);
+        case 'creator':
+          return visibleRows.filter((r) => catalogCourseRowIsCreatorRoleCatalog(r)).map((r) => r.course);
+        case 'admin_only':
+          return visibleRows.filter((r) => catalogCourseRowIsLearnerHiddenAdminVisible(r)).map((r) => r.course);
+        case 'both':
+          return adminBothCatalogSubScope === 'learner'
+            ? visibleRows.filter((r) => catalogCourseRowIsLearnerEveryoneCatalog(r)).map((r) => r.course)
+            : visibleRows
+                .filter(
+                  (r) =>
+                    catalogCourseRowIsCreatorRoleCatalog(r) ||
+                    catalogCourseRowIsLearnerHiddenAdminVisible(r)
+                )
+                .map((r) => r.course);
+      }
+    }
 
     if (creatorBrowseCatalogPref === 'mine') {
       if (viewerHasCreatorStudio || optimisticMineOrAllWhileRolesPending) {
@@ -2257,10 +2366,17 @@ export default function App() {
       }
       return browseVisibleCatalogCourses;
     }
+    if (creatorBrowseCatalogPref === 'both' && viewerHasCreatorStudio) {
+      return creatorBothCatalogSubScope === 'mine' ? mineCourses() : publishedOnlyCourses();
+    }
     return browseVisibleCatalogCourses;
   }, [
+    useAdminBrowseScope,
+    adminBrowseCatalogPref,
+    adminBothCatalogSubScope,
     viewerHasCreatorStudio,
     creatorBrowseCatalogPref,
+    creatorBothCatalogSubScope,
     browseVisibleCatalogRows,
     browseVisibleCatalogCourses,
     shellViewerIsAdmin,
@@ -2444,6 +2560,132 @@ export default function App() {
     return () => window.removeEventListener(CREATOR_BROWSE_CATALOG_PREFERENCE_CHANGED, onPrefChanged);
   }, [isAuthReady, viewerHasCreatorStudio, user?.uid]);
 
+  useEffect(() => {
+    if (!isAuthReady) return;
+    if (!user?.uid) {
+      setCreatorBothCatalogSubScope('mine');
+      return;
+    }
+    if (!viewerHasCreatorStudio) return;
+    setCreatorBothCatalogSubScope(readCreatorBothCatalogSubScope(user.uid));
+  }, [isAuthReady, user?.uid, viewerHasCreatorStudio]);
+
+  useEffect(() => {
+    if (!isAuthReady || !viewerHasCreatorStudio || !user?.uid) return;
+    const onSubChanged = () => setCreatorBothCatalogSubScope(readCreatorBothCatalogSubScope(user.uid));
+    window.addEventListener(CREATOR_BOTH_CATALOG_SUB_SCOPE_CHANGED, onSubChanged);
+    return () => window.removeEventListener(CREATOR_BOTH_CATALOG_SUB_SCOPE_CHANGED, onSubChanged);
+  }, [isAuthReady, viewerHasCreatorStudio, user?.uid]);
+
+  useEffect(() => {
+    if (!isAuthReady) return;
+    if (!user?.uid) {
+      setAdminBrowseCatalogPref('both');
+      return;
+    }
+    if (!adminAccessResolved) return;
+    if (!isAdminUser) {
+      setAdminBrowseCatalogPref('both');
+      return;
+    }
+    setAdminBrowseCatalogPref(readAdminBrowseCatalogPreference(user.uid));
+  }, [isAuthReady, adminAccessResolved, isAdminUser, user?.uid]);
+
+  useEffect(() => {
+    if (!isAuthReady || !isAdminUser || !user?.uid) return;
+    const onPrefChanged = () => setAdminBrowseCatalogPref(readAdminBrowseCatalogPreference(user.uid));
+    window.addEventListener(ADMIN_BROWSE_CATALOG_PREFERENCE_CHANGED, onPrefChanged);
+    return () => window.removeEventListener(ADMIN_BROWSE_CATALOG_PREFERENCE_CHANGED, onPrefChanged);
+  }, [isAuthReady, isAdminUser, user?.uid]);
+
+  useEffect(() => {
+    if (!isAuthReady) return;
+    if (!user?.uid) {
+      setAdminBothCatalogSubScope('learner');
+      return;
+    }
+    if (!adminAccessResolved || !isAdminUser) return;
+    setAdminBothCatalogSubScope(readAdminBothCatalogSubScope(user.uid));
+  }, [isAuthReady, user?.uid, adminAccessResolved, isAdminUser]);
+
+  useEffect(() => {
+    if (!isAuthReady || !user?.uid || !adminAccessResolved || !isAdminUser) return;
+    const onSubChanged = () => setAdminBothCatalogSubScope(readAdminBothCatalogSubScope(user.uid));
+    window.addEventListener(ADMIN_BOTH_CATALOG_SUB_SCOPE_CHANGED, onSubChanged);
+    return () => window.removeEventListener(ADMIN_BOTH_CATALOG_SUB_SCOPE_CHANGED, onSubChanged);
+  }, [isAuthReady, user?.uid, adminAccessResolved, isAdminUser]);
+
+  useEffect(() => {
+    if (!isAuthReady || !adminAccessResolved || !isAdminUser || !user?.uid) {
+      setAdminBrowseUserDirectory(null);
+      return;
+    }
+    return subscribeUsersForAdmin(
+      (rows) => setAdminBrowseUserDirectory(rows),
+      () => setAdminBrowseUserDirectory(null)
+    );
+  }, [isAuthReady, adminAccessResolved, isAdminUser, user?.uid]);
+
+  /**
+   * Admins only: when browse is Creators’ catalog or Show all, load every other user’s creator-studio
+   * courses/paths into merge rows (`adminPreviewOwnerUid`). Creators who are not admins never run this.
+   */
+  useEffect(() => {
+    if (!isAuthReady || !user?.uid || !adminAccessResolved || !isAdminUser) {
+      setAdminOtherCreatorsCatalogCourseRows([]);
+      setAdminOtherCreatorsCatalogPathRows([]);
+      return;
+    }
+    if (adminBrowseCatalogPref !== 'creator' && adminBrowseCatalogPref !== 'both') {
+      setAdminOtherCreatorsCatalogCourseRows([]);
+      setAdminOtherCreatorsCatalogPathRows([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const cu = auth.currentUser;
+      if (!cu || cu.uid !== user.uid) return;
+      await cu.getIdToken();
+      const [allCourses, allPaths] = await Promise.all([
+        loadAllCreatorCoursesForAdmin(),
+        loadAllCreatorLearningPathsForAdmin(),
+      ]);
+      if (cancelled) return;
+      const self = user.uid;
+      const otherCourseRows: CatalogCourseRow[] = allCourses
+        .filter(({ ownerUid }) => ownerUid !== self)
+        .map(({ course, ownerUid }) => ({
+          course,
+          fromCreatorDraft: true as const,
+          adminPreviewOwnerUid: ownerUid,
+        }));
+      const otherPathRows: CatalogLearningPathRow[] = allPaths
+        .filter(({ ownerUid }) => ownerUid !== self)
+        .map(({ path, ownerUid }) => ({
+          ...path,
+          fromCreatorDraft: true as const,
+          adminPreviewOwnerUid: ownerUid,
+        }));
+      const outlineMerge: Record<string, MindmapTreeNode[]> = {};
+      for (const { path, ownerUid, outlineChildren } of allPaths) {
+        if (ownerUid === self) continue;
+        outlineMerge[path.id] = outlineChildren;
+      }
+      setAdminOtherCreatorsCatalogCourseRows(otherCourseRows);
+      setAdminOtherCreatorsCatalogPathRows(otherPathRows);
+      setPathOutlinePrefetchCreator((prev) => ({ ...prev, ...outlineMerge }));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isAuthReady,
+    user?.uid,
+    adminAccessResolved,
+    isAdminUser,
+    adminBrowseCatalogPref,
+  ]);
+
   const filteredMyCourseRows = useMemo(
     () => filteredCatalogRows.filter((r) => r.fromCreatorDraft && !r.adminPreviewOwnerUid),
     [filteredCatalogRows]
@@ -2455,6 +2697,25 @@ export default function App() {
   );
 
   const catalogGridRows = useMemo(() => {
+    if (useAdminBrowseScope) {
+      switch (adminBrowseCatalogPref) {
+        case 'other':
+          return filteredCatalogRows.filter((r) => catalogCourseRowIsLearnerEveryoneCatalog(r));
+        case 'creator':
+          return filteredCatalogRows.filter((r) => catalogCourseRowIsCreatorRoleCatalog(r));
+        case 'admin_only':
+          return filteredCatalogRows.filter((r) => catalogCourseRowIsLearnerHiddenAdminVisible(r));
+        case 'both':
+          return adminBothCatalogSubScope === 'learner'
+            ? filteredCatalogRows.filter((r) => catalogCourseRowIsLearnerEveryoneCatalog(r))
+            : filteredCatalogRows.filter(
+                (r) =>
+                  catalogCourseRowIsCreatorRoleCatalog(r) ||
+                  catalogCourseRowIsLearnerHiddenAdminVisible(r)
+              );
+      }
+    }
+
     // Avoid a flash on reload: we may already have cached draft rows + a persisted preference,
     // but creator/admin role checks resolve async (which drives `showCreatorBrowseTabs`).
     const hasOwnDraftRows = filteredMyCourseRows.length > 0;
@@ -2467,14 +2728,20 @@ export default function App() {
 
     if (creatorBrowseCatalogPref === 'mine') return filteredMyCourseRows;
     if (creatorBrowseCatalogPref === 'all') return filteredAllCourseRows;
-    // 'both' shows a combined grid (drafts already carry badges).
+    if (creatorBrowseCatalogPref === 'both') {
+      return creatorBothCatalogSubScope === 'mine' ? filteredMyCourseRows : filteredAllCourseRows;
+    }
     return filteredCatalogRows;
   }, [
+    useAdminBrowseScope,
+    adminBrowseCatalogPref,
     showCreatorBrowseTabs,
     filteredCatalogRows,
     filteredMyCourseRows,
     filteredAllCourseRows,
     creatorBrowseCatalogPref,
+    creatorBothCatalogSubScope,
+    adminBothCatalogSubScope,
   ]);
 
   const catalogGridCourses = useMemo(() => catalogGridRows.map((r) => r.course), [catalogGridRows]);
@@ -2489,20 +2756,58 @@ export default function App() {
     [navbarCatalogPathRows]
   );
   const navbarLearningPathsForNav = useMemo(() => {
+    if (useAdminBrowseScope) {
+      const base = navbarCatalogPathRows;
+      const pathBranches = (r: (typeof base)[number]) =>
+        r.fromCreatorDraft ? pathOutlinePrefetchCreator[r.id] : pathOutlinePrefetchPublished[r.id];
+      switch (adminBrowseCatalogPref) {
+        case 'other':
+          return base.filter((r) =>
+            learningPathRowIsLearnerEveryoneCatalog(r, pathBranches(r), learnerOutlineCatalogCourseIdSet)
+          );
+        case 'creator':
+          return base.filter((r) => learningPathRowIsCreatorRoleCatalog(r));
+        case 'admin_only':
+          return base.filter((r) =>
+            learningPathRowIsLearnerHiddenAdminVisible(r, pathBranches(r), learnerOutlineCatalogCourseIdSet)
+          );
+        case 'both':
+          return base.filter((r) => {
+            const b = pathBranches(r);
+            if (adminBothCatalogSubScope === 'learner') {
+              return learningPathRowIsLearnerEveryoneCatalog(r, b, learnerOutlineCatalogCourseIdSet);
+            }
+            return (
+              learningPathRowIsCreatorRoleCatalog(r) ||
+              learningPathRowIsLearnerHiddenAdminVisible(r, b, learnerOutlineCatalogCourseIdSet)
+            );
+          });
+      }
+    }
+
     // Unlike courses, the navbar Learning Paths list should NOT “fallback to all” while roles are resolving.
     // If the preference is 'mine' and there are 0 draft paths, showing 0 is correct — showing all briefly
     // causes the visible flash (see debug logs `paths-pre`: navLen 5 -> 0).
     if (creatorBrowseCatalogPref === 'mine') return filteredMyNavbarPathRows;
     if (creatorBrowseCatalogPref === 'all') return filteredAllNavbarPathRows;
+    if (creatorBrowseCatalogPref === 'both' && viewerHasCreatorStudio) {
+      return creatorBothCatalogSubScope === 'mine' ? filteredMyNavbarPathRows : filteredAllNavbarPathRows;
+    }
     return navbarCatalogPathRows;
   }, [
+    useAdminBrowseScope,
+    adminBrowseCatalogPref,
+    adminBothCatalogSubScope,
     navbarCatalogPathRows,
     filteredMyNavbarPathRows,
     filteredAllNavbarPathRows,
     creatorBrowseCatalogPref,
+    creatorBothCatalogSubScope,
+    viewerHasCreatorStudio,
+    pathOutlinePrefetchCreator,
+    pathOutlinePrefetchPublished,
+    learnerOutlineCatalogCourseIdSet,
   ]);
-
-  // Creator catalog view is controlled via persisted preference; no local tab state needed.
 
   const handleCourseRowClick = (row: CatalogCourseRow, focusIndex?: number) => {
     if (focusIndex !== undefined) {
@@ -2587,6 +2892,28 @@ export default function App() {
     setNavCatalogCategoryTag(null);
     setLibraryFilters(next);
   }, []);
+
+  const handleCreatorBothLibrarySubScope = useCallback((scope: CreatorBothCatalogSubScope) => {
+    if (!user?.uid) return;
+    setCreatorBothCatalogSubScope(scope);
+    writeCreatorBothCatalogSubScope(user.uid, scope);
+  }, [user?.uid]);
+
+  const handleAdminBothLibrarySubScope = useCallback((scope: AdminBothCatalogSubScope) => {
+    if (!user?.uid) return;
+    setAdminBothCatalogSubScope(scope);
+    writeAdminBothCatalogSubScope(user.uid, scope);
+  }, [user?.uid]);
+
+  const adminCatalogCreatorAttribution = useCallback(
+    (row: CatalogCourseRow): string | undefined => {
+      if (!shellViewerIsAdmin || !row.fromCreatorDraft) return undefined;
+      const ownerUid = (row.adminPreviewOwnerUid?.trim() || user?.uid || '').trim();
+      if (!ownerUid) return undefined;
+      return formatAdminStudioOwnerAttribution(ownerUid, user?.uid ?? null, adminBrowseUserDirectory);
+    },
+    [shellViewerIsAdmin, user?.uid, adminBrowseUserDirectory]
+  );
 
   useEffect(() => {
     const onExtras = () => setCategoryFilterRevision((r) => r + 1);
@@ -2733,7 +3060,15 @@ export default function App() {
       setProfileSettingsUnderlayView(prev);
       profileReturnCourseIdRef.current = selectedCourse?.id ?? null;
     }
-    if (shouldClear && (view === 'home' || view === 'catalog' || view === 'contact' || view === 'profile')) {
+    if (
+      shouldClear &&
+      (view === 'home' ||
+        view === 'catalog' ||
+        view === 'contact' ||
+        view === 'profile' ||
+        view === 'privacy' ||
+        view === 'terms')
+    ) {
       clearFilters();
       setFocusedCourseIndex(-1);
       setFocusedFooterIndex(-1);
@@ -3185,7 +3520,7 @@ export default function App() {
   };
 
   const handleFooterKeyDown = (e: React.KeyboardEvent, index: number) => {
-    const footerLinksCount = 6; // Focusable footer links (Solutions rows are static)
+    const footerLinksCount = 7; // Focusable footer links (Solutions rows are static)
     /** Contact Us is hidden below md — hamburger-only entry on narrow viewports. */
     const skipContactIndex =
       typeof window !== 'undefined' && !window.matchMedia('(min-width: 768px)').matches;
@@ -3540,6 +3875,7 @@ export default function App() {
               onClick={() => handleCourseRowClick(row)}
               showPrivateDraftBadge={row.fromCreatorDraft}
               draftBadgeLabel={row.adminPreviewOwnerUid ? 'Creator preview' : undefined}
+              adminStudioCreatorAttribution={adminCatalogCreatorAttribution(row)}
             />
           ))}
         </div>
@@ -3559,6 +3895,10 @@ export default function App() {
           : null;
     const pathUnknown =
       selectedLearningPathId != null && learningPathsFetched && activeLearningPath == null;
+    const showCreatorLibraryBothSubtabs =
+      !useAdminBrowseScope && showCreatorBrowseTabs && creatorBrowseCatalogPref === 'both';
+    const showAdminLibraryBothSubtabs = useAdminBrowseScope && adminBrowseCatalogPref === 'both';
+    const showCourseLibraryScopeSubtabs = showCreatorLibraryBothSubtabs || showAdminLibraryBothSubtabs;
     return (
       <div className="mx-auto min-w-0 max-w-7xl px-4 pb-12 pt-[max(5.5rem,calc(4rem+env(safe-area-inset-top,0px)))] sm:px-6 sm:pb-20 sm:pt-24">
         <div className="sticky top-16 z-30 -mx-4 mb-6 border-b border-[var(--border-color)]/80 bg-[var(--bg-primary)] px-4 pb-4 sm:static sm:z-auto sm:mx-0 sm:mb-10 sm:border-0 sm:bg-transparent sm:px-0 sm:pb-0">
@@ -3567,6 +3907,106 @@ export default function App() {
               <h1 className="min-w-0 break-words text-2xl font-bold leading-tight text-[var(--text-primary)] sm:text-3xl md:text-4xl">
                 {catalogHeading}
               </h1>
+              {showCourseLibraryScopeSubtabs ? (
+                <div className="mt-4 flex w-full min-w-0 items-center justify-between gap-3 sm:mt-5">
+                  <div
+                    role="tablist"
+                    aria-label={
+                      showAdminLibraryBothSubtabs
+                        ? 'Course library: learner catalog or creators and admin-only'
+                        : 'Course library: my courses or all catalog courses'
+                    }
+                    className="inline-flex min-w-0 gap-0.5 rounded-2xl border border-[var(--border-color)]/70 bg-[var(--bg-secondary)]/90 p-1 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)] ring-1 ring-black/[0.04] dark:bg-[var(--hover-bg)]/50 dark:ring-white/[0.06]"
+                  >
+                    {showCreatorLibraryBothSubtabs
+                      ? (
+                          [
+                            { id: 'mine' as const, label: 'My Courses' },
+                            { id: 'all' as const, label: 'All Courses' },
+                          ] as const
+                        ).map((opt) => {
+                          const selected = creatorBothCatalogSubScope === opt.id;
+                          return (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              role="tab"
+                              aria-selected={selected}
+                              aria-controls="course-library-grid"
+                              tabIndex={selected ? 0 : -1}
+                              onClick={() => handleCreatorBothLibrarySubScope(opt.id)}
+                              className={`relative min-h-11 shrink-0 rounded-[0.65rem] px-3 py-2 text-xs font-semibold leading-tight transition-[color,box-shadow,transform,background-color] duration-200 ease-out sm:px-4 sm:text-sm ${
+                                selected
+                                  ? 'z-[1] bg-[var(--bg-primary)] text-brand-500 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.25),0_0_0_1px_rgba(249,115,22,0.22)] ring-1 ring-orange-500/25 dark:shadow-[0_2px_12px_-2px_rgba(0,0,0,0.5),0_0_0_1px_rgba(251,146,60,0.2)]'
+                                  : 'text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]/40 hover:text-[var(--text-primary)] dark:hover:bg-white/[0.05]'
+                              } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-primary)]`}
+                            >
+                              {opt.label}
+                            </button>
+                          );
+                        })
+                      : (
+                          [
+                            {
+                              id: 'learner' as const,
+                              labelShort: 'Learners’',
+                              label: 'Learners’ catalog',
+                              title:
+                                'Published courses and paths that appear in learner browse (platform catalog only, not creator drafts).',
+                            },
+                            {
+                              id: 'staff' as const,
+                              labelShort: 'Staff',
+                              label: 'Creators & admin-only',
+                              title:
+                                'Creator drafts and previews, plus platform catalog entries visible to admins only.',
+                            },
+                          ] as const
+                        ).map((opt) => {
+                          const selected = adminBothCatalogSubScope === opt.id;
+                          return (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              role="tab"
+                              title={opt.title}
+                              aria-selected={selected}
+                              aria-controls="course-library-grid"
+                              tabIndex={selected ? 0 : -1}
+                              onClick={() => handleAdminBothLibrarySubScope(opt.id)}
+                              className={`relative min-h-11 shrink-0 rounded-[0.65rem] px-2.5 py-2 text-[0.7rem] font-semibold leading-tight transition-[color,box-shadow,transform,background-color] duration-200 ease-out sm:px-3.5 sm:text-sm ${
+                                selected
+                                  ? 'z-[1] bg-[var(--bg-primary)] text-brand-500 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.25),0_0_0_1px_rgba(249,115,22,0.22)] ring-1 ring-orange-500/25 dark:shadow-[0_2px_12px_-2px_rgba(0,0,0,0.5),0_0_0_1px_rgba(251,146,60,0.2)]'
+                                  : 'text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]/40 hover:text-[var(--text-primary)] dark:hover:bg-white/[0.05]'
+                              } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-primary)]`}
+                            >
+                              <span className="sm:hidden">{opt.labelShort}</span>
+                              <span className="hidden sm:inline">{opt.label}</span>
+                            </button>
+                          );
+                        })}
+                  </div>
+                  <div
+                    className="flex shrink-0 items-center gap-2 rounded-2xl border border-[var(--border-color)]/60 bg-gradient-to-br from-brand-500/[0.12] via-[var(--bg-secondary)]/80 to-[var(--bg-secondary)]/90 px-3 py-2 shadow-sm ring-1 ring-orange-500/10 sm:gap-2.5 sm:px-3.5 sm:py-2.5"
+                    aria-live="polite"
+                    aria-atomic="true"
+                  >
+                    <BookOpen
+                      className="size-[1.125rem] shrink-0 text-brand-500/85 sm:size-4"
+                      strokeWidth={2}
+                      aria-hidden
+                    />
+                    <p className="flex min-w-0 items-baseline gap-x-1.5 leading-none">
+                      <span className="inline-flex min-w-[3ch] shrink-0 justify-end tabular-nums text-lg font-bold tracking-tight text-[var(--text-primary)] sm:min-w-[3.25ch] sm:text-xl">
+                        {catalogGridRows.length}
+                      </span>
+                      <span className="inline-block w-[4.5rem] shrink-0 text-left text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)] sm:w-[4.75rem] sm:text-xs sm:tracking-[0.1em]">
+                        {catalogGridRows.length === 1 ? 'course' : 'courses'}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : selectedLearningPathId != null && (pathTitleLoading || pathHeroTitle != null) ? (
             <div className="mb-2 rounded-2xl border border-[var(--border-light)] bg-[var(--bg-secondary)] p-4 shadow-sm ring-1 ring-[var(--border-color)]/30 sm:mb-4 sm:p-5">
@@ -3704,7 +4144,16 @@ export default function App() {
 
         {selectedLearningPathId == null ? (
           <>
-            <div className="relative z-0 grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4">
+            <div
+              id="course-library-grid"
+              role={
+                (!useAdminBrowseScope && showCreatorBrowseTabs && creatorBrowseCatalogPref === 'both') ||
+                (useAdminBrowseScope && adminBrowseCatalogPref === 'both')
+                  ? 'tabpanel'
+                  : undefined
+              }
+              className="relative z-0 grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4"
+            >
               {catalogGridRows.map((row, index) => (
                 <CourseCard
                   key={
@@ -3722,6 +4171,7 @@ export default function App() {
                   isFocused={focusedCourseIndex === index}
                   showPrivateDraftBadge={row.fromCreatorDraft}
                   draftBadgeLabel={row.adminPreviewOwnerUid ? 'Creator preview' : undefined}
+                  adminStudioCreatorAttribution={adminCatalogCreatorAttribution(row)}
                 />
               ))}
             </div>
@@ -3900,6 +4350,53 @@ export default function App() {
     </div>
   );
 
+  const renderTerms = () => (
+    <div className="pt-32 pb-20 px-6 max-w-3xl mx-auto">
+      <h1 className="text-4xl font-bold text-[var(--text-primary)] mb-8">Terms of Service</h1>
+      <div className="prose prose-invert max-w-none text-[var(--text-secondary)] space-y-6">
+        <p>Last updated: March 19, 2026</p>
+        <p>
+          These Terms of Service (&ldquo;Terms&rdquo;) govern your access to and use of the websites, applications,
+          and services offered by i-Golden Inc. (&ldquo;i-Golden,&rdquo; &ldquo;we,&rdquo; &ldquo;us,&rdquo; or
+          &ldquo;our&rdquo;). By using our services, you agree to these Terms.
+        </p>
+        <h2 className="text-2xl font-bold text-[var(--text-primary)] mt-12 mb-4">1. Using our services</h2>
+        <p>
+          You must follow applicable laws and any policies made available to you within the services. Do not misuse
+          our services — for example, do not interfere with the services or try to access them using a method other
+          than the interface and instructions we provide.
+        </p>
+        <h2 className="text-2xl font-bold text-[var(--text-primary)] mt-12 mb-4">2. Your account</h2>
+        <p>
+          Some features require an account. You are responsible for activity that happens on or through your account.
+          Keep your credentials confidential and notify us if you learn of any unauthorized use.
+        </p>
+        <h2 className="text-2xl font-bold text-[var(--text-primary)] mt-12 mb-4">3. Content and intellectual property</h2>
+        <p>
+          Our services may display content owned by i-Golden, our partners, or other users. Unless we say otherwise,
+          that content is subject to intellectual property rights and these Terms. You may not copy, modify, or
+          distribute our services or related content except as we expressly allow.
+        </p>
+        <h2 className="text-2xl font-bold text-[var(--text-primary)] mt-12 mb-4">4. Disclaimers and limitation of liability</h2>
+        <p>
+          The services are provided on an &ldquo;as is&rdquo; basis. To the fullest extent permitted by law, i-Golden
+          disclaims warranties of any kind and limits liability for indirect or consequential damages arising from your
+          use of the services.
+        </p>
+        <h2 className="text-2xl font-bold text-[var(--text-primary)] mt-12 mb-4">5. Changes</h2>
+        <p>
+          We may modify these Terms or the services. We will post the updated Terms with a new &ldquo;Last
+          updated&rdquo; date where reasonable. Continued use after changes means you accept the revised Terms.
+        </p>
+        <h2 className="text-2xl font-bold text-[var(--text-primary)] mt-12 mb-4">6. Contact</h2>
+        <p>
+          For questions about these Terms, use the Contact page in this app or reach out through the support channels
+          we list there.
+        </p>
+      </div>
+    </div>
+  );
+
   const renderEnterprise = () => (
     <div className="pt-32 pb-20 px-6 max-w-7xl mx-auto">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-20 items-center mb-32">
@@ -4001,7 +4498,7 @@ export default function App() {
             fromCreatorDraft: r.fromCreatorDraft,
             adminPreviewOwnerUid: r.adminPreviewOwnerUid,
           }))}
-          privatePathIds={catalogPrivatePathIds}
+          privatePathIds={catalogPrivatePathIdsForOutline}
           onPathSelect={handlePathSelect}
           learningPathNavActive={learningPathNavActive}
           onSkillSelect={handleSkillSelect}
@@ -4086,6 +4583,15 @@ export default function App() {
                   remoteDataVersion={remoteProfileDataVersion}
                   contentDeepLink={overviewContentDeepLink}
                   onContentDeepLinkConsumed={() => setOverviewContentDeepLink(null)}
+                  adminCreatorStudioAttribution={
+                    shellViewerIsAdmin && selectedCourseIsCreatorDraft
+                      ? formatAdminStudioOwnerAttribution(
+                          (selectedCourseAdminPreviewOwnerUid?.trim() || user?.uid || '').trim(),
+                          user?.uid ?? null,
+                          adminBrowseUserDirectory
+                        )
+                      : null
+                  }
                 />
               ) : null
             ) : deferredCourseRoute?.view === 'overview' ? (
@@ -4143,6 +4649,7 @@ export default function App() {
           {mainView === 'about' && renderAbout()}
           {mainView === 'careers' && renderCareers()}
           {mainView === 'privacy' && renderPrivacy()}
+          {mainView === 'terms' && renderTerms()}
           {mainView === 'help' && renderHelp()}
           {mainView === 'contact' && renderContact()}
           {mainView === 'status' && renderStatus()}
@@ -4196,7 +4703,8 @@ export default function App() {
               courses={catalogCourses}
               user={user}
               isAuthReady={isAuthReady}
-              isCreator={!!user && adminAccessResolved && (isCreatorUser || isAdminUser)}
+              isAdmin={!!user && adminAccessResolved && isAdminUser}
+              isCreator={!!user && adminAccessResolved && isCreatorUser}
               onShowCertificate={handleShowCertificate}
               openCompletedCoursesSignal={completedCoursesModalSignal}
               onDismiss={handleProfileDismiss}
@@ -4374,11 +4882,20 @@ export default function App() {
                 >
                   Careers
                 </li>
-                <li 
-                  ref={el => footerRefs.current[5] = el as any}
+                <li
+                  ref={(el) => (footerRefs.current[5] = el as any)}
                   tabIndex={focusedFooterIndex === 5 ? 0 : -1}
                   onKeyDown={(e) => handleFooterKeyDown(e as any, 5)}
-                  onClick={() => handleNavigate('privacy')} 
+                  onClick={() => handleNavigate('terms')}
+                  className="hover:text-orange-500 cursor-pointer focus:outline-none focus:text-orange-500"
+                >
+                  Terms of Service
+                </li>
+                <li
+                  ref={(el) => (footerRefs.current[6] = el as any)}
+                  tabIndex={focusedFooterIndex === 6 ? 0 : -1}
+                  onKeyDown={(e) => handleFooterKeyDown(e as any, 6)}
+                  onClick={() => handleNavigate('privacy')}
                   className="hover:text-orange-500 cursor-pointer focus:outline-none focus:text-orange-500"
                 >
                   Privacy Policy
@@ -4387,8 +4904,25 @@ export default function App() {
             </div>
             </div>
           </div>
-          <div className="max-w-7xl mx-auto mt-12 pt-8 border-t border-[var(--border-color)] text-center text-[var(--text-secondary)] text-xs">
-            © 2026 i-Golden Inc. All rights reserved.
+          <div className="max-w-7xl mx-auto mt-12 flex flex-col items-center justify-center gap-3 border-t border-[var(--border-color)] pt-8 text-center text-xs text-[var(--text-secondary)] sm:flex-row sm:flex-wrap sm:gap-x-4 sm:gap-y-2">
+            <span>© 2026 i-Golden Inc. All rights reserved.</span>
+            <span className="hidden h-3 w-px shrink-0 bg-[var(--border-color)] sm:block" aria-hidden />
+            <nav aria-label="Legal" className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+              <button
+                type="button"
+                onClick={() => handleNavigate('terms')}
+                className="min-h-11 rounded-md px-1 text-[var(--text-secondary)] underline decoration-[var(--text-muted)] underline-offset-2 transition-colors hover:text-orange-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 sm:min-h-0"
+              >
+                Terms of Service
+              </button>
+              <button
+                type="button"
+                onClick={() => handleNavigate('privacy')}
+                className="min-h-11 rounded-md px-1 text-[var(--text-secondary)] underline decoration-[var(--text-muted)] underline-offset-2 transition-colors hover:text-orange-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 sm:min-h-0"
+              >
+                Privacy Policy
+              </button>
+            </nav>
           </div>
         </footer>
       )}

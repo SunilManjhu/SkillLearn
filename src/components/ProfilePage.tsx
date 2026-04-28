@@ -22,6 +22,12 @@ import {
   type CreatorBrowseCatalogPreference,
   writeCreatorBrowseCatalogPreference,
 } from '../utils/creatorBrowseCatalogPreference';
+import {
+  ADMIN_BROWSE_CATALOG_PREFERENCE_CHANGED,
+  readAdminBrowseCatalogPreference,
+  type AdminBrowseCatalogPreference,
+  writeAdminBrowseCatalogPreference,
+} from '../utils/adminBrowseCatalogPreference';
 
 const bioStorageKey = (uid: string) => `skilllearn-profile-bio:${uid}`;
 
@@ -58,6 +64,8 @@ interface ProfilePageProps {
   courses: Course[];
   user: User | null;
   isAuthReady: boolean;
+  /** Firestore role admin — Admin browse scope for catalog / paths. */
+  isAdmin?: boolean;
   isCreator?: boolean;
   onShowCertificate: (courseId: string, userName: string, date: string, certId: string) => void;
   /** Increment (e.g. from navbar certificate notification) to open Completed Courses modal. */
@@ -81,6 +89,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   courses,
   user,
   isAuthReady,
+  isAdmin = false,
   isCreator = false,
   onShowCertificate,
   openCompletedCoursesSignal = 0,
@@ -103,6 +112,9 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   const { showActionToast, actionToast } = useAdminActionToast();
   const [creatorCatalogPref, setCreatorCatalogPref] = useState<CreatorBrowseCatalogPreference>(() =>
     user?.uid ? readCreatorBrowseCatalogPreference(user.uid) : 'both'
+  );
+  const [adminCatalogPref, setAdminCatalogPref] = useState<AdminBrowseCatalogPreference>(() =>
+    user?.uid ? readAdminBrowseCatalogPreference(user.uid) : 'both'
   );
 
   const { enabled: aiModelsEnabled, setEnabled: setAiModelsEnabled } = useLearnerGeminiEnabled();
@@ -210,6 +222,18 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
     if (!user?.uid) return;
     setCreatorCatalogPref(readCreatorBrowseCatalogPreference(user.uid));
   }, [user?.uid]);
+
+  useEffect(() => {
+    if (!user?.uid || !isAdmin) return;
+    setAdminCatalogPref(readAdminBrowseCatalogPreference(user.uid));
+  }, [user?.uid, isAdmin]);
+
+  useEffect(() => {
+    if (!user?.uid || !isAdmin) return;
+    const onChanged = () => setAdminCatalogPref(readAdminBrowseCatalogPreference(user.uid));
+    window.addEventListener(ADMIN_BROWSE_CATALOG_PREFERENCE_CHANGED, onChanged);
+    return () => window.removeEventListener(ADMIN_BROWSE_CATALOG_PREFERENCE_CHANGED, onChanged);
+  }, [user?.uid, isAdmin]);
 
   const heroName = user?.displayName?.trim() || user?.email?.split('@')[0] || 'User';
   const photoUrl = user?.photoURL;
@@ -607,6 +631,94 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
           </section>
         </div>
 
+        {isAdmin ? (
+          <div className="mt-4 space-y-2 border-b border-[var(--border-color)] pb-4 sm:mt-5 sm:space-y-3 sm:pb-5">
+            <div className="flex flex-wrap items-center justify-between gap-2 gap-y-1">
+              <h3 className="text-sm font-semibold text-[var(--text-primary)]">Admins</h3>
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                Catalog & paths
+              </span>
+            </div>
+            <div
+              role="group"
+              aria-label="Admin browse scope for courses and learning paths"
+              className="grid min-w-0 grid-cols-2 gap-1 rounded-xl border border-[var(--border-color)] bg-[var(--hover-bg)]/30 p-1 sm:grid-cols-4"
+            >
+              {(
+                [
+                  {
+                    id: 'other' as const,
+                    label: 'Learners’ catalog',
+                    title:
+                      'Published courses and paths that appear in learner browse (platform catalog only, not creator drafts).',
+                  },
+                  {
+                    id: 'creator' as const,
+                    label: 'Creators’ catalog',
+                    title: 'Courses and paths from creators: studio drafts and admin previews of creator work.',
+                  },
+                  {
+                    id: 'admin_only' as const,
+                    label: 'Admin-only browse',
+                    title:
+                      'Items enabled for administrators only—hidden from learners in Browse Catalog and Learning Paths.',
+                  },
+                  {
+                    id: 'both' as const,
+                    label: 'Show all',
+                    title:
+                      'Everything together: creators’ items, admin-only items, and learner-visible catalog.',
+                  },
+                ] as const
+              ).map((opt) => {
+                const selected = adminCatalogPref === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    aria-pressed={selected}
+                    title={opt.title}
+                    onClick={() => {
+                      if (!user?.uid) return;
+                      setAdminCatalogPref(opt.id);
+                      writeAdminBrowseCatalogPreference(user.uid, opt.id);
+                      showActionToast(
+                        opt.id === 'both'
+                          ? 'Use Learners’ / Staff under Course Library (and matching paths in the nav) to switch between learner-visible catalog and creators + admin-only items.'
+                          : opt.id === 'other'
+                            ? 'Browse Catalog and Learning Paths now show only the learner-visible catalog (published for learners).'
+                            : opt.id === 'creator'
+                              ? 'Browse Catalog and Learning Paths now show only creators’ courses and paths (drafts and previews).'
+                              : 'Browse Catalog and Learning Paths now show only admin-only items (not shown to learners).'
+                      );
+                    }}
+                    className={`min-h-11 w-full min-w-0 rounded-lg px-1.5 py-2 text-[0.65rem] font-semibold leading-tight transition-colors sm:px-2 sm:text-xs sm:leading-snug md:text-sm ${
+                      selected
+                        ? 'bg-brand-500/15 text-brand-500'
+                        : 'text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-xs leading-relaxed text-[var(--text-secondary)]">
+              <strong className="font-semibold text-[var(--text-primary)]">Learners’ catalog</strong> — published
+              courses and paths learners can see. <strong className="font-semibold text-[var(--text-primary)]">
+                Creators’ catalog
+              </strong>{' '}
+              — work from creators (drafts and previews). <strong className="font-semibold text-[var(--text-primary)]">
+                Admin-only browse
+              </strong>{' '}
+              — enabled for admins but not for learners. <strong className="font-semibold text-[var(--text-primary)]">
+                Show all
+              </strong>{' '}
+              combines those three.
+            </p>
+          </div>
+        ) : null}
+
         {isCreator ? (
           <div className="mt-4 space-y-2 border-b border-[var(--border-color)] pb-4 sm:mt-5 sm:space-y-3 sm:pb-5">
             <div className="flex items-center justify-between gap-3">
@@ -639,7 +751,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                       writeCreatorBrowseCatalogPreference(user.uid, opt.id);
                       showActionToast(
                         opt.id === 'both'
-                          ? 'Browse Catalog and Learning Paths show your items and the rest of the catalog.'
+                          ? 'Use My Courses / All Courses under Course Library (and matching paths in the nav) to switch views.'
                           : opt.id === 'mine'
                             ? 'Browse Catalog and Learning Paths show your courses and paths only.'
                             : 'Browse Catalog and Learning Paths show catalog courses and paths only (not your drafts).'

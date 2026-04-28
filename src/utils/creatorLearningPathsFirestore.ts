@@ -74,6 +74,33 @@ export async function listCreatorLearningPathsForAdminByOwner(ownerUid: string):
   return r.paths;
 }
 
+/** Admin browse: every `creatorLearningPaths` doc with parseable `ownerUid` + outline children (same shape as per-owner load). */
+export async function loadAllCreatorLearningPathsForAdmin(): Promise<
+  Array<{ path: LearningPath; ownerUid: string; outlineChildren: MindmapTreeNode[] }>
+> {
+  try {
+    const snap = await getDocs(collection(db, 'creatorLearningPaths'));
+    const out: Array<{ path: LearningPath; ownerUid: string; outlineChildren: MindmapTreeNode[] }> = [];
+    for (const d of snap.docs) {
+      const raw = d.data() as Record<string, unknown>;
+      const ownerUid = typeof raw.ownerUid === 'string' ? raw.ownerUid.trim() : '';
+      const p = docToLearningPath(d.id, raw);
+      if (p && ownerUid) {
+        out.push({
+          path: p,
+          ownerUid,
+          outlineChildren: outlineChildrenFromPathFirestoreData(raw),
+        });
+      }
+    }
+    out.sort((a, b) => a.path.title.localeCompare(b.path.title, undefined, { sensitivity: 'base' }));
+    return out;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'creatorLearningPaths');
+    return [];
+  }
+}
+
 export type SaveCreatorLearningPathOptions = {
   allowNonOwnerWriter?: boolean;
 };
