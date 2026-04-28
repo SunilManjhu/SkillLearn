@@ -107,6 +107,21 @@ function MiniToolbar({ editor }: { editor: Editor | null }) {
   );
 }
 
+export type CatalogMiniRichMultilineMaxHeight = 'none' | 'descriptionBio';
+
+/**
+ * ~2 lines of `text-sm` + `leading-relaxed` plus ~1rem vertical padding (matches author bio `py-2`).
+ * Capped height; overflow scrolls so the field does not grow with content.
+ */
+export const CATALOG_DESCRIPTION_BIO_NATIVE_INPUT_SCROLL_CLASS =
+  'min-h-[calc(2*0.875rem*1.625+1rem)] max-h-[12.5rem] min-w-0 overflow-y-auto overflow-x-hidden overscroll-y-contain sm:max-h-[14.5rem]';
+
+/** Scroll shell for rich description (adds rounding). Author bio textarea uses `CATALOG_DESCRIPTION_BIO_NATIVE_INPUT_SCROLL_CLASS` on the control. */
+export const CATALOG_DESCRIPTION_BIO_FIELD_SCROLL_CLASS = `${CATALOG_DESCRIPTION_BIO_NATIVE_INPUT_SCROLL_CLASS} rounded-md`;
+
+/** TipTap shell: same scroll bounds; inner editor stays block-level so height follows content inside the scroller. */
+export const CATALOG_DESCRIPTION_BIO_MULTILINE_SCROLL_SHELL_CLASS = `${CATALOG_DESCRIPTION_BIO_FIELD_SCROLL_CLASS} [&_.ProseMirror]:!min-h-0 [&_.tiptap]:!min-h-0 [&_.tiptap]:block`;
+
 export type CatalogMiniRichEditorProps = {
   id: string;
   value: string;
@@ -117,7 +132,18 @@ export type CatalogMiniRichEditorProps = {
   placeholder?: string;
   /** Merged onto the outer shell (e.g. `h-full min-h-0` beside a matched-height textarea). */
   className?: string;
+  /**
+   * When set, multiline body uses ~2 lines min height, caps at the catalog panel max, then scrolls
+   * on the shell (toolbar stays usable).
+   */
+  multilineMaxHeight?: CatalogMiniRichMultilineMaxHeight;
 };
+
+const catalogMiniRichMultilineProseClass =
+  'catalog-mini-rich ProseMirror min-h-[4.5rem] w-full max-w-full px-2.5 py-1.5 text-sm leading-relaxed outline-none focus:outline-none sm:px-3 sm:py-2 [&_p]:my-1 [&_p]:first:mt-0 [&_p]:last:mb-0';
+
+const catalogMiniRichMultilineDescriptionBioProseClass =
+  'catalog-mini-rich ProseMirror min-h-0 w-full max-w-full px-2.5 py-1.5 text-sm leading-relaxed outline-none focus:outline-none sm:px-3 sm:py-2 [&_p]:my-0 [&_p]:first:mt-0 [&_p]:last:mb-0';
 
 export function CatalogMiniRichEditor({
   id,
@@ -128,7 +154,13 @@ export function CatalogMiniRichEditor({
   error,
   placeholder = '',
   className,
+  multilineMaxHeight = 'none',
 }: CatalogMiniRichEditorProps) {
+  const multilineProseClass =
+    multilineMaxHeight === 'descriptionBio'
+      ? catalogMiniRichMultilineDescriptionBioProseClass
+      : catalogMiniRichMultilineProseClass;
+
   const editor = useEditor({
     extensions: [
       LessonNotePasteHtml,
@@ -165,7 +197,7 @@ export function CatalogMiniRichEditor({
         class:
           variant === 'title'
             ? 'catalog-mini-rich ProseMirror flex min-h-0 w-full min-w-0 flex-1 items-center px-2 py-0 text-sm font-semibold leading-none outline-none focus:outline-none [&_p]:m-0 [&_p]:flex [&_p]:min-h-0 [&_p]:flex-1 [&_p]:items-center [&_p]:leading-none [&_p]:pb-0 [&_p_br]:m-0 [&_p_br]:block [&_p_br]:h-0 [&_p_br]:leading-none [&_p_br]:overflow-hidden'
-            : 'catalog-mini-rich ProseMirror min-h-[4.5rem] w-full max-w-full px-2.5 py-1.5 text-sm leading-relaxed outline-none focus:outline-none sm:px-3 sm:py-2 [&_p]:my-1 [&_p]:first:mt-0 [&_p]:last:mb-0',
+            : multilineProseClass,
         'aria-label': ariaLabel,
       },
     },
@@ -192,10 +224,17 @@ export function CatalogMiniRichEditor({
     >
       <MiniToolbar editor={editor} />
       {variant === 'title' ? (
-        <div className="flex min-h-11 min-w-0 items-stretch overflow-hidden rounded-md sm:min-h-7">
+        <div className="flex min-h-11 max-sm:min-h-9 min-w-0 items-stretch overflow-hidden rounded-md sm:min-h-7">
           <EditorContent
             editor={editor}
             className="flex min-h-0 min-w-0 flex-1 [&_.tiptap]:flex [&_.tiptap]:min-h-0 [&_.tiptap]:flex-1 [&_.tiptap]:items-stretch"
+          />
+        </div>
+      ) : multilineMaxHeight === 'descriptionBio' ? (
+        <div className={CATALOG_DESCRIPTION_BIO_MULTILINE_SCROLL_SHELL_CLASS}>
+          <EditorContent
+            editor={editor}
+            className="min-h-0 min-w-0 [&_.ProseMirror]:max-w-full [&_.tiptap]:min-h-0 [&_.tiptap]:max-w-full"
           />
         </div>
       ) : (

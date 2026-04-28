@@ -123,12 +123,14 @@ export function CourseHierarchyVisibilityCells({
     return (
       <div
         data-path-branch-outline-visibility
-        className={`flex max-w-full min-w-0 flex-col gap-2 sm:flex-row sm:flex-nowrap sm:items-start sm:gap-2 ${
+        className={`flex max-w-full min-w-0 flex-col gap-1.5 max-md:flex-row max-md:flex-wrap max-md:items-center max-md:gap-x-2 max-md:gap-y-1 sm:flex-row sm:flex-nowrap sm:items-start sm:gap-2 ${
           rowEnd ? 'ml-auto items-end sm:ml-auto sm:justify-end' : ''
         }`}
       >
         {showCellInline}
-        <div className="min-w-0 w-full max-w-[min(100vw-2rem,22rem)] shrink-0 sm:w-auto">{roleCell}</div>
+        <div className="min-w-0 w-full flex-1 max-w-[min(100vw-2rem,22rem)] shrink-0 max-md:max-w-none sm:w-auto">
+          {roleCell}
+        </div>
       </div>
     );
   }

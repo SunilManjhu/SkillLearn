@@ -66,7 +66,10 @@ import {
   CourseHierarchyVisibilityCells,
   COURSE_HIERARCHY_VISIBILITY_SHOW_TIP,
 } from './CourseHierarchyVisibilityControls';
-import { CatalogMiniRichEditor } from './CatalogMiniRichEditor';
+import {
+  CatalogMiniRichEditor,
+  CATALOG_DESCRIPTION_BIO_NATIVE_INPUT_SCROLL_CLASS,
+} from './CatalogMiniRichEditor';
 import {
   catalogMiniRichIsEffectivelyEmpty,
   catalogMiniRichPlainText,
@@ -1026,8 +1029,8 @@ const CATALOG_LESSON_INSERT_OUTER_HOVER =
 const CATALOG_LESSON_INSERT_OUTER_PERSIST =
   'group/ins relative z-0 mb-0 min-w-0 overflow-visible py-0';
 const CATALOG_LESSON_INSERT_INNER_HOVER =
-  'flex w-full pl-3 max-md:!pl-0 items-center justify-center md:min-h-0 md:py-0.5';
-const CATALOG_LESSON_INSERT_INNER_PERSIST = 'flex w-full pl-3 max-md:!pl-0 justify-center';
+  'flex w-full pl-3 max-md:!pl-0 items-center justify-center max-md:py-0 md:min-h-0 md:py-0.5';
+const CATALOG_LESSON_INSERT_INNER_PERSIST = 'flex w-full pl-3 max-md:!pl-0 max-md:py-0 justify-center';
 
 function CatalogLessonInsertSlot({
   persistVisibleOnMd,
@@ -1097,13 +1100,13 @@ const CATALOG_MODULE_INSERT_OUTER_HOVER =
 const CATALOG_MODULE_INSERT_OUTER_PERSIST =
   'group/ins relative z-0 mb-0 min-w-0 overflow-visible py-0';
 const CATALOG_MODULE_INSERT_INNER_HOVER =
-  'flex w-full max-md:!pl-0 items-center justify-center md:min-h-0 md:py-0.5';
-const CATALOG_MODULE_INSERT_INNER_PERSIST = 'flex w-full max-md:!pl-0 justify-center';
+  'flex w-full max-md:!pl-0 items-center justify-center max-md:py-0 md:min-h-0 md:py-0.5';
+const CATALOG_MODULE_INSERT_INNER_PERSIST = 'flex w-full max-md:!pl-0 max-md:py-0 justify-center';
 
 const CATALOG_LESSON_MODULE_BOUNDARY_INNER_HOVER =
-  'flex w-full min-w-0 flex-col gap-2 pl-3 max-md:!pl-0 md:flex-row md:flex-wrap md:items-stretch md:justify-center md:gap-2 md:py-0.5';
+  'flex w-full min-w-0 flex-col gap-1.5 max-md:gap-1.5 pl-3 max-md:!pl-0 md:flex-row md:flex-wrap md:items-stretch md:justify-center md:gap-2 md:py-0.5';
 const CATALOG_LESSON_MODULE_BOUNDARY_INNER_PERSIST =
-  'flex w-full min-w-0 flex-col gap-2 pl-3 max-md:!pl-0 md:flex-row md:flex-wrap md:items-stretch md:justify-center md:gap-2';
+  'flex w-full min-w-0 flex-col gap-1.5 max-md:gap-1.5 pl-3 max-md:!pl-0 md:flex-row md:flex-wrap md:items-stretch md:justify-center md:gap-2';
 
 /** After the last lesson in an expanded module: “Add branch” and “Add module” share one hover strip on one row (md+). */
 function CatalogLessonModuleBoundaryInsertRow({
@@ -4299,48 +4302,56 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
         </div>
       </div>
 
-      <div className="-mx-1 flex min-h-11 flex-wrap items-center gap-2 border-b border-[var(--border-color)] px-1 pb-2">
+      <div
+        role="tablist"
+        aria-label="Catalog sections"
+        className="-mx-1 flex min-h-11 w-full min-w-0 flex-nowrap items-stretch gap-1 border-b border-[var(--border-color)] px-1 py-1.5 pb-3 sm:gap-2 sm:pb-2.5"
+      >
         <button
           type="button"
+          role="tab"
           onClick={() => requestContentCatalogSubTab('catalog')}
-          className={`inline-flex min-h-11 touch-manipulation shrink-0 items-center rounded-lg px-3 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/45 active:opacity-90 ${
+          className={`flex min-h-11 min-w-0 flex-1 touch-manipulation flex-col items-center justify-center gap-0.5 rounded-lg border px-1.5 py-2 text-xs font-semibold leading-snug focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#a1a2a2]/45 active:opacity-90 sm:flex-row sm:gap-1.5 sm:px-3 sm:text-sm sm:leading-normal ${
             contentCatalogSubTab === 'catalog'
-              ? 'bg-[#616161]/10 text-[var(--text-primary)] ring-1 ring-[#a1a2a2]/45'
-              : 'text-[var(--text-secondary)]'
+              ? 'border-[#a1a2a2]/45 bg-[#616161]/10 text-[var(--text-primary)]'
+              : 'border-transparent text-[var(--text-secondary)]'
           }`}
-          aria-current={contentCatalogSubTab === 'catalog' ? 'page' : undefined}
+          aria-selected={contentCatalogSubTab === 'catalog'}
         >
-          Catalog
+          <BookOpen size={15} className="shrink-0 opacity-90" aria-hidden />
+          <span className="max-w-full text-center whitespace-normal">Catalog</span>
         </button>
-        <div className="flex min-h-11 min-w-0 flex-1 gap-2 overflow-x-auto overflow-y-visible overscroll-x-contain pb-0.5 [scrollbar-width:none] [-webkit-overflow-scrolling:touch] sm:flex-wrap sm:overflow-visible sm:pb-0 [&::-webkit-scrollbar]:hidden">
-          <button
-            type="button"
-            onClick={() => requestContentCatalogSubTab('paths')}
-            aria-current={contentCatalogSubTab === 'paths' ? 'page' : undefined}
-            className={`inline-flex min-h-11 touch-manipulation shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/45 active:opacity-90 ${
-              contentCatalogSubTab === 'paths'
-                ? 'bg-[#616161]/10 text-[var(--text-primary)] ring-1 ring-[#a1a2a2]/45'
-                : 'text-[var(--text-secondary)]'
-            }`}
-          >
-            <Route size={15} aria-hidden />
-            Paths
-          </button>
-          <button
-            type="button"
-            onClick={() => requestContentCatalogSubTab('taxonomy')}
-            aria-current={contentCatalogSubTab === 'taxonomy' ? 'page' : undefined}
-            aria-label="Categories and skills"
-            className={`inline-flex min-h-11 touch-manipulation shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold tracking-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/45 active:opacity-90 ${
-              contentCatalogSubTab === 'taxonomy'
-                ? 'bg-[#616161]/10 text-[var(--text-primary)] ring-1 ring-[#a1a2a2]/45'
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-            }`}
-          >
-            <Tags size={15} className="shrink-0 opacity-90" aria-hidden />
-            <span className="min-w-0 truncate">Categories & Skills</span>
-          </button>
-        </div>
+        <button
+          type="button"
+          role="tab"
+          onClick={() => requestContentCatalogSubTab('paths')}
+          aria-selected={contentCatalogSubTab === 'paths'}
+          className={`flex min-h-11 min-w-0 flex-1 touch-manipulation flex-col items-center justify-center gap-0.5 rounded-lg border px-1.5 py-2 text-xs font-semibold leading-snug focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#a1a2a2]/45 active:opacity-90 sm:flex-row sm:gap-1.5 sm:px-3 sm:text-sm sm:leading-normal ${
+            contentCatalogSubTab === 'paths'
+              ? 'border-[#a1a2a2]/45 bg-[#616161]/10 text-[var(--text-primary)]'
+              : 'border-transparent text-[var(--text-secondary)]'
+          }`}
+        >
+          <Route size={15} className="shrink-0" aria-hidden />
+          <span className="max-w-full text-center whitespace-normal">Paths</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          onClick={() => requestContentCatalogSubTab('taxonomy')}
+          aria-selected={contentCatalogSubTab === 'taxonomy'}
+          aria-label="Categories and skills"
+          className={`flex min-h-11 min-w-0 flex-1 touch-manipulation flex-col items-center justify-center gap-0.5 rounded-lg border px-1.5 py-2 text-xs font-semibold leading-snug tracking-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#a1a2a2]/45 active:opacity-90 sm:flex-row sm:gap-1.5 sm:px-3 sm:text-sm sm:leading-normal ${
+            contentCatalogSubTab === 'taxonomy'
+              ? 'border-[#a1a2a2]/45 bg-[#616161]/10 text-[var(--text-primary)]'
+              : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+          }`}
+        >
+          <Tags size={15} className="shrink-0 opacity-90" aria-hidden />
+          <span className="max-w-full text-center whitespace-normal break-words">
+            Categories & Skills
+          </span>
+        </button>
       </div>
 
       {contentCatalogSubTab === 'catalog' && (
@@ -4906,8 +4917,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                     aria-labelledby="admin-course-description-bio-toggle"
                     className="border-t border-[var(--border-color)] px-3 pb-3 pt-2 sm:px-4 sm:pb-4 sm:pt-3"
                   >
-                    <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 sm:items-stretch sm:gap-4">
-                      <label className="flex h-full min-h-[14rem] min-w-0 flex-col gap-1 sm:min-h-[16rem]">
+                    <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
+                      <label className="flex min-w-0 flex-col gap-1">
                         <span className="text-xs font-semibold text-[var(--text-secondary)]">Description</span>
                         <CatalogMiniRichEditor
                           id="admin-course-description"
@@ -4915,18 +4926,22 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           onChange={(description) => updateDraft({ description })}
                           aria-label="Course description"
                           variant="multiline"
+                          multilineMaxHeight="descriptionBio"
                           placeholder="Overview shown on the course page — you can paste formatted text (subscripts, bold, etc.)."
-                          className="flex min-h-0 flex-1 flex-col"
+                          className="w-full min-w-0"
                         />
                       </label>
-                      <label className="flex h-full min-h-[14rem] min-w-0 flex-col gap-1 sm:min-h-[16rem]">
+                      <label className="flex min-w-0 flex-col gap-1">
                         <span className="text-xs font-semibold text-[var(--text-secondary)]">Author bio (optional)</span>
-                        <textarea
-                          value={draft.authorBio ?? ''}
-                          onChange={(e) => updateDraft({ authorBio: e.target.value || undefined })}
-                          rows={8}
-                          className="box-border min-h-0 w-full flex-1 resize-y rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-sm leading-relaxed"
-                        />
+                        <div className="relative z-0 min-w-0 w-full rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)]">
+                          <textarea
+                            value={draft.authorBio ?? ''}
+                            onChange={(e) => updateDraft({ authorBio: e.target.value || undefined })}
+                            rows={2}
+                            aria-label="Author bio (optional)"
+                            className={`box-border block w-full min-w-0 resize-none border-0 bg-transparent px-3 py-2 text-sm leading-relaxed outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-[#a1a2a2]/40 ${CATALOG_DESCRIPTION_BIO_NATIVE_INPUT_SCROLL_CLASS}`}
+                          />
+                        </div>
                       </label>
                     </div>
                   </div>
@@ -5048,13 +5063,13 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                 className="space-y-0 pb-0 pt-0"
               >
                 <div
-                  className={`flex flex-col items-stretch gap-1.5 @xl/catalog:flex-row @xl/catalog:flex-wrap @xl/catalog:items-center @xl/catalog:justify-between @xl/catalog:gap-x-2 @xl/catalog:gap-y-1 ${
+                  className={`flex flex-col items-stretch gap-1 max-md:gap-1 @xl/catalog:flex-row @xl/catalog:flex-wrap @xl/catalog:items-center @xl/catalog:justify-between @xl/catalog:gap-x-2 @xl/catalog:gap-y-1 ${
                     openModules[mi] ? 'pb-0' : ''
                   }`}
                 >
-                  <div className="flex min-h-11 w-full min-w-0 flex-col gap-2 @xl/catalog:flex-row @xl/catalog:items-center md:min-h-10 @xl/catalog:flex-1 @xl/catalog:gap-2">
+                  <div className="flex min-h-11 w-full min-w-0 flex-col gap-1.5 max-md:gap-1 @xl/catalog:flex-row @xl/catalog:items-center md:min-h-10 @xl/catalog:flex-1 @xl/catalog:gap-2">
                     <div className="flex min-h-11 min-w-0 w-full flex-1 flex-col gap-0.5 md:min-h-10">
-                      <div className="flex min-w-0 w-full flex-col gap-1.5 @xl/catalog:flex-row @xl/catalog:flex-wrap @xl/catalog:items-center @xl/catalog:gap-x-2 @xl/catalog:gap-y-0.5">
+                      <div className="flex min-w-0 w-full flex-col gap-1 max-md:gap-1 @xl/catalog:flex-row @xl/catalog:flex-wrap @xl/catalog:items-center @xl/catalog:gap-x-2 @xl/catalog:gap-y-0.5">
                         <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-1.5">
                         <button
                           type="button"
@@ -5136,7 +5151,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           {mi + 1} of {draft.modules.length} in course
                         </span>
                       </div>
-                      <p className="text-[10px] font-medium leading-tight tabular-nums text-[var(--text-muted)] md:hidden">
+                      <p className="text-[10px] font-medium leading-tight tabular-nums text-[var(--text-muted)] max-md:mt-px md:hidden">
                         {mod.lessons.length}{' '}
                         {mod.lessons.length === 1 ? 'lesson' : 'lessons'}
                         <span aria-hidden> · </span>
@@ -5155,7 +5170,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       )}
                     </div>
                   </div>
-                  <div className="flex w-full min-w-0 shrink-0 flex-wrap items-center justify-start gap-x-2 gap-y-2 border-t border-[var(--border-color)]/50 pt-2 sm:gap-x-2 @xl/catalog:w-auto @xl/catalog:flex-nowrap @xl/catalog:justify-end @xl/catalog:border-t-0 @xl/catalog:pt-0">
+                  <div className="flex w-full min-w-0 shrink-0 flex-wrap items-center justify-start gap-x-2 gap-y-2 border-t border-[var(--border-color)]/50 pt-2 max-md:gap-x-1.5 max-md:gap-y-1 max-md:pt-1 sm:gap-x-2 @xl/catalog:w-auto @xl/catalog:flex-nowrap @xl/catalog:justify-end @xl/catalog:border-t-0 @xl/catalog:pt-0">
                     <CourseHierarchyVisibilityCells
                       visibleToRoles={mod.visibleToRoles}
                       onChange={(next) => {
@@ -5267,7 +5282,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
 
                 {openModules[mi] && (
                 <>
-                <div className="space-y-0 border-l border-[var(--border-color)]/50 pl-2 sm:pl-3">
+                <div className="space-y-0 border-l border-[var(--border-color)]/50 pl-1.5 sm:pl-3">
                   <CatalogLessonInsertSlot
                     persistVisibleOnMd={mod.lessons.length === 0}
                     ariaLabel={`Add branch at the start of ${catalogMiniRichPlainText(mod.title ?? '') || 'Module'}`}
@@ -5306,17 +5321,17 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                       data-admin-lesson-row={lessonRowKey}
                       data-lesson-mi={mi}
                       data-lesson-li={li}
-                      className={`space-y-1.5 py-0 sm:space-y-2${
+                      className={`max-md:space-y-1 space-y-1.5 py-0 sm:space-y-2${
                         lessonRowInSectionUnderDivider(mod, li)
                           ? ` ${CATALOG_LESSON_SECTION_UNDER_DIVIDER_INDENT}`
                           : ''
                       }`}
                     >
-                      <div className="flex w-full min-w-0 flex-col gap-2">
-                        <div className="flex w-full min-w-0 flex-col gap-2 @xl/catalog:flex-row @xl/catalog:items-start @xl/catalog:gap-2">
+                      <div className="flex w-full min-w-0 flex-col gap-1.5 max-md:gap-1.5 sm:gap-2">
+                        <div className="flex w-full min-w-0 flex-col gap-1.5 max-md:gap-1.5 @xl/catalog:flex-row @xl/catalog:items-start @xl/catalog:gap-2">
                         {lesson.contentKind === 'divider' ? (
                           <div
-                            className="flex min-h-11 min-w-0 w-full flex-1 flex-col gap-1.5 rounded-lg py-0 -mx-0.5 px-0.5 @xl/catalog:flex-row @xl/catalog:items-center md:min-h-10 @xl/catalog:gap-2 @xl/catalog:py-0.5 @xl/catalog:-mx-1 @xl/catalog:px-1"
+                            className="flex min-h-11 min-w-0 w-full flex-1 flex-col gap-1 max-md:gap-1 rounded-lg py-0 -mx-0.5 px-0.5 @xl/catalog:flex-row @xl/catalog:items-center md:min-h-10 @xl/catalog:gap-2 @xl/catalog:py-0.5 @xl/catalog:-mx-1 @xl/catalog:px-1"
                             role="group"
                             aria-label="Section divider row"
                           >
@@ -5367,8 +5382,8 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                           </div>
                         ) : (
                         <div className="flex min-h-11 min-w-0 w-full flex-1 flex-col gap-0.5 md:min-h-10">
-                          <div className="flex min-w-0 w-full flex-col gap-1.5 @xl/catalog:flex-row @xl/catalog:flex-wrap @xl/catalog:items-center @xl/catalog:gap-x-2 @xl/catalog:gap-y-0.5">
-                            <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-1.5">
+                          <div className="flex min-w-0 w-full flex-col gap-1 max-md:gap-1 @xl/catalog:flex-row @xl/catalog:flex-wrap @xl/catalog:items-center @xl/catalog:gap-x-2 @xl/catalog:gap-y-0.5">
+                            <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-1.5 max-md:gap-x-1">
                               <button
                                 type="button"
                                 onClick={() => toggleLessonOpen(mi, li)}
@@ -5444,7 +5459,7 @@ export const AdminCourseCatalogSection: React.FC<AdminCourseCatalogSectionProps>
                             )}
                         </div>
                         )}
-                        <div className="flex w-full min-w-0 shrink-0 flex-wrap items-center justify-start gap-x-2 gap-y-2 border-t border-[var(--border-color)]/50 pt-2 @xl/catalog:w-auto @xl/catalog:border-0 @xl/catalog:pt-0 @xl/catalog:justify-end sm:gap-x-2 md:flex-nowrap">
+                        <div className="flex w-full min-w-0 shrink-0 flex-wrap items-center justify-start gap-x-2 gap-y-2 border-t border-[var(--border-color)]/50 pt-2 max-md:gap-x-1.5 max-md:gap-y-1 max-md:pt-1 @xl/catalog:w-auto @xl/catalog:border-0 @xl/catalog:pt-0 @xl/catalog:justify-end sm:gap-x-2 md:flex-nowrap">
                           <CourseHierarchyVisibilityCells
                             visibleToRoles={lesson.visibleToRoles}
                             onChange={(next) => {

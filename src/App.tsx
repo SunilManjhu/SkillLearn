@@ -131,6 +131,7 @@ import {
   clearCachedAuthProfile,
   type AuthProfileSnapshot,
 } from './utils/authProfileCache';
+import { readCachedUserRole, writeCachedUserRole, clearCachedUserRole } from './utils/userRoleLocalCache';
 import {
   readInitialUiThemeForSession,
   readPersistedUiThemeForUser,
@@ -790,9 +791,27 @@ export default function App() {
    * Prevents treating a brief `isAdminUser === false` as “kick off #/admin”.
    */
   const [adminAccessResolved, setAdminAccessResolved] = useState(false);
-  const shellViewerIsAdmin = adminAccessResolved && isAdminUser;
+  /**
+   * Same identity key as browse pref / session caches: Firebase `user` may be null for a frame after refresh
+   * while `readCachedAuthProfile()` still has uid — needed so role cache applies before first paint.
+   */
+  const uidForRoleShell = user?.uid ?? readCachedAuthProfile()?.uid ?? null;
+  /** Last Firestore role for this uid (written on each role snapshot) — first paint before `subscribeUserRole` resolves. */
+  const cachedUserRoleForShell = uidForRoleShell ? readCachedUserRole(uidForRoleShell) : null;
+  const shellViewerIsAdmin =
+    (adminAccessResolved && isAdminUser) ||
+    (!adminAccessResolved && Boolean(uidForRoleShell) && cachedUserRoleForShell === 'admin');
   /** Creator-only outline/catalog rules; admins (`shellViewerIsAdmin`) bypass creator checks. */
-  const shellViewerIsCreator = adminAccessResolved && isCreatorUser && !isAdminUser;
+  const shellViewerIsCreator =
+    (adminAccessResolved && isCreatorUser && !isAdminUser) ||
+    (!adminAccessResolved && Boolean(uidForRoleShell) && cachedUserRoleForShell === 'creator');
+  /** Signed-in creator or admin — used for browse chrome and taxonomy scoping before grid memos below. */
+  const viewerHasCreatorStudio =
+    Boolean(uidForRoleShell) &&
+    (adminAccessResolved
+      ? isCreatorUser || isAdminUser
+      : cachedUserRoleForShell === 'admin' || cachedUserRoleForShell === 'creator');
+  const showCreatorBrowseTabs = selectedLearningPathId == null && viewerHasCreatorStudio;
   /**
    * For path outline filtering: subset of browse-surface course ids this viewer may see (course-level and
    * single-module `visibleToRoles`). `browseVisibleCourseIdSet` is publish/draft only; using it alone for path
@@ -818,8 +837,8 @@ export default function App() {
    * for learners, or only unpublished courses), matching course catalog rules.
    */
   const navbarCatalogPathRows = useMemo(() => {
-    const adminOnlyNoCreatorStudio =
-      adminAccessResolved && isAdminUser && !isCreatorUser;
+    /** Admins who are not creators omit private creator-draft path rows from browse chrome (uses optimistic shell flags). */
+    const adminOnlyNoCreatorStudio = shellViewerIsAdmin && !shellViewerIsCreator;
     let rows = combinedCatalogPathRows;
     if (adminOnlyNoCreatorStudio) {
       rows = rows.filter(
@@ -845,9 +864,6 @@ export default function App() {
     });
   }, [
     combinedCatalogPathRows,
-    adminAccessResolved,
-    isAdminUser,
-    isCreatorUser,
     shellViewerIsAdmin,
     shellViewerIsCreator,
     pathOutlineCatalogCourseIdSet,
@@ -1250,6 +1266,8 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
       if (!nextUser) {
+        const uidToClear = readCachedAuthProfile()?.uid;
+        if (uidToClear) clearCachedUserRole(uidToClear);
         setUser(null);
         setIsAuthReady(true);
         clearCachedAuthProfile();
@@ -1606,12 +1624,14 @@ export default function App() {
         user.uid,
         (role) => {
           if (cancelled) return;
+          writeCachedUserRole(user.uid, role);
           setIsAdminUser(role === 'admin');
           setIsCreatorUser(role === 'creator');
           setAdminAccessResolved(true);
         },
         () => {
           if (cancelled) return;
+          writeCachedUserRole(user.uid, 'learner');
           setIsAdminUser(false);
           setIsCreatorUser(false);
           setAdminAccessResolved(true);
@@ -2098,6 +2118,8 @@ export default function App() {
 
   const handleLogout = async () => {
     try {
+      const uid = auth.currentUser?.uid;
+      if (uid) clearCachedUserRole(uid);
       await signOut(auth);
       historyActionRef.current = 'replace';
       setCurrentView('home');
@@ -2159,6 +2181,7 @@ export default function App() {
       }
       return { ok: false, error: result.message };
     }
+    clearCachedUserRole(uid);
     clearCachedAuthProfile();
     historyActionRef.current = 'replace';
     setCurrentView('catalog');
@@ -2194,20 +2217,72 @@ export default function App() {
     clearLegacyCatalogPopularTopicsLocalStorage();
   }, []);
 
+  /**
+   * Courses used to build library filter / navbar topic pools. For creators (or admins with studio) with
+   * browse pref “My courses / paths”, only own draft rows; with “Other courses / paths”, only non-draft
+   * catalog rows — matching what the Course Library grid can show for that pref.
+   * While `adminAccessResolved` is false, `viewerHasCreatorStudio` is still false; if the signed-in (or
+   * cached-profile) user has pref mine/all, use the same scoped rows anyway so navbar skills/categories
+   * do not flash the full catalog (same idea as Learning Paths during auth restore).
+   */
+  const libraryTaxonomySourceCourses = useMemo((): Course[] => {
+    const rowVisible = (r: CatalogCourseRow) =>
+      catalogCourseEntryVisibleToViewer(r.course, shellViewerIsAdmin, shellViewerIsCreator);
+
+    const mineCourses = () =>
+      browseVisibleCatalogRows
+        .filter((r) => r.fromCreatorDraft && !r.adminPreviewOwnerUid && rowVisible(r))
+        .map((r) => r.course);
+
+    const publishedOnlyCourses = () =>
+      browseVisibleCatalogRows
+        .filter((r) => !r.fromCreatorDraft && rowVisible(r))
+        .map((r) => r.course);
+
+    const uidOrCached = user?.uid ?? readCachedAuthProfile()?.uid ?? null;
+    const optimisticMineOrAllWhileRolesPending =
+      !adminAccessResolved &&
+      Boolean(uidOrCached) &&
+      (creatorBrowseCatalogPref === 'mine' || creatorBrowseCatalogPref === 'all');
+
+    if (creatorBrowseCatalogPref === 'mine') {
+      if (viewerHasCreatorStudio || optimisticMineOrAllWhileRolesPending) {
+        return mineCourses();
+      }
+      return browseVisibleCatalogCourses;
+    }
+    if (creatorBrowseCatalogPref === 'all') {
+      if (viewerHasCreatorStudio || optimisticMineOrAllWhileRolesPending) {
+        return publishedOnlyCourses();
+      }
+      return browseVisibleCatalogCourses;
+    }
+    return browseVisibleCatalogCourses;
+  }, [
+    viewerHasCreatorStudio,
+    creatorBrowseCatalogPref,
+    browseVisibleCatalogRows,
+    browseVisibleCatalogCourses,
+    shellViewerIsAdmin,
+    shellViewerIsCreator,
+    adminAccessResolved,
+    user?.uid,
+  ]);
+
   /** Preset + discovery pools; “more” lists still include labels not on any course until filtered below. */
   const browseCatalogTaxonomy = useMemo(
     () =>
       buildCatalogTaxonomy({
-        courses: browseVisibleCatalogCourses,
+        courses: libraryTaxonomySourceCourses,
         topicPresets: categoryPresets,
         skillPresets,
       }),
-    [browseVisibleCatalogCourses, categoryFilterRevision, categoryPresets, skillFilterRevision, skillPresets]
+    [libraryTaxonomySourceCourses, categoryFilterRevision, categoryPresets, skillFilterRevision, skillPresets]
   );
 
   const browseCatalogTaxonomyUsage = useMemo(
-    () => catalogCourseTaxonomyUsage(browseVisibleCatalogCourses),
-    [browseVisibleCatalogCourses]
+    () => catalogCourseTaxonomyUsage(libraryTaxonomySourceCourses),
+    [libraryTaxonomySourceCourses]
   );
 
   /** Only topics/skills/levels that appear on at least one visible catalog course (learner browse + published). */
@@ -2265,12 +2340,12 @@ export default function App() {
   const libraryPopularTopicsOrdered = useMemo(
     () =>
       computeCrossKindPopularTopicLabels({
-        courses: browseVisibleCatalogCourses,
+        courses: libraryTaxonomySourceCourses,
         categoryPool: categoryFilterPoolForLibrary,
         skillPool: catalogBrowseSkills,
         limit: 3,
       }),
-    [browseVisibleCatalogCourses, categoryFilterPoolForLibrary, catalogBrowseSkills]
+    [libraryTaxonomySourceCourses, categoryFilterPoolForLibrary, catalogBrowseSkills]
   );
 
   useEffect(() => {
@@ -2341,9 +2416,6 @@ export default function App() {
     () => filteredCatalogRows.map((r) => r.course),
     [filteredCatalogRows]
   );
-
-  const viewerHasCreatorStudio = !!user && adminAccessResolved && (isCreatorUser || isAdminUser);
-  const showCreatorBrowseTabs = selectedLearningPathId == null && viewerHasCreatorStudio;
 
   useEffect(() => {
     // Avoid a brief "both" flash during auth restore: we may have a cached uid/pref

@@ -44,6 +44,13 @@ import {
 
 type TaxonomyKind = 'category' | 'skill';
 
+/**
+ * Chip list viewport height (~4 rows: size-11 row + gap-1.5 between items).
+ * Keeps Categories & Skills compact on mobile; additional labels scroll inside the section.
+ */
+const TAXONOMY_CHIP_LIST_MAX_H =
+  'max-h-[min(15.25rem,calc(50dvh-6rem))] sm:max-h-[min(14.875rem,calc(45dvh-5rem))]';
+
 function lower(s: string): string {
   return s.trim().toLowerCase();
 }
@@ -313,8 +320,8 @@ function TaxonomySection({
 
   const chipListClassName =
     listLayout === 'grid'
-      ? 'grid min-h-0 max-h-[70dvh] min-w-0 flex-1 grid-cols-1 content-start gap-1.5 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch] sm:grid-cols-2'
-      : 'flex min-h-0 max-h-[70dvh] min-w-0 flex-1 flex-col content-start gap-1.5 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch]';
+      ? `grid min-h-0 ${TAXONOMY_CHIP_LIST_MAX_H} min-w-0 flex-1 grid-cols-1 content-start gap-1.5 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch] sm:grid-cols-2`
+      : `flex min-h-0 ${TAXONOMY_CHIP_LIST_MAX_H} min-w-0 flex-1 flex-col content-start gap-1.5 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch]`;
 
   return (
     <section className="flex min-h-0 min-w-0 flex-col rounded-xl border border-[var(--border-color)]/70 bg-[var(--bg-primary)]/25 p-3 sm:p-4">
